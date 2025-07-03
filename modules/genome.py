@@ -392,28 +392,69 @@ class Genome():
     def copy(self):
         return copy.deepcopy(self)
         
-    def extract_peak_sequences(self, output_file_name, DAPseq_output_file, output_folder:str="", top=600):
+    def extract_peak_sequences(self, output_file_name, DAPseq_output_file, output_folder: str = "", top=600):
 
-        export_folder = Path(output_folder or self.path + "out_peak_seqs/")
+        export_folder = Path(output_folder or Path(self.path) / "out_peak_seqs/")
         export_folder.mkdir(parents=True, exist_ok=True)
 
-        df = pd.read_csv(DAPseq_output_file, delimiter='\t', dtype=str)
-        df.dropna(how='all', inplace=True)
+        try:
+            df = pd.read_csv(DAPseq_output_file, delimiter='\t', dtype=str)
+            df.dropna(how='all', inplace=True)
+        except FileNotFoundError:
+            print(f"Error: DAPseq file not found: {DAPseq_output_file}")
+            return
 
+        # --- Selection of 'top' peaks ---
         if top == 'all':
             top_df = df
         else:
             df['score'] = pd.to_numeric(df['score'], errors='coerce')
+            df.dropna(subset=['score'], inplace=True)
             top_df = df.nlargest(top, 'score')
 
+        peaks = {}
 
-        peaks = {
-            f"{row['seqnames']}_{row['feature']}_{int(row['peak'].split(':')[1])-100}:{int(row['peak'].split(':')[1])+100}":
-            self.scaffolds[row['seqnames']].seq[int(row['peak'].split(':')[1])-100:int(row['peak'].split(':')[1])+100]
-            for _, row in top_df.iterrows()
-        }
+        for index, row in top_df.iterrows():
+            try:
 
-        with open(export_folder / output_file_name, "w", encoding="utf-8") as f_out:
+                seq_name = row['seqnames']
+                feature = row['feature']
+                peak_str = row['peak']
+
+                peak_position = int(peak_str.split(':')[1])
+
+                scaffold_seq = self.scaffolds[seq_name].seq
+                scaffold_len = len(scaffold_seq)
+
+                start_pos = max(0, peak_position - 100)
+                end_pos = min(scaffold_len, peak_position + 100)
+                
+                if start_pos >= end_pos:
+                    print(f"Warning: Invalid range for row {index}. Skipping.")
+                    continue
+
+                extracted_seq = scaffold_seq[start_pos:end_pos]
+                header = f"{seq_name}_{feature}_{start_pos}:{end_pos}"
+
+                peaks[header] = str(extracted_seq)
+
+            except (IndexError, ValueError):
+
+                print(f"Warning: Incorrect peak format in row {index} (value: '{row.get('peak', 'N/A')}'). Skipping.")
+            except KeyError:
+
+                print(f"Warning: Scaffold '{row.get('seqnames', 'N/A')}' not found in reference. Skipping row {index}.")
+            except Exception as e:
+
+                print(f"Error processing row {index}: {e}. Skipping.")
+
+
+        if not peaks:
+            print("Warning: No peaks extracted for any sequence.")
+            return
+
+        output_path = export_folder / output_file_name
+        with open(output_path, "w", encoding="utf-8") as f_out:
             for header, seq in peaks.items():
                 f_out.write(f'>{header}\n')
                 f_out.write(f'{textwrap.fill(seq, width=60)}\n')
