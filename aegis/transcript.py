@@ -1,7 +1,7 @@
-from modules.feature import Feature
-from modules.subfeatures import Exon, Intron, CDS, UTR
-from modules.misc_features import Promoter
-from modules.genefunctions import find_ORFs, longest_ORF, translate, overlap
+from .feature import Feature
+from .subfeatures import Exon, Intron, CDS, UTR
+from .misc_features import Promoter
+from .genefunctions import find_ORFs, longest_ORF, translate, overlap
 
 
 class Transcript(Feature):

@@ -1,6 +1,6 @@
-from modules.feature import Feature
-from modules.misc_features import Protein
-from modules.genefunctions import reverse_complement
+from .feature import Feature
+from .misc_features import Protein
+from .genefunctions import reverse_complement
 
 class CDS(Feature):
     def __init__(self, CDS_segments:list, feature_id:str, 

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+authors = [
+	{ name = "David Navarro-Payá", email = "david.navarro.paya@gmail.com" },
+	{ name = "Antonio Santiago", email = "antsanpaj@gmail.com" },
+	{ name = "Amandine Velt", email = "Amandine.Velt@inrae.fr" },
+]
+name = "aegis"
+version = "0.0.1"
+description = "Annotation Extraction Genomic Integration Suite."
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+	"Operating System :: OS Independent",
+]
+
+license = "GPL-3.0-or-later"
+
+
+[project.scripts]

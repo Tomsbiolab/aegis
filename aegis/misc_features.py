@@ -1,6 +1,6 @@
 import copy
-from modules.genefunctions import translate
-from modules.feature import Feature
+from .genefunctions import translate
+from .feature import Feature
 
 class Protein():
     def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):
