@@ -1,4 +1,4 @@
-from modules.genefunctions import count_occurrences, reverse_complement
+from .genefunctions import count_occurrences, reverse_complement
 import copy
 
 class Feature():

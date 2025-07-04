@@ -14,15 +14,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 #import networkx as nx
 
-from modules.plots import pie_chart, barplot
-from modules.genefunctions import overlap, reverse_complement, find_all_occurrences
-from modules.feature import Feature
-from modules.gene import Gene
-from modules.transcript import Transcript
-from modules.subfeatures import Exon, UTR, Intron
-
-
-from modules.hits import OverlapHit, BlastHit
+from .plots import pie_chart, barplot
+from .genefunctions import overlap, reverse_complement, find_all_occurrences
+from .feature import Feature
+from .gene import Gene
+from .transcript import Transcript
+from .subfeatures import Exon, UTR, Intron
+from .hits import OverlapHit, BlastHit
 
 from os import system
 from statistics import mean

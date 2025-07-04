@@ -1,6 +1,6 @@
-from modules.feature import Feature
-from modules.subfeatures import Exon
-from modules.transcript import Transcript
+from .feature import Feature
+from .subfeatures import Exon
+from .transcript import Transcript
 
 class Gene(Feature):
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
