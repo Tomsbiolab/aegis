@@ -8,7 +8,7 @@ authors = [
 	{ name = "Antonio Santiago", email = "antsanpaj@gmail.com" },
 	{ name = "Amandine Velt", email = "Amandine.Velt@inrae.fr" },
 ]
-name = "aegis"
+name = "aegis-bio"
 version = "0.0.1"
 description = "Annotation Extraction Genomic Integration Suite."
 readme = "README.md"
@@ -19,7 +19,8 @@ classifiers = [
 	"Operating System :: OS Independent",
 ]
 
-license = "GPL-3.0-or-later"
+license = { text = "GPL-3.0-or-later" }
 
 
 [project.scripts]
+aegis-extract = "aegis.cli.extract:app"
