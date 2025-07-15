@@ -148,7 +148,7 @@ def process_annotation(annot, genomes, dap, coordinates_path, gff_path, features
 
     if gffs:
         a.export_gff(custom_path=gff_path, skip_atypical_fts=skip_atypical, UTRs=utrs)
-        if dap:
+        if dap or a.dapfit:
             a.export_gff(custom_path=gff_path, just_genes=True)
 
     if combine and gffs:
@@ -156,7 +156,7 @@ def process_annotation(annot, genomes, dap, coordinates_path, gff_path, features
         b.combine_transcripts(temp_dap_genome, respect_non_coding=True)
         b.update_attributes(featurecountsID=featurecounts)
         b.export_gff(custom_path=gff_path, skip_atypical_fts=skip_atypical, UTRs=utrs)
-        if dap:
+        if dap or b.dapfit:
             b.export_gff(custom_path=gff_path, just_genes=True)
     
     a.CDS_to_CDS_segment_ids()
