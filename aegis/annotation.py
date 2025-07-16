@@ -6,6 +6,7 @@ Module defining several genomic classes.
 @authors: David Navarro, Antonio Santiago
 """
 
+import re
 import sys
 import copy
 import random
@@ -28,6 +29,185 @@ from scipy.stats import fisher_exact
 from tqdm import tqdm
 from multiprocessing import Pool
 
+def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):
+    """
+    Tries several encodings to find the suitable one.
+    """
+    for enc in encodings:
+        try:
+            with open(file_path, 'r', encoding=enc) as f:
+                f.readlines()
+                return enc
+        except UnicodeDecodeError:
+            continue
+
+    raise ValueError(f"Not able to decodify '{file_path}'")
+
+
+def detect_file_format(file_path, encoding, lines_to_check=20):
+    """
+    Detects if a file is likely GTF or GFF3 format.
+    """
+    try:
+        with open(file_path, 'r', encoding=encoding) as f:
+
+            for i, line in enumerate(f):
+                if i >= lines_to_check:
+                    break
+                
+                line = line.strip()
+                if not line:
+                    continue
+
+                if line.startswith("##gff-version 3"):
+                    return 'gff3'
+
+                if line.startswith('#'):
+                    continue
+
+                parts = line.split('\t')
+                if len(parts) == 9:
+                    attributes = parts[8]
+
+                    if re.search(r'\w+\s+"[^"]+";', attributes):
+                        return 'gtf'
+
+                    if re.search(r'\w+=', attributes):
+                        return 'gff3'
+            
+            # unknown format returns gff3
+            return 'gff3'
+            
+    except Exception as e:
+        sys.stderr.write(f"Error reading file for format detection: {e}\n")
+        sys.exit(1)
+
+def parse_gtf_attributes(attr_string):
+    """
+    Parses the GFF/GTF attribute column and returns a dictionary.
+    Handles GTF-specific format where values are quoted.
+    """
+    attributes = {}
+
+    for match in re.finditer(r'(\w+)\s+"([^"]+)"', attr_string):
+        key, value = match.groups()
+        attributes[key] = value
+    return attributes
+
+def format_gff3_attributes(attrs, feature_type):
+    """
+    Formats a dictionary of attributes into a GFF3-compliant string.
+    """
+
+    special_keys = {'gene_id', 'transcript_id', 'exon_id', 'exon_number'}
+    
+    gff3_attrs = []
+
+    if feature_type in ["gene", "pseudogene", "transposable_element_gene"]:
+        if 'gene_id' in attrs:
+            gff3_attrs.append(f"ID={attrs['gene_id']}")
+    
+    elif feature_type in ["transcript", "mRNA", "antisense_lncRNA", "antisense_RNA", 
+                             "miRNA_primary_transcript", "ncRNA", "lncRNA",
+                             "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
+                             "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]:
+        if 'transcript_id' in attrs:
+            gff3_attrs.append(f"ID={attrs['transcript_id']}")
+        if 'gene_id' in attrs:
+            gff3_attrs.append(f"Parent={attrs['gene_id']}")
+            
+    elif feature_type in ['exon', 'CDS', 'UTR', 'three_prime_utr', 'five_prime_utr', 'start_codon', 'stop_codon']:
+        parent_id = f"{attrs['transcript_id']}"
+        gff3_attrs.append(f"Parent={parent_id}")
+
+        feature_id = f"{attrs['transcript_id']}"
+        if 'exon_number' in attrs:
+            feature_id += f".{attrs['exon_number']}"
+
+        if 'exon_number' in attrs or feature_type in ['CDS', 'start_codon', 'stop_codon']:
+             gff3_attrs.append(f"ID={feature_id}")
+    
+    if 'gene_name' in attrs:
+        gff3_attrs.append(f"Name={attrs['gene_name']}")
+    elif 'transcript_name' in attrs:
+        gff3_attrs.append(f"Name={attrs['transcript_name']}")
+
+    for key, value in attrs.items():
+        if key not in special_keys and key not in ['gene_name', 'transcript_name']:
+            gff3_attrs.append(f"{key}={value}")
+            
+    return ";".join(gff3_attrs)
+
+def convert_gtf_to_gff3(gtf_file, encoding):
+    """
+    Reads a GTF file, converts it to GFF3 format, and writes to an output file.
+    """
+
+    gff_lines = []
+
+    with open(gtf_file, 'r', encoding=encoding) as infile:
+
+        gff_lines.append("##gff-version 3\n")
+
+        seen_genes = set()
+        seen_transcripts = set()
+
+        for line in infile:
+
+            if line.startswith('#'):
+
+                if not line.startswith('##'):
+                    gff_lines.append(f"#{line}")
+                continue
+
+            parts = line.strip().split('\t')
+            if len(parts) != 9:
+                sys.stderr.write(f"Warning: Skipping malformed line: {line.strip()}\n")
+                continue
+
+            seqname, source, feature, start, end, score, strand, frame, attr_string = parts
+            attributes = parse_gtf_attributes(attr_string)
+            
+            if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes:
+                gene_attrs = {'gene_id': attributes['gene_id']}
+                if 'gene_name' in attributes:
+                    gene_attrs['gene_name'] = attributes['gene_name']
+                if 'gene_biotype' in attributes:
+                    gene_attrs['gene_biotype'] = attributes['gene_biotype']
+                    
+                gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
+                gene_line = "\t".join([seqname, source, 'gene', start, end, score, strand, frame, gene_attr_str])
+
+                gff_lines.append(gene_line + '\n')
+                seen_genes.add(attributes['gene_id'])
+
+
+            if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts:
+
+                tx_attrs = {k: v for k, v in attributes.items() if 'transcript' in k or 'gene' in k}
+                tx_feature_type = 'transcript'
+                if 'transcript_biotype' in attributes:
+                    if 'RNA' in attributes['transcript_biotype']:
+                        tx_feature_type = attributes['transcript_biotype']
+
+                tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
+                tx_line = "\t".join([seqname, source, tx_feature_type, start, end, score, strand, frame, tx_attr_str])
+                gff_lines.append(tx_line + '\n')
+                seen_transcripts.add(attributes['transcript_id'])
+
+            if feature in ['gene', 'transcript']:
+                continue
+
+            gff3_attr_string = format_gff3_attributes(attributes, feature)
+
+            gff3_line = "\t".join([seqname, source, feature, start, end, score, strand, frame, gff3_attr_string])
+            gff_lines.append(gff3_line + '\n')
+
+    
+    print(f"Successfully converted to a gff file")
+    return gff_lines
+
+
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
     sorted_genes = {g.id: g.copy() for g in genes}
@@ -44,7 +224,7 @@ class Annotation():
     noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA", 
                              "miRNA_primary_transcript", "ncRNA", "lncRNA",
                              "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-                             "snRNA", "tRNA"]
+                             "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
     # Some features are clearly transcript level features but they cannot be
     # classed as coding/noncoding just by looking at the name   
     features["transcript"] = (["transcript", "transcript_region", "primary_transcript",
@@ -181,40 +361,52 @@ class Annotation():
         parsed_lines = {key: [] for key in Annotation.features}
         parsed_lines["atypical"] = []
         
+        encoding = read_file_with_fallback(self.file)
+        file_format = detect_file_format(self.file, encoding)
+        print(f'{file_format} file format detected')
+
+        if file_format == 'gtf':
+
+            lines = convert_gtf_to_gff3(self.file, encoding)
+
+        else:
+            
+            with open(self.file, encoding=encoding) as f:
+                lines = f.readlines()
+
         temp = []
         protein_match_lines = []
         chromosomes_t = set()
         # Read lines from input file, filtering out lines consisting of "###\n"
-        with open(self.file, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line == "":
-                    continue
-                if line.startswith("#") and line != "###" and line != "#":
-                    self.gff_header += line + "\n"
-                elif line != "###" and line != "#":
-                    line = line.split("\t")
-                    if len(line) > 2:
-                        if chosen_chromosomes != None:
-                            if line[0] not in chosen_chromosomes:
-                                continue
-                            else:
-                                if chosen_coordinates != None:
-                                    if int(line[3]) < chosen_coordinates[0] or int(line[4]) > chosen_coordinates[1]:
-                                        continue
-                        self.features.add(line[2])
-                        if line[2] == "nucleotide_to_protein_match":
-                            #to check why ":"
-                            chromosomes_t.add(line[0].split(":")[0])
-                            protein_match_lines.append(line)
-                        elif line[2] in Annotation.features_r:
-                            chromosomes_t.add(line[0])
-                            temp.append(line)
+        for line in lines:
+            line = line.strip()
+            if line == "" or line == "###" or line == "#":
+                continue
+            if line.startswith("#"):
+                self.gff_header += line + "\n"
+            else:
+                line = line.split("\t")
+                if len(line) > 2:
+                    if chosen_chromosomes != None:
+                        if line[0] not in chosen_chromosomes:
+                            continue
                         else:
-                            chromosomes_t.add(line[0])
-                            parsed_lines["atypical"].append(line)
+                            if chosen_coordinates != None:
+                                if int(line[3]) < chosen_coordinates[0] or int(line[4]) > chosen_coordinates[1]:
+                                    continue
+                    self.features.add(line[2])
+                    if line[2] == "nucleotide_to_protein_match":
+                        #to check why ":"
+                        chromosomes_t.add(line[0].split(":")[0])
+                        protein_match_lines.append(line)
+                    elif line[2] in Annotation.features_r:
+                        chromosomes_t.add(line[0])
+                        temp.append(line)
                     else:
-                        self.gff_header += "#" + "\t".join(line) + "\n"
+                        chromosomes_t.add(line[0])
+                        parsed_lines["atypical"].append(line)
+                else:
+                    self.gff_header += "#" + "\t".join(line) + "\n"
 
         sorted_lines = sorted(temp, key=lambda x: (int(x[3]), int(x[4])))
         protein_match_lines = sorted(protein_match_lines, key=lambda x: (int(x[3]), int(x[4])))
