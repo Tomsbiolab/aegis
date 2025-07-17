@@ -1,36 +1,48 @@
 import typer
-from typing_extensions import Annotated, Literal
+import os
+from typing_extensions import Annotated
 from typing import List
 from aegis.genome import Genome
 from aegis.annotation import Annotation
-import sys
-import re
 
-Feature = Literal["gene", "transcript", "CDS", "protein", "promoter"]
+features = ["gene", "transcript", "CDS", "protein", "promoter"]
 
-IDs = Literal["gene", "transcript", "CDS", "feature"]
+IDs = ["gene", "transcript", "CDS", "feature"]
 
-Mode = Literal["all", "main", "unique", "unique_per_gene"]
+modes = ["all", "main", "unique", "unique_per_gene"]
 
-app = typer.Typer(help="Extract sequences from a genome based on an annotation.")
+app = typer.Typer(help="Extract sequences from a genome based on an annotation.", add_completion=False)
+
+def split_callback(value: str):
+    if value:
+        return [item.strip() for item in value.split(',')]
+    return []
 
 @app.command()
 def main(
     genome_fasta: Annotated[str, typer.Option(
         "-g", "--genome-fasta", help="Path to the input genome FASTA file."
     )],
-    annotation_gff: Annotated[str, typer.Option(
-        "-a", "--annotation-gff", help="Path to the input annotation GFF3 file."
+    annotation_file: Annotated[str, typer.Option(
+        "-a", "--annotation-file", help="Path to the input annotation GFF3/GTF file."
     )],
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome_name", help="Genome assembly version, name or tag."
+    )] = "filename",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation_name", help="Annotation version, name or tag."
+    )] = "filename",
     output_dir: Annotated[str, typer.Option(
         "-o", "--output-dir", help="Path to the directory where output FASTA files will be saved."
-    )],
-    feature_type: Annotated[List[str], typer.Option(
-        "-f", "--feature-type", help=f"One or more feature types to extract. Choose from: {Feature}."
-    )],
-    mode: Annotated[List[str], typer.Option(
-        "-m", "--mode", help=f"Extract main or all features, or both. Choose from: {Mode}."
-    )],
+    )] = "./aegis_output/",
+    feature_type: Annotated[str, typer.Option(
+        "-f", "--feature-type", help=f"One or more feature types to extract, separated by commas. Choose from: {features}.",
+        callback=split_callback
+    )] = "gene",
+    mode: Annotated[str, typer.Option(
+        "-m", "--mode", help=f"Extract main or all features, or both, separated by commas. Choose from: {modes}.",
+        callback=split_callback
+    )] = "all,main",
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help=f"Verbose."
     )] = False,
@@ -38,24 +50,31 @@ def main(
         "-i", "--feature-id", help=f"Most specific feature ID used in fasta header outputs. E.g. you may want to export transcripts but associated to gene ids directly instead of using the transcript feature IDs. Choose from: {IDs}."
     )] = "feature"
 ):
-    genome = Genome(name="genome", genome_file_path=genome_fasta)
-    annotation = Annotation(name="annotation", annot_file_path=annotation_gff, genome=genome)
 
+    for f_type in feature_type:
+        if f_type not in features:
+            raise typer.BadParameter(f"Invalid feature type: {f_type}. Choose from: {features}")
+
+    for m_type in mode:
+        if m_type not in modes:
+            raise typer.BadParameter(f"Invalid mode: {m_type}. Choose from: {modes}")
+
+    if feature_id not in IDs:
+        raise typer.BadParameter(f"Invalid feature ID: {feature_id}. Choose from: {IDs}")
+    
+    if annotation_name == "filename":
+        annotation_name = os.path.splitext(annotation_file)[0]
+
+    if genome_name == "filename":
+        genome_name = os.path.splitext(genome_fasta)[0]
+
+    genome = Genome(name=genome_name, genome_file_path=genome_fasta)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome)
     annotation.generate_sequences(genome)
 
-    valid_features = [f.value for f in Feature.__args__]
-    for f_type in feature_type:
-        if f_type not in valid_features:
-            raise typer.BadParameter(f"Invalid feature type: {f_type}. Choose from: {valid_features}")
+    if "gene" in feature_type:
 
-    valid_modes = [m.value for m in Mode.__args__]
-    for m_type in mode:
-        if m_type not in valid_modes:
-            raise typer.BadParameter(f"Invalid mode: {m_type}. Choose from: {valid_modes}")
-
-    valid_ids = [i.value for i in IDs.__args__]
-    if feature_id not in valid_ids:
-        raise typer.BadParameter(f"Invalid feature ID: {feature_id}. Choose from: {valid_ids}")
+        annotation.export_genes(custom_path=output_dir, verbose=verbose)
 
     if "transcript" in feature_type:
 
