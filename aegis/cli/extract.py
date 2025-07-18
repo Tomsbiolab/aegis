@@ -11,6 +11,8 @@ IDs = ["gene", "transcript", "CDS", "feature"]
 
 modes = ["all", "main", "unique", "unique_per_gene"]
 
+promoter_types = ["standard", "upstream_ATG", "standard_plus_up_to_ATG"]
+
 app = typer.Typer(help="Extract sequences from a genome based on an annotation.", add_completion=False)
 
 def split_callback(value: str):
@@ -39,6 +41,14 @@ def main(
         "-f", "--feature-type", help=f"One or more feature types to extract, separated by commas. Choose from: {features}.",
         callback=split_callback
     )] = "gene",
+    promoter_size: Annotated[int, typer.Option(
+        "-ps", "--promoter_size", help=f"Promoter size in bp upstream of TSS."
+    )] = 2000,
+
+    promoter_type: Annotated[str, typer.Option(
+        "-p", "--promoter_type", help=f"Defines the reference point for the promoters: 'standard' (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS); 'upstream_ATG' : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
+    )] = "standard",
+
     mode: Annotated[str, typer.Option(
         "-m", "--mode", help=f"Extract main or all features, or both, separated by commas. Choose from: {modes}.",
         callback=split_callback
@@ -70,6 +80,10 @@ def main(
 
     genome = Genome(name=genome_name, genome_file_path=genome_fasta)
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome)
+
+    if "promoter" in feature_type:
+        annotation.generate_promoters(genome, promoter_size=promoter_size, promoter_type=promoter_type)
+
     annotation.generate_sequences(genome)
 
     if "gene" in feature_type:

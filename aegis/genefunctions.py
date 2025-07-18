@@ -491,6 +491,7 @@ def export_group_equivalences(annotations:list, custom_path:str="", multidirecti
 
     genome = annotations_to_overlap[0].genome
     same_genome = True
+    none_genome = False
     different_annotations = True
     annotation_ids = []
 
@@ -499,6 +500,10 @@ def export_group_equivalences(annotations:list, custom_path:str="", multidirecti
             annotation_ids.append(a.id)
         else:
             different_annotations = False
+
+        if a.genome == None or genome == None:
+            none_genome = True
+            continue
         if a.genome != genome:
             same_genome = False
 
@@ -508,6 +513,10 @@ def export_group_equivalences(annotations:list, custom_path:str="", multidirecti
 
 
     if same_genome:
+
+        if none_genome:
+            print(f"Warning: Please make sure all submitted annotations are associated to the same genome version, this could not be verified as at least one of the submitted annotations has a 'None' genome.")
+
         if not multidirectional:
             print("Non multidirectional or targeted mode is not working yet.")
 
@@ -601,7 +610,10 @@ def export_group_equivalences(annotations:list, custom_path:str="", multidirecti
                             processed_pairs.append(f"{a1.id}-pair-{a2.id}")
                             processed_pairs.append(f"{a2.id}-pair-{a1.id}")
 
-                tag = f"{group_tag}_on_{genome}_equivalences"
+                if genome != None:
+                    tag = f"{group_tag}_on_{genome}_equivalences"
+                else:
+                    tag = f"{group_tag}_equivalences"
 
                 
                 if stringent:

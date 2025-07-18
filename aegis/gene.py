@@ -4,13 +4,12 @@ from .transcript import Transcript
 
 class Gene(Feature):
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
-                 ch:str, ch_size:int, source:str, feature:str, strand:str,
+                 ch:str, source:str, feature:str, strand:str,
                  start:int, end:int, score:str, phase:str, attributes:str):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.pseudogene = pseudogene
         self.transposable = transposable
-        self.ch_size = ch_size
         # transcripts will be added as {"transcript_id" : transcript_object}
         self.transcripts = {}
         # order within the chromosome
@@ -178,7 +177,7 @@ class Gene(Feature):
             temp_coding_feature = "mRNA"
             if not self.coding:
                 temp_coding_feature = "lncRNA"
-            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.ch_size, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, ".", f"ID={self.id}_t001;Parent={self.id}")
+            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, ".", f"ID={self.id}_t001;Parent={self.id}")
             self.transcripts[f"{self.id}_t001"].exons = temp_fts.copy()
             counter = 0
             for e in self.transcripts[f"{self.id}_t001"].exons:
