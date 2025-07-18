@@ -5,7 +5,7 @@ from .genefunctions import find_ORFs, longest_ORF, translate, overlap
 
 
 class Transcript(Feature):
-    def __init__(self, feature_id:str, ch:str, ch_size:int, source:str, 
+    def __init__(self, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str, 
                  phase:str, attributes:str):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
@@ -17,8 +17,6 @@ class Transcript(Feature):
         self.coding = False
         self.main = False
         self.miRNAs = []
-        self.ch_size = ch_size
-        self.generate_promoter(3000)
         self.overlaps = {"self" : [], "other" : []}
     
     def update_size(self):
@@ -90,43 +88,49 @@ class Transcript(Feature):
         self.exons = []
         self.update()
 
-    def generate_promoter(self, promoter_size, from_ATG:bool = False, count_prom_size_from_TSS:bool = True):
+    def generate_promoter(self, promoter_size, ch_size, promoter_type:str = "standard"):
         """
-        - from_ATG will only be paid attention if CDS exists.
-        - count_prom_size_from_TSS can only be set to false if from_ATG is True
-            - in this case the promoter will start counting from the ATG
-                - ortherwise the upstream ATG region is added to std. promoter
+        promoter_type (str): Defines the reference point for the promoter.
+            - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
+            - upstream_ATG : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard.
+            - standard_plus_up_to_ATG : Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.
         """
+
+        valid_options = ["standard", "upstream_ATG", "standard_plus_up_to_ATG"]
+
+        if promoter_type not in valid_options:
+            raise ValueError(f"promoter_type={promoter_type} selected is not a valid option. Choose from: {valid_options}.")
+
         prom_id = self.id + "_promoter"
-        promoter_type = "standard"
         if self.strand == "+":
             temp_start = self.start - promoter_size
             temp_end = self.start - 1
-            if from_ATG:
+            if promoter_type != "standard":
                 if self.CDSs != {}:
                     for c in self.CDSs.values():
                         if c.main:
                             temp_end = c.start - 1
-                            if count_prom_size_from_TSS:
+                            if promoter_type == "standard_plus_up_to_ATG":
                                 temp_start = self.start - promoter_size
-                                promoter_type = "plus_5_UTR"
                             else:
                                 temp_start = c.start - promoter_size
-                                promoter_type = "just_upstream_ATG"
+                else:
+                    promoter_type = "standard"
+        
         elif self.strand == "-":
             temp_start = self.end + 1
             temp_end = self.end + promoter_size
-            if from_ATG:
+            if promoter_type != "standard":
                 if self.CDSs != {}:
                     for c in self.CDSs.values():
                         if c.main:
                             temp_start = c.end + 1
-                            if count_prom_size_from_TSS:
+                            if promoter_type == "standard_plus_up_to_ATG":
                                 temp_end = self.end + promoter_size
-                                promoter_type = "plus_5_UTR"
                             else:
                                 temp_end = c.end + promoter_size
-                                promoter_type = "just_upstream_ATG"   
+                else:
+                    promoter_type = "standard"
         else:
             print(f"Warning: {self.id} does not have a strand.")
             promoter_type = "none"
@@ -142,9 +146,9 @@ class Transcript(Feature):
                 temp_end = 0
 
             # similar thing at the other contig/chr end
-            if temp_end > self.ch_size:
-                temp_end = self.ch_size
-            if temp_start > self.ch_size:
+            if temp_end > ch_size:
+                temp_end = ch_size
+            if temp_start > ch_size:
                 temp_start = 1
                 temp_end = 0
 

@@ -239,7 +239,7 @@ class Annotation():
         for value in values:
             features_r[value] = key
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, name:str, annot_file_path:str, genome:object, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False):
+    def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False):
         
         start = time.time()
         if chosen_chromosomes != None:
@@ -257,8 +257,12 @@ class Annotation():
         self.liftoff = False
         self.merged = False
         self.sorted = False
-        self.genome = genome.name
-        self.id = f"{self.name}_on_{self.genome}"
+        
+        if genome != None:
+            self.genome = genome.name
+            self.id = f"{self.name}_on_{self.genome}"
+        self.genome = None
+        self.id = self.name
 
         print(f"\nProcessing {self.id} annotation object\n")
         self.excluded_chromosomes = []
@@ -319,7 +323,10 @@ class Annotation():
         if "_confrenamed" in annot_file_path:
             self.confrenamed = True
 
-        self.dapfit = genome.dapfit
+        if self.genome != None:
+            self.dapfit = genome.dapfit
+        else:
+            self.dapfit = None
 
         self.symbols_added = False
 
@@ -487,10 +494,9 @@ class Annotation():
                 gene_id = f"{ID}_gene"
                 sorted_features = features.copy()
                 sorted_features.sort()
-                ch_size = genome.scaffolds[sorted_features[0].ch].size
                 if gene_id not in self.all_gene_ids:
                     self.chrs[sorted_features[0].ch][gene_id] = Gene(False, False,
-                                                        gene_id, sorted_features[0].ch, ch_size,
+                                                        gene_id, sorted_features[0].ch,
                                                         sorted_features[0].source, "gene",
                                                         sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
                                                         sorted_features[0].score, ".", f"ID={gene_id}")
@@ -500,13 +506,13 @@ class Annotation():
                         count += 1
                         gene_id = f"{ID}_{count}_gene"
                     self.chrs[sorted_features[0].ch][gene_id] = Gene(False, False,
-                                                        gene_id, sorted_features[0].ch, ch_size,
+                                                        gene_id, sorted_features[0].ch,
                                                         sorted_features[0].source, "gene",
                                                         sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
                                                         sorted_features[0].score, ".", f"ID={gene_id}")
                     self.all_gene_ids[gene_id] = sorted_features[0].ch
                 
-                self.chrs[sorted_features[0].ch][gene_id].transcripts["temp_t"] = Transcript("temp_t", sorted_features[0].ch, ch_size, sorted_features[0].source, "mRNA",
+                self.chrs[sorted_features[0].ch][gene_id].transcripts["temp_t"] = Transcript("temp_t", sorted_features[0].ch, sorted_features[0].source, "mRNA",
                                                         sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
                                                         sorted_features[0].score, ".", f"ID=temp_t;Parent={gene_id}")
                 self.all_transcript_ids["temp_t"] = sorted_features[0].ch
@@ -537,7 +543,6 @@ class Annotation():
                     phase = line[7]
                     attributes = line[8].strip(";")
                     attributes_l = attributes.split(";")
-                    ch_size = genome.scaffolds[ch].size
                     ID = False
                     for a in attributes_l:
                         a = a.split("=")
@@ -565,7 +570,7 @@ class Annotation():
                         self.all_gene_ids[f"{ID}_gene"] = ch
                         transcript_info[f"{ID}"] = [ch, coord[0], coord[1], 1]
                         self.chrs[ch][f"{ID}_gene"] = Gene(pseudogene, transposable,
-                                                    f"{ID}_gene", ch, ch_size,
+                                                    f"{ID}_gene", ch,
                                                     source, "gene",
                                                     strand, coord[0], coord[1],
                                                     score, ".", f"ID={ID}_gene")
@@ -574,7 +579,7 @@ class Annotation():
                         self.all_gene_ids[f"{ID}_{transcript_info[ID][3]}_gene"] = ch
                         self.chrs[ch][f"{ID}_{transcript_info[ID][3]}_gene"] = Gene(pseudogene, transposable,
                                                 f"{ID}_{transcript_info[ID][3]}_gene",
-                                                ch, ch_size, source, "gene", 
+                                                ch, source, "gene", 
                                                 strand, coord[0], coord[1], score,
                                                  ".",
                                                 f"ID={ID}_{transcript_info[ID][3]}_gene")
@@ -618,7 +623,6 @@ class Annotation():
 
                     # genes
                     if n == 0:
-                        ch_size = genome.scaffolds[ch].size
                         if coord[0] == coord[1]:
                             print(f"{self.id} Error: 1bp gene {ID} feature")
                             self.errors["1bp_gene"].append(ID)
@@ -638,7 +642,7 @@ class Annotation():
                         if ID not in self.all_gene_ids:
                             self.all_gene_ids[ID] = ch
                             self.chrs[ch][ID] = Gene(pseudogene, transposable,
-                                                    ID, ch, ch_size,
+                                                    ID, ch,
                                                     source, ft, strand, coord[0],
                                                     coord[1], score, ".",
                                                     attributes)
@@ -648,7 +652,6 @@ class Annotation():
 
                     # transcripts with created genes
                     elif n == 1 and created_genes:
-                        ch_size = genome.scaffolds[ch].size
                         if coord[0] == coord[1]:
                             print(f"{self.id} Error: 1bp transcript level {ID} "
                                 "feature ")
@@ -656,7 +659,7 @@ class Annotation():
                         count =  transcript_info[f"{ID}"][3]
 
                         if count == 1:
-                            self.chrs[ch][f"{ID}_gene"].transcripts[ID] = Transcript(ID, ch, ch_size, source, ft, 
+                            self.chrs[ch][f"{ID}_gene"].transcripts[ID] = Transcript(ID, ch, source, ft, 
                                                             strand, coord[0],
                                                             coord[1], score,
                                                             ".",
@@ -679,7 +682,6 @@ class Annotation():
                                         found = True
                                         (self.chrs[ch][t_parent]
                                         .transcripts[t_id]) = Transcript(t_id, ch,
-                                                                        ch_size,
                                                                     source, ft,
                                                                     strand,
                                                                     coord[0],
@@ -693,7 +695,6 @@ class Annotation():
     
                     # transcripts
                     elif n == 1:
-                        ch_size = genome.scaffolds[ch].size
                         if coord[0] == coord[1]:
                             print(f"{self.id} Error: 1bp transcript level {ID} "
                                 "feature ")
@@ -718,7 +719,7 @@ class Annotation():
                                                     .append(ID))
                                     else:
                                         (self.chrs[ch][parent].transcripts
-                                                [ID]) = Transcript(ID, ch, ch_size, source,
+                                                [ID]) = Transcript(ID, ch, source,
                                                                 ft, 
                                                                 strand, coord[0],
                                                                 coord[1], score,
@@ -774,7 +775,7 @@ class Annotation():
                                                 # transcript subfeatures
                                                 # are given a single
                                                 # pseudotranscript
-                                                self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].ch_size, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, ".", self.chrs[ch][parent].attributes)
+                                                self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, ".", self.chrs[ch][parent].attributes)
                                                 
                                             if pseudo_t in self.chrs[ch][parent].transcripts:
                                                 if n == 4:
@@ -1264,6 +1265,7 @@ class Annotation():
         #print(f"Corrected feature coordinates for {self.id}")
 
     def generate_sequences(self, genome:object, just_CDSs:bool=False):
+
         start = time.time()
         for o in self.atypical_features:
             o.generate_sequence(genome)
@@ -1314,26 +1316,20 @@ class Annotation():
         print(f"Clearing sequences of {self.id} annotation object took "
               f"{round(lapse, 1)} seconds\n")
 
-    def generate_promoters(self, genome:object, promoter_size:int=2000, from_ATG:bool=False, count_prom_size_from_TSS:bool=True):
+    def generate_promoters(self, genome:object, promoter_size:int=2000, promoter_type:str = "standard"):
         """
-        - from_ATG will only be paid attention if CDS exists.
-        - count_prom_size_from_TSS can only be set to false if from_ATG is True
-            - in this case the promoter will start counting from the ATG
-                - ortherwise the upstream ATG region is added to std. promoter
+        promoter_type (str): Defines the reference point for the promoters.
+            - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
+            - upstream_ATG : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard.
+            - standard_plus_up_to_ATG : Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.
         """
-        self.promoter_types = "standard"
+        self.promoter_types = promoter_type
         self.promoter_size = promoter_size
-        if from_ATG and count_prom_size_from_TSS:
-            self.promoter_types = "plus_5_UTR"
-        elif from_ATG and not count_prom_size_from_TSS:
-            self.promoter_types = "just_upstream_ATG"
 
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
-                    t.generate_promoter(promoter_size, from_ATG, count_prom_size_from_TSS)
-
-        self.generate_sequences(genome)
+                    t.generate_promoter(promoter_size, genome.scaffolds[t.ch].size, promoter_type)
 
     def find_motifs(self, query_genes:list, motif:str, motif_length, glistname, motifid, tfname, backlist:list=[], backlistname:str="", custom_path:str=""):
         # Check if stdout or stderr are redirected to files
@@ -2527,6 +2523,9 @@ class Annotation():
         if other != None:
 
             if self.genome == other.genome:
+
+                if self.genome == None:
+                    print(f"Warning: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
                 
                 if other.name in self.overlapped_annotations or self.name in other.overlapped_annotations:
                     print(f"Overlaps between {self.id} and {other.id} "
@@ -3371,7 +3370,10 @@ class Annotation():
             self.name = f"{first_name}_..._{other.name}"
         else:
             self.name = f"{self.name}_merged_{other.name}"
-        self.id = f"{self.name}_on_{self.genome}"
+        if self.genome != None:
+            self.id = f"{self.name}_on_{self.genome}"
+        else:
+            self.id = self.name
         count = 0
         if ignore_overlaps:
             for chr, genes in other.chrs.items():
