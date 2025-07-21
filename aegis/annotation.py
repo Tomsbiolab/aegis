@@ -13,7 +13,7 @@ import random
 import time
 import pandas as pd
 import matplotlib.pyplot as plt
-#import networkx as nx
+import networkx as nx
 
 from .plots import pie_chart, barplot
 from .genefunctions import overlap, reverse_complement, find_all_occurrences
@@ -43,7 +43,6 @@ def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):
 
     raise ValueError(f"Not able to decodify '{file_path}'")
 
-
 def detect_file_format(file_path, encoding, lines_to_check=20):
     """
     Detects if a file is likely GTF or GFF3 format.
@@ -51,10 +50,10 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
     try:
         with open(file_path, 'r', encoding=encoding) as f:
 
-            for i, line in enumerate(f):
-                if i >= lines_to_check:
-                    break
-                
+            i = 0
+
+            for line in f:
+
                 line = line.strip()
                 if not line:
                     continue
@@ -65,15 +64,20 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
                 if line.startswith('#'):
                     continue
 
+                i += 1
+
+                if i >= lines_to_check:
+                    break
+
                 parts = line.split('\t')
                 if len(parts) == 9:
                     attributes = parts[8]
 
-                    if re.search(r'\w+\s+"[^"]+";', attributes):
-                        return 'gtf'
-
                     if re.search(r'\w+=', attributes):
                         return 'gff3'
+
+                    if re.search(r'\w+\s+"[^"]+";', attributes):
+                        return 'gtf'
             
             # unknown format returns gff3
             return 'gff3'
@@ -162,7 +166,7 @@ def convert_gtf_to_gff3(gtf_file, encoding):
 
             parts = line.strip().split('\t')
             if len(parts) != 9:
-                sys.stderr.write(f"Warning: Skipping malformed line: {line.strip()}\n")
+                sys.stderr.write(f"Warning: Skipping malformed line in file='{gtf_file}': {line.strip()}\n")
                 continue
 
             seqname, source, feature, start, end, score, strand, frame, attr_string = parts
@@ -204,7 +208,7 @@ def convert_gtf_to_gff3(gtf_file, encoding):
             gff_lines.append(gff3_line + '\n')
 
     
-    print(f"Successfully converted to a gff file")
+    print(f"Successfully converted file='{gtf_file} to a gff file")
     return gff_lines
 
 
@@ -370,10 +374,9 @@ class Annotation():
         
         encoding = read_file_with_fallback(self.file)
         file_format = detect_file_format(self.file, encoding)
-        print(f'{file_format} file format detected')
+        print(f"{file_format} file format detected for file='{self.file}'")
 
         if file_format == 'gtf':
-
             lines = convert_gtf_to_gff3(self.file, encoding)
 
         else:

@@ -13,7 +13,7 @@ modes = ["all", "main", "unique", "unique_per_gene"]
 
 promoter_types = ["standard", "upstream_ATG", "standard_plus_up_to_ATG"]
 
-app = typer.Typer(help="Extract sequences from a genome based on an annotation.", add_completion=False)
+app = typer.Typer(add_completion=False)
 
 def split_callback(value: str):
     if value:
@@ -41,25 +41,30 @@ def main(
         "-f", "--feature-type", help=f"One or more feature types to extract, separated by commas. Choose from: {features}.",
         callback=split_callback
     )] = "gene",
+
+    mode: Annotated[str, typer.Option(
+        "-m", "--mode", help=f"Select extraction modes separated by commas. Choose from: {features}. 'All' for all transcripts/CDSs/proteins of a gene, 'main' for just the main variant of a gene defined by default as the longest transcript/CDS/protein, 'unique_per_gene' removes redundant CDS/protein sequences per gene, and 'unique' does the same for proteins at the whole output level.",
+        callback=split_callback
+    )] = "all,main",
+
     promoter_size: Annotated[int, typer.Option(
-        "-ps", "--promoter_size", help=f"Promoter size in bp upstream of TSS."
+        "-ps", "--promoter_size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'."
     )] = 2000,
 
     promoter_type: Annotated[str, typer.Option(
-        "-p", "--promoter_type", help=f"Defines the reference point for the promoters: 'standard' (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS); 'upstream_ATG' : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
+        "-p", "--promoter_type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size: 'standard' (default): Generated upstream of the transcript's start site (TSS); 'upstream_ATG' : Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
     )] = "standard",
 
-    mode: Annotated[str, typer.Option(
-        "-m", "--mode", help=f"Extract main or all features, or both, separated by commas. Choose from: {modes}.",
-        callback=split_callback
-    )] = "all,main",
     verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help=f"Verbose."
+        "-v", "--verbose", help=f"Whether to include extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable."
     )] = False,
     feature_id: Annotated[str, typer.Option(
         "-i", "--feature-id", help=f"Most specific feature ID used in fasta header outputs. E.g. you may want to export transcripts but associated to gene ids directly instead of using the transcript feature IDs. Choose from: {IDs}."
     )] = "feature"
 ):
+    """
+    Extract sequences from a genome based on an annotation.
+    """
 
     for f_type in feature_type:
         if f_type not in features:
