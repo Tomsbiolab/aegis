@@ -52,7 +52,7 @@ def main(
     )] = 2000,
 
     promoter_type: Annotated[str, typer.Option(
-        "-p", "--promoter_type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size: 'standard' (default): Generated upstream of the transcript's start site (TSS); 'upstream_ATG' : Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
+        "-p", "--promoter_type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
     )] = "standard",
 
     verbose: Annotated[bool, typer.Option(
@@ -64,6 +64,13 @@ def main(
 ):
     """
     Extract sequences from a genome based on an annotation.
+
+    This command supports multiple output formats and allows selecting
+    specific features (e.g. gene, transcript, CDS, protein, promoter).
+    
+    Use the --mode and --feature-id flags to control sequence filtering
+    and ID labeling. Promoter generation supports multiple strategies,
+    including upstream of TSS or ATG.
     """
 
     for f_type in feature_type:

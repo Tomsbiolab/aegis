@@ -22,6 +22,7 @@ class Feature():
         self.phase = phase
         self.frame = "."
         self.attributes = attributes
+        self.gtf_attributes = ""
         self.size = (self.end - self.start) + 1
         self.seq = ""
         self.hard_seq = ""
@@ -120,6 +121,12 @@ class Feature():
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t"
                f"{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t"
                f"{self.attributes}\n")
+
+    def print_gtf(self):
+
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t"
+               f"{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t"
+               f"{self.gtf_attributes}\n")
     
     def copy(self):
         return copy.deepcopy(self)

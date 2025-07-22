@@ -29,6 +29,32 @@ from scipy.stats import fisher_exact
 from tqdm import tqdm
 from multiprocessing import Pool
 
+
+default_features = {}
+default_features["gene"] = ["gene", "pseudogene", "transposable_element_gene"]
+default_coding_transcripts = ["mRNA"]
+default_noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA", 
+                            "miRNA_primary_transcript", "ncRNA", "lncRNA",
+                            "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
+                            "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
+default_codons = ['start_codon', 'stop_codon']
+# Some features are clearly transcript level features but they cannot be
+# classed as coding/noncoding just by looking at the name   
+default_features["transcript"] = (["transcript", "transcript_region", "primary_transcript",
+                            "pseudotranscript", "pseudogenic_transcript", "mRNA_TE_gene"] 
+                            + default_coding_transcripts + default_noncoding_transcripts)
+default_features["UTR"] = ["UTR", "three_prime_UTR", "five_prime_UTR", "five_prime_utr", "three_prime_utr"]
+default_features["exon"] = ["exon", "pseudogenic_exon"]
+default_features["CDS"] = ["CDS"]
+default_features["other_subfeature"] = ["miRNA"]
+
+default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"]
+
+default_features_r = {}
+for key, values in default_features.items():
+    for value in values:
+        default_features_r[value] = key
+
 def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):
     """
     Tries several encodings to find the suitable one.
@@ -107,20 +133,17 @@ def format_gff3_attributes(attrs, feature_type):
     
     gff3_attrs = []
 
-    if feature_type in ["gene", "pseudogene", "transposable_element_gene"]:
+    if feature_type in default_features["gene"]:
         if 'gene_id' in attrs:
             gff3_attrs.append(f"ID={attrs['gene_id']}")
     
-    elif feature_type in ["transcript", "mRNA", "antisense_lncRNA", "antisense_RNA", 
-                             "miRNA_primary_transcript", "ncRNA", "lncRNA",
-                             "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-                             "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]:
+    elif feature_type in default_features["transcript"]:
         if 'transcript_id' in attrs:
             gff3_attrs.append(f"ID={attrs['transcript_id']}")
         if 'gene_id' in attrs:
             gff3_attrs.append(f"Parent={attrs['gene_id']}")
             
-    elif feature_type in ['exon', 'CDS', 'UTR', 'three_prime_utr', 'five_prime_utr', 'start_codon', 'stop_codon']:
+    elif feature_type in default_subfeatures:
         parent_id = f"{attrs['transcript_id']}"
         gff3_attrs.append(f"Parent={parent_id}")
 
@@ -128,7 +151,7 @@ def format_gff3_attributes(attrs, feature_type):
         if 'exon_number' in attrs:
             feature_id += f".{attrs['exon_number']}"
 
-        if 'exon_number' in attrs or feature_type in ['CDS', 'start_codon', 'stop_codon']:
+        if 'exon_number' in attrs or feature_type in default_features["CDS"] or feature_type in default_codons:
              gff3_attrs.append(f"ID={feature_id}")
     
     if 'gene_name' in attrs:
@@ -222,26 +245,7 @@ class Annotation():
     # these are not fixed, the more gffs are looked at the more terms appear
     # so add them here to be read into the annotation object as long as they
     # are unambiguous
-    features = {}
-    features["gene"] = ["gene", "pseudogene", "transposable_element_gene"]
-    coding_transcripts = ["mRNA"]
-    noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA", 
-                             "miRNA_primary_transcript", "ncRNA", "lncRNA",
-                             "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-                             "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
-    # Some features are clearly transcript level features but they cannot be
-    # classed as coding/noncoding just by looking at the name   
-    features["transcript"] = (["transcript", "transcript_region", "primary_transcript",
-                               "pseudotranscript", "pseudogenic_transcript", "mRNA_TE_gene"] 
-                               + coding_transcripts + noncoding_transcripts)
-    features["UTR"] = ["UTR", "three_prime_UTR", "five_prime_UTR", "five_prime_utr", "three_prime_utr"]
-    features["exon"] = ["exon", "pseudogenic_exon"]
-    features["CDS"] = ["CDS"]
-    features["other_subfeature"] = ["miRNA"]
-    features_r = {}
-    for key, values in features.items():
-        for value in values:
-            features_r[value] = key
+    
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
     def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False):
         
@@ -369,7 +373,7 @@ class Annotation():
                          "transcript_with_no_exons": [],
                          "gene_with_no_transcripts": []}
         
-        parsed_lines = {key: [] for key in Annotation.features}
+        parsed_lines = {key: [] for key in default_features}
         parsed_lines["atypical"] = []
         
         encoding = read_file_with_fallback(self.file)
@@ -409,7 +413,7 @@ class Annotation():
                         #to check why ":"
                         chromosomes_t.add(line[0].split(":")[0])
                         protein_match_lines.append(line)
-                    elif line[2] in Annotation.features_r:
+                    elif line[2] in default_features_r:
                         chromosomes_t.add(line[0])
                         temp.append(line)
                     else:
@@ -422,7 +426,7 @@ class Annotation():
         protein_match_lines = sorted(protein_match_lines, key=lambda x: (int(x[3]), int(x[4])))
         temp.clear()
         for line in sorted_lines:
-            parsed_lines[Annotation.features_r[line[2]]].append(line)
+            parsed_lines[default_features_r[line[2]]].append(line)
         sorted_lines.clear()
         chromosomes_t = list(chromosomes_t)
         chromosomes_t.sort()
@@ -1122,9 +1126,9 @@ class Annotation():
         if standardise:
             for genes in self.chrs.values():
                 for g in genes.values():
-                    g.feature = Annotation.features_r[g.feature]
+                    g.feature = default_features_r[g.feature]
                     for t in g.transcripts.values():
-                        if t.feature not in Annotation.noncoding_transcripts:
+                        if t.feature not in default_noncoding_transcripts:
                             t.feature = "mRNA"
                         for e in t.exons:
                             e.feature = "exon"
@@ -3337,7 +3341,120 @@ class Annotation():
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
         f_out.write(out)
         f_out.close()
-        
+
+    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False):
+
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected:
+            disable = True
+        else:
+            disable = False
+
+        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+                                bar_format=(
+                    f'\033[38;2;46;204;113m\033[1mExporting gtf for {self.id} annotation:\033[0m '
+                    '{percentage:3.0f}%|'
+                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
+                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        out = ""
+        if custom_path == "":
+            export_folder = self.path + "out_gtfs/"
+        else:
+            export_folder = custom_path
+        if export_folder[-1] != "/":
+            export_folder += "/"
+
+        system(f"mkdir -p {export_folder}")
+
+        out += "#gtf-version 2.2\n"
+
+        for genes in self.chrs.values():
+            progress_bar.update(len(genes))
+            for g in genes.values():
+                
+                if just_genes:
+                    continue
+                
+                if no_1bp_features:
+                    gene_1bp_feature = False
+                    for t in g.transcripts.values():
+                        for e in t.exons:
+                            if e.size == 1:
+                                gene_1bp_feature = True
+                        for c in t.CDSs.values():
+                            for cs in c.CDS_segments:
+                                if cs.size == 1:
+                                    gene_1bp_feature = True
+                            for u in c.UTRs:
+                                if u.size == 1:
+                                    gene_1bp_feature = True
+
+                    if gene_1bp_feature:
+                        continue
+
+                out += g.print_gtf()
+
+                temp_subfeatures = []
+                for t in g.transcripts.values():
+                    if main_only:
+                        if not t.main:
+                            continue
+                    out += t.print_gtf()
+                    for e in t.exons:
+                        add = True
+                        for ts in temp_subfeatures:
+                            if e.almost_equal(ts):
+                                add = False
+                        if add:
+                            temp_subfeatures.append(e)
+                    for c in t.CDSs.values():
+                        if main_only:
+                            if not c.main:
+                                continue
+                        for c_seg in c.CDS_segments:
+                            add = True
+                            for ts in temp_subfeatures:
+                                if c_seg == ts:
+                                    add = False
+                            if add:
+                                temp_subfeatures.append(c_seg)
+                        if UTRs:
+                            if hasattr(c, "UTRs"):
+                                for u in c.UTRs:
+                                    add = True
+                                    for ts in temp_subfeatures:
+                                        if u == ts:
+                                            add = False
+                                    if add:
+                                        temp_subfeatures.append(u)
+                temp_subfeatures.sort()
+                for ts in temp_subfeatures:
+                    out += ts.print_gtf()
+                out += "###\n"
+
+        progress_bar.close()
+
+        output_suffix = ""
+
+        if just_genes:
+            output_suffix += "_just_genes"
+        if no_1bp_features:
+            output_suffix += "_for_lifton"
+
+        if tag == ".gtf":
+            tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
+
+        print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")         
+
+        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
+        f_out.write(out)
+        f_out.close()
+
     def merge(self, other:object, ignore_overlaps:bool=True, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100):
         """
         Priority is given to self annotation
@@ -4273,8 +4390,30 @@ class Annotation():
 
         self.update_suffixes()
 
-    def temporary_add_missing_properties(self):
-        pass
+    def create_gtf_attributes(self):
+
+        self.update_attributes()
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+
+                g.gtf_attributes = f'gene_id "{g.id}";'
+                if g.symbols != []:
+                    name_string = ",".join(g.symbols)
+                    g.gtf_attributes += f'gene_name "{name_string}";'
+                elif g.names != []:
+                    name_string = ",".join(g.names)
+                    g.gtf_attributes += f'gene_name "{name_string}";'
+
+                for t in g.transcripts.values():
+                    t.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                    for x, e in enumerate(t.exons):
+                        e.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}"; exon_number "{x+1}";'
+
+                    for c in t.CDSs.values():
+                        c.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                        for u in c.UTRs:
+                            u.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
 
     def add_blast_hits(self, source, blastfile, mode:str="protein"):
         """
