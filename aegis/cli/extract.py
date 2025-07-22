@@ -1,7 +1,6 @@
 import typer
 import os
 from typing_extensions import Annotated
-from typing import List
 from aegis.genome import Genome
 from aegis.annotation import Annotation
 
@@ -29,11 +28,11 @@ def main(
         "-a", "--annotation-file", help="Path to the input annotation GFF3/GTF file."
     )],
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome_name", help="Genome assembly version, name or tag."
-    )] = "filename",
+        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+    )] = "{genome-fasta}",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation_name", help="Annotation version, name or tag."
-    )] = "filename",
+        "-an", "--annotation-name", help="Annotation version, name or tag."
+    )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
         "-o", "--output-dir", help="Path to the directory where output FASTA files will be saved."
     )] = "./aegis_output/",
@@ -48,11 +47,11 @@ def main(
     )] = "all,main",
 
     promoter_size: Annotated[int, typer.Option(
-        "-ps", "--promoter_size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'."
+        "-ps", "--promoter-size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'."
     )] = 2000,
 
     promoter_type: Annotated[str, typer.Option(
-        "-p", "--promoter_type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
+        "-p", "--promoter-type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
     )] = "standard",
 
     verbose: Annotated[bool, typer.Option(
