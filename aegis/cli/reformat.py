@@ -1,7 +1,7 @@
 import typer
 import os
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, detect_file_format
+from aegis.annotation import Annotation, detect_file_format, read_file_with_fallback
 
 app = typer.Typer(add_completion=False)
 
@@ -32,12 +32,14 @@ def main(
 
     os.system(f"mkdir -p {output_folder}")
 
-    annotation = Annotation(name={annotation_name}, annot_file_path=annotation_file)
+    encoding = read_file_with_fallback(annotation_file)
+
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
 
     input_format = input_format.lower()
 
     if input_format == "auto detect":
-        input_format = detect_file_format(annotation_file)
+        input_format = detect_file_format(annotation_file, encoding=encoding)
     elif input_format.lower() == "gff":
         input_format = "gff3"
 

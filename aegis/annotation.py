@@ -6,6 +6,7 @@ Module defining several genomic classes.
 @authors: David Navarro, Antonio Santiago
 """
 
+from pathlib import Path
 import re
 import sys
 import copy
@@ -148,16 +149,17 @@ def format_gff3_attributes(attrs, feature_type):
         gff3_attrs.append(f"Parent={parent_id}")
 
         feature_id = f"{attrs['transcript_id']}"
+
         if 'exon_number' in attrs:
-            feature_id += f".{attrs['exon_number']}"
+            feature_id += f"_e{attrs['exon_number']}"
 
         if 'exon_number' in attrs or feature_type in default_features["CDS"] or feature_type in default_codons:
              gff3_attrs.append(f"ID={feature_id}")
     
     if 'gene_name' in attrs:
-        gff3_attrs.append(f"Name={attrs['gene_name']}")
+        gff3_attrs.append(f"Symbol={attrs['gene_name']}")
     elif 'transcript_name' in attrs:
-        gff3_attrs.append(f"Name={attrs['transcript_name']}")
+        gff3_attrs.append(f"Symbol={attrs['transcript_name']}")
 
     for key, value in attrs.items():
         if key not in special_keys and key not in ['gene_name', 'transcript_name']:
@@ -194,8 +196,9 @@ def convert_gtf_to_gff3(gtf_file, encoding):
 
             seqname, source, feature, start, end, score, strand, frame, attr_string = parts
             attributes = parse_gtf_attributes(attr_string)
+
             
-            if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes:
+            if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes and feature in default_features["gene"]:
                 gene_attrs = {'gene_id': attributes['gene_id']}
                 if 'gene_name' in attributes:
                     gene_attrs['gene_name'] = attributes['gene_name']
@@ -209,7 +212,7 @@ def convert_gtf_to_gff3(gtf_file, encoding):
                 seen_genes.add(attributes['gene_id'])
 
 
-            if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts:
+            if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts and feature in default_features["transcript"]:
 
                 tx_attrs = {k: v for k, v in attributes.items() if 'transcript' in k or 'gene' in k}
                 tx_feature_type = 'transcript'
@@ -222,7 +225,7 @@ def convert_gtf_to_gff3(gtf_file, encoding):
                 gff_lines.append(tx_line + '\n')
                 seen_transcripts.add(attributes['transcript_id'])
 
-            if feature in ['gene', 'transcript']:
+            if feature in default_features["transcript"] or feature in default_features["gene"]:
                 continue
 
             gff3_attr_string = format_gff3_attributes(attributes, feature)
@@ -257,8 +260,9 @@ class Annotation():
                 self.name = f"{name}_{chosen_chromosomes[0]}"
         else:
             self.name = name
-        self.file = annot_file_path
-        self.path = "/".join(self.file.split("/")[0:-1]) + "/"
+
+        self.file = str(Path(annot_file_path).resolve())
+        self.path = str(Path(annot_file_path).resolve().parent) + "/"
         self.gff_header = ""
         self.target = target
         self.to_overlap = to_overlap
@@ -384,7 +388,6 @@ class Annotation():
             lines = convert_gtf_to_gff3(self.file, encoding)
 
         else:
-            
             with open(self.file, encoding=encoding) as f:
                 lines = f.readlines()
 
@@ -703,8 +706,7 @@ class Annotation():
                     # transcripts
                     elif n == 1:
                         if coord[0] == coord[1]:
-                            print(f"{self.id} Error: 1bp transcript level {ID} "
-                                "feature ")
+                            print(f"{self.id} Error: 1bp transcript level {ID} feature")
                             self.errors["1bp_transcript"].append(ID)
                         for term in attributes_l:
                             if "arent=" not in term:
@@ -720,10 +722,8 @@ class Annotation():
                                 parent = parents[0].strip()
                                 if parent in self.chrs[ch]:
                                     if ID in self.chrs[ch][parent].transcripts:
-                                        print(f"{self.id} Error: duplicated {ID}"
-                                                f"transcript for {parent} gene")
-                                        (self.errors["repeat_transcript_same_gene"]
-                                                    .append(ID))
+                                        print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
+                                        self.errors["repeat_transcript_same_gene"].append(ID)
                                     else:
                                         (self.chrs[ch][parent].transcripts
                                                 [ID]) = Transcript(ID, ch, source,
@@ -3252,7 +3252,7 @@ class Annotation():
 
         for genes in self.chrs.values():
             progress_bar.update(len(genes))
-            for g in genes.values():
+            for x, g in enumerate(genes.values()):
                 
                 if just_genes:
                     continue
@@ -3312,7 +3312,9 @@ class Annotation():
                 temp_subfeatures.sort()
                 for ts in temp_subfeatures:
                     out += ts.print_gff()
-                out += "###\n"
+                
+                if x < (len(genes) - 1):
+                    out += "###\n"
 
         progress_bar.close()
 
@@ -3343,6 +3345,8 @@ class Annotation():
         f_out.close()
 
     def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False):
+
+        self.create_gtf_attributes()
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3375,7 +3379,7 @@ class Annotation():
 
         for genes in self.chrs.values():
             progress_bar.update(len(genes))
-            for g in genes.values():
+            for x, g in enumerate(genes.values()):
                 
                 if just_genes:
                     continue
@@ -3406,36 +3410,22 @@ class Annotation():
                             continue
                     out += t.print_gtf()
                     for e in t.exons:
-                        add = True
-                        for ts in temp_subfeatures:
-                            if e.almost_equal(ts):
-                                add = False
-                        if add:
-                            temp_subfeatures.append(e)
+                        temp_subfeatures.append(e)
                     for c in t.CDSs.values():
                         if main_only:
                             if not c.main:
                                 continue
                         for c_seg in c.CDS_segments:
-                            add = True
-                            for ts in temp_subfeatures:
-                                if c_seg == ts:
-                                    add = False
-                            if add:
-                                temp_subfeatures.append(c_seg)
+                            temp_subfeatures.append(c_seg)
                         if UTRs:
                             if hasattr(c, "UTRs"):
                                 for u in c.UTRs:
-                                    add = True
-                                    for ts in temp_subfeatures:
-                                        if u == ts:
-                                            add = False
-                                    if add:
-                                        temp_subfeatures.append(u)
+                                    temp_subfeatures.append(u)
                 temp_subfeatures.sort()
                 for ts in temp_subfeatures:
                     out += ts.print_gtf()
-                out += "###\n"
+                if x < (len(genes) - 1):
+                    out += "###\n"
 
         progress_bar.close()
 
@@ -4283,7 +4273,12 @@ class Annotation():
                     g.attributes += f";Description={new_symbols}"
                 if not clean and g.misc_attributes != "":
                     g.attributes += f";{g.misc_attributes}"
-                g.attributes += f";pseudogene={g.pseudogene};transposable={g.transposable}"
+
+                if g.pseudogene:
+                    g.attributes += f";pseudogene={g.pseudogene}"
+                if g.transposable:
+                    g.attributes += f";transposable={g.transposable}"
+
                 if featurecountsID:
                     g.attributes += f";featurecounts_id={g.id}"
                 if aliases and g.aliases != []:
@@ -4400,10 +4395,10 @@ class Annotation():
                 g.gtf_attributes = f'gene_id "{g.id}";'
                 if g.symbols != []:
                     name_string = ",".join(g.symbols)
-                    g.gtf_attributes += f'gene_name "{name_string}";'
+                    g.gtf_attributes += f' gene_name "{name_string}";'
                 elif g.names != []:
                     name_string = ",".join(g.names)
-                    g.gtf_attributes += f'gene_name "{name_string}";'
+                    g.gtf_attributes += f' gene_name "{name_string}";'
 
                 for t in g.transcripts.values():
                     t.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
@@ -4412,6 +4407,8 @@ class Annotation():
 
                     for c in t.CDSs.values():
                         c.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                        for cs in c.CDS_segments:
+                            cs.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
                         for u in c.UTRs:
                             u.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
 

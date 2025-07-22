@@ -32,7 +32,7 @@ def main(
 
     os.system(f"mkdir -p {output_folder}")
 
-    annotation = Annotation(name={annotation_name}, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
 
     annotation.detect_gene_overlaps()
 
