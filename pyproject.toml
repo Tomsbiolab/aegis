@@ -25,3 +25,4 @@ license = { text = "GPL-3.0-or-later" }
 [project.scripts]
 aegis-extract = "aegis.cli.extract:app"
 aegis-overlap = "aegis.cli.overlap:app"
+aegis-reformat = "aegis.cli.reformat:app"

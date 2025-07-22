@@ -25,7 +25,7 @@ def main(
         "-g", "--genome-fasta", help="Path to the input genome FASTA file."
     )],
     annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation-file", help="Path to the input annotation GFF3/GTF file."
+        "-a", "--annotation-file", help="Path to the input annotation GFF/GTF file."
     )],
     genome_name: Annotated[str, typer.Option(
         "-gn", "--genome-name", help="Genome assembly version, name or tag."
