@@ -1,7 +1,6 @@
 import typer
 import os
 from typing_extensions import Annotated
-from typing import List
 from aegis.genome import Genome
 from aegis.annotation import Annotation
 
@@ -13,7 +12,7 @@ modes = ["all", "main", "unique", "unique_per_gene"]
 
 promoter_types = ["standard", "upstream_ATG", "standard_plus_up_to_ATG"]
 
-app = typer.Typer(help="Extract sequences from a genome based on an annotation.", add_completion=False)
+app = typer.Typer(add_completion=False)
 
 def split_callback(value: str):
     if value:
@@ -29,11 +28,11 @@ def main(
         "-a", "--annotation-file", help="Path to the input annotation GFF3/GTF file."
     )],
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome_name", help="Genome assembly version, name or tag."
-    )] = "filename",
+        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+    )] = "{genome-fasta}",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation_name", help="Annotation version, name or tag."
-    )] = "filename",
+        "-an", "--annotation-name", help="Annotation version, name or tag."
+    )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
         "-o", "--output-dir", help="Path to the directory where output FASTA files will be saved."
     )] = "./aegis_output/",
@@ -41,25 +40,37 @@ def main(
         "-f", "--feature-type", help=f"One or more feature types to extract, separated by commas. Choose from: {features}.",
         callback=split_callback
     )] = "gene",
+
+    mode: Annotated[str, typer.Option(
+        "-m", "--mode", help=f"Select extraction modes separated by commas. Choose from: {features}. 'All' for all transcripts/CDSs/proteins of a gene, 'main' for just the main variant of a gene defined by default as the longest transcript/CDS/protein, 'unique_per_gene' removes redundant CDS/protein sequences per gene, and 'unique' does the same for proteins at the whole output level.",
+        callback=split_callback
+    )] = "all,main",
+
     promoter_size: Annotated[int, typer.Option(
-        "-ps", "--promoter_size", help=f"Promoter size in bp upstream of TSS."
+        "-ps", "--promoter-size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'."
     )] = 2000,
 
     promoter_type: Annotated[str, typer.Option(
-        "-p", "--promoter_type", help=f"Defines the reference point for the promoters: 'standard' (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS); 'upstream_ATG' : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
+        "-p", "--promoter-type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
     )] = "standard",
 
-    mode: Annotated[str, typer.Option(
-        "-m", "--mode", help=f"Extract main or all features, or both, separated by commas. Choose from: {modes}.",
-        callback=split_callback
-    )] = "all,main",
     verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help=f"Verbose."
+        "-v", "--verbose", help=f"Whether to include extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable."
     )] = False,
     feature_id: Annotated[str, typer.Option(
         "-i", "--feature-id", help=f"Most specific feature ID used in fasta header outputs. E.g. you may want to export transcripts but associated to gene ids directly instead of using the transcript feature IDs. Choose from: {IDs}."
     )] = "feature"
 ):
+    """
+    Extract sequences from a genome based on an annotation.
+
+    This command supports multiple output formats and allows selecting
+    specific features (e.g. gene, transcript, CDS, protein, promoter).
+    
+    Use the --mode and --feature-id flags to control sequence filtering
+    and ID labeling. Promoter generation supports multiple strategies,
+    including upstream of TSS or ATG.
+    """
 
     for f_type in feature_type:
         if f_type not in features:
