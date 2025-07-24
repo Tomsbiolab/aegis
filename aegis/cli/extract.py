@@ -14,9 +14,9 @@ promoter_types = ["standard", "upstream_ATG", "standard_plus_up_to_ATG"]
 
 app = typer.Typer(add_completion=False)
 
-def split_callback(value: str):
+def split_callback(value:str):
     if value:
-        return [item.strip() for item in value.split(',')]
+        return [item.strip() for item in value.split(",")]
     return []
 
 @app.command()

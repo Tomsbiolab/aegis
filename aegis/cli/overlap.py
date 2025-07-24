@@ -7,14 +7,20 @@ from aegis.genefunctions import export_group_equivalences
 
 app = typer.Typer(add_completion=False)
 
+def split_callback(value:str):
+    if value:
+        return [item.strip() for item in value.split(",")]
+    return []
+
 @app.command()
 def main(
     annotation_files: Annotated[List[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
-    annotation_names: Annotated[List[str], typer.Option(
-        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files."
-    )] = ["{annotation-filename(s)}"],
+    annotation_names: Annotated[str, typer.Option(
+        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2",
+        callback=split_callback
+    )] = "{annotation-filename(s)}",
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/",
@@ -27,9 +33,10 @@ def main(
     simple: Annotated[bool, typer.Option(
         "-s", "--simple", help="Whether to remove percentage overlap details at different feature levels for a more simple output table."
     )] = False,
-    original_annotation_files: Annotated[List[str], typer.Option(
-        "-t", "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1 NA original_file_3'"
-    )] = [],
+    original_annotation_files: Annotated[str, typer.Option(
+        "-t", "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files, separated by commas. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
+        callback=split_callback
+    )] = "",
 ):
     """
     Calculates degree of gene overlaps between annotations associated to the same assembly and results in a gene-id equivalence table. If only one annotation file is provided as input, gene overlaps within the same annotation will be measured.
@@ -55,11 +62,12 @@ def main(
     if len(annotation_files) != len(annotation_names):
         raise ValueError(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
 
-    if original_annotation_files != []:
+    if original_annotation_files != "":
         if len(annotation_files) != len(original_annotation_files):
             raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
         
     else:
+        original_annotation_files = []
         for annotation_file in annotation_files:
             original_annotation_files.append("NA")
     
@@ -87,10 +95,14 @@ def main(
 
             output_tag = f"{annotations[0].name}_{annotations[1].name}"
 
+            output_file = f"{annotations[0].name}_{annotations[1].name}_overlaps_t{overlap_threshold}.tsv"
+
+            annotations[0].export_equivalences(custom_path=output_folder, output_file=output_file, verbose=verbose, overlap_threshold=overlap_threshold, export_self=False, export_csv=True, return_df=False, NAs=include_NAs)
+
         else:
             output_tag = f"{annotations[0].name}_..._{annotations[-1].name}"
 
-        export_group_equivalences(annotations, custom_path=output_folder, verbose=verbose, multidirectional=True, group_tag=output_tag, overlap_threshold=overlap_threshold)
+            export_group_equivalences(annotations, custom_path=output_folder, verbose=verbose, multidirectional=True, group_tag=output_tag, overlap_threshold=overlap_threshold)
     else:
         raise ValueError(f"No annotation-files provided.")
 
