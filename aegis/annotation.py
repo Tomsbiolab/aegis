@@ -6,7 +6,6 @@ Module defining several genomic classes.
 @authors: David Navarro, Antonio Santiago
 """
 
-from pathlib import Path
 import re
 import sys
 import copy
@@ -15,6 +14,7 @@ import time
 import pandas as pd
 import matplotlib.pyplot as plt
 import networkx as nx
+import os
 
 from .plots import pie_chart, barplot
 from .genefunctions import overlap, reverse_complement, find_all_occurrences
@@ -24,12 +24,11 @@ from .transcript import Transcript
 from .subfeatures import Exon, UTR, Intron
 from .hits import OverlapHit, BlastHit
 
-from os import system
 from statistics import mean
 from scipy.stats import fisher_exact
 from tqdm import tqdm
 from multiprocessing import Pool
-
+from pathlib import Path
 
 default_features = {}
 default_features["gene"] = ["gene", "pseudogene", "transposable_element_gene"]
@@ -1362,6 +1361,7 @@ class Annotation():
                     '{percentage:3.0f}%|'
                     f'\033[1;94;1m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
+        
         if custom_path == "":
             output_path = self.path + "tf_motifs/"
             output_file = output_path 
@@ -1370,9 +1370,10 @@ class Annotation():
         if output_file[-1] != "/":
             output_file += "/"
         common_multifasta = self.path + "tf_motifs/"
-        system(f"mkdir -p {common_multifasta}")
+
+        os.makedirs(common_multifasta, exist_ok=True)
         output_file += f"{tfname}/"
-        system(f"mkdir -p {output_file}")
+        os.makedirs(output_file, exist_ok=True)
 
         output_file += f"{tfname}_{motifid}"
 
@@ -1717,14 +1718,11 @@ class Annotation():
 
         valid_id_choices = ["gene", "transcript", "CDS", "protein"]
         """
-        if custom_path == "":
-            output_path = self.path + "features/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-        if output_file[-1] != "/":
-            output_file += "/"
-        system(f"mkdir -p {output_file}")
+
+        output_file = Path(custom_path or self.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
+
         output_file += self.id
         output_file += self.feature_suffix
         output_file += "_proteins"
@@ -1838,14 +1836,6 @@ class Annotation():
         else:
             disable = False
         
-        if custom_path == "":
-            output_path = self.path + "features/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-        if output_file[-1] != "/":
-            output_file += "/"
-
         if not self.contains_protein_sequences:
             if genome == None:
                 print(f"You forgot to provide the genome for {self.id} and no sequences exist for CDSs")
@@ -1853,7 +1843,9 @@ class Annotation():
                 self.generate_sequences(genome)
                 self.export_unique_proteins(custom_path=custom_path)
         else:
-            system(f"mkdir -p {output_file}")
+            output_file = Path(custom_path or self.path) / "features"
+            output_file.mkdir(parents=True, exist_ok=True)
+            output_file = str(output_file) + "/"
             output_file += f"{self.id}{self.feature_suffix}_unique_proteins.fasta"
             out = ""
             all_protein_seqs = {}
@@ -1914,14 +1906,12 @@ class Annotation():
 
         valid_id_choices = ["gene", "transcript", "CDS"]
         """
-        if custom_path == "":
-            output_path = self.path + "features/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-        if output_file[-1] != "/":
-            output_file += "/"
-        system(f"mkdir -p {output_file}")
+
+    
+        output_file = Path(custom_path or self.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
+
         output_file += self.id
         output_file += self.feature_suffix
         output_file += "_CDSs"
@@ -2030,14 +2020,9 @@ class Annotation():
 
         valid_id_choices = ["gene", "transcript"]
         """
-        if custom_path == "":
-            output_path = self.path + "features/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-        if output_file[-1] != "/":
-            output_file += "/"
-        system(f"mkdir -p {output_file}")
+        output_file = Path(custom_path or self.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
         output_file += self.id
         output_file += self.feature_suffix
         output_file += "_transcripts"
@@ -2087,14 +2072,9 @@ class Annotation():
             print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
 
     def export_genes(self, verbose:bool=True, custom_path:str=""):
-        if custom_path == "":
-            output_path = self.path + "features/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-        if output_file[-1] != "/":
-            output_file += "/"
-        system(f"mkdir -p {output_file}")
+        output_file = Path(custom_path or self.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
         output_file += self.id
         output_file += self.feature_suffix
         output_file += "_genes"
@@ -2123,15 +2103,9 @@ class Annotation():
         Verbose will include promoter type, strand, chromosome, and coordinates.
 
         """
-        if custom_path == "":
-            output_path = self.path + "features/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-        system(f"mkdir -p {output_file}")
-        if output_file[-1] != "/":
-            output_file += "/"
-
+        output_file = Path(custom_path or self.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
         output_file += self.id
         output_file += self.feature_suffix
         output_file += "_promoters"
@@ -2319,15 +2293,10 @@ class Annotation():
 
         self.calculate_gc_content()
 
-        if custom_path == "":
-            export_folder = self.path + "out_stats/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
-
         if export:
-            system(f"mkdir -p {export_folder}")
+            export_folder = Path(custom_path or self.path) / "out_stats"
+            export_folder.mkdir(parents=True, exist_ok=True)
+            export_folder = str(export_folder) + "/"
 
         to_tally = ["coding_genes", "noncoding_genes", "CDSs_without_stop", "CDSs_with_stop"]
 
@@ -2998,21 +2967,17 @@ class Annotation():
         for node in connector_nodes:
             self.overlap_networks[chr][0].remove_node(node)
 
-    def add_aliases(self, stringent:bool=True):
-        if stringent:
-            acceptable_values = [6, 7, 8, 9, 10, 11]
-        else:
-            acceptable_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    def add_aliases(self, overlap_threshold:int=6):
         for genes in self.chrs.values():
             for g in genes.values():
                 for name, hits in g.overlaps.items():
                     if name == "other":
                         for hit in hits:
-                            if hit.score in acceptable_values:
+                            if hit.score >= overlap_threshold:
                                 if hit.id not in g.aliases:
                                     g.aliases.append(hit.id)
 
-    def export_equivalences(self, custom_path:str="", stringent:bool=True, verbose:bool=True, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str=""):
+    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str=""):
         start = time.time()
         if export_self:
             export = "self"
@@ -3020,94 +2985,124 @@ class Annotation():
         else:
             export = "other"
             export_tag = ""
-        tag = f"{export_tag}{self.id}{self.feature_suffix}_equivalences"
-        if stringent:
-            acceptable_values = [6, 7, 8, 9, 10, 11]
-            tag += "_filtered"
-        else:
-            acceptable_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]        
-        
-        if custom_path == "":
-            export_folder = self.path + "overlaps/"
-        else:
-            export_folder = custom_path
-            
-        if export_folder[-1] != "/":
-            export_folder += "/"
-        system(f"mkdir -p {export_folder}")
 
-        equivalences = {"query_id": [], "target_id": []}
-        if verbose:
-            equivalences["query_synteny_conserved"] = []
-            equivalences["target_synteny_conserved"] = []
-            equivalences["same_strand"] = []
-            equivalences["min_gene_percent"] = []
-            equivalences["min_exon_percent"] = []
-            equivalences["min_CDS_percent"] = []
-        if not verbose:
-            tag += "_simple"
-        equivalences["query_origin"] = []            
-        equivalences["target_origin"] = []
-        equivalences["overlap_score"] = []
+        tag = f"{export_tag}{self.id}{self.feature_suffix}_overlap_t{overlap_threshold}"
         
-        eq_df = pd.DataFrame(data=equivalences)
+        export_folder = Path(custom_path or self.path) / "overlaps"
+        export_folder.mkdir(parents=True, exist_ok=True)
+        export_folder = str(export_folder) + "/"
+
+        correct_order = ["query_id", "target_id", "query_synteny_conserved", "target_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "query_origin", "target_origin", "overlap_score"]
+
+        rows = []
+
         for genes in self.chrs.values():
             for g in genes.values():
                 for name, hits in g.overlaps.items():
                     if name == export:
                         for hit in hits:
-                            if hit.score not in acceptable_values:
+                            if hit.score < overlap_threshold:
                                 continue
-                            index = len(eq_df.index)
-                            if eq_df.empty:
-                                eq_df.loc[0] = pd.NA
-                            eq_df.loc[index, "query_id"] = g.id
-                            eq_df.loc[index, "target_id"] = hit.id
-    
-                            
-                            if verbose:      
-                                eq_df.loc[index, "same_strand"] = hit.orientation
-                                if self.liftoff:
-                                    eq_df.loc[index, "query_synteny_conserved"] = g.conserved_synteny
-                                else:
-                                    eq_df.loc[index, "query_synteny_conserved"] = pd.NA
-                                eq_df.loc[index, "target_synteny_conserved"] = hit.target_synteny_conserved
 
-                                eq_df.loc[index, "min_gene_percent"] = hit.min_gene_percent
-                                eq_df.loc[index, "min_exon_percent"] = hit.min_exon_percent
-                                eq_df.loc[index, "min_CDS_percent"] = hit.min_CDS_percent
-                            eq_df.loc[index, "query_origin"] = self.name
-                            eq_df.loc[index, "target_origin"] = hit.origin
-                            eq_df.loc[index, "overlap_score"] = hit.score
+                            row = {
+                                "query_id": g.id,
+                                "target_id": hit.id,
+                                "query_origin": self.name,
+                                "target_origin": hit.origin,
+                                "overlap_score": hit.score,
+                            }
+
+                            if synteny:
+                                row["query_synteny_conserved"] = g.conserved_synteny if self.liftoff else pd.NA
+                                row["target_synteny_conserved"] = hit.target_synteny_conserved
+
+                            if verbose:
+                                row["same_strand"] = hit.orientation
+                                row["min_gene_percent"] = hit.min_gene_percent
+                                row["min_exon_percent"] = hit.min_exon_percent
+                                row["min_CDS_percent"] = hit.min_CDS_percent
+
+                            rows.append(row)
+
+        eq_df = pd.DataFrame(rows)
+
+        if export == "self":
+            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["query_id"], row["target_id"]])), axis=1)
+            eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
+            eq_df.drop(inplace=True, columns=["query_origin", "target_origin"])
 
         if NAs:
-            tag += "_justQueryNAs"
-            overlapping_genes = eq_df["query_id"].to_list()
-            # adding target genes with no equivalence:
-            for genes in self.chrs.values():
-                for g in genes.values():
-                    if g.id not in overlapping_genes:
-                        index = len(eq_df.index)
-                        eq_df.loc[index] = pd.NA
-                        eq_df.loc[index, "query_id"] = g.id
-                        eq_df.loc[index, "query_origin"] = self.name
-                        eq_df.loc[index, "overlap_score"] = 0
-            # Only for liftoff annotations
-            for g_id in self.unmapped:
-                if g_id not in overlapping_genes:
-                    index = len(eq_df.index)
-                    eq_df.loc[index] = pd.NA
-                    eq_df.loc[index, "query_id"] = g_id
-                    eq_df.loc[index, "query_origin"] = self.name
-        else:
-            tag += "_noNAs"
+            tag += "_query_NAs"
+            if export == "self":
+                overlapping_genes = set(pd.concat([eq_df["query_id"], eq_df["target_id"]]).dropna())
+            else:
+                overlapping_genes = set(eq_df["query_id"].dropna())
 
-        # There should not be any duplicates but removing them just in case
-        eq_df.drop_duplicates(inplace=True)
-        column_sort_order = ["query_origin", "target_origin", "overlap_score", "query_synteny_conserved", "target_synteny_conserved", "query_id", "target_id"]
-        ascending = [True, True, False, False, False, True, True]
+            na_rows = []
+
+            if export == "self":
+
+                for genes in self.chrs.values():
+                    for g in genes.values():
+                        if g.id not in overlapping_genes:
+                            na_rows.append({
+                                "query_id": g.id,
+                                "overlap_score": 0
+                            })
+
+                if synteny:
+                    for g_id in self.unmapped:
+                        if g_id not in overlapping_genes:
+                            na_rows.append({
+                                "query_id": g_id
+                            })
+
+            else:
+
+                for genes in self.chrs.values():
+                    for g in genes.values():
+                        if g.id not in overlapping_genes:
+                            na_rows.append({
+                                "query_id": g.id,
+                                "query_origin": self.name,
+                                "overlap_score": 0
+                            })
+
+                if synteny:
+                    for g_id in self.unmapped:
+                        if g_id not in overlapping_genes:
+                            na_rows.append({
+                                "query_id": g_id,
+                                "query_origin": self.name
+                            })
+
+            # Combine with the original df
+            if na_rows:
+                eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
+
+        eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
+
+        if synteny:
+            column_sort_order = ["query_origin", "target_origin", "overlap_score", "query_synteny_conserved", "target_synteny_conserved", "query_id", "target_id"]
+            ascending = [True, True, False, False, False, True, True]
+        elif export == "self":
+            column_sort_order = ["overlap_score", "query_id", "target_id"]
+            ascending = [False, True, True]
+        else:
+            column_sort_order = ["query_origin", "target_origin", "overlap_score", "query_id", "target_id"]
+            ascending = [True, True, False, True, True]            
+
         eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
         eq_df.reset_index(drop=True, inplace=True)
+
+        if export == "self":
+
+            mapping = {
+                "query_id": "gene_id_A",
+                "target_id": "gene_id_B",
+            }
+
+            eq_df = eq_df.rename(columns=mapping)
         
         if export_csv:
             if output_file:
@@ -3119,7 +3114,7 @@ class Annotation():
 
         now = time.time()
         lapse = now - start
-        print(f"\nExporting {self.id} equivalences to the following queries {self.overlapped_annotations} took {round(lapse/60, 1)} minutes")
+        print(f"\nExporting {self.id} overlaps to the following queries {self.overlapped_annotations} took {round(lapse/60, 1)} minutes")
         
         if return_df:
             return eq_df
@@ -3146,13 +3141,11 @@ class Annotation():
         Exports gene lengths as total exon length of main transcript.
         """
         out = ""
-        if custom_path == "":
-            export_folder = self.path + "gene_lengths/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
-        system(f"mkdir -p {export_folder}")
+
+        export_folder = Path(custom_path or self.path) / "gene_lengths"
+        export_folder.mkdir(parents=True, exist_ok=True)
+        export_folder = str(export_folder) + "/"
+
         if not just_genes:
             for genes in self.chrs.values():
                 for g in genes.values():
@@ -3180,13 +3173,11 @@ class Annotation():
             out = "gene_id\tchromosome\tgene_start\tgene_end\tgene_length\n"
         else:
             out = "gene_id\tchromosome\tgene_start\tgene_end\n"
-        if custom_path == "":
-            export_folder = self.path + "gene_coordinates/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
-        system(f"mkdir -p {export_folder}")
+
+        export_folder = Path(custom_path or self.path) / "gene_coordinates"
+        export_folder.mkdir(parents=True, exist_ok=True)
+        export_folder = str(export_folder) + "/"
+
         if lengths:
             for chrom, genes in self.chrs.items():
                 for g in genes.values():
@@ -3236,14 +3227,10 @@ class Annotation():
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
         out = ""
-        if custom_path == "":
-            export_folder = self.path + "out_gffs/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
 
-        system(f"mkdir -p {export_folder}")
+        export_folder = Path(custom_path or self.path) / "out_gffs"
+        export_folder.mkdir(parents=True, exist_ok=True)
+        export_folder = str(export_folder) + "/"
 
         if self.clean or self.dapmod:
             out += "##gff-version 3\n"
@@ -3366,14 +3353,10 @@ class Annotation():
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
         out = ""
-        if custom_path == "":
-            export_folder = self.path + "out_gtfs/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
 
-        system(f"mkdir -p {export_folder}")
+        export_folder = Path(custom_path or self.path) / "out_gtfs"
+        export_folder.mkdir(parents=True, exist_ok=True)
+        export_folder = str(export_folder) + "/"
 
         out += "#gtf-version 2.2\n"
 

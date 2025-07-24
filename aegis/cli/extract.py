@@ -21,17 +21,17 @@ def split_callback(value: str):
 
 @app.command()
 def main(
-    genome_fasta: Annotated[str, typer.Option(
-        "-g", "--genome-fasta", help="Path to the input genome FASTA file."
+    annotation_file: Annotated[str, typer.Argument(
+        help="Path to the input annotation GFF/GTF file."
     )],
-    annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation-file", help="Path to the input annotation GFF/GTF file."
+    genome_fasta: Annotated[str, typer.Argument(
+        help="Path to the input genome FASTA file."
     )],
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "--genome-name", help="Genome assembly version, name or tag."
     )] = "{genome-fasta}",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
         "-o", "--output-dir", help="Path to the directory where output FASTA files will be saved."
@@ -83,11 +83,11 @@ def main(
     if feature_id not in IDs:
         raise typer.BadParameter(f"Invalid feature ID: {feature_id}. Choose from: {IDs}")
     
-    if annotation_name == "filename":
-        annotation_name = os.path.splitext(annotation_file)[0]
+    if annotation_name == "{annotation-file}":
+        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    if genome_name == "filename":
-        genome_name = os.path.splitext(genome_fasta)[0]
+    if genome_name == "{genome-fasta}":
+        genome_name = os.path.splitext(os.path.basename(genome_fasta))[0]
 
     genome = Genome(name=genome_name, genome_file_path=genome_fasta)
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome)

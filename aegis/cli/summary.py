@@ -29,9 +29,9 @@ def main(
     """
 
     if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(annotation_file)[0]
+        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.system(f"mkdir -p {output_folder}")
+    os.makedirs(output_folder, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
     genome = Genome(name=genome_name, genome_file_path=genome_fasta)
