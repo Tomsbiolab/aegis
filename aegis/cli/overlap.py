@@ -83,6 +83,10 @@ def main(
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
             raise ValueError(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
+        
+    if len(annotation_files) == 1:
+        if original_annotation_files[0] != "NA":
+            raise Warning(f"Note that he provided original annotation file {original_annotation_files[0]} will not be used as synteny analysis is not implemented when evaluating gene overlaps within a single annotation = {annotation_names[0]}.")
 
     annotations = []
 

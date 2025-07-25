@@ -280,7 +280,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
             genome_name = a.genome.name
 
     if genome_none:
-        print("Note: Based on annotation files alone the associated genome assembly cannot be ensured to be the same for all annotations. Please verify this as annotations from different genome versions/assemblies cannot be compared.")
+        raise Warning("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.")
 
     if genome_name != "":
         for a in annotations:
