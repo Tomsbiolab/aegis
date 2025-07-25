@@ -333,153 +333,101 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
             all_genes[a.name] = set(a.all_gene_ids.keys())
             unmapped_genes[a.name] = set(a.unmapped)
 
-    if len(annotations) == 2 and reference == "":
+    for x, a in enumerate(annotations):
 
-        if group_tag:
+        if group_tag and (reference or len(annotations) == 2):
             prefix = group_tag
-        else:
+
+        elif reference and len(annotations) == 2:
+            for o in annotations:
+                if not o.target:
+                    other = o.name
+                    break
+            prefix = f"{reference}_{other}"
+        
+        elif len(annotations) == 2:
             prefix = f"{annotations[0].name}_{annotations[1].name}"
+        
+        else:
+            prefix = a.name
 
         if genome_name:
             single_tag = f"{prefix}_on_{genome_name}_overlaps_t{overlap_threshold}.csv"
         else:
             single_tag = f"{prefix}_overlaps_t{overlap_threshold}.csv"
 
-        a = annotations[0]
+        if reference:
+            if a.name != reference:
+                continue
+
+        elif len(annotations) == 2:
+            if x != 0:
+                continue
 
         single_df = a.export_equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
 
-        if include_NAs:
-            na_rows = []
+        if len(annotations) > 2:
 
-            for a_name, genes in all_genes.items():
-
-                temp_df = single_df[single_df["gene_id_A_origin"] == a_name]
-                present = set(temp_df["gene_id_A"].dropna())
-                temp_df = single_df[single_df["gene_id_B_origin"] == a_name]
-                present = present | set(temp_df["gene_id_B"].dropna())
-
-                if a_name == a.name:
-                    for g in genes:
-                        if g not in present:
-                            na_rows.append({
-                                "gene_id_A": g.id,
-                                "gene_id_A_origin": a_name,
-                                "overlap_score": 0
-                            })
-
-                else:
-                    for g in genes:
-                        if g not in present:
-                            na_rows.append({
-                                "gene_id_B": g.id,
-                                "gene_id_B_origin": a_name,
-                                "overlap_score": 0
-                            })
-
-            if synteny:
-                for a_name, unmapped in unmapped_genes.items():
-
-                    if a_name == a.name:
-
-                        for g_id in unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": a_name
-                            })
-                    else:
-                        for g_id in unmapped:
-                            na_rows.append({
-                                "gene_id_B": g_id,
-                                "gene_id_B_origin": a_name
-                            })
-
-            if na_rows:
-                single_df = pd.concat([single_df, pd.DataFrame(na_rows)], ignore_index=True)
-
-            single_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
-            single_df.reset_index(drop=True, inplace=True)
-            single_df.to_csv(f"{export_folder}{single_tag}", sep="\t", index=False, na_rep="NA")
-    
-    elif reference != "":
-
-        for a in annotations:
-            if a.target:
-                break
-
-        if group_tag:
-            prefix = group_tag
-        else:
-            if len(annotations) == 2:
-                for o in annotations:
-                    if not o.target:
-                        prefix = f"{a.name}_{o.name}"
-                        del o
-                        break
+            if x == 0:
+                eq_df = single_df.copy()
             else:
-                prefix = a.name
+                eq_df = pd.concat([eq_df, single_df])
 
-        if genome_name:
-            single_tag = f"{prefix}_on_{genome_name}_overlaps_t{overlap_threshold}.csv"
-        else:
-            single_tag = f"{prefix}_overlaps_t{overlap_threshold}.csv"
+        if len(annotations) == 2 or output_also_single_files:
 
-        single_df = a.export_equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
+            if include_NAs:
+                na_rows = []
 
-        if include_NAs:
-            na_rows = []
+                for a_name, genes in all_genes.items():
 
-            for a_name, genes in all_genes.items():
-
-                temp_df = single_df[single_df["gene_id_A_origin"] == a_name]
-                present = set(temp_df["gene_id_A"].dropna())
-                temp_df = single_df[single_df["gene_id_B_origin"] == a_name]
-                present = present | set(temp_df["gene_id_B"].dropna())
-
-                if a_name == a.name:
-                    for g in genes:
-                        if g not in present:
-                            na_rows.append({
-                                "gene_id_A": g.id,
-                                "gene_id_A_origin": a_name,
-                                "overlap_score": 0
-                            })
-
-                else:
-                    for g in genes:
-                        if g not in present:
-                            na_rows.append({
-                                "gene_id_B": g.id,
-                                "gene_id_B_origin": a_name,
-                                "overlap_score": 0
-                            })
-
-            if synteny:
-                for a_name, unmapped in unmapped_genes.items():
+                    temp_df = single_df[single_df["gene_id_A_origin"] == a_name]
+                    present = set(temp_df["gene_id_A"].dropna())
+                    temp_df = single_df[single_df["gene_id_B_origin"] == a_name]
+                    present = present | set(temp_df["gene_id_B"].dropna())
 
                     if a_name == a.name:
+                        for g in genes:
+                            if g not in present:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_origin": a_name,
+                                    "overlap_score": 0
+                                })
 
-                        for g_id in unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": a_name
-                            })
                     else:
-                        for g_id in unmapped:
-                            na_rows.append({
-                                "gene_id_B": g_id,
-                                "gene_id_B_origin": a_name
-                            })
+                        for g in genes:
+                            if g not in present:
+                                na_rows.append({
+                                    "gene_id_B": g.id,
+                                    "gene_id_B_origin": a_name,
+                                    "overlap_score": 0
+                                })
 
-            if na_rows:
-                single_df = pd.concat([single_df, pd.DataFrame(na_rows)], ignore_index=True)
+                if synteny:
+                    for a_name, unmapped in unmapped_genes.items():
+
+                        if a_name == a.name:
+
+                            for g_id in unmapped:
+                                na_rows.append({
+                                    "gene_id_A": g_id,
+                                    "gene_id_A_origin": a_name
+                                })
+                        else:
+                            for g_id in unmapped:
+                                na_rows.append({
+                                    "gene_id_B": g_id,
+                                    "gene_id_B_origin": a_name
+                                })
+
+                if na_rows:
+                    single_df = pd.concat([single_df, pd.DataFrame(na_rows)], ignore_index=True)
 
             single_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
             single_df.reset_index(drop=True, inplace=True)
             single_df.to_csv(f"{export_folder}{single_tag}", sep="\t", index=False, na_rep="NA")
 
-    else:
-
+    if len(annotations) > 2:
         if group_tag:
             prefix = group_tag
         else:
@@ -489,74 +437,6 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
             tag = f"{prefix}_on_{genome_name}_overlaps_t{overlap_threshold}.csv"
         else:
             tag = f"{prefix}_overlaps_t{overlap_threshold}.csv"
-
-        for x, a in enumerate(annotations):
-
-            if genome_name:
-                single_tag = f"{a.name}_on_{genome_name}_overlaps_t{overlap_threshold}.csv"
-            else:
-                single_tag = f"{a.name}_overlaps_t{overlap_threshold}.csv"
-
-            single_df = a.export_equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
-
-            if x == 0:
-                eq_df = single_df.copy()
-            else:
-                eq_df = pd.concat([eq_df, single_df])
-
-            if output_also_single_files:
-                if include_NAs:
-                    na_rows = []
-
-                    for a_name, genes in all_genes.items():
-
-                        temp_df = single_df[single_df["gene_id_A_origin"] == a_name]
-                        present = set(temp_df["gene_id_A"].dropna())
-                        temp_df = single_df[single_df["gene_id_B_origin"] == a_name]
-                        present = present | set(temp_df["gene_id_B"].dropna())
-
-                        if a_name == a.name:
-                            for g in genes:
-                                if g not in present:
-                                    na_rows.append({
-                                        "gene_id_A": g.id,
-                                        "gene_id_A_origin": a_name,
-                                        "overlap_score": 0
-                                    })
-
-                        else:
-                            for g in genes:
-                                if g not in present:
-                                    na_rows.append({
-                                        "gene_id_B": g.id,
-                                        "gene_id_B_origin": a_name,
-                                        "overlap_score": 0
-                                    })
-
-                    if synteny:
-                        for a_name, unmapped in unmapped_genes.items():
-
-                            if a_name == a.name:
-
-                                for g_id in unmapped:
-                                    na_rows.append({
-                                        "gene_id_A": g_id,
-                                        "gene_id_A_origin": a_name
-                                    })
-                            else:
-                                for g_id in unmapped:
-                                    na_rows.append({
-                                        "gene_id_B": g_id,
-                                        "gene_id_B_origin": a_name
-                                    })
-
-                    if na_rows:
-                        single_df = pd.concat([single_df, pd.DataFrame(na_rows)], ignore_index=True)
-
-                single_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
-                single_df.reset_index(drop=True, inplace=True)
-                single_df.to_csv(f"{export_folder}{single_tag}", sep="\t", index=False, na_rep="NA")
-
 
         if include_NAs:
 
@@ -587,7 +467,6 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
 
             if na_rows:
                 eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
-
 
         eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
         eq_df.reset_index(drop=True, inplace=True)
