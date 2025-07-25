@@ -8,6 +8,7 @@ Module with an array of genomic functions.
 @authors: David Navarro, Antonio Santiago
 """
 
+from pathlib import Path
 from collections import Counter
 from os import system
 import pandas as pd
@@ -251,428 +252,228 @@ def overlap(feat1, feat2):
 
     return overlapping, overlap_bp
 
-
 def export_for_dapseq(annotation, genome, chromosome_dictionary:dict={}, genome_out_folder:str="", gff_out_folder:str="", tag:str="_for_dap.gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, exclude_non_coding:bool=False):
     equivalences = genome.rename_features_dap(custom_path=genome_out_folder, return_equivalences=True, export=True, chromosome_dictionary=chromosome_dictionary)
     annotation.rename_chromosomes(equivalences)
     annotation.export_gff(output_folder=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, exclude_non_coding=exclude_non_coding)
 
-def old_export_group_equivalences(annotations:list, custom_path:str="",
-                              multidirectional:bool=False, group_tag:str="all",
-                              stringent:bool=True, verbose:bool=True,
-                              clear_overlaps=True):
-    """
-    This generates equivalences between a set of annotation objects, whether
-    only reporting equivalences to a particular target or between all
-    annotations.
-    """
-    column_sort_order = ["query_origin", "target_origin", "overlap_score", "query_synteny_conserved", "target_synteny_conserved", "query_id", "target_id"]
-    ascending = [True, True, False, False, False, True, True]
-
-    # Force clean before doing any overlaps is on by default to be safe,
-    # but turning it off saves time if you know what you are doing
-    if clear_overlaps:
-        for a in annotations:
-            a.clear_overlaps()
-    genome = annotations[0].genome
-    same_genome = True
-
-    for a in annotations:
-        if a.genome != genome:
-            same_genome = False
-            break
-
-    if same_genome:
-        if not multidirectional:
-            count = 0
-            for a in annotations:
-                if a.target:
-                    count += 1
-            if count == 1:
-                print("\nRunning 'export_group_equivalences' with 'stringent="
-                      f"{stringent}' and 'verbose={verbose}' in target mode\n")
-                for a1 in annotations:
-                    if a1.target:
-                        for a2 in annotations:
-                            if not a2.to_overlap:
-                                continue
-                            if a1.name != a2.name:
-                                a1.detect_gene_overlaps(a2, clear=False)
-                for a1 in annotations:
-                    if a1.target:
-                        tag = f"{a1.id}_equivalences"
-                        overlapped_annotations = a1.overlapped_annotations
-                        if stringent:
-                            tag += "_filtered"
-                        if not verbose:
-                            tag += "_simple"
-                        if custom_path == "":
-                            export_path = a1.path + "overlaps/"
-                        else:
-                            export_path = custom_path
-                        if export_path[-1] != "/":
-                            export_path += "/"
-                        system(f"mkdir -p {export_path}")
-                        eq_df = a1.export_equivalences(custom_path, stringent,
-                                                       verbose)
-                        start = time.time()
-                        overlapping_genes = eq_df["query_id"].to_list()
-                        for a2 in annotations:
-                            if not a2.to_overlap:
-                                continue
-                            if a1.name != a2.name:
-                                # adding query genes with no equivalence:
-                                for genes in a2.chrs.values():
-                                    for g in genes.values():
-                                        if g.id not in overlapping_genes:
-                                            index = len(eq_df.index)
-                                            eq_df.loc[index] = pd.NA
-                                            eq_df.loc[index, "query_id"] = g.id
-                                            if a2.liftoff:
-                                                eq_df.loc[index, "query_origin"] = (
-                                                                            a2.name)
-                                            else:
-                                                eq_df.loc[index, 
-                                                        "query_origin"] = a2.name
-                                            eq_df.loc[index, "overlap_score"] = 0
-                                # Only for liftoff annotations
-                                for g_id in a2.unmapped:
-                                    if g_id not in overlapping_genes:
-                                        index = len(eq_df.index)
-                                        eq_df.loc[index] = pd.NA
-                                        eq_df.loc[index, "query_id"] = g_id
-                                        eq_df.loc[index, "query_origin"] = (
-                                                                        a2.name)
-                # There should not be any duplicates but just in case
-                eq_df.drop_duplicates(inplace=True)
-                eq_df.sort_values(by=columns, ascending=ascending, inplace=True)
-                eq_df.reset_index(drop=True, inplace=True)
-                eq_df.to_csv(f"{export_path}{tag}.csv", sep="\t", index=False,
-                             na_rep="NA")
-                now = time.time()
-                lapse = now - start
-                print(f"Appending query NAs from {overlapped_annotations} "
-                      f"to the exported {a1.id} equivalences took "
-                      f"{round(lapse/60, 1)} minutes\n")
-
-            else:
-                print("\nERROR: Make one annotation the target instead of "
-                      f"{count} or set it to multidirectional mode if you want "
-                      "to obtain equivalences between all annotations\n")
-
-        else:
-            if custom_path == "":
-                print("\nERROR: please define an output folder to save the "
-                      f"combined csv for {group_tag} annotations\n")
-            else:
-                print("\nRunning 'export_group_equivalences' with 'stringent="
-                      f"{stringent}' and 'verbose={verbose}' in "
-                      f"multidirectional mode for {group_tag} annotations\n")
-                processed_pairs = []
-                processed_annotations = []
-                for a1 in annotations:
-                    if not a1.to_overlap:
-                        continue
-                    processed_annotations.append(a1.id)
-                    genome = a1.genome
-                    for a2 in annotations:
-                        if not a2.to_overlap:
-                            continue
-                        if a1.name != a2.name:
-                            if f"{a1.name}-pair-{a2.name}" in processed_pairs:
-                                continue
-                            if f"{a2.name}-pair-{a1.name}" in processed_pairs:
-                                continue
-                            processed_pairs.append(f"{a1.name}-pair-{a2.name}")
-                            processed_pairs.append(f"{a2.name}-pair-{a1.name}")
-                            a1.detect_gene_overlaps(a2, clear=False)
-                x = -1
-
-                tag = f"{group_tag}_on_{genome}_equivalences"
-                multistart = time.time()
-                if stringent:
-                    tag += "_filtered"
-                if not verbose:
-                    tag += "_simple"
-                export_path = custom_path
-                    
-                if export_path[-1] != "/":
-                    export_path += "/"
-                system(f"mkdir -p {export_path}")
-
-                for a1 in annotations:
-                    if not a1.to_overlap:
-                        continue
-                    x += 1
-                    single_tag = f"{a1.id}_equivalences"
-                    overlapped_annotations = a1.overlapped_annotations
-                    if stringent:
-                        single_tag += "_filtered"
-                    if not verbose:
-                        single_tag += "_simple"
-                    single_df = a1.export_equivalences(custom_path, stringent,
-                                                       verbose)
-                    start = time.time()
-                    temp_df = single_df.copy()
-                    overlapping_genes = single_df["query_id"].to_list()
-                    for a2 in annotations:
-                        if not a2.to_overlap:
-                            continue
-                        if a1.name != a2.name:
-                            # adding query genes with no equivalence:
-                            for genes in a2.chrs.values():
-                                for g in genes.values():
-                                    if g.id not in overlapping_genes:
-                                        index = len(single_df.index)
-                                        single_df.loc[index] = pd.NA
-                                        single_df.loc[index, "query_id"] = g.id
-                                        if a2.liftoff:
-                                            single_df.loc[index, "query_origin"] = a2.name                                  
-                                        else:
-                                            single_df.loc[index,"query_origin"] = a2.name
-                                        single_df.loc[index, "overlap_score"] = 0
-                            # Only for liftoff annotations
-                            for g_id in a2.unmapped:
-                                if g_id not in overlapping_genes:
-                                    index = len(single_df.index)
-                                    single_df.loc[index] = pd.NA
-                                    single_df.loc[index, "query_id"] = g_id
-                                    single_df.loc[index, "query_origin"] = (
-                                                                        a2.name)
-                    # There should not be any duplicates but just in case       
-                    single_df.drop_duplicates(inplace=True)
-                    single_df.sort_values(by=columns, ascending=ascending,
-                                          inplace=True)
-                    single_df.reset_index(drop=True, inplace=True)
-                    single_df.to_csv(f"{export_path}{single_tag}.csv", sep="\t",
-                                     index=False, na_rep="NA")
-                    now = time.time()
-                    lapse = now - start
-                    print(f"Appending query NAs from ({overlapped_annotations})"
-                          f" to the exported {a1.id} equivalences took "
-                          f"{round(lapse/60, 1)} minutes\n")
-
-                    # temp_dfs can be directly contatenated
-                    if x == 0:
-                        eq_df = temp_df.copy()
-                    else:
-                        eq_df = pd.concat([eq_df, temp_df]).drop_duplicates()
-                        eq_df.reset_index(drop=True, inplace=True)
-
-                # There should not be any duplicates but just in case
-                eq_df.drop_duplicates(inplace=True)
-                eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
-                eq_df.reset_index(drop=True, inplace=True)
-                eq_df.to_csv(f"{export_path}{tag}.csv", sep="\t", index=False, na_rep="NA")
-                now = time.time()
-                lapse = now - multistart
-                print(f"\nGenerating single-target equivalences for all {processed_annotations} as well as producing the final combined multidirectional table took {round(lapse/60, 1)} minutes\n")
-    else:
-        print("The annotations submitted do not share a common genome. Please try again.")
-
-
-def export_group_equivalences(annotations:list, custom_path:str="", multidirectional:bool=False, group_tag:str="all", stringent:bool=True, verbose:bool=True, clear_overlaps=True):
+def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False):
     """
     This generates equivalences between a set of annotation objects, whether only reporting equivalences to a particular target or between all annotations.
     """
-    
-    columns = ["query_origin", "target_origin", "overlap_score", "query_synteny_conserved", "target_synteny_conserved", "query_id", "target_id"]
-    ascending = [True, True, False, False, False, True, True]
 
-    # Force clear_overlaps before doing any overlaps is on by default to be safe,
-    # but turning it off saves time if you know what you are doing
+    start = time.time()
 
-    annotations_to_overlap = []
+    if synteny:
+        column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
+        ascending = [True, True, False, False, False, True, True]
+    else:
+        column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A", "gene_id_B"]
+        ascending = [True, True, False, True, True]
+
+    genome_none = False
+    genome_name = ""
     for a in annotations:
-        if a.to_overlap:
-            annotations_to_overlap.append(a.copy())
-
-    del annotations
-
-    genome = annotations_to_overlap[0].genome
-    same_genome = True
-    none_genome = False
-    different_annotations = True
-    annotation_ids = []
-
-    for a in annotations_to_overlap:
-        if a.id not in annotation_ids:
-            annotation_ids.append(a.id)
+        if a.genome == None:
+            genome_none = True
         else:
-            different_annotations = False
+            genome_name = a.genome.name
 
-        if a.genome == None or genome == None:
-            none_genome = True
-            continue
-        if a.genome != genome:
-            same_genome = False
+    if genome_none:
+        raise Warning("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.")
+
+    if genome_name != "":
+        for a in annotations:
+            if a.genome != None:
+                if a.genome.name != genome_name:
+                    raise ValueError("The provided annotations are not based on the same genome version/assembly. Please review input.")
+                
+    if len(annotations) < 2:
+        raise ValueError(f"Not enough annotations ({annotations}) have been provided to export group equivalences.")
 
     if clear_overlaps:
-        for a in annotations_to_overlap:
+        for a in annotations:
             a.clear_overlaps()
 
+    export_folder = Path(output_folder) / "overlaps"
+    export_folder.mkdir(parents=True, exist_ok=True)
+    export_folder = str(export_folder) + "/"
 
-    if same_genome:
+    reference = ""
 
-        if none_genome:
-            print(f"Warning: Please make sure all submitted annotations are associated to the same genome version, this could not be verified as at least one of the submitted annotations has a 'None' genome.")
+    for a in annotations:
+        if a.target:
+            reference = a.name
+            break
 
-        if not multidirectional:
-            print("Non multidirectional or targeted mode is not working yet.")
+    processed_pairs = set()
+    
+    for a1 in annotations:
+        for a2 in annotations:
+            if a1.name == a2.name:
+                continue
+                
+            pair = sorted([a1.name, a2.name])
+            if pair in processed_pairs:
+                continue
 
-            # count = 0
-            # for a in annotations_to_overlap:
-            #     if a.target:
-            #         count += 1
-            # if count == 1:
-            #     print(f"\nRunning 'export_group_equivalences' with 'stringent={stringent}' and 'verbose={verbose}' in target mode\n")
-            #     for a1 in annotations_to_overlap:
-            #         if a1.target:
-            #             for a2 in annotations_to_overlap:
-            #                 if not a2.to_overlap:
-            #                     continue
-            #                 if a1.name != a2.name:
-            #                     a1.detect_gene_overlaps(a2, clear=False)
-            #     for a1 in annotations_to_overlap:
-            #         if a1.target:
-            #             tag = f"{a1.id}_equivalences"
-            #             overlapped_annotations = a1.overlapped_annotations
-            #             if stringent:
-            #                 tag += "_filtered"
-            #             if not verbose:
-            #                 tag += "_simple"
-            #             if custom_path == "":
-            #                 export_path = a1.path + "overlaps/"
-            #             else:
-            #                 export_path = custom_path
-            #             if export_path[-1] != "/":
-            #                 export_path += "/"
-            #             system(f"mkdir -p {export_path}")
-            #             eq_df = a1.export_equivalences(custom_path, stringent, verbose)
-            #             start = time.time()
-            #             overlapping_genes = eq_df["query_id"].to_list()
-            #             for a2 in annotations_to_overlap:
-            #                 if not a2.to_overlap:
-            #                     continue
-            #                 if a1.name != a2.name:
-            #                     # adding query genes with no equivalence:
-            #                     for genes in a2.chrs.values():
-            #                         for g in genes.values():
-            #                             if g.id not in overlapping_genes:
-            #                                 index = len(eq_df.index)
-            #                                 eq_df.loc[index] = pd.NA
-            #                                 eq_df.loc[index, "query_id"] = g.id
-            #                                 if a2.liftoff:
-            #                                     eq_df.loc[index, "query_origin"] = a2.name
-            #                                 else:
-            #                                     eq_df.loc[index, "query_origin"] = a2.name
-            #                                 eq_df.loc[index, "overlap_score"] = 0
-            #                     # Only for liftoff annotations
-            #                     for g_id in a2.unmapped:
-            #                         if g_id not in overlapping_genes:
-            #                             index = len(eq_df.index)
-            #                             eq_df.loc[index] = pd.NA
-            #                             eq_df.loc[index, "query_id"] = g_id
-            #                             eq_df.loc[index, "query_origin"] = a2.name
-            #     # There should not be any duplicates but just in case
-            #     eq_df.drop_duplicates(inplace=True)
-            #     eq_df.sort_values(by=columns, ascending=ascending, inplace=True)
-            #     eq_df.reset_index(drop=True, inplace=True)
-            #     eq_df.to_csv(f"{export_path}{tag}.csv", sep="\t", index=False, na_rep="NA")
-            #     now = time.time()
-            #     lapse = now - start
-            #     print(f"Appending query NAs from {overlapped_annotations} to the exported {a1.id} equivalences took {round(lapse/60, 1)} minutes\n")
+            if reference != "":
+                if not a1.target and not a2.target:
+                    continue
 
-            # else:
-            #     print(f"\nERROR: Make one annotation the target instead of {count} or set it to multidirectional mode if you want to obtain equivalences between all annotations\n")
+            a1.detect_gene_overlaps(a2, clear=False)
 
+            processed_pairs.add(tuple(pair))
+
+    all_genes = {}
+    unmapped_genes = {}
+
+    if include_NAs:
+        for a in annotations:
+            all_genes[a.name] = set(a.all_gene_ids.keys())
+            unmapped_genes[a.name] = set(a.unmapped)
+
+    for x, a in enumerate(annotations):
+
+        if group_tag and (reference or len(annotations) == 2):
+            prefix = group_tag
+
+        elif reference and len(annotations) == 2:
+            for o in annotations:
+                if not o.target:
+                    other = o.name
+                    break
+            prefix = f"{reference}_{other}"
+        
+        elif len(annotations) == 2:
+            prefix = f"{annotations[0].name}_{annotations[1].name}"
+        
         else:
-            if custom_path == "":
-                print(f"\nERROR: please define an output folder to save the combined csv for {group_tag} annotations\n")
+            prefix = a.name
+
+        if genome_name:
+            single_tag = f"{prefix}_on_{genome_name}_overlaps_t{overlap_threshold}.csv"
+        else:
+            single_tag = f"{prefix}_overlaps_t{overlap_threshold}.csv"
+
+        if reference:
+            if a.name != reference:
+                continue
+
+        elif len(annotations) == 2:
+            if x != 0:
+                continue
+
+        single_df = a.export_equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
+
+        if len(annotations) > 2:
+
+            if x == 0:
+                eq_df = single_df.copy()
             else:
-                print(f"\nRunning 'export_group_equivalences' with 'stringent={stringent}' and 'verbose={verbose}' in multidirectional mode for {group_tag} annotations\n")
-                
-                start = time.time()
-                
-                processed_pairs = []
-                processed_annotations = []
+                eq_df = pd.concat([eq_df, single_df])
 
-                for a1 in annotations_to_overlap:
-                    processed_annotations.append(a1.id)
-                    genome = a1.genome
-                    for a2 in annotations_to_overlap:
-                        if a1.id != a2.id:
-                            if f"{a1.id}-pair-{a2.id}" in processed_pairs:
-                                continue
-                            if f"{a2.id}-pair-{a1.id}" in processed_pairs:
-                                continue
-                            a1.detect_gene_overlaps(a2, clear=False)
-                            processed_pairs.append(f"{a1.id}-pair-{a2.id}")
-                            processed_pairs.append(f"{a2.id}-pair-{a1.id}")
+        if len(annotations) == 2 or output_also_single_files:
 
-                if genome != None:
-                    tag = f"{group_tag}_on_{genome}_equivalences"
-                else:
-                    tag = f"{group_tag}_equivalences"
+            if include_NAs:
+                na_rows = []
 
-                
-                if stringent:
-                    tag += "_filtered"
-                if not verbose:
-                    tag += "_simple"
-                
-                export_path = custom_path
-                    
-                if export_path[-1] != "/":
-                    export_path += "/"
+                for a_name, genes in all_genes.items():
 
-                system(f"mkdir -p {export_path}")
+                    temp_df = single_df[single_df["gene_id_A_origin"] == a_name]
+                    present = set(temp_df["gene_id_A"].dropna())
+                    temp_df = single_df[single_df["gene_id_B_origin"] == a_name]
+                    present = present | set(temp_df["gene_id_B"].dropna())
 
-                all_genes = {}
+                    if a_name == a.name:
+                        for g in genes:
+                            if g not in present:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_origin": a_name,
+                                    "overlap_score": 0
+                                })
 
-                for x, a1 in enumerate(annotations_to_overlap):
-                    single_tag = f"{a1.id}_equivalences"
-                    overlapped_annotations = a1.overlapped_annotations
-                    if stringent:
-                        single_tag += "_filtered"
-                    if not verbose:
-                        single_tag += "_simple"
-
-                    single_df = a1.export_equivalences(custom_path, stringent, verbose)
-
-                    all_genes[a1.id] = [single_df["query_id"].to_list(), a1.name]
-
-                    # this removes unmatched genes only between query and target annotations
-                    # unmapped genes during liftoff (overlap_score == NA) will never have a match even between target annotations
-                    single_df = single_df[single_df["overlap_score"] != 0]
-
-                    if x == 0:
-                        eq_df = single_df.copy()
                     else:
-                        eq_df = pd.concat([eq_df, single_df])
+                        for g in genes:
+                            if g not in present:
+                                na_rows.append({
+                                    "gene_id_B": g.id,
+                                    "gene_id_B_origin": a_name,
+                                    "overlap_score": 0
+                                })
 
-                for a_id in all_genes:
-                    genes = all_genes[a_id][0]
-                    name = all_genes[a_id][1]
+                if synteny:
+                    for a_name, unmapped in unmapped_genes.items():
 
-                    temp_df = eq_df[eq_df["query_origin"] == name]
-                    present_genes = temp_df["query_id"].to_list()
+                        if a_name == a.name:
 
-                    for g in genes:
-                        if g not in present_genes:
-                            index = len(eq_df.index)
-                            eq_df.loc[index] = pd.NA
-                            eq_df.loc[index, "query_id"] = g
-                            eq_df.loc[index, "query_origin"] = name
+                            for g_id in unmapped:
+                                na_rows.append({
+                                    "gene_id_A": g_id,
+                                    "gene_id_A_origin": a_name
+                                })
+                        else:
+                            for g_id in unmapped:
+                                na_rows.append({
+                                    "gene_id_B": g_id,
+                                    "gene_id_B_origin": a_name
+                                })
 
-                # There should not be any duplicates but just in case
-                eq_df.drop_duplicates(inplace=True)
-                eq_df.sort_values(by=columns, ascending=ascending, inplace=True)
-                eq_df.reset_index(drop=True, inplace=True)
-                eq_df.to_csv(f"{export_path}{tag}.csv", sep="\t", index=False, na_rep="NA")
+                if na_rows:
+                    single_df = pd.concat([single_df, pd.DataFrame(na_rows)], ignore_index=True)
 
-                now = time.time()
-                lapse = now - start
-                print(f"\nGenerating multidirectional equivalences for all {processed_annotations} took {round(lapse/60, 1)} minutes\n")
-    else:
-        print("The annotations submitted do not share a common genome. Please try again.")
+            single_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
+            single_df.reset_index(drop=True, inplace=True)
+            single_df.to_csv(f"{export_folder}{single_tag}", sep="\t", index=False, na_rep="NA")
+
+    if len(annotations) > 2:
+        if group_tag:
+            prefix = group_tag
+        else:
+            prefix = f"{annotations[0].name}...{annotations[-1].name}"
+
+        if genome_name:
+            tag = f"{prefix}_on_{genome_name}_overlaps_t{overlap_threshold}.csv"
+        else:
+            tag = f"{prefix}_overlaps_t{overlap_threshold}.csv"
+
+        if include_NAs:
+
+            na_rows = []
+
+            for a_name, genes in all_genes.items():
+
+                temp_df = eq_df[eq_df["gene_id_A_origin"] == a_name]
+                present = set(temp_df["gene_id_A"].dropna())
+                temp_df = eq_df[eq_df["gene_id_B_origin"] == a_name]
+                present = present | set(temp_df["gene_id_B"].dropna())
+
+                for g in genes:
+                    if g not in present:
+                        na_rows.append({
+                            "gene_id_A": g.id,
+                            "gene_id_A_origin": a_name,
+                            "overlap_score": 0
+                        })
+
+            if synteny:
+                for a_name, unmapped in unmapped_genes.items():
+                    for g_id in unmapped:
+                        na_rows.append({
+                            "gene_id_A": g_id,
+                            "gene_id_A_origin": a_name
+                        })
+
+            if na_rows:
+                eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
+
+        eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
+        eq_df.reset_index(drop=True, inplace=True)
+        eq_df.to_csv(f"{export_folder}{tag}", sep="\t", index=False, na_rep="NA")
+
+    now = time.time()
+    lapse = now - start
+    print(f"\nGenerating overlaps for annotations = '{annotations}' took {round(lapse/60, 1)} minutes\n")
+
+        
