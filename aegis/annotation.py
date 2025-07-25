@@ -2992,7 +2992,7 @@ class Annotation():
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
-        correct_order = ["query_id", "target_id", "query_synteny_conserved", "target_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "query_origin", "target_origin", "overlap_score"]
+        correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score"]
 
         rows = []
 
@@ -3005,16 +3005,16 @@ class Annotation():
                                 continue
 
                             row = {
-                                "query_id": g.id,
-                                "target_id": hit.id,
-                                "query_origin": self.name,
-                                "target_origin": hit.origin,
+                                "gene_id_A": g.id,
+                                "gene_id_B": hit.id,
+                                "gene_id_A_origin": self.name,
+                                "gene_id_B_origin": hit.origin,
                                 "overlap_score": hit.score,
                             }
 
                             if synteny:
-                                row["query_synteny_conserved"] = g.conserved_synteny if self.liftoff else pd.NA
-                                row["target_synteny_conserved"] = hit.target_synteny_conserved
+                                row["gene_id_A_synteny_conserved"] = g.conserved_synteny if self.liftoff else pd.NA
+                                row["gene_id_B_synteny_conserved"] = hit.target_synteny_conserved
 
                             if verbose:
                                 row["same_strand"] = hit.orientation
@@ -3027,16 +3027,20 @@ class Annotation():
         eq_df = pd.DataFrame(rows)
 
         if export == "self":
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["query_id"], row["target_id"]])), axis=1)
+            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
-            eq_df.drop(inplace=True, columns=["query_origin", "target_origin"])
+            eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
+
+        else:
+            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f"{row["gene_id_A"]}_{row["gene_id_A_origin"]}", f"{row["gene_id_B"]}_{row["gene_id_B_origin"]}"])), axis=1)
+            eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
-            tag += "_query_NAs"
+            tag += "_gene_id_A_NAs"
             if export == "self":
-                overlapping_genes = set(pd.concat([eq_df["query_id"], eq_df["target_id"]]).dropna())
+                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
             else:
-                overlapping_genes = set(eq_df["query_id"].dropna())
+                overlapping_genes = set(eq_df["gene_id_A"].dropna())
 
             na_rows = []
 
@@ -3046,16 +3050,15 @@ class Annotation():
                     for g in genes.values():
                         if g.id not in overlapping_genes:
                             na_rows.append({
-                                "query_id": g.id,
+                                "gene_id_A": g.id,
                                 "overlap_score": 0
                             })
 
                 if synteny:
-                    for g_id in self.unmapped:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "query_id": g_id
-                            })
+                    if g_id not in overlapping_genes:
+                        na_rows.append({
+                            "gene_id_A": g_id
+                        })
 
             else:
 
@@ -3063,18 +3066,17 @@ class Annotation():
                     for g in genes.values():
                         if g.id not in overlapping_genes:
                             na_rows.append({
-                                "query_id": g.id,
-                                "query_origin": self.name,
+                                "gene_id_A": g.id,
+                                "gene_id_A_origin": self.name,
                                 "overlap_score": 0
                             })
 
                 if synteny:
                     for g_id in self.unmapped:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "query_id": g_id,
-                                "query_origin": self.name
-                            })
+                        na_rows.append({
+                            "gene_id_A": g_id,
+                            "gene_id_A_origin": self.name
+                        })
 
             # Combine with the original df
             if na_rows:
@@ -3083,26 +3085,17 @@ class Annotation():
         eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
 
         if synteny:
-            column_sort_order = ["query_origin", "target_origin", "overlap_score", "query_synteny_conserved", "target_synteny_conserved", "query_id", "target_id"]
+            column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
             ascending = [True, True, False, False, False, True, True]
         elif export == "self":
-            column_sort_order = ["overlap_score", "query_id", "target_id"]
+            column_sort_order = ["overlap_score", "gene_id_A", "gene_id_B"]
             ascending = [False, True, True]
         else:
-            column_sort_order = ["query_origin", "target_origin", "overlap_score", "query_id", "target_id"]
+            column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A", "gene_id_B"]
             ascending = [True, True, False, True, True]            
 
         eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
         eq_df.reset_index(drop=True, inplace=True)
-
-        if export == "self":
-
-            mapping = {
-                "query_id": "gene_id_A",
-                "target_id": "gene_id_B",
-            }
-
-            eq_df = eq_df.rename(columns=mapping)
         
         if export_csv:
             if output_file:
@@ -3112,9 +3105,12 @@ class Annotation():
 
             eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
 
-        now = time.time()
-        lapse = now - start
-        print(f"\nExporting {self.id} overlaps to the following queries {self.overlapped_annotations} took {round(lapse/60, 1)} minutes")
+            now = time.time()
+            lapse = now - start
+            if export == "self":
+                print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
+            else:
+                print(f"\nExporting {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
         
         if return_df:
             return eq_df
