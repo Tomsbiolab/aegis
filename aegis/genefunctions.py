@@ -16,6 +16,7 @@ from Bio.Data import CodonTable
 from Bio.Seq import Seq
 import time
 import re
+import warnings
 
 def count_occurrences(string, char):
     return Counter(string)[char]
@@ -280,7 +281,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
             genome_name = a.genome.name
 
     if genome_none:
-        raise Warning("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.")
+        warnings.warn("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.")
 
     if genome_name != "":
         for a in annotations:
@@ -313,7 +314,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
             if a1.name == a2.name:
                 continue
                 
-            pair = sorted([a1.name, a2.name])
+            pair = tuple(sorted([a1.name, a2.name]))
             if pair in processed_pairs:
                 continue
 
@@ -323,7 +324,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
 
             a1.detect_gene_overlaps(a2, clear=False)
 
-            processed_pairs.add(tuple(pair))
+            processed_pairs.add(pair)
 
     all_genes = {}
     unmapped_genes = {}
@@ -389,7 +390,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
                         for g in genes:
                             if g not in present:
                                 na_rows.append({
-                                    "gene_id_A": g.id,
+                                    "gene_id_A": g,
                                     "gene_id_A_origin": a_name,
                                     "overlap_score": 0
                                 })
@@ -398,7 +399,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
                         for g in genes:
                             if g not in present:
                                 na_rows.append({
-                                    "gene_id_B": g.id,
+                                    "gene_id_B": g,
                                     "gene_id_B_origin": a_name,
                                     "overlap_score": 0
                                 })
@@ -452,7 +453,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
                 for g in genes:
                     if g not in present:
                         na_rows.append({
-                            "gene_id_A": g.id,
+                            "gene_id_A": g,
                             "gene_id_A_origin": a_name,
                             "overlap_score": 0
                         })

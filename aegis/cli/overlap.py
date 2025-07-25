@@ -1,5 +1,6 @@
 import typer
 import os
+import warnings
 from typing import List
 from typing_extensions import Annotated
 from aegis.annotation import Annotation
@@ -41,7 +42,7 @@ def main(
         callback=split_callback
     )] = "",
     reference_annotation: Annotated[str, typer.Option(
-        "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported."
+        "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
     )] = "None",
 ):
     """
@@ -86,7 +87,7 @@ def main(
         
     if len(annotation_files) == 1:
         if original_annotation_files[0] != "NA":
-            raise Warning(f"Note that he provided original annotation file {original_annotation_files[0]} will not be used as synteny analysis is not implemented when evaluating gene overlaps within a single annotation = {annotation_names[0]}.")
+            warnings.warn(f"Note that he provided original annotation file {original_annotation_files[0]} will not be used as synteny analysis is not implemented when evaluating gene overlaps within a single annotation = {annotation_names[0]}.")
 
     annotations = []
 
@@ -119,7 +120,7 @@ def main(
         if output_filetag == "{annotation-name(s)}":
             output_filetag = ""
             
-        export_group_equivalences(annotations, output_folder=output_folder, verbose=verbose, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, NAs=include_NAs, output_also_single_files=True)
+        export_group_equivalences(annotations, output_folder=output_folder, verbose=verbose, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=True)
 
     else:
         raise ValueError(f"No annotation-files provided.")
