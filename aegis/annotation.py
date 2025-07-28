@@ -15,6 +15,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import networkx as nx
 import os
+import warnings
 
 from .plots import pie_chart, barplot
 from .genefunctions import overlap, reverse_complement, find_all_occurrences
@@ -249,7 +250,7 @@ class Annotation():
     # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False):
+    def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename:bool=False, rename_ids_minimal:bool=False):
         
         start = time.time()
         if chosen_chromosomes != None:
@@ -282,7 +283,7 @@ class Annotation():
         self.chrs = {}
         # we save here chr as the value corresponding to each gene id
         self.all_gene_ids = {}
-        # we save here chr as the value corresponding to each transcript id
+        # we save here chr, gene id as the tuple corresponding to each transcript id
         self.all_transcript_ids = {}
         self.all_protein_ids = {}
         self.unmapped = []
@@ -524,7 +525,7 @@ class Annotation():
                 self.chrs[sorted_features[0].ch][gene_id].transcripts["temp_t"] = Transcript("temp_t", sorted_features[0].ch, sorted_features[0].source, "mRNA",
                                                         sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
                                                         sorted_features[0].score, ".", f"ID=temp_t;Parent={gene_id}")
-                self.all_transcript_ids["temp_t"] = sorted_features[0].ch
+                self.all_transcript_ids["temp_t"] = (sorted_features[0].ch, gene_id)
                 for f in sorted_features:
                     self.chrs[f.ch][gene_id].transcripts["temp_t"].temp_CDSs.append(Feature("temp_CDS", f.ch, f.source, "CDS", f.strand, f.start, f.end, f.score, f.phase, f"ID=temp_CDS;Parent=temp_t"))
                     self.chrs[f.ch][gene_id].transcripts["temp_t"].exons.append(Feature(f"temp_exon", f.ch, f.source, "exon", f.strand, f.start, f.end, f.score,  ".", f"ID=temp_exon;Parent=temp_t"))
@@ -575,7 +576,7 @@ class Annotation():
 
                     #improve at some point, slow with massive lists
                     if ID not in self.all_transcript_ids:
-                        self.all_transcript_ids[f"{ID}"] = ch
+                        self.all_transcript_ids[f"{ID}"] = (ch, f"{ID}_gene")
                         self.all_gene_ids[f"{ID}_gene"] = ch
                         transcript_info[f"{ID}"] = [ch, coord[0], coord[1], 1]
                         self.chrs[ch][f"{ID}_gene"] = Gene(pseudogene, transposable,
@@ -592,7 +593,7 @@ class Annotation():
                                                 strand, coord[0], coord[1], score,
                                                  ".",
                                                 f"ID={ID}_{transcript_info[ID][3]}_gene")
-                        self.all_transcript_ids[f"{ID}_{transcript_info[ID][3]}"] = ch
+                        self.all_transcript_ids[f"{ID}_{transcript_info[ID][3]}"] = (ch, f"{ID}_{transcript_info[ID][3]}_gene")
                         print(f"{self.id} Warning: repeated transcript ID "
                             f"{ID}_gene renamed to {ID}_{transcript_info[ID][3]}_gene")
 
@@ -724,14 +725,13 @@ class Annotation():
                                         print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
                                         self.errors["repeat_transcript_same_gene"].append(ID)
                                     else:
-                                        (self.chrs[ch][parent].transcripts
-                                                [ID]) = Transcript(ID, ch, source,
-                                                                ft, 
-                                                                strand, coord[0],
-                                                                coord[1], score,
-                                                                ".",
-                                                                attributes)
-                                        self.all_transcript_ids[ID] = ch
+                                        self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
+                                                                                            ft, 
+                                                                                            strand, coord[0],
+                                                                                            coord[1], score,
+                                                                                            ".",
+                                                                                            attributes)
+                                        self.all_transcript_ids[ID] = (ch, parent)
                                 elif parent in self.all_gene_ids:
                                     print(f"{self.id} Error: {ID} transcript " 
                                             "refers to a gene in a different "
@@ -1027,17 +1027,18 @@ class Annotation():
         if self.features == ["nucleotide_to_protein_match"]:
             self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny)
         else:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny)
-            
-    
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename=rename, rename_ids_minimal=rename_ids_minimal)
         if "CDS" not in self.features and rework_CDSs:
             self.rework_CDSs(genome)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename=rename, rename_ids_minimal=rename_ids_minimal)
 
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:object=None, rename_ids_minimal=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2):
+    def update(self, original_annotation:object=None, rename:bool=True, rename_ids_minimal:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2):
+        """
+
+        """
         start = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1066,7 +1067,8 @@ class Annotation():
                 g.update()
         self.update_features()
         progress_bar.close()
-        self.rename_ids(minimal=rename_ids_minimal, extra_attributes=extra_attributes)
+        if rename:
+            self.rename_ids(minimal=rename_ids_minimal, extra_attributes=extra_attributes)
         self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
         self.correct_gene_transcript_and_subfeature_coordinates()
         if not self.sorted:
@@ -3203,7 +3205,7 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False):
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, sort_gene_subfeatures_by_type:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3292,7 +3294,9 @@ class Annotation():
                                             add = False
                                     if add:
                                         temp_subfeatures.append(u)
-                temp_subfeatures.sort()
+                                        
+                if sort_gene_subfeatures_by_type:
+                    temp_subfeatures.sort()
                 for ts in temp_subfeatures:
                     out += ts.print_gff()
                 
@@ -3327,7 +3331,7 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False):
+    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, sort_gene_subfeatures_by_type:bool=False):
 
         self.create_gtf_attributes()
 
@@ -3387,7 +3391,10 @@ class Annotation():
                     if main_only:
                         if not t.main:
                             continue
+                    original_feature = t.ft
+                    t.feature = "transcript"
                     out += t.print_gtf()
+                    t.feature = original_feature
                     for e in t.exons:
                         temp_subfeatures.append(e)
                     for c in t.CDSs.values():
@@ -3400,7 +3407,8 @@ class Annotation():
                             if hasattr(c, "UTRs"):
                                 for u in c.UTRs:
                                     temp_subfeatures.append(u)
-                temp_subfeatures.sort()
+                if sort_gene_subfeatures_by_type:
+                    temp_subfeatures.sort()
                 for ts in temp_subfeatures:
                     out += ts.print_gtf()
                 if x < (len(genes) - 1):
@@ -3556,6 +3564,17 @@ class Annotation():
             print(f"{t_id} Warning: transcript with no exons whichcould have been removed because of strand inconsistencies")
             self.warnings["transcript_with_no_exons"].append(t_id)
 
+    def remove_transcripts(self, to_remove:set):
+        for t in to_remove:
+            if t in self.all_transcript_ids:
+                chrom = self.all_transcript_ids[t][0]
+                g_id = self.all_transcript_ids[t][1]
+                del self.chrs[chrom][g_id].transcripts[t]
+            else:
+                warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}")
+
+        self.remove_genes_with_no_transcripts()
+
     def remove_genes_with_no_transcripts(self):
         genes_to_remove = []
         for chrom, genes in self.chrs.items():
@@ -3566,6 +3585,8 @@ class Annotation():
             del self.chrs[chrom][g_id]
             print(f"{g_id} Warning: gene with no transcripts which could have been removed because of strand inconsistencies of its exons")
             self.warnings["gene_with_no_transcripts"].append(g_id)
+
+        self.update_gene_and_transcript_list()
 
     def remove_missing_transcript_parent_references(self, extra_attributes=False):
         #print(f"Removing missing transcript parent references for {self.id} annotation.")
@@ -3670,7 +3691,7 @@ class Annotation():
                 progress_bar.update(1)
                 self.all_gene_ids[g.id] = chr
                 for t in g.transcripts.values():
-                    self.all_transcript_ids[t.id] = chr
+                    self.all_transcript_ids[t.id] = (chr, g.id)
         progress_bar.close()
 
     def make_alternative_transcripts_into_genes(self):
@@ -4718,7 +4739,7 @@ class Annotation():
                     g.remove = True
         progress_bar.close()
 
-    def remove_genes(self):
+    def remove_genes(self, to_remove:set=()):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -4734,6 +4755,13 @@ class Annotation():
                     '{percentage:3.0f}%|'
                     f'\033[1;91m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
+        
+        for gene in to_remove:
+            if gene in self.all_gene_ids:
+                chrom = self.all_gene_ids[gene]
+                self.chrs[chrom][gene].remove = True
+            else:
+                warnings.warn(f"Gene {gene} is not present in annotation {self.id}.")
 
         genes_to_remove = set()
         for genes in self.chrs.values():
@@ -4747,7 +4775,9 @@ class Annotation():
             del self.chrs[chrom][g_id]
             del self.all_gene_ids[g_id]
         progress_bar.close()
+        
         self.remove_missing_genes_in_overlaps()
+        self.update_gene_and_transcript_list()
 
     def remove_missing_genes_in_overlaps(self):
         # Check if stdout or stderr are redirected to files

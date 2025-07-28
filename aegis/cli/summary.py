@@ -8,17 +8,17 @@ app = typer.Typer(add_completion=False)
 
 @app.command()
 def main(
-    annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation-file", help="Path to the input annotation GFF/GTF file."
+    annotation_file: Annotated[str, typer.Argument(
+        help="Path to the input annotation GFF/GTF file."
     )],
-    genome_fasta: Annotated[str, typer.Option(
-        "-g", "--genome-fasta", help="Path to the input genome FASTA file."
+    genome_fasta: Annotated[str, typer.Argument(
+        help="Path to the input genome FASTA file."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "--genome-name", help="Genome assembly version, name or tag."
     )] = "{genome-fasta}",
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."

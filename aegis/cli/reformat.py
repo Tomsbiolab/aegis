@@ -7,11 +7,11 @@ app = typer.Typer(add_completion=False)
 
 @app.command()
 def main(
-    annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation-file", help="Path to the input annotation GFF/GTF file."
+    annotation_file: Annotated[str, typer.Argument(
+        help="Path to the input annotation GFF/GTF file."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     input_format: Annotated[str, typer.Option(
         "-m", "--input_format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override."
