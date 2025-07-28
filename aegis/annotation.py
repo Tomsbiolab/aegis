@@ -3391,7 +3391,10 @@ class Annotation():
                     if main_only:
                         if not t.main:
                             continue
+                    original_feature = t.ft
+                    t.feature = "transcript"
                     out += t.print_gtf()
+                    t.feature = original_feature
                     for e in t.exons:
                         temp_subfeatures.append(e)
                     for c in t.CDSs.values():

@@ -120,7 +120,7 @@ def main(
         if output_filetag == "{annotation-name(s)}":
             output_filetag = ""
             
-        export_group_equivalences(annotations, output_folder=output_folder, verbose=verbose, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=True)
+        export_group_equivalences(annotations, output_folder=output_folder, verbose=verbose, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False)
 
     else:
         raise ValueError(f"No annotation-files provided.")
