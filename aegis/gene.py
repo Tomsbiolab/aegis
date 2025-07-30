@@ -46,6 +46,10 @@ class Gene(Feature):
         self.transcriptomic_evidence = False
         self.abinitio_evidence = False
 
+
+        self.obtain_base_id(original=True)
+
+
     def update(self):
         self.update_size()
         self.sort_transcripts()
@@ -102,6 +106,53 @@ class Gene(Feature):
             print(f"Error: gene {self.id} has no transcripts annotated")
 
         self.homogenise_exon_scores()
+
+    def obtain_base_id(self, original=False):
+
+        if self.id.endswith("_gene"):
+            self.base_id = self.id[:-5]
+        elif self.id.endswith("gene"):
+            self.base_id = self.id[:-4]
+        elif self.id.startswith("gene:"):
+            self.base_id = self.id[5:]
+        elif self.id.startswith("gene-"):
+            self.base_id = self.id[5:]
+        elif self.id.startswith("gene"):
+            self.base_id = self.id[4:]
+        else:
+            self.base_id = self.id
+
+        if original:
+            self.original_base_id = self.base_id
+
+    def rename(self, count, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
+
+        if remove_point_suffix:
+            if "." in self.id:
+                self.id = self.id.split(".")[0]
+                if self.original_id != self.id:
+                    self.renamed = True
+                    self.obtain_base_id()
+
+        if base_id_as_id:
+            if self.base_id != self.id:
+                self.id = self.base_id
+                if self.original_id != self.id:
+                    self.renamed = True
+
+        if prefix:
+
+            if suffix:
+                self.id = f"{prefix}{self.ch}g{count:0{digits}d}{sep}{suffix}"
+            else:
+                self.id = f"{prefix}{self.ch}g{count:0{digits}d}"
+    
+            if self.original_id != self.id:
+                self.renamed = True
+                self.obtain_base_id()
+            
+        if self.renamed:
+            self.update_numbering()
 
     def sort_transcripts(self):
         sorted_transcripts = sorted(self.transcripts.values())

@@ -1,5 +1,6 @@
 from .genefunctions import count_occurrences, reverse_complement
 import copy
+import re
 
 class Feature():
     """
@@ -12,6 +13,7 @@ class Feature():
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str):
         
         self.id = feature_id
+        self.original_id = feature_id
         self.ch = ch
         self.source = source
         self.feature = feature
@@ -35,6 +37,10 @@ class Feature():
         self.gc_content = 0
         self.aliases = []
         self.blast_hits = []
+        self.renamed = False
+
+        self.id_number = None
+        self.original_id_number = None
 
         attributes_l = attributes.split(";")
         if attributes_l == [""]:
@@ -75,9 +81,18 @@ class Feature():
                         self.names.append(name)
             elif a.strip() != "":
                 misc_attributes.append(a.strip())
+        self.update_numbering(original=True)
 
         self.misc_attributes = ";".join(misc_attributes)
         self.masked_fraction = 0
+
+    def update_numbering(self, original:bool=False):
+
+        match = re.search(r'(\d+)$', self.id)
+        if match:
+            if original:
+                self.original_id_number = int(match.group(1))
+            self.id_number = int(match.group(1))
 
     def update_size(self):
         self.size = (self.end - self.start) + 1
