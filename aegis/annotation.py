@@ -3783,7 +3783,7 @@ class Annotation():
         self.update_gene_and_transcript_list()
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
 
-    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cs_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False):
+    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -3808,8 +3808,8 @@ class Annotation():
         elif suffix:
             warnings.warn(f"Provided suffix={suffix} will have no effect as no prefix was provided and custom renaming will therefore be skipped.")
 
-        if cs_segment_ids and "CDS" not in features:
-            warnings.warn("CDS features will be changed if need be since cs_segment_ids have been requested.")
+        if cds_segment_ids and "CDS" not in features:
+            warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.")
 
 
         if repeat_exons_utrs:
@@ -3937,9 +3937,9 @@ class Annotation():
                         if "CDS" in features or prefix:
 
                             if prefix or (base_id_present and base_id_missing):
-                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=False, cs_segment_ids=cs_segment_ids)
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=False, cds_segment_ids=cds_segment_ids)
                             else:
-                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, cs_segment_ids=cs_segment_ids)
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, cds_segment_ids=cds_segment_ids)
 
                             if c.renamed:
                                 changed_features.add("CDS")
