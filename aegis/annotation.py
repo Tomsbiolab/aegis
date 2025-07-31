@@ -3219,20 +3219,69 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False):
+    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False):
+        repeat_CDS_segment_id = False
+
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     for j, c in enumerate(t.CDSs.values()):
-                        for x, cs in enumerate(c.CDS_segments):
-                            if j == 0:
-                                cs.id = f"{t.id}_CDS{x+1}"
+                        for x1, cs1 in enumerate(c.CDS_segments):
+                            for x2, cs2 in enumerate(c.CDS_segments):
+                                if x1 == x2:
+                                    continue
+                                if cs1 == cs2:
+                                    repeat_CDS_segment_id = True
+                                    break
+
+        if repeat_CDS_segment_id or override:
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        count = 1
+                        for j, c in enumerate(t.CDSs.values()):
+                            if not c.main:
+                                count += 1
+                                c.id = f"{t.id}_CDS{count}"
                             else:
-                                cs.id = f"{t.id}_CDS{j}{x+1}"
+                                c.id = f"{t.id}_CDS1"
+                            for x, cs in enumerate(c.CDS_segments):
+                                cs.id = f"{c.id}_{x+1}"
 
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False):
+    def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False):
+        common_protein_CDS_ids = True
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for j, c in enumerate(t.CDSs.values()):
+                        for x1, cs1 in enumerate(c.CDS_segments):
+                            for x2, cs2 in enumerate(c.CDS_segments):
+                                if x1 == x2:
+                                    continue
+                                if cs1 != cs2:
+                                    common_protein_CDS_ids = False
+                                    break
+
+        if not common_protein_CDS_ids or override:
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        count = 1
+                        for c in t.CDSs.values():
+                            if not c.main:
+                                count += 1
+                                c.id = f"{t.id}_CDS{count}"
+                            else:
+                                c.id = f"{t.id}_CDS1"
+                            for cs in c.CDS_segments:
+                                cs.id = c.id
+
+        self.update_attributes(extra_attributes=extra_attributes)
+
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
