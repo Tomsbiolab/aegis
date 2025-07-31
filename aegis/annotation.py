@@ -1816,7 +1816,7 @@ class Annotation():
 
                     if c.protein.summary_tag and verbose:
                         out += f"|{c.protein.summary_tag}"
-                    elif verbose:
+                    if verbose:
                         out += f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.ch}|{c.start}:{c.end}"
 
                     out += f"\n{c.protein.seq}\n"        
