@@ -237,7 +237,6 @@ def convert_gtf_to_gff3(gtf_file, encoding):
     print(f"Successfully converted file='{gtf_file} to a gff file")
     return gff_lines
 
-
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
     sorted_genes = {g.id: g.copy() for g in genes}
@@ -250,7 +249,7 @@ class Annotation():
     # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename:bool=False, rename_ids_minimal:bool=False):
+    def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False):
         
         start = time.time()
         if chosen_chromosomes != None:
@@ -342,7 +341,7 @@ class Annotation():
 
         self.symbols_added = False
 
-        self.renamed_ids = False
+        self.renamed_features = []
 
         self.small_cds_removed = False
         if "_minus_small_CDSs" in annot_file_path:
@@ -1027,15 +1026,15 @@ class Annotation():
         if self.features == ["nucleotide_to_protein_match"]:
             self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny)
         else:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename=rename, rename_ids_minimal=rename_ids_minimal)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained)
         if "CDS" not in self.features and rework_CDSs:
             self.rework_CDSs(genome)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename=rename, rename_ids_minimal=rename_ids_minimal)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained)
 
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:object=None, rename:bool=True, rename_ids_minimal:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2):
+    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2):
         """
 
         """
@@ -1067,9 +1066,10 @@ class Annotation():
                 g.update()
         self.update_features()
         progress_bar.close()
-        if rename:
-            self.rename_ids(minimal=rename_ids_minimal, extra_attributes=extra_attributes)
+        if rename_features != []:
+            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes)
         self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
+        self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes)
         self.correct_gene_transcript_and_subfeature_coordinates()
         if not self.sorted:
             self.sort_genes(processes=sort_processes)
@@ -1183,7 +1183,9 @@ class Annotation():
                         t.temp_UTRs = []
         if clean:
             self.remove_other_mRNA_transcripts_from_rRNA_genes()
-        self.update(rename_ids_minimal=True)
+            self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+        else:
+            self.update()
     
     def remove_other_mRNA_transcripts_from_rRNA_genes(self):
         for chrom, genes in self.chrs.items():
@@ -2175,7 +2177,7 @@ class Annotation():
             for g in genes.values():
                 g.combine_transcripts(genome, respect_non_coding=respect_non_coding)
         self.sorted = False
-        self.update()
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
         self.combined = True
         self.update_suffixes()
 
@@ -2470,6 +2472,55 @@ class Annotation():
 
         #print(f"\nUpdated stats for {self.id}")
 
+    def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False):
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for tid1, t1 in g.transcripts.items():
+                    for e1 in t1.exons:
+                        for tid2, t2 in g.transcripts.items():
+                            if tid1 == tid2:
+                                continue
+                            for e2 in t2.exons:
+                                if e1.almost_equal(e2):
+                                    for p in e2.parents:
+                                        if p not in e1.parents:
+                                            e1.parents.append(p)
+                        e1.parents.sort()
+
+                for tid1, t1 in g.transcripts.items():
+                    for cid1, c1 in t1.CDSs.items():
+                        for u1 in c1.UTRs:
+                            for tid2, t2 in g.transcripts.items():
+                                for cid2, c2 in t2.CDSs.items():
+                                    if cid1 == cid2 and tid1 == tid2:
+                                        continue
+                                    for u2 in c2.UTRs:
+                                        if u1.almost_equal(u2):
+                                            for p in u2.parents:
+                                                if p not in u1.parents:
+                                                    u1.parents.append(p)
+
+                            u1.parents.sort()
+
+        self.shared_exons = True
+        self.shared_UTRs = True
+        self.update_attributes(extra_attributes=extra_attributes)
+
+    def single_parent_for_exons_utrs(self, extra_attributes:bool=False):
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for e in t.exons:
+                        e.parents = [t.id]
+                    for c in t.CDSs.values():
+                        for u in c.UTRs:
+                            u.parents = [t.id]
+
+        self.shared_exons = False
+        self.shared_UTRs = False
+        self.update_attributes(extra_attributes=extra_attributes)
+
     def detect_gene_overlaps(self, other:object=None, sort_processes:int=2, clear=True):
         """
         Detecting gene overlaps within the same annotation object or between
@@ -2541,8 +2592,8 @@ class Annotation():
                                     else:
                                         gene_orientation = False
 
-                                    gene_query_percent = (overlap_bp/(g1.size))*100                  
-                                    gene_target_percent = (overlap_bp/(g2.size))*100
+                                    gene_query_percent = (overlap_bp / g1.size) * 100                  
+                                    gene_target_percent = (overlap_bp / g2.size) * 100
 
                                     target_exons = False
                                     query_exons = False
@@ -2560,8 +2611,7 @@ class Annotation():
                                             overlap_exon_temp = 0
                                             for e1 in t1.exons:
                                                 for e2 in t2.exons:
-                                                    overlap_temp, overlap_bp = (
-                                                                        overlap(e1, e2))
+                                                    overlap_temp, overlap_bp = overlap(e1, e2)
                                                     if overlap_temp:
                                                         overlap_exon_temp += overlap_bp
                                                         overlapping = True
@@ -2575,8 +2625,8 @@ class Annotation():
                                         if gene_orientation != exon_orientation:
                                             print(f"Warning: {self.id} query and {other.id} target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}.")
                                         if overlapping:
-                                            exon_query_percent = (best_exon_overlap/exon_query_size)*100
-                                            exon_target_percent = (best_exon_overlap/exon_target_size)*100
+                                            exon_query_percent = (best_exon_overlap / exon_query_size) * 100
+                                            exon_target_percent = (best_exon_overlap / exon_target_size) * 100
                                         else:
                                             exon_query_percent = 0
                                             exon_target_percent = 0
@@ -2605,18 +2655,13 @@ class Annotation():
                                                     overlap_CDS_temp = 0
                                                     for c1 in CDS1.CDS_segments:
                                                         for c2 in CDS2.CDS_segments:
-                                                            (overlap_temp,
-                                                                overlap_bp) = (
-                                                                        overlap(c1, c2))
+                                                            overlap_temp, overlap_bp = overlap(c1, c2)
                                                             if not overlap_temp:
                                                                 continue
-                                                            overlap_CDS_temp += (
-                                                                            overlap_bp)
+                                                            overlap_CDS_temp += overlap_bp
                                                             overlapping = True
-                                                    if (overlap_CDS_temp > 
-                                                        best_CDS_overlap):
-                                                        best_CDS_overlap = (
-                                                                    overlap_CDS_temp)
+                                                    if overlap_CDS_temp > best_CDS_overlap:
+                                                        best_CDS_overlap = overlap_CDS_temp
                                                         CDS_query_size = CDS1.size
                                                         CDS_target_size = CDS2.size
                                                 
@@ -2625,10 +2670,8 @@ class Annotation():
                                         if gene_orientation != CDS_orientation:
                                             print(f"Warning: {self.id} query and {other.id} target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}.")
                                         if overlapping:
-                                            CDS_query_percent = ((best_CDS_overlap
-                                                                /CDS_query_size)*100)
-                                            CDS_target_percent = ((best_CDS_overlap
-                                                                /CDS_target_size)*100)
+                                            CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
+                                            CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
                                         else:
                                             CDS_query_percent = 0
                                             CDS_target_percent = 0
@@ -2658,9 +2701,7 @@ class Annotation():
                                                             overlap_protein_temp = 0
                                                             for c1 in CDS1.CDS_segments:
                                                                 for c2 in CDS2.CDS_segments:
-                                                                    (overlap_temp,
-                                                                        overlap_bp) = overlap(c1,
-                                                                                                c2)
+                                                                    overlap_temp, overlap_bp = overlap(c1, c2)
                                                                     if not overlap_temp:
                                                                         continue
                                                                     if c1.frame != c2.frame:
@@ -2675,10 +2716,8 @@ class Annotation():
                                                         
                                             if target_protein and query_protein:
                                                 if overlapping:
-                                                    protein_query_percent = ((best_protein_overlap
-                                                                            /protein_query_size)*100)
-                                                    protein_target_percent = ((best_protein_overlap
-                                                                            /protein_target_size)*100)
+                                                    protein_query_percent = (best_protein_overlap / protein_query_size) * 100
+                                                    protein_target_percent = (best_protein_overlap / protein_target_size) * 100
                                                 else:
                                                     protein_query_percent = 0
                                                     protein_target_percent = 0
@@ -2696,7 +2735,8 @@ class Annotation():
                                                                     CDS_target_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                g2.conserved_synteny))
+                                                                    g2.conserved_synteny))
+
                                     g2.overlaps["other"].append(OverlapHit(g1.id,
                                                                     self.name,
                                                                     gene_orientation,
@@ -2710,7 +2750,7 @@ class Annotation():
                                                                     CDS_query_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                g1.conserved_synteny))
+                                                                    g1.conserved_synteny))
                     self.add_aliases()
                     other.add_aliases()
                     now = time.time()
@@ -2760,8 +2800,8 @@ class Annotation():
                             else:
                                 gene_orientation = False
 
-                            gene_query_percent = (overlap_bp/(g1.size))*100                  
-                            gene_target_percent = (overlap_bp/(g2.size))*100
+                            gene_query_percent = (overlap_bp / g1.size) * 100                  
+                            gene_target_percent = (overlap_bp / g2.size) * 100
 
                             target_exons = False
                             query_exons = False
@@ -2779,8 +2819,7 @@ class Annotation():
                                     overlap_exon_temp = 0
                                     for e1 in t1.exons:
                                         for e2 in t2.exons:
-                                            overlap_temp, overlap_bp = overlap(e1,
-                                                                            e2)
+                                            overlap_temp, overlap_bp = overlap(e1, e2)
                                             if overlap_temp:
                                                 overlap_exon_temp += overlap_bp
                                                 overlapping = True
@@ -2794,10 +2833,8 @@ class Annotation():
                                 if gene_orientation != exon_orientation:
                                     print(f"Warning: {self.id} query and target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}")
                                 if overlapping:
-                                    exon_query_percent = ((best_exon_overlap
-                                                            /exon_query_size)*100)
-                                    exon_target_percent = ((best_exon_overlap
-                                                            /exon_target_size)*100)
+                                    exon_query_percent = (best_exon_overlap / exon_query_size) * 100
+                                    exon_target_percent = (best_exon_overlap / exon_target_size) * 100
                                 else:
                                     exon_query_percent = 0
                                     exon_target_percent = 0
@@ -2825,9 +2862,7 @@ class Annotation():
                                             overlap_CDS_temp = 0
                                             for c1 in CDS1.CDS_segments:
                                                 for c2 in CDS2.CDS_segments:
-                                                    (overlap_temp,
-                                                        overlap_bp) = overlap(c1,
-                                                                                c2)
+                                                    overlap_temp, overlap_bp = overlap(c1, c2)
                                                     if not overlap_temp:
                                                         continue
                                                     overlap_CDS_temp += overlap_bp
@@ -2840,15 +2875,10 @@ class Annotation():
                             if target_CDS and query_CDS:
                                 CDSs_in_both = True
                                 if gene_orientation != CDS_orientation:
-                                    print(f"Error: {self.id} query and target have discrepancies"
-                                            " in the orientation of gene and CDS."
-                                            f"genes: {g1.id} and {g2.id}" 
-                                            "DO NOT CONTINUE! -> fix the problem!")
+                                    print(f"Error: {self.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}. DO NOT CONTINUE! -> fix the problem!")
                                 if overlapping:
-                                    CDS_query_percent = ((best_CDS_overlap
-                                                            /CDS_query_size)*100)
-                                    CDS_target_percent = ((best_CDS_overlap
-                                                            /CDS_target_size)*100)
+                                    CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
+                                    CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
                                 else:
                                     CDS_query_percent = 0
                                     CDS_target_percent = 0
@@ -2878,9 +2908,7 @@ class Annotation():
                                                         overlap_protein_temp = 0
                                                         for c1 in CDS1.CDS_segments:
                                                             for c2 in CDS2.CDS_segments:
-                                                                (overlap_temp,
-                                                                    overlap_bp) = overlap(c1,
-                                                                                            c2)
+                                                                overlap_temp, overlap_bp = overlap(c1, c2)
                                                                 if not overlap_temp:
                                                                     continue
                                                                 if c1.frame != c2.frame:
@@ -2895,16 +2923,13 @@ class Annotation():
                                                     
                                         if target_protein and query_protein:
                                             if overlapping:
-                                                protein_query_percent = ((best_protein_overlap
-                                                                        /protein_query_size)*100)
-                                                protein_target_percent = ((best_protein_overlap
-                                                                        /protein_target_size)*100)
+                                                protein_query_percent = (best_protein_overlap / protein_query_size) * 100
+                                                protein_target_percent = (best_protein_overlap / protein_target_size) * 100
                             else:
 
                                 protein_query_percent = None
                                 protein_target_percent = None
-                            
-                            
+
                             g1.overlaps["self"].append(OverlapHit(g2.id, self.name,
                                                                 gene_orientation,
                                                                 gene_query_percent,
@@ -2917,7 +2942,8 @@ class Annotation():
                                                                 CDS_target_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                            g2.conserved_synteny))
+                                                                g2.conserved_synteny))
+
                             g2.overlaps["self"].append(OverlapHit(g1.id, self.name,
                                                                 gene_orientation,
                                                                 gene_target_percent,
@@ -2930,11 +2956,12 @@ class Annotation():
                                                                 CDS_query_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                            g1.conserved_synteny))
+                                                                g1.conserved_synteny))
                         try:
                             gl.remove(g1.id)
                         except:
                             pass
+
                 self.self_overlapping = list(self.self_overlapping)
                 progress_bar.close()
                 now = time.time()
@@ -3034,7 +3061,7 @@ class Annotation():
             eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
 
         else:
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f"{row['gene_id_A']}_{row['gene_id_A_origin']}", f"{row['gene_id_B']}_{row['gene_id_B_origin']}"])), axis=1)
+            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f'{row["gene_id_A"]}_{row["gene_id_A_origin"]}', f'{row["gene_id_B"]}_{row["gene_id_B_origin"]}'])), axis=1)
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
@@ -3205,7 +3232,7 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, sort_gene_subfeatures_by_type:bool=False):
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3235,6 +3262,9 @@ class Annotation():
         else:
             out += self.gff_header
 
+        if repeat_exons_utrs:
+            self.single_parent_for_exons_utrs()
+
         for genes in self.chrs.values():
             progress_bar.update(len(genes))
             for x, g in enumerate(genes.values()):
@@ -3261,45 +3291,76 @@ class Annotation():
 
                 out += g.print_gff()
 
-                temp_subfeatures = []
-                for t in g.transcripts.values():
-                    if main_only:
-                        if not t.main:
-                            continue
-                    out += t.print_gff()
-                    for e in t.exons:
-                        add = True
-                        for ts in temp_subfeatures:
-                            if e.almost_equal(ts):
-                                add = False
-                        if add:
-                            temp_subfeatures.append(e)
-                    for c in t.CDSs.values():
+                if repeat_exons_utrs:
+                    for t in g.transcripts.values():
                         if main_only:
-                            if not c.main:
+                            if not t.main:
                                 continue
-                        for c_seg in c.CDS_segments:
+                        out += t.print_gff()
+                        for e in t.exons:
+                            out += e.print_gff()
+
+                        for c in t.CDSs.values():
+                            if main_only:
+                                if not c.main:
+                                    continue
+                            for c_seg in c.CDS_segments:
+                                out += c_seg.print_gff()
+
+                            if UTRs:
+                                if hasattr(c, "UTRs"):
+                                    for u in c.UTRs:
+                                        out += u.print_gff()
+
+                else:
+                            
+                    for t in g.transcripts.values():
+                        if main_only:
+                            if not t.main:
+                                continue
+                        out += t.print_gff()
+
+                    exons = []
+                    for t in g.transcripts.values():
+                        for e in t.exons:
                             add = True
-                            for ts in temp_subfeatures:
-                                if c_seg == ts:
+                            for ts in exons:
+                                if e.almost_equal(ts):
                                     add = False
                             if add:
-                                temp_subfeatures.append(c_seg)
-                        if UTRs:
-                            if hasattr(c, "UTRs"):
-                                for u in c.UTRs:
-                                    add = True
-                                    for ts in temp_subfeatures:
-                                        if u == ts:
-                                            add = False
-                                    if add:
-                                        temp_subfeatures.append(u)
-                                        
-                if sort_gene_subfeatures_by_type:
-                    temp_subfeatures.sort()
-                for ts in temp_subfeatures:
-                    out += ts.print_gff()
-                
+                                exons.append(e)
+
+                    exons.sort()
+
+                    for e in exons:
+                        out += e.print_gff()
+
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if main_only:
+                                if not c.main:
+                                    continue
+                            for c_seg in c.CDS_segments:
+                                out += c_seg.print_gff()
+
+                    utrs = []
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if main_only:
+                                continue
+                            if UTRs:
+                                if hasattr(c, "UTRs"):
+                                    for u in c.UTRs:
+                                        add = True
+                                        for ts in utrs:
+                                            if u == ts:
+                                                add = False
+                                        if add:
+                                            utrs.append(u)
+                    utrs.sort()
+                    for u in utrs:
+                        out += u.print_gff()
+
                 if x < (len(genes) - 1):
                     out += "###\n"
 
@@ -3331,7 +3392,7 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, sort_gene_subfeatures_by_type:bool=False):
+    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False):
 
         self.create_gtf_attributes()
 
@@ -3386,7 +3447,6 @@ class Annotation():
 
                 out += g.print_gtf()
 
-                temp_subfeatures = []
                 for t in g.transcripts.values():
                     if main_only:
                         if not t.main:
@@ -3396,21 +3456,18 @@ class Annotation():
                     out += t.print_gtf()
                     t.feature = original_feature
                     for e in t.exons:
-                        temp_subfeatures.append(e)
+                        e.print_gtf()
                     for c in t.CDSs.values():
                         if main_only:
                             if not c.main:
                                 continue
                         for c_seg in c.CDS_segments:
-                            temp_subfeatures.append(c_seg)
+                            c_seg.print_gtf()
                         if UTRs:
                             if hasattr(c, "UTRs"):
                                 for u in c.UTRs:
-                                    temp_subfeatures.append(u)
-                if sort_gene_subfeatures_by_type:
-                    temp_subfeatures.sort()
-                for ts in temp_subfeatures:
-                    out += ts.print_gtf()
+                                    u.print_gtf()
+
                 if x < (len(genes) - 1):
                     out += "###\n"
 
@@ -3533,8 +3590,8 @@ class Annotation():
         self.generated_protein_sequences = False
         self.contains_protein_sequences = False
         progress_bar.close()
-        self.rename_ids(from_merge=True)
-        self.update()
+        self.update_gene_and_transcript_list()
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
         now = time.time()
         lapse = now - start
         print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
@@ -3602,18 +3659,21 @@ class Annotation():
                                 if g.transcripts[p].strand == e.strand:
                                     new_parents.append(p)
                         e.parents = new_parents.copy()
+                        e.parents.sort()
                     for c in t.CDSs.values():
                         new_parents = []
                         for p in c.parents:
                             if p in self.all_transcript_ids:
                                 new_parents.append(p)
                         c.parents = new_parents.copy()
+                        c.parents.sort()
                         for cs in c.CDS_segments:
                             new_parents = []
                             for p in cs.parents:
                                 if p in self.all_transcript_ids:
                                     new_parents.append(p)
                             cs.parents = new_parents.copy()
+                            cs.parents.sort()
 
         self.update_attributes(extra_attributes=extra_attributes)
         #print(f"Removed missing transcript parent references for {self.id} annotation.")
@@ -3657,7 +3717,7 @@ class Annotation():
                     t.exon_update()
 
         progress_bar.close()
-        self.update()
+        self.update(rename_features=["CDS", "exon", "UTR"])
         now = time.time()
         lapse = now - start
         print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} "
@@ -3726,24 +3786,48 @@ class Annotation():
         del new_chrs
 
         self.update_gene_and_transcript_list()
-        self.update()
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
 
-    def rename_ids(self, minimal:bool=False, prefix:str="", suffix:str="", spacer:int=100, from_merge:bool=False, extra_attributes:bool=False, remove_point_suffix:bool=False, correspondences:bool=False, custom_path:str="", cs_segment_ids:bool=False, sep:str="_"):
-        """
-        If a prefix is provided, everything is renamed. Otherwise just transcripts and subfeatures.
-        Minimal mode just changes CDS or transcript IDs that do not contain part of the gene id.
-        """
+    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False):
 
-        if custom_path == "":
-            export_folder = self.path + "out_gffs/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
+        acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
+
+        for f in features:
+            if f not in acceptable_features:
+                raise ValueError(f"Incorrect feature '{f}' chosen. Select from: {acceptable_features}.")
+        
+        if features == []:
+            raise ValueError(f"Rename ids was called but no feature levels were chosen. Select from: {acceptable_features}.")
+        
+        if prefix:
+            if keep_ids_with_gene_id_contained or features != acceptable_features or remove_point_suffix:
+                ignored_options = []
+                if keep_ids_with_gene_id_contained:
+                    ignored_options.append("keep_ids_with_gene_id_contained")
+                if features != acceptable_features:
+                    ignored_options.append("features")
+                if remove_point_suffix:
+                    ignored_options.append("remove_point_suffix")
+                warnings.warn(f"Providing a prefix '{prefix}' means all features will be renamed based on the prefix, the following provided options are to be ignored: {ignored_options}.")
+
+        elif suffix:
+            warnings.warn(f"Provided suffix={suffix} will have no effect as no prefix was provided and custom renaming will therefore be skipped.")
+
+        if cds_segment_ids and "CDS" not in features:
+            warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.")
 
 
-        if from_merge:
-            self.update_gene_and_transcript_list()
+        if repeat_exons_utrs:
+            if keep_subfeature_numbers and keep_ids_with_gene_id_contained:
+                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' and 'keep_ids_with_gene_id_contained' parameters will be ignored.")
+            elif keep_subfeature_numbers:
+                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' parameter will be ignored.")
+            elif keep_ids_with_gene_id_contained:
+                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.")
+
+        export_folder = Path(custom_path or self.path) / "out_gffs"
+        export_folder.mkdir(parents=True, exist_ok=True)
+        export_folder = str(export_folder) + "/"
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -3761,427 +3845,259 @@ class Annotation():
             disable = True
         else:
             disable = False
-        changed = set()
+        changed_features = set()
         progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
                                 bar_format=(
                     f'\033[38;2;156;42;42m\033[1mRenaming {self.id} Gene Ids:\033[0m '
                     '{percentage:3.0f}%|'
                     f'\033[38;2;156;42;42m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
-        if not minimal:
-            if not prefix:
-                for genes in self.chrs.values():
-                    for g in genes.values():
-                        progress_bar.update(1)
-                        changed.add("transcripts")
-                        changed.add("exons")
-                        changed.add("CDSs")
-                        changed.add("CDS_segments")
 
-                        if g.id.endswith("_gene"):
-                            g_prefix = g.id[:-5]
-                            changed.add("genes")
-                        elif g.id.endswith("gene"):
-                            g_prefix = g.id[:-4]
-                            changed.add("genes")
-                        elif g.id.startswith("gene:"):
-                            g_prefix = g.id[5:]
-                            changed.add("genes")
-                        elif g.id.startswith("gene-"):
-                            g_prefix = g.id[5:]  
-                        elif g.id.startswith("gene"):
-                            g_prefix = g.id[4:]
-                            changed.add("genes")
+        correspondences_d = {}
+
+        for genes in self.chrs.values():
+            g_count = 0
+            for g in genes.values():
+                progress_bar.update(1)
+                g_count += spacer
+
+                if "gene" in features or prefix:
+                    g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix)
+                    if g.renamed:
+                        changed_features.add("gene")
+
+                    correspondences_d[g.original_id] = g.id
+
+                tmains = 0
+
+                base_id_present = False
+                base_id_missing = False
+
+                for t in g.transcripts.values():
+                    if t.main:
+                        tmains += 1
+                    if g.base_id in t.id:
+                        base_id_present = True
+                    else:
+                        base_id_missing = True
+                    
+                if base_id_present and base_id_missing:
+                    warnings.warn(f"{self.id} annotation gene {g.original_id} has a mix of transcript id formats and renaming errors could occur!")
+                
+                if tmains > 1:
+                    raise ValueError(f"There shouldn't be more than one main transcript for {g.original_id} in {self.id} annotation.")
+
+
+                t_count = 1
+                e_count = 0
+                u_count = 0
+                for t in g.transcripts.values():
+
+                    t.parents = [g.id]
+
+                    if not t.main:
+                        t_count += 1
+
+                    if "transcript" in features or prefix:
+
+                        if prefix or (base_id_present and base_id_missing):
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers)
                         else:
-                            g_prefix = g.id
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
 
-                        if remove_point_suffix:
-                            g.id = g.id.split(".")[0]
-                            g_prefix = g.id
+                        if t.renamed:
+                            changed_features.add("transcript")
 
-                        g.id = g_prefix
-                        
-                        t_count = 1
-                        tmains = 0
+                    cmains = 0
+                    base_id_present = False
+                    base_id_missing = False
 
-                        for t in g.transcripts.values():
-                            t.parents = [g_prefix]
-                            if t.main:
-                                t.id = f"{g_prefix}{sep}t001"
-                                tmains += 1
-                            else:
-                                t_count += 1
-                                t_count_s = "{:03d}".format(t_count)
-                                t.id = f"{g_prefix}{sep}t{t_count_s}"
-                            c_count = 1
-                            # CDSs renamed based on transcript ID!
-                            for c in t.CDSs.values():
-                                if c.main:
-                                    c.id = f"{t.id}{sep}CDS1"
-                                else:
-                                    c_count += 1
-                                    c.id = f"{t.id}{sep}CDS{c_count}"
-                                c.parents = [t.id]
-                                cs_count = 0
-                                for cs in c.CDS_segments:
-                                    cs_count += 1
-                                    if cs_segment_ids:
-                                        if c_count == 1:
-                                            cs.id = f"{t.id}{sep}CDS{cs_count}" 
-                                        else:
-                                            cs.id = f"{t.id}{sep}CDS{c_count}{sep}{cs_count}"
-                                    else:
-                                        cs.id = c.id
-                                    cs.parents = [t.id]
-                                c.generate_protein()
-
-
-                        if tmains > 1:
-                            print(f"Error: There should not be more than one main transcript for {g.id} in {self.id} annotation.")
-
-                        e_temp = set()
-                        e_parents = {}
-                        for t in g.transcripts.values():
-                            # gather all unique exons and sort them, then grant IDs
-                            # based on start and end coordinates and start renaming
-                            for e in t.exons:
-                                e_unique = f"{e.start}_{e.end}_{e.strand}"
-                                e_temp.add((e.start, e.end, e.strand))
-                                if e_unique in e_parents:
-                                    e_parents[e_unique].add(t.id)
-                                else:
-                                    e_parents[e_unique] = set([t.id])
-                        e_temp = list(e_temp)
-                        e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
-                        e_ids = {}
-                        e_count = 0
-                        for e in e_temp:
-                            e_count += 1
-                            e_count_s = "{:03d}".format(e_count)
-                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g_prefix}{sep}e{e_count_s}"
-                                
-                        for t in g.transcripts.values():
-                            for e in t.exons:
-                                new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
-                                e.parents = list(new_parents.copy())
-                                e.parents.sort()
-                                e.id = e_ids[f"{e.start}_{e.end}_{e.strand}"]
-
-                        u_temp = set()
-                        u_parents = {}
-                        for t in g.transcripts.values():
-                            # gather all unique UTR segments and sort them, then grant IDs
-                            # based on start and end coordinates and start renaming
-                            for c in t.CDSs.values():
-                                for u in c.UTRs:
-                                    u_unique = f"{u.start}_{u.end}"
-                                    u_temp.add((u.start, u.end))
-                                    if u_unique in u_parents:
-                                        u_parents[u_unique].add(t.id)
-                                    else:
-                                        u_parents[u_unique] = set([t.id])
-                        u_temp = list(u_temp)
-                        u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
-                        u_ids = {}
-                        u_count = 0
-                        for u in u_temp:
-                            u_count += 1
-                            u_count_s = "{:03d}".format(u_count)
-                            u_ids[f"{u[0]}_{u[1]}"] = f"{g_prefix}{sep}u{u_count_s}"
-                                
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                for u in c.UTRs:
-                                    new_parents = u_parents[f"{u.start}_{u.end}"]
-                                    u.parents = list(new_parents.copy())
-                                    u.parents.sort()
-                                    changed.add("UTRs")
-                                    u.id = u_ids[f"{u.start}_{u.end}"]
-
-
-            else:
-                if correspondences:
-                    correspondences_d = {}
-                changed = set(["genes", "transcripts", "exons", "CDSs", "CDS_segments"])
-                for genes in self.chrs.values():
-                    g_count = 0
-                    for g in genes.values():
-                        progress_bar.update(1)
-                        g_count += spacer
-                        g_count_s = "{:05d}".format(g_count)
-                        if suffix:
-                            g_prefix = f"{prefix}{g.ch}g{g_count_s}{sep}{suffix}"
+                    for c in t.CDSs.values():
+                        if c.main:
+                            cmains += 1
+                        if g.base_id in c.id:
+                            base_id_present = True
                         else:
-                            g_prefix = f"{prefix}{g.ch}g{g_count_s}"
-                        if correspondences:
-                            correspondences_d[g_prefix] = g.id
-                        g.id = g_prefix
-                        t_count = 1
-                        tmains = 0
-                        for t in g.transcripts.values():
-                            t.parents = [g_prefix]
-                            if t.main:
-                                tmains += 1
-                                t.id = f"{g_prefix}{sep}t001"
+                            base_id_missing = True
+
+                        for cs in c.CDS_segments:
+                            if g.base_id in cs.id:
+                                base_id_present = True
                             else:
-                                t_count += 1
-                                t_count_s = "{:03d}".format(t_count)
-                                t.id = f"{g_prefix}{sep}t{t_count_s}"
-                            c_count = 1
-                            # CDSs renamed based on transcript ID!
-                            for c in t.CDSs.values():
-                                if c.main:
-                                    c.id = f"{t.id}{sep}CDS1"
-                                else:
-                                    c_count += 1
-                                    c.id = f"{t.id}{sep}CDS{c_count}"
-                                c.parents = [t.id]
-                                cs_count = 0
-                                for cs in c.CDS_segments:
-                                    cs_count += 1
-                                    if cs_segment_ids:
-                                        if c_count == 1:
-                                            cs.id = f"{t.id}{sep}CDS{cs_count}" 
-                                        else:
-                                            cs.id = f"{t.id}{sep}CDS{c_count}{sep}{cs_count}"
-                                    else:
-                                        cs.id = c.id
-                                    cs.parents = [t.id]
-                                c.generate_protein()
-                        
-                        if tmains > 1:
-                            print(f"Error: There shouldn't be more than one main transcript for {g.id} in {self.id} annotation.")
+                                base_id_missing = True
 
-                        e_temp = set()
-                        e_parents = {}
-                        for t in g.transcripts.values():
-                            # gather all unique exons and sort them, then grant IDs
-                            # based on start and end coordinates and start renaming
-                            for e in t.exons:
-                                e_unique = f"{e.start}_{e.end}_{e.strand}"
-                                e_temp.add((e.start, e.end, e.strand))
-                                if e_unique in e_parents:
-                                    e_parents[e_unique].add(t.id)
-                                else:
-                                    e_parents[e_unique] = set([t.id])
-                        e_temp = list(e_temp)
-                        e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
-                        e_ids = {}
-                        e_count = 0
-                        for e in e_temp:
-                            e_count += 1
-                            e_count_s = "{:03d}".format(e_count)
-                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g_prefix}{sep}e{e_count_s}"
-                                
-                        for t in g.transcripts.values():
-                            for e in t.exons:
-                                new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
-                                e.parents = list(new_parents.copy())
-                                e.parents.sort()
-                                e.id = e_ids[f"{e.start}_{e.end}_{e.strand}"]
+                    if base_id_present and base_id_missing:
+                        warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of CDS id formats and renaming errors could occur!")
 
-                        u_temp = set()
-                        u_parents = {}
-                        for t in g.transcripts.values():
-                            # gather all unique UTR segments and sort them, then grant IDs
-                            # based on start and end coordinates and start renaming
-                            for c in t.CDSs.values():
-                                for u in c.UTRs:
-                                    u_unique = f"{u.start}_{u.end}"
-                                    u_temp.add((u.start, u.end))
-                                    if u_unique in u_parents:
-                                        u_parents[u_unique].add(t.id)
-                                    else:
-                                        u_parents[u_unique] = set([t.id])
-                        u_temp = list(u_temp)
-                        u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
-                        u_ids = {}
-                        u_count = 0
-                        for u in u_temp:
-                            u_count += 1
-                            u_count_s = "{:03d}".format(u_count)
-                            u_ids[f"{u[0]}_{u[1]}"] = f"{g_prefix}{sep}u{u_count_s}"
-                                
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                for u in c.UTRs:
-                                    new_parents = u_parents[f"{u.start}_{u.end}"]
-                                    u.parents = list(new_parents.copy())
-                                    u.parents.sort()
-                                    changed.add("UTRs")
-                                    u.id = u_ids[f"{u.start}_{u.end}"]
+                    if cmains > 1:
+                        raise ValueError(f"There shouldn't be more than one main CDS for transcript {t.original_id} in {self.id} annotation.")
 
-        else:
-            # Fix to change UTR names
-            if not prefix:
-                for genes in self.chrs.values():
-                    for g in genes.values():
-                        progress_bar.update(1)
+                    c_count = 1
+                    for c in t.CDSs.values():
+                        c.parents = [t.id]
 
-                        if g.id.endswith("_gene"):
-                            g_prefix = g.id[:-5]
-                        elif g.id.endswith("gene"):
-                            g_prefix = g.id[:-4]
-                        elif g.id.startswith("gene:"):
-                            g_prefix = g.id[5:]
-                        elif g.id.startswith("gene-"):
-                            g_prefix = g.id[5:]    
-                        elif g.id.startswith("gene"):
-                            g_prefix = g.id[4:]
-                        else:
-                            g_prefix = g.id
+                        if not c.main:
+                            c_count += 1
 
-                        g_id_contained = False
-                        g_id_not_contained = False
+                        if "CDS" in features or prefix:
 
-                        t_count = 1
-                        tmains = 0
-                        for t in g.transcripts.values():
-                            t.parents = [g.id]
-                            if g_prefix in t.id and g_prefix != t.id:
-                                g_id_contained = True
-                                continue
-                            g_id_not_contained = True
-                            if t.main:
-                                tmains += 1
-                                changed.add("transcripts")
-                                t.id = f"{g_prefix}{sep}t001"
+                            if prefix or (base_id_present and base_id_missing):
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=False, cds_segment_ids=cds_segment_ids)
                             else:
-                                t_count += 1
-                                t_count_s = "{:03d}".format(t_count)
-                                t.id = f"{g_prefix}{sep}t{t_count_s}"
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, cds_segment_ids=cds_segment_ids)
 
-                        if tmains > 1:
-                            print(f"Error: There shouldn't be more than one main transcript for {g.id} in {self.id} annotation.")
+                            if c.renamed:
+                                changed_features.add("CDS")
+
+                        for cs in c.CDS_segments:
+                            cs.parents = [t.id]
+
+                    if repeat_exons_utrs:
+
+                        base_id_present = False
+                        base_id_missing = False
+
+                        for e in t.exons:
+                            e.parents = [t.id]
+                            if g.base_id in e.id:
+                                base_id_present = True
+                            else:
+                                base_id_missing = True
+
+                        if base_id_present and base_id_missing:
+                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
 
 
-                        if g_id_contained and g_id_not_contained:
-                            print(f"Warning: {self.id} annotation has a mix of transcript formats and renaming errors could occur!")
+                        if "exon" in features or prefix:
+                            if prefix or (base_id_present and base_id_missing):
+                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                            else:
+                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+
+                        e_count += len(t.exons)
+
+                        base_id_present = False
+                        base_id_missing = False
+
+                        for c in t.CDSs.values():
+                            for u in c.UTRs:
+                                u.parents = [t.id]
+                                if g.base_id in u.id:
+                                    base_id_present = True
+                                else:
+                                    base_id_missing = True
+
+                        if base_id_present and base_id_missing:
+                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
+
+                        if "UTR" in features or prefix:
+                            if prefix or (base_id_present and base_id_missing):
+                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers)
+                            else:
+                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+
+                        for c in t.CDSs.values():
+                            u_count += len(c.UTRs)
+
+                        if t.renamed_exons:
+                            changed_features.add("exon")
+
+                        if t.renamed_utrs:
+                            changed_features.add("UTR")
+
+                if not repeat_exons_utrs:
+
+                    e_temp = set()
+                    e_parents = {}
+                    
+                    for t in g.transcripts.values():
+                        # gather all unique exons and sort them, then grant IDs
+                        # based on start and end coordinates and start renaming
+                        for e in t.exons:
+                            e_unique = f"{e.start}_{e.end}_{e.strand}"
+                            e_temp.add((e.start, e.end, e.strand))
+                            if e_unique in e_parents:
+                                e_parents[e_unique].add(t.id)
+                            else:
+                                e_parents[e_unique] = set([t.id])
+                    e_temp = list(e_temp)
+                    e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
+                    e_ids = {}
+                    e_count = 0
+                    for e in e_temp:
+                        e_count += 1
+                        e_count_s = f"{e_count:0{t_id_digits}d}"
+                        e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
                             
-                        g_id_contained = False
-                        g_id_not_contained = False
-                        for t in g.transcripts.values():
-                            # CDSs renamed based on transcript ID!
-                            c_count = 1
-                            for c in t.CDSs.values():
-                                c.parents = [t.id]
-                                for cs in c.CDS_segments:
-                                    cs.parents = [t.id]
+                    for t in g.transcripts.values():
+                        for e in t.exons:
+                            new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
+                            e.parents = list(new_parents.copy())
+                            e.parents.sort()
+                            e.id = e_ids[f"{e.start}_{e.end}_{e.strand}"]
 
-                                if g_prefix in c.id:
-                                    g_id_contained = True
-                                    continue
-                                g_id_not_contained = True
-                                if c.main:
-                                    changed.add("CDSs")
-                                    c.id = f"{t.id}{sep}CDS1"
+                            if e.id != e.original_id:
+                                changed_features.add("exon")
+
+                    u_temp = set()
+                    u_parents = {}
+                    for t in g.transcripts.values():
+                        # gather all unique UTR segments and sort them, then grant IDs
+                        # based on start and end coordinates and start renaming
+                        for c in t.CDSs.values():
+                            for u in c.UTRs:
+                                u_unique = f"{u.start}_{u.end}"
+                                u_temp.add((u.start, u.end))
+                                if u_unique in u_parents:
+                                    u_parents[u_unique].add(t.id)
                                 else:
-                                    c_count += 1
-                                    c.id = f"{t.id}{sep}CDS{c_count}"
-                                cs_count = 0
-                                for cs in c.CDS_segments:
-                                    changed.add("CDS_segments")
-                                    cs_count += 1
-                                    if cs_segment_ids:
-                                        if c_count == 1:
-                                            cs.id = f"{t.id}{sep}CDS{cs_count}" 
-                                        else:
-                                            cs.id = f"{t.id}{sep}CDS{c_count}{sep}{cs_count}"
-                                    else:
-                                        cs.id = c.id
-                                c.generate_protein()
-
-                        if g_id_contained and g_id_not_contained:
-                            print(f"Warning: {self.id} annotation has a mix of CDS formats and renaming errors could occur!")
-
-                        
-                        e_temp = set()
-                        e_parents = {}
-                        for t in g.transcripts.values():
-                            # gather all unique exons and sort them, then grant IDs
-                            # based on start and end coordinates and start renaming
-                            for e in t.exons:
-                                e_unique = f"{e.start}_{e.end}_{e.strand}"
-                                e_temp.add((e.start, e.end, e.strand))
-                                if e_unique in e_parents:
-                                    e_parents[e_unique].add(t.id)
-                                else:
-                                    e_parents[e_unique] = set([t.id])
-                        e_temp = list(e_temp)
-                        e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
-                        e_ids = {}
-                        e_count = 0
-                        for e in e_temp:
-                            e_count += 1
-                            e_count_s = "{:03d}".format(e_count)
-                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g_prefix}{sep}e{e_count_s}"
-
-                        for t in g.transcripts.values():
-                            for e in t.exons:
-                                new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
-                                e.parents = list(new_parents.copy())
-                                e.parents.sort()
-                                if g_prefix in e.id:
-                                    continue
-                                changed.add("exons")
-                                e.id = e_ids[f"{e.start}_{e.end}_{e.strand}"]
-
-                        u_temp = set()
-                        u_parents = {}
-                        for t in g.transcripts.values():
-                            # gather all unique UTR segments and sort them, then grant IDs
-                            # based on start and end coordinates and start renaming
-                            for c in t.CDSs.values():
-                                for u in c.UTRs:
-                                    u_unique = f"{u.start}_{u.end}"
-                                    u_temp.add((u.start, u.end))
-                                    if u_unique in u_parents:
-                                        u_parents[u_unique].add(t.id)
-                                    else:
-                                        u_parents[u_unique] = set([t.id])
-                        u_temp = list(u_temp)
-                        u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
-                        u_ids = {}
-                        u_count = 0
-                        for u in u_temp:
-                            u_count += 1
-                            u_count_s = "{:03d}".format(u_count)
-                            u_ids[f"{u[0]}_{u[1]}"] = f"{g_prefix}{sep}u{u_count_s}"
-                                
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                for u in c.UTRs:
-                                    new_parents = u_parents[f"{u.start}_{u.end}"]
-                                    u.parents = list(new_parents.copy())
-                                    u.parents.sort()
-                                    if g_prefix in u.id:
-                                        continue
-                                    changed.add("UTRs")
-                                    u.id = u_ids[f"{u.start}_{u.end}"]
-
-            else:
-                print("Error: you cannot provide a prefix and ask for minimal gene id renaming")
+                                    u_parents[u_unique] = set([t.id])
+                    u_temp = list(u_temp)
+                    u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
+                    u_ids = {}
+                    u_count = 0
+                    for u in u_temp:
+                        u_count += 1
+                        u_count_s = f"{u_count:0{t_id_digits}d}"
+                        u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+                            
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            for u in c.UTRs:
+                                new_parents = u_parents[f"{u.start}_{u.end}"]
+                                u.parents = list(new_parents.copy())
+                                u.parents.sort()
+                                u.id = u_ids[f"{u.start}_{u.end}"]
+                                if u.id != u.original_id:
+                                    changed_features.add("UTR")
 
         progress_bar.close()
-        self.update_attributes(extra_attributes=extra_attributes)
+
+        if repeat_exons_utrs:
+            self.homogenise_parents_for_shared_exons_utrs()
+        else:
+            self.update_attributes(extra_attributes=extra_attributes)
         self.update_keys()
         self.update_gene_and_transcript_list()
 
-
-        if not minimal:
-            self.renamed_ids = True
+        self.renamed_features = changed_features
 
         if correspondences:
-            out_text = "old_gene_id\tnew_gene_id\n"
-            for k, v in correspondences_d.items():
-                out_text += f"{v}\t{k}\n"
-            f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
-            f_out.write(out_text)
-            f_out.close()
+
+            if "gene" in changed_features:
+                out_text = "old_gene_id\tnew_gene_id\n"
+                for k, v in correspondences_d.items():
+                    out_text += f"{v}\t{k}\n"
+                f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
+                f_out.write(out_text)
+                f_out.close()
+
+            else:
+                warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.")
 
         now = time.time()
         lapse = now - start
-        print(f"\nRenaming {self.id} ids in minimal='{minimal}' and prefix='{prefix}' mode changing={list(changed)} features took {round(lapse/60, 1)} minutes")
+        print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
     def update_keys(self):
         # Check if stdout or stderr are redirected to files
@@ -4377,7 +4293,7 @@ class Annotation():
 
         progress_bar.close()
 
-        if self.renamed_ids:
+        if self.renamed_features == ["gene", "transcript", "CDS", "exon", "UTR"]:
             self.aegis = True
 
         if clean:
@@ -5154,7 +5070,7 @@ class Annotation():
         progress_bar.close()
         self.rename_ids()
         self.remove_duplicate_transcripts()
-        self.update()
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
     def remove_duplicate_transcripts(self):
         # Check if stdout or stderr are redirected to files
@@ -5188,7 +5104,7 @@ class Annotation():
                 for t_eliminate in to_eliminate:
                     del g.transcripts[t_eliminate]
         progress_bar.close()
-        self.update()
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
     def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"]):
         # Check if stdout or stderr are redirected to files
@@ -5319,7 +5235,7 @@ class Annotation():
                     g.transcripts[t_copy.id] = t_copy.copy()
                     del t_copy
         progress_bar.close()
-        self.update()
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
     def remove_exon_overlaps(self, source_priority, blast:bool=False):
         for genes in self.chrs.values():
@@ -5442,7 +5358,7 @@ class Annotation():
 
                         g.transcripts[best_candidate.id] = best_candidate.copy()
 
-        self.update()
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
     def make_alternative_genes_into_transcripts(self):
 
@@ -5474,7 +5390,7 @@ class Annotation():
             if g in self.chrs[chrom]:
                 del self.chrs[chrom][g]
 
-        self.update()
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
 
     def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):
         """
@@ -5575,7 +5491,7 @@ class Annotation():
         self.remove_exon_overlaps(source_priority)
         self.remove_UTRs_from_exon_overlaps()
         self.remove_genes()
-        self.update()
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
         self.detect_gene_overlaps()
 
     def remove_genes_with_small_CDSs(self, CDS_threshold:int=200):
@@ -5599,7 +5515,7 @@ class Annotation():
 
         if removed_any:
             self.small_cds_removed = True
-        self.update(rename_ids_minimal=True)
+        self.update()
 
     def remove_TE_genes(self):
 
@@ -5616,7 +5532,7 @@ class Annotation():
 
         if removed_any:
             self.transposable_removed = True
-        self.update(rename_ids_minimal=True)
+        self.update()
 
     def remove_non_TE_genes(self):
 
@@ -5634,7 +5550,7 @@ class Annotation():
         if removed_any:
             self.non_transposable_removed = True
 
-        self.update(rename_ids_minimal=True)
+        self.update()
 
     def remove_non_coding_genes_and_transcripts(self):
 
@@ -5654,7 +5570,7 @@ class Annotation():
         if removed_any:
             self.non_coding_removed = True
 
-        self.update(rename_ids_minimal=True)
+        self.update()
 
     def remove_coding_genes_and_transcripts(self):
 
@@ -5674,7 +5590,7 @@ class Annotation():
         if removed_any:
             self.coding_removed = True
 
-        self.update(rename_ids_minimal=True)
+        self.update()
 
     def remove_coding_transcripts_from_non_coding_genes(self, removed_any:bool=False, update=True):
         transcripts_to_remove = []
@@ -5698,7 +5614,7 @@ class Annotation():
         self.clear_overlaps()
 
         if update:
-            self.update(rename_ids_minimal=True)
+            self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
         return removed_any
 
@@ -5724,7 +5640,7 @@ class Annotation():
         self.clear_overlaps()
 
         if update:
-            self.update(rename_ids_minimal=True)
+            self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
         return removed_any
 
@@ -5848,7 +5764,7 @@ class Annotation():
                             u.source = source_name
 
         self.update(extra_attributes=extra_attributes)
-        self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix)
+        self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"])
         self.update(extra_attributes=extra_attributes)
         self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs)
 

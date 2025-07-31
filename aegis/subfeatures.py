@@ -64,6 +64,59 @@ class CDS(Feature):
                 frame = 7 - frame
                 cs.frame = frame
 
+
+    def rename(self, base_id, base_gene_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
+
+        rename = False
+        rename_cs = False
+
+        if keep_ids_with_base_id_contained:
+            if base_gene_id not in self.id:
+                rename = True
+            for cs in self.CDS_segments:
+                if base_gene_id not in cs.id:
+                    rename_cs = True
+        else:
+            rename = True
+            rename_cs = True
+
+        if rename:
+            self.renamed = True
+
+            if keep_numbering and self.id_number != None:
+                if self.main:
+                    self.id = f"{base_id}{sep}CDS{self.id_number:0{digits}d}"
+                else:
+                    self.id = f"{base_id}{sep}CDS{self.id_number:0{digits}d}"
+            else:
+                if self.main:
+                    self.id = f"{base_id}{sep}CDS{1:0{digits}d}"
+                else:
+                    self.id = f"{base_id}{sep}CDS{count:0{digits}d}"
+
+            if self.original_id != self.id:
+                self.renamed = True
+                self.update_numbering()
+                self.generate_protein()
+
+        cs_count = 0
+        for cs in self.CDS_segments:
+            cs_count += 1
+
+            if rename_cs:
+
+                if keep_numbering and cs.id_number != None:
+                    cs.id = f"{base_id}{sep}CDS{cs.id_number}"
+                elif cds_segment_ids:
+                    cs.id = f"{base_id}{sep}CDS{self.id_number}{sep}{cs_count}"
+                else:
+                    cs.id = self.id
+
+                if cs.original_id != cs.id:
+                    self.renamed = True
+                    cs.update_numbering()
+
+
     def clear_UTRs(self):
         self.five_prime_UTR_seq = ""
         self.three_prime_UTR_seq = ""

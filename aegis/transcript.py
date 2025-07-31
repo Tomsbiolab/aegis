@@ -18,6 +18,8 @@ class Transcript(Feature):
         self.main = False
         self.miRNAs = []
         self.overlaps = {"self" : [], "other" : []}
+        self.renamed_exons = False
+        self.renamed_utrs = False
     
     def update_size(self):
         self.size = 0
@@ -59,6 +61,81 @@ class Transcript(Feature):
                 for e in self.exons:
                     if e.start < c_end and e.end > c_start:
                         e.coding = True
+
+    def rename(self, base_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+
+        rename = False
+
+        if keep_ids_with_base_id_contained:
+            if base_id not in self.id:
+                rename = True
+        else:
+            rename = True
+
+        if rename:
+
+            if keep_numbering and self.id_number != None:
+                if self.main:
+                    self.id = f"{base_id}{sep}t{self.id_number:0{digits}d}"
+                else:
+                    self.id = f"{base_id}{sep}t{self.id_number:0{digits}d}"
+            else:
+                if self.main:
+                    self.id = f"{base_id}{sep}t{1:0{digits}d}"
+                else:
+                    self.id = f"{base_id}{sep}t{count:0{digits}d}"
+
+            if self.original_id != self.id:
+                self.renamed = True
+                self.update_numbering()
+
+    def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+
+        rename = False
+
+        if keep_ids_with_base_id_contained:
+            for e in self.exons:
+                if base_id not in e.id:
+                    rename = True
+        else:
+            rename = True
+
+        if rename:
+            for e in self.exons:
+                count += 1
+                if keep_numbering and e.id_number != None:
+                    e.id = f"{base_id}{sep}e{e.id_number:0{digits}d}"
+                else:
+                    e.id = f"{base_id}{sep}e{count:0{digits}d}"
+
+                if e.original_id != e.id:
+                    self.renamed_exons = True
+                    e.update_numbering()
+
+    def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+
+        rename = False
+
+        if keep_ids_with_base_id_contained:
+            for c in self.CDSs.values():
+                for u in c.UTRs:
+                    if base_id not in u.id:
+                        rename = True
+        else:
+            rename = True
+
+        if rename:
+            for c in self.CDSs.values():
+                for u in c.UTRs:
+                    count += 1
+                    if keep_numbering and u.id_number != None:
+                        u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
+                    else:
+                        u.id = f"{base_id}{sep}u{count:0{digits}d}"
+
+                    if u.original_id != u.id:
+                        self.renamed_utrs = True
+                        u.update_numbering()
 
     def exon_update(self):
         CDS_size = 0
