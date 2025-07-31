@@ -42,7 +42,7 @@ def main(
         output_file = f"{annotation_name}"
 
     if feature_type not in features:
-        raise typer.BadParameter(f"Invalid feature leve: {feature_type}. Choose from: {features}")
+        raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
 
     if output_file == "{annotation-name}_pruned":
         output_file = f"{annotation_name}_pruned"
@@ -66,7 +66,7 @@ def main(
         annotation.remove_transcripts(input_ids)
 
     output_file += ".gff3"
-    annotation.export_gff(custom_path=output_folder, tag=output_file, UTRs=True)
+    annotation.export_gff(custom_path=output_folder, tag=output_file)
 
 
 if __name__ == "__main__":

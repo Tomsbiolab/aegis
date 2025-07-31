@@ -4028,7 +4028,6 @@ class Annotation():
                         else:
                             rev = False
 
-
                         if "exon" in features or prefix:
                             if prefix or (base_id_present and base_id_missing):
                                 t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
@@ -5791,14 +5790,21 @@ class Annotation():
 
         self.update_suffixes()
 
-    def add_gene_symbols(self, file_path:str, just_gene_names:bool=True, clear:bool=True):
+    def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
         if clear:
             self.clear_gene_names_and_symbols()
 
-        if file_path.endswith(".xlsx"):
-            df = pd.read_excel(file_path, skiprows=1, dtype=str)
+        if header:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, skiprows=1, dtype=str)
+            else:
+                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
         else:
-            df = pd.read_csv(file_path, sep="\t", dtype=str)
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, dtype=str)
+            else:
+                df = pd.read_csv(file_path, sep=sep, dtype=str)
+
         df = df.fillna("")
 
         pseudogene_col_exists = False
@@ -5830,7 +5836,34 @@ class Annotation():
 
         self.symbols_added = True
 
-        self.update_attributes(clean=True, aliases=False, extra_attributes=False, symbols=True, symbols_as_descriptors=True)
+        self.update_attributes(extra_attributes=False, symbols=True)
+
+    def add_gene_symbols(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
+        if clear:
+            self.clear_gene_names_and_symbols()
+
+        if header:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, skiprows=1, dtype=str)
+            else:
+                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
+        else:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, dtype=str)
+            else:
+                df = pd.read_csv(file_path, sep=sep, dtype=str)
+
+        df = df.fillna("")
+
+        for index, row in df.iterrows():
+            gene_name = df.iloc[index, 1]
+            gene_id = df.iloc[index, 0]
+            ch = self.all_gene_ids[gene_id]
+            self.chrs[ch][gene_id].symbols.append(gene_name)
+
+        self.symbols_added = True
+
+        self.update_attributes(extra_attributes=False, symbols=True)
 
     def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False):
         if clear_aliases:
