@@ -65,7 +65,7 @@ class CDS(Feature):
                 cs.frame = frame
 
 
-    def rename(self, base_id, base_gene_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cs_segment_ids:bool=False):
+    def rename(self, base_id, base_gene_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
 
         rename = False
         rename_cs = False
@@ -107,7 +107,7 @@ class CDS(Feature):
 
                 if keep_numbering and cs.id_number != None:
                     cs.id = f"{base_id}{sep}CDS{cs.id_number}"
-                elif cs_segment_ids:
+                elif cds_segment_ids:
                     cs.id = f"{base_id}{sep}CDS{self.id_number}{sep}{cs_count}"
                 else:
                     cs.id = self.id

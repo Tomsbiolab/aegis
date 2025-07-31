@@ -237,7 +237,6 @@ def convert_gtf_to_gff3(gtf_file, encoding):
     print(f"Successfully converted file='{gtf_file} to a gff file")
     return gff_lines
 
-
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
     sorted_genes = {g.id: g.copy() for g in genes}
@@ -2487,7 +2486,7 @@ class Annotation():
                                     for p in e2.parents:
                                         if p not in e1.parents:
                                             e1.parents.append(p)
-                        e1.sort()
+                        e1.parents.sort()
 
                 for tid1, t1 in g.transcripts.items():
                     for cid1, c1 in t1.CDSs.items():
@@ -3320,41 +3319,47 @@ class Annotation():
                             if not t.main:
                                 continue
                         out += t.print_gff()
-                        for e in t.exons:
-                            out += e.print_gff()
 
-                    temp_subfeatures = []
+                    exons = []
                     for t in g.transcripts.values():
-                        if main_only:
-                            if not t.main:
-                                continue
-                        out += t.print_gff()
                         for e in t.exons:
                             add = True
-                            for ts in temp_subfeatures:
+                            for ts in exons:
                                 if e.almost_equal(ts):
                                     add = False
                             if add:
-                                temp_subfeatures.append(e)
+                                exons.append(e)
+
+                    exons.sort()
+
+                    for e in exons:
+                        out += e.print_gff()
+
+                    for t in g.transcripts.values():
                         for c in t.CDSs.values():
                             if main_only:
                                 if not c.main:
                                     continue
                             for c_seg in c.CDS_segments:
-                                temp_subfeatures.append(c_seg)
+                                out += c_seg.print_gff()
+
+                    utrs = []
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if main_only:
+                                continue
                             if UTRs:
                                 if hasattr(c, "UTRs"):
                                     for u in c.UTRs:
                                         add = True
-                                        for ts in temp_subfeatures:
+                                        for ts in utrs:
                                             if u == ts:
                                                 add = False
                                         if add:
-                                            temp_subfeatures.append(u)
-
-                    temp_subfeatures.sort()
-                    for ts in temp_subfeatures:
-                        out += ts.print_gff()
+                                            utrs.append(u)
+                    utrs.sort()
+                    for u in utrs:
+                        out += u.print_gff()
 
                 if x < (len(genes) - 1):
                     out += "###\n"
@@ -3852,7 +3857,7 @@ class Annotation():
 
         for genes in self.chrs.values():
             g_count = 0
-            for g in genes.update(1):
+            for g in genes.values():
                 progress_bar.update(1)
                 g_count += spacer
 
