@@ -32,7 +32,7 @@ def main(
         "-s", "--remove_symbols", help="Removes symbol attributes from gff output."
     )] = False,
     remove_aliases: Annotated[bool, typer.Option(
-        "-a", "--remove_aliases", help="Removes alias attributes from gff output."
+        "-al", "--remove_aliases", help="Removes alias attributes from gff output."
     )] = False,
     clean_attributes: Annotated[bool, typer.Option(
         "-c", "--clean_attributes", help="Removes non-standard attributes from a gff, may help with external tool compatibility issues."
@@ -53,7 +53,7 @@ def main(
         "-l", "--for_lifton", help="Ensures output has idividual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
     )] = False,
     clean_features: Annotated[bool, typer.Option(
-        "-c", "--clean_features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
+        "-cf", "--clean_features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
     )] = False
 
 ):

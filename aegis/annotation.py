@@ -3418,9 +3418,6 @@ class Annotation():
         if not skip_atypical_fts:
             if not just_genes:
                 if self.atypical_features != []:
-                    print("Export of atypical features is not fully supported yet "
-                        "these will just be added at the end of the gff regardless "
-                        "of coordinate or chromosome/scaffold order")
                     for ft in self.atypical_features:
                         out += ft.print_gff()
 
@@ -3940,6 +3937,15 @@ class Annotation():
                 t_count = 1
                 e_count = 0
                 u_count = 0
+
+                e_count_rev = 0
+                u_count_rev = 0
+
+                for t in g.transcripts.values():
+                    e_count_rev += len(t.exons)
+                    for c in t.CDSs.values():
+                        u_count_rev += len(c.UTRs)
+
                 for t in g.transcripts.values():
 
                     t.parents = [g.id]
@@ -4016,14 +4022,22 @@ class Annotation():
                         if base_id_present and base_id_missing:
                             warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
 
+                        if t.strand == "-":
+                            e_count = e_count_rev
+                            rev = True
+                        else:
+                            rev = False
+
 
                         if "exon" in features or prefix:
                             if prefix or (base_id_present and base_id_missing):
-                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
                             else:
-                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
 
                         e_count += len(t.exons)
+
+                        e_count_rev -= len(t.exons)
 
                         base_id_present = False
                         base_id_missing = False
@@ -4039,14 +4053,21 @@ class Annotation():
                         if base_id_present and base_id_missing:
                             warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
 
+                        if t.strand == "-":
+                            u_count = u_count_rev
+                            rev = True
+                        else:
+                            rev = False
+
                         if "UTR" in features or prefix:
                             if prefix or (base_id_present and base_id_missing):
-                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers)
+                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, rev=rev)
                             else:
-                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
 
                         for c in t.CDSs.values():
                             u_count += len(c.UTRs)
+                            u_count_rev -= len(c.UTRs)
 
                         if t.renamed_exons:
                             changed_features.add("exon")
@@ -4071,13 +4092,22 @@ class Annotation():
                                 e_parents[e_unique] = set([t.id])
                     e_temp = list(e_temp)
                     e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
+
                     e_ids = {}
                     e_count = 0
-                    for e in e_temp:
-                        e_count += 1
-                        e_count_s = f"{e_count:0{t_id_digits}d}"
-                        e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
-                            
+
+                    if t.strand == "+":
+                        for n, e in enumerate(e_temp):
+                            e_count_s = f"{(n+1):0{t_id_digits}d}"
+                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
+
+                    elif t.strand == "-":
+                        counter = len(e_temp)
+                        for n, e in enumerate(e_temp):
+                            e_count_s = f"{counter:0{t_id_digits}d}"
+                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
+                            counter -= 1
+
                     for t in g.transcripts.values():
                         for e in t.exons:
                             new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
@@ -4103,12 +4133,21 @@ class Annotation():
                                     u_parents[u_unique] = set([t.id])
                     u_temp = list(u_temp)
                     u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
+
                     u_ids = {}
                     u_count = 0
-                    for u in u_temp:
-                        u_count += 1
-                        u_count_s = f"{u_count:0{t_id_digits}d}"
-                        u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+
+                    if t.strand == "+":
+                        for n, u in enumerate(u_temp):
+                            u_count_s = f"{(n+1):0{t_id_digits}d}"
+                            u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+
+                    elif t.strand == "-":
+                        counter = len(u_temp)
+                        for n, u in enumerate(u_temp):
+                            u_count_s = f"{counter:0{t_id_digits}d}"
+                            u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+                            counter -= 1
                             
                     for t in g.transcripts.values():
                         for c in t.CDSs.values():
