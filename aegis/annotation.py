@@ -1814,7 +1814,7 @@ class Annotation():
 
                     if c.protein.summary_tag and verbose:
                         out += f"|{c.protein.summary_tag}"
-                    elif verbose:
+                    if verbose:
                         out += f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.ch}|{c.start}:{c.end}"
 
                     out += f"\n{c.protein.seq}\n"        
@@ -3034,7 +3034,7 @@ class Annotation():
             eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
 
         else:
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f"{row["gene_id_A"]}_{row["gene_id_A_origin"]}", f"{row["gene_id_B"]}_{row["gene_id_B_origin"]}"])), axis=1)
+            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f"{row['gene_id_A']}_{row['gene_id_A_origin']}", f"{row['gene_id_B']}_{row['gene_id_B_origin']}"])), axis=1)
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
