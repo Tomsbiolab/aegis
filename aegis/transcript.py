@@ -89,7 +89,7 @@ class Transcript(Feature):
                 self.renamed = True
                 self.update_numbering()
 
-    def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -101,8 +101,11 @@ class Transcript(Feature):
             rename = True
 
         if rename:
-            for e in self.exons:
-                count += 1
+            for x, e in enumerate(self.exons):
+                if rev and x != 0:
+                    count -= 1
+                else:
+                    count += 1
                 if keep_numbering and e.id_number != None:
                     e.id = f"{base_id}{sep}e{e.id_number:0{digits}d}"
                 else:
@@ -112,7 +115,7 @@ class Transcript(Feature):
                     self.renamed_exons = True
                     e.update_numbering()
 
-    def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -125,9 +128,12 @@ class Transcript(Feature):
             rename = True
 
         if rename:
-            for c in self.CDSs.values():
-                for u in c.UTRs:
-                    count += 1
+            for x, c in enumerate(self.CDSs.values()):
+                for j, u in enumerate(c.UTRs):
+                    if rev and x != 0 and j != 0:
+                        count -= 1
+                    else:
+                        count += 1
                     if keep_numbering and u.id_number != None:
                         u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
                     else:
@@ -629,19 +635,26 @@ class Transcript(Feature):
             
             self.exons = temp_fts.copy()
             self.exons.sort()
-            counter = 0
-            for e in self.exons:
-                counter += 1
-                e.feature = "exon"
-                e.id = f"{self.id}_generated_exon_{counter}"
-                e.attributes = f"ID={e.id};Parent={self.id}"
-                e.misc_attributes = ""
-                e.parents = [self.id]
-                e.phase = "."
-            
+
+            if self.strand == "+":
+                for n, e in enumerate(self.exons):
+                    e.feature = "exon"
+                    e.id = f"{self.id}_e{n+1}"
+                    e.attributes = f"ID={e.id};Parent={self.id}"
+                    e.misc_attributes = ""
+                    e.parents = [self.id]
+                    e.phase = "."
+            elif self.strand == "-":
+                counter = len(self.exons)
+                for n, e in enumerate(self.exons):
+                    e.id = f"{self.id}_e{counter}"
+                    e.attributes = f"ID={e.id};Parent={self.id}"      
+                    e.parents = [self.id]  
+                    counter -= 1
+
         # Exons rebuilt from the transcript
         else:
-            self.exons = [Exon(f"{self.id}_generated_exon_1", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", "")]
+            self.exons = [Exon(f"{self.id}_e1", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", "")]
             self.exons[0].attributes = (f"ID={self.exons[0].id};Parent={self.id}")
             self.exons[0].parents = [self.id]
 

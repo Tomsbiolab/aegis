@@ -1,7 +1,7 @@
 import typer
 import os
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, detect_file_format, read_file_with_fallback
+from aegis.annotation import Annotation
 
 app = typer.Typer(add_completion=False)
 
@@ -69,7 +69,7 @@ def main(
     )] = False,
 ):
     """
-    Rename feature ids of a gff.
+    Rename feature ids of an annotation file.
     """
 
     if annotation_name == "{annotation-file}":
