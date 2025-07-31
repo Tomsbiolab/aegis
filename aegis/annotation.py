@@ -237,7 +237,6 @@ def convert_gtf_to_gff3(gtf_file, encoding):
     print(f"Successfully converted file='{gtf_file} to a gff file")
     return gff_lines
 
-
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
     sorted_genes = {g.id: g.copy() for g in genes}
@@ -2487,7 +2486,7 @@ class Annotation():
                                     for p in e2.parents:
                                         if p not in e1.parents:
                                             e1.parents.append(p)
-                        e1.sort()
+                        e1.parents.sort()
 
                 for tid1, t1 in g.transcripts.items():
                     for cid1, c1 in t1.CDSs.items():
@@ -3320,41 +3319,47 @@ class Annotation():
                             if not t.main:
                                 continue
                         out += t.print_gff()
-                        for e in t.exons:
-                            out += e.print_gff()
 
-                    temp_subfeatures = []
+                    exons = []
                     for t in g.transcripts.values():
-                        if main_only:
-                            if not t.main:
-                                continue
-                        out += t.print_gff()
                         for e in t.exons:
                             add = True
-                            for ts in temp_subfeatures:
+                            for ts in exons:
                                 if e.almost_equal(ts):
                                     add = False
                             if add:
-                                temp_subfeatures.append(e)
+                                exons.append(e)
+
+                    exons.sort()
+
+                    for e in exons:
+                        out += e.print_gff()
+
+                    for t in g.transcripts.values():
                         for c in t.CDSs.values():
                             if main_only:
                                 if not c.main:
                                     continue
                             for c_seg in c.CDS_segments:
-                                temp_subfeatures.append(c_seg)
+                                out += c_seg.print_gff()
+
+                    utrs = []
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if main_only:
+                                continue
                             if UTRs:
                                 if hasattr(c, "UTRs"):
                                     for u in c.UTRs:
                                         add = True
-                                        for ts in temp_subfeatures:
+                                        for ts in utrs:
                                             if u == ts:
                                                 add = False
                                         if add:
-                                            temp_subfeatures.append(u)
-
-                    temp_subfeatures.sort()
-                    for ts in temp_subfeatures:
-                        out += ts.print_gff()
+                                            utrs.append(u)
+                    utrs.sort()
+                    for u in utrs:
+                        out += u.print_gff()
 
                 if x < (len(genes) - 1):
                     out += "###\n"
@@ -3783,7 +3788,7 @@ class Annotation():
         self.update_gene_and_transcript_list()
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
 
-    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cs_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False):
+    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -3808,8 +3813,8 @@ class Annotation():
         elif suffix:
             warnings.warn(f"Provided suffix={suffix} will have no effect as no prefix was provided and custom renaming will therefore be skipped.")
 
-        if cs_segment_ids and "CDS" not in features:
-            warnings.warn("CDS features will be changed if need be since cs_segment_ids have been requested.")
+        if cds_segment_ids and "CDS" not in features:
+            warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.")
 
 
         if repeat_exons_utrs:
@@ -3852,7 +3857,7 @@ class Annotation():
 
         for genes in self.chrs.values():
             g_count = 0
-            for g in genes.update(1):
+            for g in genes.values():
                 progress_bar.update(1)
                 g_count += spacer
 
@@ -3937,9 +3942,9 @@ class Annotation():
                         if "CDS" in features or prefix:
 
                             if prefix or (base_id_present and base_id_missing):
-                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=False, cs_segment_ids=cs_segment_ids)
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=False, cds_segment_ids=cds_segment_ids)
                             else:
-                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, cs_segment_ids=cs_segment_ids)
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, cds_segment_ids=cds_segment_ids)
 
                             if c.renamed:
                                 changed_features.add("CDS")
