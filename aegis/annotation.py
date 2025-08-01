@@ -3222,20 +3222,69 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False):
+    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False):
+        repeat_CDS_segment_id = False
+
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     for j, c in enumerate(t.CDSs.values()):
-                        for x, cs in enumerate(c.CDS_segments):
-                            if j == 0:
-                                cs.id = f"{t.id}_CDS{x+1}"
+                        for x1, cs1 in enumerate(c.CDS_segments):
+                            for x2, cs2 in enumerate(c.CDS_segments):
+                                if x1 == x2:
+                                    continue
+                                if cs1 == cs2:
+                                    repeat_CDS_segment_id = True
+                                    break
+
+        if repeat_CDS_segment_id or override:
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        count = 1
+                        for j, c in enumerate(t.CDSs.values()):
+                            if not c.main:
+                                count += 1
+                                c.id = f"{t.id}_CDS{count}"
                             else:
-                                cs.id = f"{t.id}_CDS{j}{x+1}"
+                                c.id = f"{t.id}_CDS1"
+                            for x, cs in enumerate(c.CDS_segments):
+                                cs.id = f"{c.id}_{x+1}"
 
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False):
+    def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False):
+        common_protein_CDS_ids = True
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for j, c in enumerate(t.CDSs.values()):
+                        for x1, cs1 in enumerate(c.CDS_segments):
+                            for x2, cs2 in enumerate(c.CDS_segments):
+                                if x1 == x2:
+                                    continue
+                                if cs1 != cs2:
+                                    common_protein_CDS_ids = False
+                                    break
+
+        if not common_protein_CDS_ids or override:
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        count = 1
+                        for c in t.CDSs.values():
+                            if not c.main:
+                                count += 1
+                                c.id = f"{t.id}_CDS{count}"
+                            else:
+                                c.id = f"{t.id}_CDS1"
+                            for cs in c.CDS_segments:
+                                cs.id = c.id
+
+        self.update_attributes(extra_attributes=extra_attributes)
+
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3372,9 +3421,6 @@ class Annotation():
         if not skip_atypical_fts:
             if not just_genes:
                 if self.atypical_features != []:
-                    print("Export of atypical features is not fully supported yet "
-                        "these will just be added at the end of the gff regardless "
-                        "of coordinate or chromosome/scaffold order")
                     for ft in self.atypical_features:
                         out += ft.print_gff()
 
@@ -3902,6 +3948,15 @@ class Annotation():
                 t_count = 1
                 e_count = 0
                 u_count = 0
+
+                e_count_rev = 0
+                u_count_rev = 0
+
+                for t in g.transcripts.values():
+                    e_count_rev += len(t.exons)
+                    for c in t.CDSs.values():
+                        u_count_rev += len(c.UTRs)
+
                 for t in g.transcripts.values():
 
                     t.parents = [g.id]
@@ -3978,14 +4033,21 @@ class Annotation():
                         if base_id_present and base_id_missing:
                             warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
 
+                        if t.strand == "-":
+                            e_count = e_count_rev
+                            rev = True
+                        else:
+                            rev = False
 
                         if "exon" in features or prefix:
                             if prefix or (base_id_present and base_id_missing):
-                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
                             else:
-                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
 
                         e_count += len(t.exons)
+
+                        e_count_rev -= len(t.exons)
 
                         base_id_present = False
                         base_id_missing = False
@@ -4001,14 +4063,21 @@ class Annotation():
                         if base_id_present and base_id_missing:
                             warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
 
+                        if t.strand == "-":
+                            u_count = u_count_rev
+                            rev = True
+                        else:
+                            rev = False
+
                         if "UTR" in features or prefix:
                             if prefix or (base_id_present and base_id_missing):
-                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers)
+                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, rev=rev)
                             else:
-                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
 
                         for c in t.CDSs.values():
                             u_count += len(c.UTRs)
+                            u_count_rev -= len(c.UTRs)
 
                         if t.renamed_exons:
                             changed_features.add("exon")
@@ -4033,13 +4102,22 @@ class Annotation():
                                 e_parents[e_unique] = set([t.id])
                     e_temp = list(e_temp)
                     e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
+
                     e_ids = {}
                     e_count = 0
-                    for e in e_temp:
-                        e_count += 1
-                        e_count_s = f"{e_count:0{t_id_digits}d}"
-                        e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
-                            
+
+                    if t.strand == "+":
+                        for n, e in enumerate(e_temp):
+                            e_count_s = f"{(n+1):0{t_id_digits}d}"
+                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
+
+                    elif t.strand == "-":
+                        counter = len(e_temp)
+                        for n, e in enumerate(e_temp):
+                            e_count_s = f"{counter:0{t_id_digits}d}"
+                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
+                            counter -= 1
+
                     for t in g.transcripts.values():
                         for e in t.exons:
                             new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
@@ -4065,12 +4143,21 @@ class Annotation():
                                     u_parents[u_unique] = set([t.id])
                     u_temp = list(u_temp)
                     u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
+
                     u_ids = {}
                     u_count = 0
-                    for u in u_temp:
-                        u_count += 1
-                        u_count_s = f"{u_count:0{t_id_digits}d}"
-                        u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+
+                    if t.strand == "+":
+                        for n, u in enumerate(u_temp):
+                            u_count_s = f"{(n+1):0{t_id_digits}d}"
+                            u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+
+                    elif t.strand == "-":
+                        counter = len(u_temp)
+                        for n, u in enumerate(u_temp):
+                            u_count_s = f"{counter:0{t_id_digits}d}"
+                            u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
+                            counter -= 1
                             
                     for t in g.transcripts.values():
                         for c in t.CDSs.values():
@@ -5714,14 +5801,21 @@ class Annotation():
 
         self.update_suffixes()
 
-    def add_gene_symbols(self, file_path:str, just_gene_names:bool=True, clear:bool=True):
+    def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
         if clear:
             self.clear_gene_names_and_symbols()
 
-        if file_path.endswith(".xlsx"):
-            df = pd.read_excel(file_path, skiprows=1, dtype=str)
+        if header:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, skiprows=1, dtype=str)
+            else:
+                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
         else:
-            df = pd.read_csv(file_path, sep="\t", dtype=str)
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, dtype=str)
+            else:
+                df = pd.read_csv(file_path, sep=sep, dtype=str)
+
         df = df.fillna("")
 
         pseudogene_col_exists = False
@@ -5753,7 +5847,34 @@ class Annotation():
 
         self.symbols_added = True
 
-        self.update_attributes(clean=True, aliases=False, extra_attributes=False, symbols=True, symbols_as_descriptors=True)
+        self.update_attributes(extra_attributes=False, symbols=True)
+
+    def add_gene_symbols(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
+        if clear:
+            self.clear_gene_names_and_symbols()
+
+        if header:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, skiprows=1, dtype=str)
+            else:
+                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
+        else:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, dtype=str)
+            else:
+                df = pd.read_csv(file_path, sep=sep, dtype=str)
+
+        df = df.fillna("")
+
+        for index, row in df.iterrows():
+            gene_name = df.iloc[index, 1]
+            gene_id = df.iloc[index, 0]
+            ch = self.all_gene_ids[gene_id]
+            self.chrs[ch][gene_id].symbols.append(gene_name)
+
+        self.symbols_added = True
+
+        self.update_attributes(extra_attributes=False, symbols=True)
 
     def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False):
         if clear_aliases:
