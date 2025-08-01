@@ -249,19 +249,22 @@ class Annotation():
     # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, name:str, annot_file_path:str, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False):
+    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False):
         
         start = time.time()
-        if chosen_chromosomes != None:
-            if len(chosen_chromosomes) > 1:
-                self.name = f"{name}_{chosen_chromosomes[0]}-{chosen_chromosomes[-1]}"
-            else:
-                self.name = f"{name}_{chosen_chromosomes[0]}"
-        else:
-            self.name = name
 
         self.file = str(Path(annot_file_path).resolve())
         self.path = str(Path(annot_file_path).resolve().parent) + "/"
+
+        if name is None:
+            self.name = Path(annot_file_path).stem
+
+        if chosen_chromosomes != None:
+            if len(chosen_chromosomes) > 1:
+                self.name = f"{self.name}_{chosen_chromosomes[0]}-{chosen_chromosomes[-1]}"
+            else:
+                self.name = f"{self.name}_{chosen_chromosomes[0]}"
+
         self.gff_header = ""
         self.target = target
         self.to_overlap = to_overlap
@@ -3535,7 +3538,7 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def merge(self, other:object, ignore_overlaps:bool=True, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100):
+    def merge(self, other:object, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"]):
         """
         Priority is given to self annotation
         """
@@ -3543,7 +3546,7 @@ class Annotation():
         self.update()
         other.update()
 
-        if not ignore_overlaps:
+        if exon_overlap_threshold != 100 and gene_overlap_threshold != 100:
             self.detect_gene_overlaps(other)
 
         # Check if stdout or stderr are redirected to files
@@ -3575,18 +3578,20 @@ class Annotation():
         else:
             self.id = self.name
         count = 0
-        if ignore_overlaps:
+        if exon_overlap_threshold == 100 and gene_overlap_threshold == 100:
             for chr, genes in other.chrs.items():
                 if chr not in self.chrs:
                     self.chrs[chr] = {}
                 for g in genes.values():
                     progress_bar.update(1)
+                    count = 0
                     temp_id = g.id
                     while temp_id in self.all_gene_ids:
                         count += 1
                         temp_id = f"{g.id}_{count}"
                     self.chrs[chr][temp_id] = g.copy()
                     self.chrs[chr][temp_id].id = temp_id
+                    self.all_gene_ids[temp_id] = chr
 
         else:
             for chr, genes in other.chrs.items():
@@ -3602,6 +3607,7 @@ class Annotation():
                             temp_id = f"{g.id}_{count}"
                         self.chrs[chr][temp_id] = g.copy()
                         self.chrs[chr][temp_id].id = temp_id
+                        self.all_gene_ids[temp_id] = chr
                     else:
                         exon_scores = [0]
                         gene_scores = [0]
@@ -3610,8 +3616,11 @@ class Annotation():
                                 exon_scores.append(o.min_exon_percent)
                             if o.min_gene_percent != None:
                                 gene_scores.append(o.min_gene_percent)
-                        # some genes may not have annotated and hence exon_overlap_threshold cannot be taken into account
-                        if o.exons_in_both:
+
+                        check_exons = any(ov.exons_in_both for ov in g.overlaps["other"])
+
+                        # some genes may not have annotated exons and hence exon_overlap_threshold cannot be taken into account
+                        if check_exons:
                             if max(exon_scores) <= exon_overlap_threshold and max(gene_scores) <= gene_overlap_threshold:
                                 temp_id = g.id
                                 while temp_id in self.all_gene_ids:
@@ -3619,6 +3628,7 @@ class Annotation():
                                     temp_id = f"{g.id}_{count}"
                                 self.chrs[chr][temp_id] = g.copy()
                                 self.chrs[chr][temp_id].id = temp_id
+                                self.all_gene_ids[temp_id] = chr
                         elif max(gene_scores) <= gene_overlap_threshold:
                             temp_id = g.id
                             while temp_id in self.all_gene_ids:
@@ -3626,6 +3636,7 @@ class Annotation():
                                 temp_id = f"{g.id}_{count}"
                             self.chrs[chr][temp_id] = g.copy()
                             self.chrs[chr][temp_id].id = temp_id
+                            self.all_gene_ids[temp_id] = chr
 
         self.merged = True
         self.sorted = False
@@ -3637,7 +3648,7 @@ class Annotation():
         self.contains_protein_sequences = False
         progress_bar.close()
         self.update_gene_and_transcript_list()
-        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
+        self.update(rename_features=features_to_rename)
         now = time.time()
         lapse = now - start
         print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
