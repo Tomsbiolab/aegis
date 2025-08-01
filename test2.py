@@ -26,25 +26,6 @@ from aegis.annotation import Annotation
 
 # --- HELPER FUNCTIONS ---
 
-def clean_fasta_headers(input_path: Path, output_path: Path):
-    """
-    Cleans up FASTA file headers by removing specific suffixes.
-
-    JCVI requires clean FASTA headers. This function removes patterns
-    like "_t001_CDS1" from the sequence identifiers.
-
-    Args:
-        input_path (Path): Path to the input FASTA file.
-        output_path (Path): Path where the cleaned FASTA file will be saved.
-    """
-    print(f"    Cleaning headers from '{input_path.name}' -> '{output_path.name}'")
-    with open(input_path, "r") as infile, open(output_path, "w") as outfile:
-        for line in infile:
-            if line.startswith(">"):
-                # Remove patterns like '_t<number>_CDS<number>'
-                line = re.sub(r"_t\d{3}_CDS\d*", "", line)
-            outfile.write(line)
-
 def run_docker_command(working_directory: Path, command: list):
     """
     Executes a generic command inside a Docker container.
