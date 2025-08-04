@@ -71,8 +71,11 @@ def main(
 
     if len(annotation_names) != len(set(annotation_names)):
         raise ValueError("Avoid repeated annotation tag(s)/name(s).")
+    
+    if len(annotation_files) != len(set(annotation_files)):
+        raise ValueError("Avoid repeated annotation filename(s).")
 
-    if original_annotation_files != "":
+    if original_annotation_files != []:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
             raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
