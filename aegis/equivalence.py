@@ -2,11 +2,8 @@ import pandas as pd
 import re
 import time
 import os
-import shutil
 import subprocess
 
-from aegis.genome import Genome
-from aegis.annotation import Annotation
 from pathlib import Path
 
 
@@ -31,29 +28,12 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-def prepare_gff_for_jcvi(working_directory: Path, original_gff_path: Path, name: str) -> Path:
-    """
-    Copies and renames a GFF3 file to match the base name, as required by JCVI.
-
-    Args:
-        working_directory (Path): The directory where the copy will be created.
-        original_gff_path (Path): Path to the original GFF file.
-        name (str): The base name to be used for the new file.
-
-    Returns:
-        Path: The path to the new, renamed GFF file.
-    """
-    renamed_gff_path = working_directory / f"{name}.gff3"
-    print(f"    Copying and renaming GFF for JCVI: '{renamed_gff_path.name}'")
-    shutil.copyfile(original_gff_path, renamed_gff_path)
-    return renamed_gff_path
-
 
 def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int) -> tuple[Path, Path]:
 
     print(f"\n[STARTING ANALYSIS] Comparing {annot1.name} with {annot2.name}")
     print(f"Results will be stored in: {working_directory}")
-    working_directory.mkdir(exist_ok=True)
+    working_directory.mkdir(parents=True, exist_ok=True)
 
     # --- 1. ANNOTATION LIFTOVER (Liftoff and Lifton) ---
     print("\n[STEP 1.1] Running Liftoff to map annotations...")
@@ -64,7 +44,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
         "liftoff", str(genome2.file), str(genome1.file),
         "-g", str(annot1.file), "-o", str(liftoff_1_to_2_gff)
     ]
-    # run_command(working_directory, liftoff_cmd_1)
+    run_command(working_directory, liftoff_cmd_1)
 
     # Direction: Species 2 -> Species 1
     liftoff_2_to_1_gff = working_directory / f"liftoff_{annot2.name}_to_{annot1.name}.gff"
@@ -72,7 +52,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
         "liftoff", str(genome1.file), str(genome2.file),
         "-g", str(annot2.file), "-o", str(liftoff_2_to_1_gff)
     ]
-    # run_command(working_directory, liftoff_cmd_2)
+    run_command(working_directory, liftoff_cmd_2)
 
     print("\n[STEP 1.2] Running Lifton to map annotations...")
 
@@ -82,7 +62,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
         "lifton", "-g", str(annot1.file), "-o", str(lifton_1_to_2_gff),
         "-copies", str(genome2.file), str(genome1.file)
     ]
-    # run_command(working_directory, lifton_cmd_1)
+    run_command(working_directory, lifton_cmd_1)
 
     # Direction: Species 2 -> Species 1
     lifton_2_to_1_gff = working_directory / f"lifton_{annot2.name}_to_{annot1.name}.gff3"
@@ -90,7 +70,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
         "lifton", "-g", str(annot2.file), "-o", str(lifton_2_to_1_gff),
         "-copies", str(genome1.file), str(genome2.file)
     ]
-    # run_command(working_directory, lifton_cmd_2)
+    run_command(working_directory, lifton_cmd_2)
 
     # --- 2. SEQUENCE EXTRACTION (Proteins and CDS) ---
     print("\n[STEP 2] Extracting protein and CDS sequences...")
@@ -170,19 +150,27 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     jcvi_format_cmd_2 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta_2), str(cleaned_cds_2)]
     run_command(working_directory, jcvi_format_cmd_2)
 
-    # 4.2 Convert GFF3 to BED format
-    gff_for_jcvi_1 = prepare_gff_for_jcvi(working_directory, annot1.file, jcvi_name_1)
-    gff_for_jcvi_2 = prepare_gff_for_jcvi(working_directory, annot2.file, jcvi_name_2)
+    annot1.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+    annot1.export_gff(custom_path=str(working_directory), tag=f"{jcvi_name_1}.gff3")
+
+
+    annot2.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+    annot2.export_gff(custom_path=str(working_directory), tag=f"{jcvi_name_2}.gff3")
+
+
+    #os.chdir(working_directory)
 
     gff_to_bed_cmd_1 = [
         "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", str(gff_for_jcvi_1.name), "-o", str(bed_file_1)
+        "--key=Parent", "--primary_only", f"{str(Path(working_directory) / "out_gffs")}/{jcvi_name_1}.gff3", "-o", str(bed_file_1)
     ]
+
+    print(gff_to_bed_cmd_1)
     run_command(working_directory, gff_to_bed_cmd_1)
 
     gff_to_bed_cmd_2 = [
         "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", str(gff_for_jcvi_2.name), "-o", str(bed_file_2)
+        "--key=Parent", "--primary_only", f"{str(Path(working_directory) / "out_gffs")}/{jcvi_name_2}.gff3", "-o", str(bed_file_2)
     ]
     run_command(working_directory, gff_to_bed_cmd_2)
     

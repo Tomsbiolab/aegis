@@ -7,7 +7,6 @@ from typing_extensions import Annotated
 from aegis.annotation import Annotation
 from aegis.genome import Genome
 from aegis.equivalence import Simple_annotation, perform_pairwise_comparison, run_command
-from itertools import combinations
 
 app = typer.Typer(add_completion=False)
 
@@ -153,7 +152,7 @@ def main(
             annotations[n].target = True
 
 
-    output_folder = Path(output_folder) / "orthologues"
+    output_folder = Path(output_folder).resolve() / "orthologues"
     output_folder.mkdir(parents=True, exist_ok=True)
     output_folder = str(output_folder) + "/"
 
@@ -192,7 +191,7 @@ def main(
     
     # 3.1 Crear el directorio de entrada para OrthoFinder
     orthofinder_input_dir = RESULTS_DIRECTORY / "orthofinder_input"
-    orthofinder_input_dir.mkdir(exist_ok=True)
+    orthofinder_input_dir.mkdir(parents=True, exist_ok=True)
     print(f"  Created OrthoFinder input directory: {orthofinder_input_dir}")
 
     # 3.2 Copiar todos los ficheros de proteínas al directorio de entrada
@@ -230,10 +229,6 @@ def main(
         simple_annotations.append(Simple_annotation(a.name, a, group_names[n]))
 
     del annotations
-
-    output_folder = Path(output_folder) / "orthologues"
-    output_folder.mkdir(parents=True, exist_ok=True)
-    output_folder = str(output_folder) + "/"
 
     extra_tag = ""
     if verbose:
