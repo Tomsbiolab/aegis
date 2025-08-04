@@ -1331,7 +1331,7 @@ class Annotation():
         print(f"Clearing sequences of {self.id} annotation object took "
               f"{round(lapse, 1)} seconds\n")
 
-    def generate_promoters(self, genome:object, promoter_size:int=2000, promoter_type:str = "standard"):
+    def generate_promoters(self, genome:object, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):
         """
         promoter_type (str): Defines the reference point for the promoters.
             - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
@@ -1345,8 +1345,10 @@ class Annotation():
             for g in genes.values():
                 for t in g.transcripts.values():
                     t.generate_promoter(promoter_size, genome.scaffolds[t.ch].size, promoter_type)
+                    if generate_sequence:
+                        t.promoter.generate_sequence(genome)
 
-    def find_motifs(self, query_genes:list, motif:str, motif_length, glistname, motifid, tfname, backlist:list=[], backlistname:str="", custom_path:str=""):
+    def find_motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str=""):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -1359,6 +1361,13 @@ class Annotation():
 
         bin_division = 30
         bins_genome_division = 30
+
+        if backlist != [] and not backlistname:
+            backlistname = "custom_background"
+
+        if motif_length < 4 or len(motif) < 4:
+            raise ValueError(f"Chosen motif={motif} is too short (len={motif_length}) for promoter search.")
+
         random_ids = self.return_random_gene_ids(len(query_genes), to_avoid=query_genes)
         if backlist == []:
             total = (len(query_genes) * 2) + len(self.all_gene_ids.keys())
@@ -1366,25 +1375,23 @@ class Annotation():
             total = (len(query_genes) * 2) + len(backlist)
         progress_bar = tqdm(total=total, disable=disable,
                                 bar_format=(
-                    f'\033[1;94;1mScanning {glistname} genes for {tfname} {motif} ({motifid}):\033[0m '
+                    f'\033[1;94;1mScanning {glistname} genes for {tf_motif_tag} ({motif}):\033[0m '
                     '{percentage:3.0f}%|'
                     f'\033[1;94;1m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
         
         if custom_path == "":
-            output_path = self.path + "tf_motifs/"
+            output_path = self.path + "motifs/"
             output_file = output_path 
         else:
             output_file = custom_path
-        if output_file[-1] != "/":
-            output_file += "/"
-        common_multifasta = self.path + "tf_motifs/"
+            if output_file[-1] != "/":
+                output_file += "/"
+            output_file += "motifs/"
 
-        os.makedirs(common_multifasta, exist_ok=True)
-        output_file += f"{tfname}/"
         os.makedirs(output_file, exist_ok=True)
 
-        output_file += f"{tfname}_{motifid}"
+        output_file += f"{tf_motif_tag}"
 
         motif = motif.upper()
         promoter_length = 0
@@ -1400,7 +1407,6 @@ class Annotation():
                 break
             break
                     
-        multifasta_out = ""
         # critical thing to understand here is that we are looking at how a motif
         # is oriented with regards to the TSS
         towards_occurrences = []
@@ -1414,7 +1420,6 @@ class Annotation():
             for t in g.transcripts.values():
                 if t.main:
                     p = t.promoter
-                    multifasta_out += f">{g.id}_promoter\n{p.seq}\n"
                     occurrences_t = find_all_occurrences(motif, p.seq)
                     occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
                     occurrence_count_total = len(occurrences_t) + len(occurrences_a)
@@ -1423,9 +1428,9 @@ class Annotation():
                     if occurrences_t != [] or occurrences_a != []:
                         interest_proportion += 1
                     for m in occurrences_t:
-                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, g.name, g.strand, g.ch))
+                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
                     for m in occurrences_a:
-                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, g.name, g.strand, g.ch))
+                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
 
         midpoints = []
@@ -1439,11 +1444,7 @@ class Annotation():
             midpoint += 1
             midpoint = (midpoint * -1)
             midpoints.append(midpoint)
-        
-        if backlist == []:
-            f_out = open(f"{common_multifasta}{glistname}_{promoter_length/1000}kb.fasta", "w", encoding="utf-8")
-            f_out.write(multifasta_out)
-            f_out.close()
+
 
         all_occurrences = towards_occurrences + against_occurrences
         df = pd.DataFrame(all_occurrences, columns=["start", "end", "genomic_start", "genomic_end", "sequence", "orientation with respect to gene", "gene_id", "gene_name", "gene_strand", "chromosome"])
@@ -1452,8 +1453,8 @@ class Annotation():
         
         interest_count = len(midpoints)
         plt.hist(midpoints, bins=(promoter_length//bin_division), color='skyblue', edgecolor='skyblue')
-        plt.grid(b=False)
-        plt.title(f"{self.id} {tfname} {motifid} {glistname} histogram\npromoters with motif: ({interest_proportion}/{len(query_genes)})")
+        plt.grid(False)
+        plt.title(f"{self.id} {tf_motif_tag} {glistname} histogram\npromoters with motif: ({interest_proportion}/{len(query_genes)})")
         plt.xlabel("promoter position")
         plt.ylabel(f"motif occurrence count (total: {interest_count})")
         plt.grid(True)
@@ -1461,7 +1462,6 @@ class Annotation():
             plt.savefig(f"{output_file}_{glistname}.pdf")
         plt.close()
 
-        multifasta_out = ""
         # critical thing to understand here is that we are looking at how a motif
         # is oriented with regards to the TSS
         towards_occurrences = []
@@ -1475,7 +1475,6 @@ class Annotation():
             for t in g.transcripts.values():
                 if t.main:
                     p = t.promoter
-                    multifasta_out += f">{g.id}_promoter\n{p.seq}\n"
                     occurrences_t = find_all_occurrences(motif, p.seq)
                     occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
                     if occurrence_count_total != 0:
@@ -1483,9 +1482,9 @@ class Annotation():
                     if occurrences_t != [] or occurrences_a != []:
                         random_proportion += 1
                     for m in occurrences_t:
-                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, g.name, g.strand, g.ch))
+                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
                     for m in occurrences_a:
-                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, g.name, g.strand, g.ch))
+                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
         midpoints = []
         for o in towards_occurrences:
@@ -1498,11 +1497,7 @@ class Annotation():
             midpoint += 1
             midpoint = (midpoint * -1)
             midpoints.append(midpoint)
-        
-        if backlist == []:
-            f_out = open(f"{output_file}_{glistname}_random.fasta", "w", encoding="utf-8")
-            f_out.write(multifasta_out)
-            f_out.close()
+
 
         all_occurrences = towards_occurrences + against_occurrences
         df = pd.DataFrame(all_occurrences, columns=["start", "end", "genomic_start", "genomic_end", "sequence", "orientation with respect to gene", "gene_id", "gene_name", "gene_strand", "chromosome"])
@@ -1511,8 +1506,8 @@ class Annotation():
 
         random_count = len(midpoints)
         plt.hist(midpoints, bins=(promoter_length//bin_division), color='grey', edgecolor='grey')
-        plt.grid(b=False)
-        plt.title(f"{self.id} {tfname} {motifid} {glistname} random histogram\npromoters with motif: ({random_proportion}/{len(query_genes)})")
+        plt.grid(False)
+        plt.title(f"{self.id} {tf_motif_tag} {glistname} random histogram\npromoters with motif: ({random_proportion}/{len(query_genes)})")
         plt.xlabel("promoter position")
         plt.ylabel(f"motif occurrence count (total: {random_count})")
         plt.grid(True)
@@ -1542,9 +1537,9 @@ class Annotation():
                         if occurrences_t != [] or occurrences_a != []:
                             genomic_proportion += 1
                         for m in occurrences_t:
-                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, g.name, g.strand, g.ch))
+                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
                         for m in occurrences_a:
-                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, g.name, g.strand, g.ch))
+                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
             midpoints = []
             for o in towards_occurrences:
@@ -1560,8 +1555,8 @@ class Annotation():
 
             genomic_count = len(midpoints)
             plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
-            plt.grid(b=False)
-            plt.title(f"{self.id} {tfname} {motifid} full genome histogram\npromoters with motif: ({genomic_proportion}/{len(self.all_gene_ids.keys())})")
+            plt.grid(False)
+            plt.title(f"{self.id} {tf_motif_tag} full genome histogram\npromoters with motif: ({genomic_proportion}/{len(self.all_gene_ids.keys())})")
             plt.xlabel("promoter position")
             plt.ylabel(f"motif occurrence count (total: {genomic_count})")
             plt.grid(True)
@@ -1584,9 +1579,9 @@ class Annotation():
                         if occurrences_t != [] or occurrences_a != []:
                             genomic_proportion += 1
                         for m in occurrences_t:
-                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, g.name, g.strand, g.ch))
+                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
                         for m in occurrences_a:
-                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, g.name, g.strand, g.ch))
+                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
             midpoints = []
             for o in towards_occurrences:
@@ -1602,8 +1597,8 @@ class Annotation():
 
             genomic_count = len(midpoints)
             plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
-            plt.grid(b=False)
-            plt.title(f"{self.id} {tfname} {motifid} {backlistname} as background histogram\npromoters with motif: ({genomic_proportion}/{len(backlist)})")
+            plt.grid(False)
+            plt.title(f"{self.id} {tf_motif_tag} {backlistname} as background histogram\npromoters with motif: ({genomic_proportion}/{len(backlist)})")
             plt.xlabel("promoter position")
             plt.ylabel(f"motif occurrence count (total: {genomic_count})")
             plt.grid(True)
