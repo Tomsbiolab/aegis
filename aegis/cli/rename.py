@@ -27,8 +27,8 @@ def main(
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation file."
     )] = "{annotation-name}_renamed.gff3",
-    features: Annotated[str, typer.Option(
-        "-f", "--features", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {features}.",
+    feature_type: Annotated[str, typer.Option(
+        "-f", "--feature_type", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {features}.",
         callback=split_callback
     )] = "transcript,CDS,exon,UTR",
     keep_ids_with_gene_id_contained: Annotated[bool, typer.Option(
@@ -71,6 +71,9 @@ def main(
     """
     Rename feature ids of an annotation file.
     """
+
+    if feature_type not in features:
+        raise typer.BadParameter(f"Invalid feature leve: {feature_type}. Choose from: {features}")
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
