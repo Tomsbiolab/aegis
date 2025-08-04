@@ -1,28 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on May 23 2025
-
-This will go over all equivalence results and make a summary for a set of annotations.
-
-- liftoff + overlaps
-- lifton + overlaps
-- rbh
-- mcscan anchors
-- mcscan last filtered
-- blast
-
-@author: David Navarro
-"""
-
 import pandas as pd
 import re
 import time
 import os
-from modules.tools import pickle_load
-from modules.annotation import Annotation
-
-from config.paths import root
 
 def parse_evalue(e):
     e = e.strip()
@@ -54,7 +33,7 @@ class Equivalence():
         self.type = type_
         self.species = species
         self.score = score
-        self.target_annotation = target_annotation
+        self.target_ = target_annotation
         self.reliability = reliability
 
         self.aegis_score = None
@@ -485,6 +464,7 @@ class Simple_annotation():
                 score = row[score_col]
                 self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_annotation, species, score))
 
+
     def add_orthofinder_equivalences(self, file, target_annotation, species):
 
         if os.path.isfile(file):
@@ -877,130 +857,3 @@ def clean_annotation_tag(annotation_tag):
     annotation_tag = annotation_tag.split("_on_")[0]
     
     return annotation_tag
-
-
-start = time.time()
-
-aegis_output = f"{root}aegis_output/"
-pickle_paths = [f"{root}cannabis/aegis_output/pickles/", f"{root}grapevine/PN40024/aegis_output/pickles/"]
-overlaps_path = f"{root}aegis_output/overlaps/"
-transfer_path = f"{root}aegis_output/annotation_transfers/"
-equivalences_path = f"{root}aegis_output/equivalence_summary/"
-
-os.system(f"mkdir -p {equivalences_path}")
-
-protein_file_tag = "_proteins_g_id_main"
-
-tags_to_process = ["CBDRx", "PurpleKush", "JamaicanLion", "Finola", "5.1"]
-
-annotations_to_process = ["CBDRx_on_CBDRx", "PurpleKush_on_PurpleKush", "JamaicanLion_on_JamaicanLion", "Finola_on_Finola", "5.1_on_T2T_ref"]
-
-species_names = ["Cannabis", "Cannabis", "Cannabis", "Cannabis", "Grapevine"]
-
-if len(tags_to_process) != len(annotations_to_process) or len(annotations_to_process) != len(species_names):
-    raise ValueError(f"Input tags, annotations, or names do not match.")
-
-indispensable_members = []
-
-skip_liftons = False
-skip_rbhs = False
-skip_unidirectional_blasts = True
-verbose = False
-
-extra_tag = ""
-if verbose:
-    extra_tag = "_verbose"
-
-for n, a in enumerate(annotations_to_process):
-    location = ""
-    location1 = f"{pickle_paths[0]}{a}_annotation.pkl"
-    location2 = f"{pickle_paths[0]}{a}_annotation.pkl"
-    if os.path.isfile(location1):
-        location = location1
-    elif os.path.isfile(location2):
-        location = location2
-    else:
-        print(f"Warning: {a} does not appear to have its pickle file available: {location1} or {location2}")
-
-    if location:
-        a_object = pickle_load(location)
-        s_a = Simple_annotation(tags_to_process[n], a_object, species_names[n])
-        
-        for n2, a2 in enumerate(annotations_to_process):
-            if a == a2:
-                continue
-
-            if indispensable_members != []:
-                indispensable_indexes = []
-
-                for member in indispensable_members:
-                    indispensable_indexes.append(tags_to_process.index(member))
-
-                # this excludes certain combinations
-                if n not in indispensable_indexes and n2 not in indispensable_indexes:
-                    continue
-
-            target_annotation = tags_to_process[n2]
-            first_tag = tags_to_process[n]
-            second_tag = tags_to_process[n2]
-            key_col = "0"
-
-            mcscan_folder = f"{transfer_path}mcscan_{first_tag}_{second_tag}/"
-            if not os.path.isdir(mcscan_folder):
-                first_tag = tags_to_process[n2]
-                second_tag = tags_to_process[n]
-                key_col = "1"
-                mcscan_folder = f"{transfer_path}mcscan_{first_tag}_{second_tag}/"
-
-            s_a.add_mcscan_equivalences(f"{mcscan_folder}{first_tag}.{second_tag}.anchors", key_col, target_annotation, species_names[n2])
-            s_a.add_mcscan_equivalences(f"{mcscan_folder}{first_tag}.{second_tag}.last.filtered", key_col, target_annotation, species_names[n2])
-
-            first_tag = tags_to_process[n]
-            second_tag = tags_to_process[n2]
-
-            orthofinder_folder = f"{transfer_path}orthofinder_{first_tag}_{second_tag}/OrthoFinder/"
-            if not os.path.isdir(orthofinder_folder):
-                first_tag = tags_to_process[n2]
-                second_tag = tags_to_process[n]
-                orthofinder_folder = f"{transfer_path}orthofinder{first_tag}_{second_tag}/OrthoFinder/"
-
-            s_a.add_orthofinder_equivalences(f"{orthofinder_folder}Orthologues/{a}{protein_file_tag}.tsv", target_annotation, species_names[n2])
-
-            s_a.add_reciprocal_overlap_equivalences(overlaps_path, tags_to_process[n], tags_to_process[n2], species_names[n2])
-
-            if not skip_liftons:
-                s_a.add_reciprocal_overlap_equivalences(overlaps_path, tags_to_process[n], tags_to_process[n2], species_names[n2], liftoff=False)
-
-            s_a.add_blast_equivalences(f"{aegis_output}blasts/", a, a2, species_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts)
-
-
-
-        output_file = f"{equivalences_path}{tags_to_process[n]}_equivalences{extra_tag}.tsv"
-
-        output_file_filtered = f"{equivalences_path}{tags_to_process[n]}_equivalences_filtered{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs_and_rbhs = f"{equivalences_path}{tags_to_process[n]}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs = f"{equivalences_path}{tags_to_process[n]}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
-
-        s_a.export_summary_equivalences(output_file, verbose=verbose)
-
-        if skip_rbhs and skip_unidirectional_blasts:
-            s_a.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, verbose=verbose)
-
-        elif skip_unidirectional_blasts:
-            s_a.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=verbose) 
-            s_a.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, coverage_threshold=30, identity_threshold=30, verbose=verbose)
-
-        elif skip_rbhs:
-            print("Warning: It makes no sense to skip RBHs when unidirectional blasts are not being skipped.")
-
-        else:
-            s_a.export_summary_equivalences(output_file_filtered, filtered=True, verbose=verbose)      
-            s_a.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=verbose)            
-            s_a.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, coverage_threshold=30, identity_threshold=30, unidirectional_blasts=False, verbose=verbose)
-
-        del s_a
-
-
-end = time.time()
-lapse = end - start
-print(f"\nProcessing all gene equivalences for all annotations={annotations_to_process} took {round(lapse/60, 2)} minutes")

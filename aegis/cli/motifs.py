@@ -80,7 +80,7 @@ def main(
 
     annotation.generate_promoters(genome=genome, promoter_size=promoter_size, promoter_type=promoter_type, generate_sequence=True)
 
-    return_tuple = annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_folder)
+    _ = annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_folder)
     
 if __name__ == "__main__":
     app()
