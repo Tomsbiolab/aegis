@@ -1,0 +1,113 @@
+# -----------------------------------------------------------------------------
+# ETAPA 1: BASE Y DEPENDENCIAS DEL SISTEMA
+# -----------------------------------------------------------------------------
+# Usar Ubuntu 20.04 LTS como imagen base, que es versátil y estable.
+FROM ubuntu:20.04
+
+# Evitar diálogos interactivos durante la instalación de paquetes
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar todas las dependencias del sistema necesarias para compilar código,
+# descargar archivos y ejecutar nuestras herramientas.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Herramientas de construcción y compilación
+    build-essential \
+    cmake \
+    gfortran \
+    autoconf \
+    # Librerías necesarias para paquetes de Python y otras herramientas
+    libopenblas-dev \
+    liblapack-dev \
+    libatlas-base-dev \
+    zlib1g-dev \
+    # Utilidades generales
+    wget \
+    git \
+    unzip \
+    ca-certificates \
+    # Limpieza para reducir el tamaño de la imagen
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# ETAPA 2: INSTALACIÓN DE MINICONDA Y MAMBA
+# -----------------------------------------------------------------------------
+# Instalar Miniconda para gestionar los entornos y paquetes de Python/Bioinformática.
+ENV CONDA_DIR /opt/conda
+RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
+    /bin/bash ~/miniconda.sh -b -p $CONDA_DIR && \
+    rm ~/miniconda.sh
+
+# Añadir Conda al PATH del sistema.
+ENV PATH=$CONDA_DIR/bin:$PATH
+
+# Aceptar los Términos de Servicio de Anaconda para los canales necesarios
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+# Instalar mamba para una gestión de paquetes más rápida
+RUN conda install -n base -c conda-forge mamba -y
+
+# -----------------------------------------------------------------------------
+# ETAPA 3: CREACIÓN DEL ENTORNO Y INSTALACIÓN DE SOFTWARE
+# -----------------------------------------------------------------------------
+# Instalamos la mayoría de los paquetes directamente con Mamba.
+# Esto es más robusto y evita problemas de compilación y dependencias.
+# Mamba encontrará versiones compatibles de todos estos paquetes para Python 3.10.
+RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
+    python=3.10 \
+    pip \
+    # Herramientas Bioinformáticas
+    jcvi \
+    last \
+    diamond \
+    minimap2 \
+    liftoff \
+    orthofinder \
+    # Librerías de Python
+    pandas \
+    plotly \
+    python-kaleido \
+    biopython \
+    matplotlib \
+    scipy \
+    colorlover \
+    tqdm
+
+# Activamos el entorno para los siguientes comandos
+SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]
+
+# Ahora solo usamos pip para paquetes que no están en Conda o para instalaciones locales
+ENV PYTHONUNBUFFERED=1
+
+# Instalar LiftOn (que necesita numpy, networkx, etc., ahora instalados por Mamba)
+RUN git clone https://github.com/Kuanhao-Chao/LiftOn /opt/LiftOn && \
+    cd /opt/LiftOn && \
+    pip install .
+
+# Instalar miniprot
+RUN git clone https://github.com/lh3/miniprot /opt/miniprot && \
+    cd /opt/miniprot && \
+    make
+
+ENV PATH="/opt/miniprot:${PATH}"
+
+# -----------------------------------------------------------------------------
+# ETAPA 4: CONFIGURACIÓN DE LA APLICACIÓN 'AEGIS'
+# -----------------------------------------------------------------------------
+# Volvemos al shell por defecto para las operaciones de copia
+SHELL ["/bin/bash", "-c"]
+COPY aegis /aegis
+WORKDIR /aegis
+ENV PYTHONPATH="/aegis"
+
+# Volvemos al shell del entorno de conda para instalar el paquete local
+SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]
+RUN pip install -e .
+
+# -----------------------------------------------------------------------------
+# ETAPA 5: EJECUCIÓN DEL CONTENEDOR
+# -----------------------------------------------------------------------------
+WORKDIR /aegis
+ENTRYPOINT ["conda", "run", "-n", "bio_env", "--no-capture-output"]
+CMD ["/bin/bash"]

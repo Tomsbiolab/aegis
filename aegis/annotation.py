@@ -258,6 +258,8 @@ class Annotation():
 
         if name is None:
             self.name = Path(annot_file_path).stem
+        else:
+            self.name = name
 
         if chosen_chromosomes != None:
             if len(chosen_chromosomes) > 1:
