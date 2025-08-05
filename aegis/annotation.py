@@ -4786,9 +4786,22 @@ class Annotation():
 
         genes_to_remove = set()
 
+        total_deficit = 0
+
         for genes in self.chrs.values():
-            if len(genes) > genes_to_keep_per_chromosome:
+            deficit = genes_to_keep_per_chromosome - len(genes)
+            if deficit < 0:
+                deficit = 0
+            total_deficit += deficit
+
+        for genes in self.chrs.values():
+
+            if len(genes) > (genes_to_keep_per_chromosome + total_deficit):
                 genes_to_remove.update(set(genes) - set(random.sample(list(genes), genes_to_keep_per_chromosome)))
+
+            surplus = len(genes) - genes_to_keep_per_chromosome
+            if surplus > 0:
+                total_deficit -= surplus
 
         if genes_to_remove:
             self.remove_genes(genes_to_remove)
