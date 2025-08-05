@@ -8,8 +8,8 @@ from aegis.genome import Genome
 
 def split_callback(value:str):
     if value:
-        return [item.strip() for item in value.split(",")]
-    return []
+        return set([item.strip() for item in value.split(",")])
+    return set([])
 
 app = typer.Typer(add_completion=False)
 @app.command()
@@ -28,7 +28,7 @@ def main(
     callback=split_callback
     )] = None,
     gene_cap: Annotated[int, typer.Option(
-        "-gc", "--gene-cap", help="Add a total gene number cap to reduce size of gff subset."
+        "-gc", "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
@@ -43,7 +43,7 @@ def main(
         "-o", "--output-annot-file", help="Path to the output annotation filename, including extension."
     )] = "{annotation-name}_subset.gff3",
     output_genome_file: Annotated[str, typer.Option(
-        "-o", "--output-genome-file", help="Path to the output genome filename, including extension."
+        "-og", "--output-genome-file", help="Path to the output genome filename, including extension."
     )] = "{genome-name}_subset.fasta"
 ):
     """
@@ -53,6 +53,11 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
+    if genome_name == "{genome-fasta}" and genome_fasta != "":
+        genome_name = os.path.splitext(os.path.basename(genome_fasta))[0]
+    elif genome_fasta == "":
+        genome_name = "genome"
+
     os.makedirs(output_folder, exist_ok=True)
 
     if output_annot_file == "{annotation-name}_subset.gff3":
@@ -60,11 +65,6 @@ def main(
 
     if output_genome_file == "{genome-name}_subset.fasta":
         output_genome_file = f"{genome_name}_subset.fasta"
-
-    if genome_name == "{genome-fasta}" and genome_fasta != "":
-        genome_name = os.path.splitext(os.path.basename(genome_fasta))[0]
-    elif genome_fasta == "":
-        genome_name = "genome"
 
     if genome_fasta:
         g = Genome(genome_name, genome_fasta)
@@ -86,7 +86,7 @@ def main(
             else:
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", UserWarning)
         else:
-            chosen_chromosomes = set(random.sample(common_chromosomes, chr_cap))
+            chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
 
     a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap)
     a.export_gff(custom_path=output_folder, tag=output_annot_file)
