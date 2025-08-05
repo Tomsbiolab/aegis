@@ -3,7 +3,18 @@ import os
 from typing_extensions import Annotated
 from aegis.annotation import Annotation
 
+RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
+                "miRNA_primary_transcript", "ncRNA", "lncRNA",
+                "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
+                "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
+                "SRP_RNA", "RNase_MRP_RNA"]
+
 app = typer.Typer(add_completion=False)
+
+def split_callback(value:str):
+    if value:
+        return [item.strip() for item in value.split(",")]
+    return []
 
 @app.command()
 def main(
@@ -54,15 +65,25 @@ def main(
     )] = False,
     clean_features: Annotated[bool, typer.Option(
         "-cf", "--clean_features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
-    )] = False
+    )] = False,
+    rna_classes: Annotated[str, typer.Option(
+        "-r", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
+        callback=split_callback
+    )] = ""
 
 ):
     """
-    Tidies up a gtf/gff file correcting general format errors, and offers some custom output options that may help adapt your particular gff format to different external tools.
+    Cleans and reformats a GFF/GTF file to correct common formatting errors and improve compatibility with other bioinformatics tools.
+    
+    This script parses an annotation file, allows for extensive filtering and reformatting, and exports a standardized GFF3 file.
     """
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+
+    for rna_class in rna_classes:
+        if rna_class not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
     os.makedirs(output_folder, exist_ok=True)
 
@@ -78,6 +99,10 @@ def main(
 
     if symbols_as_descriptors:
         remove_symbols = True
+
+    if rna_classes:
+        annotation.filter_by_rna_class(rna_classes=rna_classes)
+        clean_features = True
 
     annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases))
 

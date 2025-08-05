@@ -4797,6 +4797,25 @@ class Annotation():
 
         self.update()
 
+    def filter_by_rna_class(self, rna_classes=['mRNA']):
+
+        transcript_to_remove = set()
+
+        for genes in self.chrs.values():
+
+            for g in genes.values():
+
+                for t in g.transcripts.values():
+
+                    if t.feature not in rna_classes:
+
+                        transcript_to_remove.add(t.id)
+
+        self.remove_transcripts(transcript_to_remove)
+    
+        self.update()
+        
+
     def remove_chromosomes(self, features_to_remove:set, update:bool=True):
         if features_to_remove:
             for ft in features_to_remove:
