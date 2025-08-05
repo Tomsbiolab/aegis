@@ -1,5 +1,7 @@
 import typer
 import os
+import random
+import warnings
 from typing_extensions import Annotated
 from aegis.annotation import Annotation
 from aegis.genome import Genome
@@ -38,11 +40,11 @@ def main(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/",
     output_annot_file: Annotated[str, typer.Option(
-        "-o", "--output-annot-file", help="Path to the output annotation filename, without extension"
-    )] = "{annotation-name}_...",
+        "-o", "--output-annot-file", help="Path to the output annotation filename, including extension."
+    )] = "{annotation-name}_subset.gff3",
     output_genome_file: Annotated[str, typer.Option(
-        "-o", "--output-genome-file", help="Path to the output genome filename, without extension."
-    )] = "{genome-name}_..."
+        "-o", "--output-genome-file", help="Path to the output genome filename, including extension."
+    )] = "{genome-name}_subset.fasta"
 ):
     """
     Obtain subsets of a gff, random or directed. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
@@ -53,34 +55,45 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    if output_annot_file == "{annotation-name}_subset.gff3":
+        output_annot_file = f"{annotation_name}_subset.gff3"
 
-    if output_file == "{annotation-name}.{ext}":
-        output_file = f"{annotation_name}"
+    if output_genome_file == "{genome-name}_subset.fasta":
+        output_genome_file = f"{genome_name}_subset.fasta"
 
     if genome_name == "{genome-fasta}" and genome_fasta != "":
         genome_name = os.path.splitext(os.path.basename(genome_fasta))[0]
     elif genome_fasta == "":
         genome_name = "genome"
 
-    output_annot_file += ".gff3"
-    output_genome_file += ".fasta"
-
     if genome_fasta:
         g = Genome(genome_name, genome_fasta)
+        a = Annotation(annotation_file, annotation_name, genome=g)
 
-    
+    else:
+        a = Annotation(annotation_file, annotation_name)
 
+    if not chosen_chromosomes:
+        if genome_fasta:
+            common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
+        else:
+            common_chromosomes = set(a.chrs)
+        
+        if chr_cap > len(common_chromosomes):
+            chosen_chromosomes = common_chromosomes.copy()
+            if genome_fasta:
+                warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) common to both genome and annotation files. The subset, in any case, will be based on common chromosomes/scaffolds.", UserWarning)
+            else:
+                warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", UserWarning)
+        else:
+            chosen_chromosomes = set(random.sample(common_chromosomes, chr_cap))
 
+    a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap)
+    a.export_gff(custom_path=output_folder, tag=output_annot_file)
 
-
-
-    if output_file == "{annotation-name}_...":
-        output_file = f"MODIFY_suffix logic"
-
-    output_file += ".gff3"
-    annotation.export_gff(custom_path=output_folder, tag=output_file)
-
+    if genome_fasta:
+        g.subset(chosen_features=chosen_chromosomes)
+        g.export(output_folder=output_folder, file=output_genome_file)
 
 if __name__ == "__main__":
     app()
