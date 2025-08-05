@@ -50,7 +50,7 @@ def main(
         "-u", "--unique_cds_entry_ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
     )] = False,
     for_lifton: Annotated[bool, typer.Option(
-        "-l", "--for_lifton", help="Ensures output has idividual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
+        "-l", "--for_lifton", help="Ensures output has individual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
     )] = False,
     clean_features: Annotated[bool, typer.Option(
         "-cf", "--clean_features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
