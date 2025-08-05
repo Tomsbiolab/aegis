@@ -268,7 +268,7 @@ class Annotation():
             else:
                 self.name = f"{self.name}_{chosen_chromosomes[0]}"
 
-        self.gff_header = ""
+        self.gff_header = []
         self.target = target
         self.to_overlap = to_overlap
         self.liftoff = False
@@ -405,7 +405,7 @@ class Annotation():
             if line == "" or line == "###" or line == "#":
                 continue
             if line.startswith("#"):
-                self.gff_header += line + "\n"
+                self.gff_header.append(line)
             else:
                 line = line.split("\t")
                 if len(line) > 2:
@@ -428,7 +428,7 @@ class Annotation():
                         chromosomes_t.add(line[0])
                         parsed_lines["atypical"].append(line)
                 else:
-                    self.gff_header += "#" + "\t".join(line) + "\n"
+                    self.gff_header.append(("#" + "\t".join(line)))
 
         sorted_lines = sorted(temp, key=lambda x: (int(x[3]), int(x[4])))
         protein_match_lines = sorted(protein_match_lines, key=lambda x: (int(x[3]), int(x[4])))
@@ -3311,7 +3311,7 @@ class Annotation():
         if self.clean or self.dapmod:
             out += "##gff-version 3\n"
         else:
-            out += self.gff_header
+            out += "\n".join(self.gff_header) + "\n"
 
         if repeat_exons_utrs:
             self.single_parent_for_exons_utrs()
@@ -3432,9 +3432,9 @@ class Annotation():
 
         if tag == ".gff3":
             tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
-
-
-        print(f"Exporting {self.id} gff with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")         
+            print(f"Exporting {self.id} gff with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
+        else:
+            print(f"Exporting {self.id} gff to {export_folder}{tag}.")
 
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
         f_out.write(out)
@@ -3530,8 +3530,9 @@ class Annotation():
 
         if tag == ".gtf":
             tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
-
-        print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")         
+            print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
+        else:
+            print(f"Exporting {self.id} gtf to {export_folder}{tag}.")         
 
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
         f_out.write(out)
@@ -4752,12 +4753,25 @@ class Annotation():
                     g.remove = True
         progress_bar.close()
 
+    def remove_chromosomes_from_header(self, features_to_remove:set):
+        new_header = []
+
+        for line in self.gff_header:
+            if line.startswith("##sequence-region"):
+                temp = line.strip().split(" ")
+                ft = temp[3].strip()
+                if ft in features_to_remove:
+                    continue
+            new_header.append(line)
+
+        self.gff_header = new_header.copy()
+
     def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2):
 
         if chosen_features:
             for chosen_feature in chosen_features:
-                if chosen_feature not in self.scaffolds:
-                    raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome.")
+                if chosen_feature not in self.chrs:
+                    raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome. Choose from '{self.chrs.keys()}'")
             features_to_remove = set(self.chrs) - chosen_features
             genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
         else:
@@ -4765,7 +4779,7 @@ class Annotation():
                 warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", UserWarning)
                 features_to_remove = set()
             else:
-                features_to_remove = set(self.chrs) - set(random.sample(set(self.chrs), feature_cap))
+                features_to_remove = set(self.chrs) - set(random.sample(list(self.chrs), feature_cap))
             genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
 
         self.remove_chromosomes(features_to_remove, update=False)
@@ -4774,7 +4788,7 @@ class Annotation():
 
         for genes in self.chrs.values():
             if len(genes) > genes_to_keep_per_chromosome:
-                genes_to_remove += set(genes) - set(random.sample(set(genes), genes_to_keep_per_chromosome))
+                genes_to_remove.update(set(genes) - set(random.sample(list(genes), genes_to_keep_per_chromosome)))
 
         if genes_to_remove:
             self.remove_genes(genes_to_remove)
@@ -4784,8 +4798,11 @@ class Annotation():
         self.update()
 
     def remove_chromosomes(self, features_to_remove:set, update:bool=True):
-        for ft in features_to_remove:
-            del self.chrs[ft]
+        if features_to_remove:
+            for ft in features_to_remove:
+                del self.chrs[ft]
+            self.remove_chromosomes_from_header(features_to_remove=features_to_remove)
+
         if update:
             self.update()
 
