@@ -116,7 +116,7 @@ def main(
 
     for rna_class in rna_classes:
         if rna_class not in RNA_CLASSES:
-            raise typer.BadParameter(f"Invalid feature type: {rna_class}. Choose from: {RNA_CLASSES}")
+            raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
     genome = Genome(name=genome_name, genome_file_path=genome_file)
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome)
