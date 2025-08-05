@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import os
 import warnings
+import math
 
 from .plots import pie_chart, barplot
 from .genefunctions import overlap, reverse_complement, find_all_occurrences
@@ -4751,7 +4752,37 @@ class Annotation():
                     g.remove = True
         progress_bar.close()
 
-    def remove_genes(self, to_remove:set=()):
+    def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2):
+
+        if chosen_features:
+            features_to_remove = set(self.chrs) - chosen_features
+            genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
+        else:
+            features_to_remove = set(self.chrs) - set(random.sample(set(self.chrs), feature_cap))
+            genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
+
+        self.remove_chromosomes(features_to_remove, update=False)
+
+        genes_to_remove = set()
+
+        for genes in self.chrs.values():
+            genes_to_remove += set(self.genes) - set(random.sample(set(genes), genes_to_keep_per_chromosome))
+
+        self.remove_genes(genes_to_remove)
+    
+        self.update()
+
+    def remove_chromosomes(self, features_to_remove:set, update:bool=True):
+        for ft in features_to_remove:
+            del self.chrs[ft]
+        if update:
+            self.update()
+
+    def remove_genes(self, to_remove:set=None):
+
+        if to_remove is None:
+            to_remove = set()
+
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()

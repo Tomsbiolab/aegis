@@ -1,10 +1,12 @@
 import typer
 import os
+import shutil
 from pathlib import Path
 from typing import List
 from typing_extensions import Annotated
 from aegis.annotation import Annotation
-from aegis.equivalence import Simple_annotation
+from aegis.genome import Genome
+from aegis.equivalence import Simple_annotation, perform_pairwise_comparison, run_command
 
 app = typer.Typer(add_completion=False)
 
@@ -18,6 +20,10 @@ def main(
     annotation_files: Annotated[List[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
+    genome_files: Annotated[str, typer.Option(
+        "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. genomefile1,genomefile2,genomefile3,genomefile4",
+        callback=split_callback
+    )],
     annotation_names: Annotated[str, typer.Option(
         "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2,name3,name4",
         callback=split_callback
@@ -26,11 +32,11 @@ def main(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/",
     group_names: Annotated[str, typer.Option(
-        "-g", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
+        "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
         callback=split_callback
     )] = "",
     original_annotation_files: Annotated[str, typer.Option(
-        "-t", "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer, separated by commas. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
+        "-ot", "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer, separated by commas. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
         callback=split_callback
     )] = "",
     reference_annotation: Annotated[str, typer.Option(
@@ -39,15 +45,41 @@ def main(
     include_single_blasts: Annotated[bool, typer.Option(
         "-b", "--include_single_blasts", help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary."
     )] = False,
+    threads: Annotated[int, typer.Option(
+        "-t", "--threads", help="Number of threads."
+    )] = 5,
     skip_rbhs: Annotated[bool, typer.Option(
         "-rb", "--skip_RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
     verbose: Annotated[bool, typer.Option(
-        "-v", "--skip_RBHs", help="Whether to include more details in the orthologue summary."
+        "-v", "--verbose", help="Whether to include more details in the orthologue summary."
     )] = False
 ):
     """
     Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCScan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
+
+    Script to perform gene correspondence analysis between multiple genomes.
+
+    This script automates a bioinformatics pipeline that uses several tools
+    (Liftoff, Lifton, DIAMOND, JCVI) to find orthologous genes between all possible
+    pairs from a given list of genomes. For each pair, it performs:
+
+    1.  Annotation Liftover: Transfers annotations between the two genomes based
+        on sequence homology (using Liftoff and Lifton).
+    2.  Reciprocal Best Hit (RBH): Uses DIAMOND (a fast alternative to BLAST) to
+        find the best reciprocal homologs at the protein level.
+    3.  Synteny and Collinearity: Uses the JCVI toolkit to identify conserved gene
+        blocks (synteny) and find orthologs within that context.
+
+    After all pairwise comparisons, it collects all unique proteomes and runs
+    OrthoFinder to infer orthogroups across all species.
+
+    The script is designed to be scalable, processing any number of genomes provided
+    in the configuration section. All results for each pairwise comparison are stored
+    in a separate, clearly named directory.
+
+    All external tool commands are executed via Docker to ensure a reproducible
+    environment.
     """
 
     if len(annotation_files) < 2:
@@ -71,8 +103,14 @@ def main(
 
     if len(annotation_names) != len(set(annotation_names)):
         raise ValueError("Avoid repeated annotation tag(s)/name(s).")
+    
+    if len(annotation_files) != len(set(annotation_files)):
+        raise ValueError("Avoid repeated annotation filename(s).")
+    
+    if len(genome_files) != len(set(genome_files)):
+        raise ValueError("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
 
-    if original_annotation_files != "":
+    if original_annotation_files != []:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
             raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
@@ -98,12 +136,14 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise ValueError(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
+    genomes = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g) for n, g in enumerate(genome_files) ]
+
     annotations = []
 
     for n, annotation_file in enumerate(annotation_files):
 
         if original_annotation_files[n].lower() != "na":
-            original_annotation = Annotation(name=f"{annotation_names[n]}_original", annot_file_path=original_annotation_files[n])
+            original_annotation = Annotation(name=f"{annotation_names[n]}_original", genome=genome_files[n], annot_file_path=original_annotation_files[n])
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, original_annotation=original_annotation))
         else:
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
@@ -111,8 +151,76 @@ def main(
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-    ### LIFTOFF ETC LOGIC
 
+    output_folder = Path(output_folder).resolve() / "orthologues"
+    output_folder.mkdir(parents=True, exist_ok=True)
+    output_folder = str(output_folder) + "/"
+
+    RESULTS_DIRECTORY = Path(f"{output_folder}temp/")
+
+    all_protein_files = set()
+
+    for n1, a1 in enumerate(annotations):
+
+        for n2, a2 in enumerate(annotations):
+
+            if n1 == n2:
+                continue
+            # Create a dedicated directory for the results of this pair
+            pair_directory = RESULTS_DIRECTORY / f"{a1.name}_vs_{a2.name}"
+            
+            ### CAMBIO ###
+            # Capturar las rutas de los ficheros de proteínas devueltos por la función.
+            protein_path_1, protein_path_2 = perform_pairwise_comparison(
+                annot1=a1,
+                annot2=a2,
+                genome1=genomes[n1],
+                genome2=genomes[n2],
+                working_directory=pair_directory,
+                num_threads=threads
+            )
+            # Añadir las rutas al conjunto
+            all_protein_files.add(protein_path_1)
+            all_protein_files.add(protein_path_2)
+
+    print("\n--- ALL PAIRWISE ANALYSES COMPLETE ---")
+    
+    ### CAMBIO ###
+    # --- 3. RUN ORTHOFINDER ON ALL PROTEOMES ---
+    print("\n[STARTING ORTHOFINDER ANALYSIS]")
+    
+    # 3.1 Crear el directorio de entrada para OrthoFinder
+    orthofinder_input_dir = RESULTS_DIRECTORY / "orthofinder_input"
+    orthofinder_input_dir.mkdir(parents=True, exist_ok=True)
+    print(f"  Created OrthoFinder input directory: {orthofinder_input_dir}")
+
+    # 3.2 Copiar todos los ficheros de proteínas al directorio de entrada
+    print("  Copying protein files to OrthoFinder input directory...")
+    for protein_file in all_protein_files:
+        if protein_file.exists():
+            print(f"    - Copying {protein_file.name}")
+            shutil.copy(protein_file, orthofinder_input_dir)
+        else:
+            print(f"    - WARNING: Protein file not found, skipping: {protein_file}")
+
+    # 3.3 Ejecutar OrthoFinder
+    print("\n  Running OrthoFinder... (this can take a very long time)")
+    orthofinder_cmd = [
+        "orthofinder",
+        "-f", str(orthofinder_input_dir),
+        "-t", str(threads) # Usar los mismos hilos que en los otros pasos
+    ]
+    
+    # OrthoFinder se ejecuta en el directorio de resultados principal.
+    # Sus resultados se crearán en una subcarpeta dentro de `orthofinder_input`.
+    run_command(RESULTS_DIRECTORY, orthofinder_cmd)
+    
+    print("\n--- ORTHOFINDER ANALYSIS COMPLETE ---")
+
+
+    
+    print("\n--- ALL ANALYSES COMPLETE ---")
+    print(f"All results can be found in subdirectories within: {RESULTS_DIRECTORY}")
     
 
     simple_annotations = []
@@ -122,17 +230,11 @@ def main(
 
     del annotations
 
-    output_folder = Path(output_folder) / "orthologues"
-    output_folder.mkdir(parents=True, exist_ok=True)
-    output_folder = str(output_folder) + "/"
-
     extra_tag = ""
     if verbose:
         extra_tag = "_verbose"
 
     protein_file_tag = "_proteins_g_id_main"
-
-    equivalences_path = f"MODIFY/"
 
     for n1, a1 in enumerate(simple_annotations):
 
@@ -145,8 +247,8 @@ def main(
                 if not a1.target and not a2.target:
                     continue
 
-            mcscan_folder = f"MODIFY/"
-            orthofinder_folder = f"MODIFY/"
+            mcscan_folder = RESULTS_DIRECTORY / f"{a1.name}_vs_{a2.name}"
+            orthofinder_folder = RESULTS_DIRECTORY
             overlaps_path = f"MODIFY/"
             blasts_path = f"MODIFY/"
 

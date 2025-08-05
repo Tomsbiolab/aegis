@@ -3,9 +3,12 @@ import textwrap
 import pandas as pd
 import copy
 import re
+import random
+import warnings
 from os import system
 from Bio import SeqIO
 from pathlib import Path
+
 
 class Scaffold():
     mitochondria_suffixes = ["m", "M"]
@@ -458,3 +461,29 @@ class Genome():
             for header, seq in peaks.items():
                 f_out.write(f'>{header}\n')
                 f_out.write(f'{textwrap.fill(seq, width=60)}\n')
+
+    def subset(self, chosen_features:set=None, cap:int=2):
+
+        if chosen_features is None:
+            chosen_features = set()
+
+        if chosen_features:
+            for chosen_feature in chosen_features:
+                if chosen_feature not in self.scaffolds:
+                    raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome.")
+                
+            scaffolds_to_remove = set(self.scaffolds) - chosen_features
+            
+        else:
+
+            if cap > len(self.scaffolds):
+                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset.", UserWarning)
+                return
+
+            scaffolds_to_remove = set(self.scaffolds) - set(random.sample(set(self.scaffolds), cap))
+        self.remove_features(scaffolds_to_remove)
+
+    def remove_features(self, features_to_remove:set):
+        for ft in features_to_remove:
+            del self.scaffolds[ft]
+        self.update()
