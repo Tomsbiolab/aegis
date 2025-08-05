@@ -471,17 +471,17 @@ class Genome():
             for chosen_feature in chosen_features:
                 if chosen_feature not in self.scaffolds:
                     raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome.")
-                
             scaffolds_to_remove = set(self.scaffolds) - chosen_features
-            
         else:
-
             if cap > len(self.scaffolds):
-                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset.", UserWarning)
+                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset genome {self.id}.", UserWarning)
                 return
-
             scaffolds_to_remove = set(self.scaffolds) - set(random.sample(set(self.scaffolds), cap))
-        self.remove_features(scaffolds_to_remove)
+
+        if scaffolds_to_remove:
+            self.remove_features(scaffolds_to_remove)
+        else:
+            print(f"No scaffolds/chromosomes removed from {self.id} genome.")
 
     def remove_features(self, features_to_remove:set):
         for ft in features_to_remove:

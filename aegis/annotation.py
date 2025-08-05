@@ -4755,10 +4755,17 @@ class Annotation():
     def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2):
 
         if chosen_features:
+            for chosen_feature in chosen_features:
+                if chosen_feature not in self.scaffolds:
+                    raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome.")
             features_to_remove = set(self.chrs) - chosen_features
             genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
         else:
-            features_to_remove = set(self.chrs) - set(random.sample(set(self.chrs), feature_cap))
+            if feature_cap > len(self.chrs):
+                warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", UserWarning)
+                features_to_remove = set()
+            else:
+                features_to_remove = set(self.chrs) - set(random.sample(set(self.chrs), feature_cap))
             genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
 
         self.remove_chromosomes(features_to_remove, update=False)
@@ -4766,10 +4773,14 @@ class Annotation():
         genes_to_remove = set()
 
         for genes in self.chrs.values():
-            genes_to_remove += set(self.genes) - set(random.sample(set(genes), genes_to_keep_per_chromosome))
+            if len(genes) > genes_to_keep_per_chromosome:
+                genes_to_remove += set(genes) - set(random.sample(set(genes), genes_to_keep_per_chromosome))
 
-        self.remove_genes(genes_to_remove)
-    
+        if genes_to_remove:
+            self.remove_genes(genes_to_remove)
+        else:
+            warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", UserWarning)
+
         self.update()
 
     def remove_chromosomes(self, features_to_remove:set, update:bool=True):
