@@ -2011,7 +2011,7 @@ class Annotation():
         else:
             print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
 
-    def export_transcripts(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="transcript"):
+    def export_transcripts(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="transcript", rna_classes:list=[]):
         """
         Main means only main transcript sequences are exported.
 
@@ -2055,18 +2055,19 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
-                    if t.seq != "":
-                        if only_main and not t.main:
-                            continue
+                    if (t.feature in rna_classes) or (not rna_classes):
+                        if t.seq != "":
+                            if only_main and not t.main:
+                                continue
 
-                        if used_id == "transcript":    
-                            out += f">{t.id}"
-                        elif used_id == "gene":
-                            out += f">{g.id}"
+                            if used_id == "transcript":    
+                                out += f">{t.id}"
+                            elif used_id == "gene":
+                                out += f">{g.id}"
 
-                        if verbose:
-                            out += f"|{t.strand}|{t.ch}|{t.start}:{t.end}"
-                        out += f"\n{t.seq}\n"
+                            if verbose:
+                                out += f"|{t.strand}|{t.ch}|{t.start}:{t.end}"
+                            out += f"\n{t.seq}\n"
 
         if out != "":
             f_out = open(output_file, "w", encoding="utf-8")
