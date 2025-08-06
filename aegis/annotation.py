@@ -1070,8 +1070,9 @@ class Annotation():
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].append(t.id)
                 g.update()
-        self.update_features()
         progress_bar.close()
+        self.update_features()
+        
         if rename_features != []:
             self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes)
         self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
@@ -3283,7 +3284,7 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False):
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3303,8 +3304,10 @@ class Annotation():
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
         out = ""
-
-        export_folder = Path(custom_path or self.path) / "out_gffs"
+        if subfolder:
+            export_folder = Path(custom_path or self.path) / "out_gffs"
+        else:
+            export_folder = Path(custom_path or self.path)
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
@@ -4833,7 +4836,14 @@ class Annotation():
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+
+
+        total_count = 0
+
+        for genes in self.chrs.values():
+            total_count += len(genes)
+        
+        progress_bar = tqdm(total=total_count, disable=disable,
                                 bar_format=(
                     f'\033[1;91mRemoving {self.id} genes:\033[0m '
                     '{percentage:3.0f}%|'
@@ -4873,7 +4883,12 @@ class Annotation():
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+
+        total_count = 0
+        for genes in self.chrs.values():
+            total_count += len(genes)
+
+        progress_bar = tqdm(total=total_count, disable=disable,
                                 bar_format=(
                     f'\033[1;91mRemoving {self.id} missing genes in overlaps:\033[0m '
                     '{percentage:3.0f}%|'

@@ -38,7 +38,7 @@ def main(
     )] = "{genome-fasta}",
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."
-    )] = "./aegis_output/",
+    )] = "./aegis_output/subsets/",
     output_annot_file: Annotated[str, typer.Option(
         "-o", "--output-annot-file", help="Path to the output annotation filename, including extension."
     )] = "{annotation-name}_subset.gff3",
@@ -89,7 +89,7 @@ def main(
             chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
 
     a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap)
-    a.export_gff(custom_path=output_folder, tag=output_annot_file)
+    a.export_gff(custom_path=output_folder, tag=output_annot_file, subfolder=False)
 
     if genome_fasta:
         g.subset(chosen_features=chosen_chromosomes)
