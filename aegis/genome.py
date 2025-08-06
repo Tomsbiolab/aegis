@@ -83,7 +83,9 @@ class Genome():
     def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False):
         start = time.time()
         self.name = name
-        self.file = genome_file_path
+
+        self.file = str(Path(genome_file_path).resolve())
+        self.path = str(Path(genome_file_path).resolve().parent) + "/"
 
         self.suffix = ""
 
@@ -116,8 +118,6 @@ class Genome():
         if "_chr00" in self.file:
             self.unknown_chromosome = True
 
-        self.path = "/".join(self.file.split("/")[0:-1]) + "/"
-        
         self.scaffolds = {}
 
         # Creating a dictionary with the genome sequence of each chromosome or scaffold, still referred as chromosomes in the code

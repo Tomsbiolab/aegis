@@ -31,6 +31,24 @@ def run_command(working_directory: Path, command: list):
 
 def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int) -> tuple[Path, Path]:
 
+    annot1.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+    annot1.export_gff(custom_path=str(working_directory), tag=f"{annot1.name}_clean.gff3", subfolder=False)
+
+    annot2.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+    annot2.export_gff(custom_path=str(working_directory), tag=f"{annot2.name}_clean.gff3", subfolder=False)
+
+    annot1_lifton = annot1.copy()
+    annot1_lifton.CDS_to_CDS_segment_ids()
+    annot1_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+    annot1_lifton.export_gff(custom_path=str(working_directory), tag=f"{annot1.name}_lifton_clean.gff3", subfolder=False, no_1bp_features=True)
+    del annot1_lifton
+
+    annot2_lifton = annot2.copy()
+    annot2_lifton.CDS_to_CDS_segment_ids()
+    annot2_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+    annot2_lifton.export_gff(custom_path=str(working_directory), tag=f"{annot2.name}_lifton_clean.gff3", subfolder=False, no_1bp_features=True)
+    del annot2_lifton
+
     print(f"\n[STARTING ANALYSIS] Comparing {annot1.name} with {annot2.name}")
     print(f"Results will be stored in: {working_directory}")
     working_directory.mkdir(parents=True, exist_ok=True)
@@ -42,7 +60,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     liftoff_1_to_2_gff = working_directory / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
     liftoff_cmd_1 = [
         "liftoff", str(genome2.file), str(genome1.file),
-        "-g", str(annot1.file), "-o", str(liftoff_1_to_2_gff)
+        "-g", f"{annot1.name}_clean.gff3", "-o", str(liftoff_1_to_2_gff)
     ]
     run_command(working_directory, liftoff_cmd_1)
 
@@ -50,7 +68,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     liftoff_2_to_1_gff = working_directory / f"liftoff_{annot2.name}_to_{annot1.name}.gff"
     liftoff_cmd_2 = [
         "liftoff", str(genome1.file), str(genome2.file),
-        "-g", str(annot2.file), "-o", str(liftoff_2_to_1_gff)
+        "-g", f"{annot2.name}_clean.gff3", "-o", str(liftoff_2_to_1_gff)
     ]
     run_command(working_directory, liftoff_cmd_2)
 
@@ -59,7 +77,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     # Direction: Species 1 -> Species 2
     lifton_1_to_2_gff = working_directory / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
     lifton_cmd_1 = [
-        "lifton", "-g", str(annot1.file), "-o", str(lifton_1_to_2_gff),
+        "lifton", "-g", f"{annot1.name}_lifton_clean.gff3", "-o", str(lifton_1_to_2_gff),
         "-copies", str(genome2.file), str(genome1.file)
     ]
     run_command(working_directory, lifton_cmd_1)
@@ -67,7 +85,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     # Direction: Species 2 -> Species 1
     lifton_2_to_1_gff = working_directory / f"lifton_{annot2.name}_to_{annot1.name}.gff3"
     lifton_cmd_2 = [
-        "lifton", "-g", str(annot2.file), "-o", str(lifton_2_to_1_gff),
+        "lifton", "-g", f"{annot2.name}_lifton_clean.gff3", "-o", str(lifton_2_to_1_gff),
         "-copies", str(genome1.file), str(genome2.file)
     ]
     run_command(working_directory, lifton_cmd_2)
@@ -135,8 +153,8 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     print("\n[STEP 4] Preparing files for JCVI synteny analysis...")
 
     # JCVI requires specific file naming conventions
-    jcvi_name_1 = f"{annot1.name}_jcvi"
-    jcvi_name_2 = f"{annot2.name}_jcvi"
+    jcvi_name_1 = f"{annot1.name}_clean"
+    jcvi_name_2 = f"{annot2.name}_clean"
     
     cleaned_cds_1 = working_directory / f"{jcvi_name_1}.cds"
     cleaned_cds_2 = working_directory / f"{jcvi_name_2}.cds"
@@ -150,19 +168,13 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
     jcvi_format_cmd_2 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta_2), str(cleaned_cds_2)]
     run_command(working_directory, jcvi_format_cmd_2)
 
-    annot1.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
-    annot1.export_gff(custom_path=str(working_directory), tag=f"{jcvi_name_1}.gff3")
-
-
-    annot2.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
-    annot2.export_gff(custom_path=str(working_directory), tag=f"{jcvi_name_2}.gff3")
 
 
     #os.chdir(working_directory)
 
     gff_to_bed_cmd_1 = [
         "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", f"{str(Path(working_directory) / "out_gffs")}/{jcvi_name_1}.gff3", "-o", str(bed_file_1)
+        "--key=Parent", "--primary_only", f"{annot1.name}_clean.gff3", "-o", str(bed_file_1)
     ]
 
     print(gff_to_bed_cmd_1)
@@ -170,7 +182,7 @@ def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object,
 
     gff_to_bed_cmd_2 = [
         "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", f"{str(Path(working_directory) / "out_gffs")}/{jcvi_name_2}.gff3", "-o", str(bed_file_2)
+        "--key=Parent", "--primary_only", f"{annot2.name}_clean.gff3", "-o", str(bed_file_2)
     ]
     run_command(working_directory, gff_to_bed_cmd_2)
     
