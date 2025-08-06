@@ -586,6 +586,7 @@ class Simple_annotation():
         self.name = name
         self.genes = {}
         self.species = species
+        self.target = annotation_object.target
         for gene in annotation_object.all_gene_ids:
             if gene not in self.genes:
                 self.genes[gene] = Simple_gene(gene)
