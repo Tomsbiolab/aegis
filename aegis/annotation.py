@@ -1241,12 +1241,14 @@ class Annotation():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
                         if c.start < t.exons[0].start:
-                            print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                            if not quiet:
+                                print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                             t.exons[0].start = c.start
                             t.exons[0].update_size()
                             self.sorted = False
                         if c.end > t.exons[-1].end:
-                            print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                            if not quiet:
+                                print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                             t.exons[-1].end = c.end
                             t.exons[-1].update_size()
                             self.sorted = False
@@ -1257,13 +1259,17 @@ class Annotation():
                 for t in g.transcripts.values():
                     if t.exons != []:
                         if t.exons[0].start < t.start:
-                            print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}")
+                            if not quiet:
+                                print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}")
                         elif t.exons[0].start > t.start:
-                            print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}")
+                            if not quiet:
+                                print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}")
                         if t.exons[-1].end < t.end:
-                            print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}")
+                            if not quiet:
+                                print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}")
                         elif t.exons[-1].end > t.end:
-                            print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}")
+                            if not quiet:
+                                print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}")
                         if t.start != t.exons[0].start or t.end != t.exons[-1].end:
                             t.start = t.exons[0].start
                             t.end = t.exons[-1].end
@@ -1277,11 +1283,13 @@ class Annotation():
                 latest_end = None
                 for n, t in enumerate(g.transcripts.values()):
                     if t.start < g.start:
-                        print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
+                        if not quiet:
+                            print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
                         g.start = t.start
                         self.sorted = False
                     if t.end > g.end:
-                        print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
+                        if not quiet:
+                            print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                         g.end = t.end
                         self.sorted = False
                     if n == 0:
@@ -1294,7 +1302,8 @@ class Annotation():
                             latest_end = t.end
                 if earliest_start != None:
                     if g.start != earliest_start or g.end != latest_end:
-                        print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
+                        if not quiet:
+                            print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
                         g.start = earliest_start
                         g.end = latest_end
                         g.update_size()
@@ -3720,7 +3729,7 @@ class Annotation():
         if not quiet:
             print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
 
-    def remove_wrongly_assigned_exons(self):
+    def remove_wrongly_assigned_exons(self, quiet:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -3731,7 +3740,7 @@ class Annotation():
                     t.exons = new_e.copy()
 
         self.remove_transcripts_with_no_exons()
-        self.remove_genes_with_no_transcripts()
+        self.remove_genes_with_no_transcripts(quiet=quiet)
 
     def remove_transcripts_with_no_exons(self):
         transcripts_to_remove = []
@@ -3745,7 +3754,7 @@ class Annotation():
             print(f"{t_id} Warning: transcript with no exons which could have been removed because of strand inconsistencies")
             self.warnings["transcript_with_no_exons"].append(t_id)
 
-    def remove_transcripts(self, to_remove:set):
+    def remove_transcripts(self, to_remove:set, quiet:bool=False):
         for t in to_remove:
             if t in self.all_transcript_ids:
                 chrom = self.all_transcript_ids[t][0]
@@ -3754,7 +3763,7 @@ class Annotation():
             else:
                 warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}")
 
-        self.remove_genes_with_no_transcripts()
+        self.remove_genes_with_no_transcripts(quiet=quiet)
 
     def remove_genes_with_no_transcripts(self, quiet:bool=False):
         genes_to_remove = []
@@ -3772,7 +3781,7 @@ class Annotation():
     def remove_missing_transcript_parent_references(self, extra_attributes=False, quiet:bool=True):
         if not quiet:
             print(f"Removing missing transcript parent references for {self.id} annotation.")
-        self.remove_wrongly_assigned_exons()
+        self.remove_wrongly_assigned_exons(quiet=quiet)
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -4832,7 +4841,7 @@ class Annotation():
 
                         transcript_to_remove.add(t.id)
 
-        self.remove_transcripts(transcript_to_remove)
+        self.remove_transcripts(transcript_to_remove, quiet=quiet)
     
         self.update(quiet=quiet)
         
