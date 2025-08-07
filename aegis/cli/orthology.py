@@ -264,26 +264,21 @@ def main(
                 if not a1.target and not a2.target:
                     continue
 
-            mcscan_folder = results_directory / f"{a1.name}_vs_{a2.name}"
-            orthofinder_folder = results_directory
-            overlaps_path = f"MODIFY/"
-            blasts_path = f"MODIFY/"
-
-            a1.add_mcscan_equivalences(f"{mcscan_folder}{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
-            a1.add_mcscan_equivalences(f"{mcscan_folder}{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
-            a1.add_orthofinder_equivalences(f"{orthofinder_folder}Orthologues/{a1.name}{protein_file_tag}.tsv", a2.name, group_names[n2])
+            a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
+            a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
+            a1.add_orthofinder_equivalences(f"{protein_path}/orthofinder/Results*/{a1.name}{protein_file_tag}.tsv", a2.name, group_names[n2])
             
-            a1.add_reciprocal_overlap_equivalences(overlaps_path, a1.name, a2.name, group_names[n2])
+            a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2])
 
-            a1.add_reciprocal_overlap_equivalences(overlaps_path, a1.name, a2.name, group_names[n2], liftoff=False)
+            a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False)
 
-            a1.add_blast_equivalences(f"{blasts_path}", a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts)
+            a1.add_blast_equivalences(f"{diamond_path}", a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts)
 
-        output_file = f"{equivalences_path}{a1.name}_equivalences{extra_tag}.tsv"
+        output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
 
-        output_file_filtered = f"{equivalences_path}{a1.name}_equivalences_filtered{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs_and_rbhs = f"{equivalences_path}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs = f"{equivalences_path}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
+        output_file_filtered = f"{output_folder}{a1.name}_equivalences_filtered{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
 
         a1.export_summary_equivalences(output_file, verbose=verbose)
 

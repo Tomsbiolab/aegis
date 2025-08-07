@@ -2609,7 +2609,8 @@ class Annotation():
             if self.genome == other.genome:
 
                 if self.genome == None:
-                    print(f"Warning: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
+                    if not quiet:
+                        print(f"Warning: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
                 
                 if other.name in self.overlapped_annotations or self.name in other.overlapped_annotations:
                     print(f"Overlaps between {self.id} and {other.id} "
