@@ -1725,7 +1725,10 @@ class Annotation():
         valid_id_choices = ["gene", "transcript", "CDS", "protein"]
         """
 
-        output_file = Path(custom_path or self.path) / "features"
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
 
@@ -1849,7 +1852,10 @@ class Annotation():
                 self.generate_sequences(genome)
                 self.export_unique_proteins(custom_path=custom_path)
         else:
-            output_file = Path(custom_path or self.path) / "features"
+            if custom_path:
+                output_file = Path(custom_path)
+            else:
+                output_file = Path(self.path) / "features"
             output_file.mkdir(parents=True, exist_ok=True)
             output_file = str(output_file) + "/"
             output_file += f"{self.id}{self.feature_suffix}_unique_proteins.fasta"
@@ -1913,8 +1919,10 @@ class Annotation():
         valid_id_choices = ["gene", "transcript", "CDS"]
         """
 
-    
-        output_file = Path(custom_path or self.path) / "features"
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
 
@@ -2026,7 +2034,10 @@ class Annotation():
 
         valid_id_choices = ["gene", "transcript"]
         """
-        output_file = Path(custom_path or self.path) / "features"
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
         output_file += self.id
@@ -2079,12 +2090,17 @@ class Annotation():
             print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
 
     def export_genes(self, verbose:bool=True, custom_path:str=""):
-        output_file = Path(custom_path or self.path) / "features"
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
         output_file += self.id
         output_file += self.feature_suffix
         output_file += "_genes"
+
+
         if verbose:
             output_file += "_coordinates"
         output_file += ".fasta"
@@ -2110,7 +2126,10 @@ class Annotation():
         Verbose will include promoter type, strand, chromosome, and coordinates.
 
         """
-        output_file = Path(custom_path or self.path) / "features"
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
         output_file += self.id

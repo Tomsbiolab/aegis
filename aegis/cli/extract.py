@@ -42,7 +42,7 @@ def main(
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
         "-o", "--output-dir", help="Path to the directory where output FASTA files will be saved."
-    )] = "./aegis_output/",
+    )] = "./aegis_output/features/",
     feature_type: Annotated[str, typer.Option(
         "-f", "--feature-type", help=f"Feature type(s) to extract, as a comma-separated list. Available options: {', '.join(FEATURES)}.",
         callback=split_callback

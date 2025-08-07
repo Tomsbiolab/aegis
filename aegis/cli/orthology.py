@@ -6,7 +6,7 @@ from typing import List
 from typing_extensions import Annotated
 from aegis.annotation import Annotation
 from aegis.genome import Genome
-from aegis.equivalence import Simple_annotation, perform_pairwise_comparison, run_command
+from aegis.equivalence import Simple_annotation, pairwise_orthology, run_command
 
 app = typer.Typer(add_completion=False)
 
@@ -151,14 +151,47 @@ def main(
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-
     output_folder = Path(output_folder).resolve() / "orthologues"
     output_folder.mkdir(parents=True, exist_ok=True)
     output_folder = str(output_folder) + "/"
 
-    RESULTS_DIRECTORY = Path(f"{output_folder}temp/")
+    results_directory = Path(f"{output_folder}temp/")
+    protein_path = results_directory / "proteins"
+    protein_path.mkdir(parents=True, exist_ok=True)
 
-    all_protein_files = set()
+    CDS_path = results_directory / "CDSs"
+    CDS_path.mkdir(parents=True, exist_ok=True)
+
+    diamond_path = results_directory / "diamond"
+    diamond_path.mkdir(parents=True, exist_ok=True)
+
+    gff_path = results_directory / "gffs"
+    gff_path.mkdir(parents=True, exist_ok=True)
+
+    # Create gff, protein, CDS files and diamond databases in a non-redundant manner
+    for n, a in enumerate(annotations):
+
+        a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+        a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False)
+
+        a_lifton = a.copy()
+        a_lifton.CDS_to_CDS_segment_ids()
+        a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+        a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True)
+
+        del a_lifton
+
+        a.generate_sequences(genomes[n])
+        a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
+        a.export_CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
+
+        protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
+
+        diamond_db_file = diamond_path / f"{a.name}_diamond_db"
+        makedb_cmd = [
+            "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
+        ]
+        run_command(diamond_path, makedb_cmd)
 
     for n1, a1 in enumerate(annotations):
 
@@ -166,62 +199,19 @@ def main(
 
             if n1 == n2:
                 continue
-            # Create a dedicated directory for the results of this pair
-            pair_directory = RESULTS_DIRECTORY / f"{a1.name}_vs_{a2.name}"
+
+            pair_directory = results_directory / f"{a1.name}_vs_{a2.name}"
             
-            ### CAMBIO ###
-            # Capturar las rutas de los ficheros de proteínas devueltos por la función.
-            protein_path_1, protein_path_2 = perform_pairwise_comparison(
-                annot1=a1,
-                annot2=a2,
-                genome1=genomes[n1],
-                genome2=genomes[n2],
-                working_directory=pair_directory,
-                num_threads=threads
-            )
-            # Añadir las rutas al conjunto
-            all_protein_files.add(protein_path_1)
-            all_protein_files.add(protein_path_2)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, working_pair_directory=pair_directory, num_threads=threads)
 
-    print("\n--- ALL PAIRWISE ANALYSES COMPLETE ---")
-    
-    ### CAMBIO ###
-    # --- 3. RUN ORTHOFINDER ON ALL PROTEOMES ---
-    print("\n[STARTING ORTHOFINDER ANALYSIS]")
-    
-    # 3.1 Crear el directorio de entrada para OrthoFinder
-    orthofinder_input_dir = RESULTS_DIRECTORY / "orthofinder_input"
-    orthofinder_input_dir.mkdir(parents=True, exist_ok=True)
-    print(f"  Created OrthoFinder input directory: {orthofinder_input_dir}")
-
-    # 3.2 Copiar todos los ficheros de proteínas al directorio de entrada
-    print("  Copying protein files to OrthoFinder input directory...")
-    for protein_file in all_protein_files:
-        if protein_file.exists():
-            print(f"    - Copying {protein_file.name}")
-            shutil.copy(protein_file, orthofinder_input_dir)
-        else:
-            print(f"    - WARNING: Protein file not found, skipping: {protein_file}")
-
-    # 3.3 Ejecutar OrthoFinder
-    print("\n  Running OrthoFinder... (this can take a very long time)")
+    print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
     orthofinder_cmd = [
         "orthofinder",
-        "-f", str(orthofinder_input_dir),
-        "-t", str(threads) # Usar los mismos hilos que en los otros pasos
+        "-f", str(protein_path),
+        "-t", str(threads),
+        "-o", f"{str(protein_path)}/orthofinder/"
     ]
-    
-    # OrthoFinder se ejecuta en el directorio de resultados principal.
-    # Sus resultados se crearán en una subcarpeta dentro de `orthofinder_input`.
-    run_command(RESULTS_DIRECTORY, orthofinder_cmd)
-    
-    print("\n--- ORTHOFINDER ANALYSIS COMPLETE ---")
-
-
-    
-    print("\n--- ALL ANALYSES COMPLETE ---")
-    print(f"All results can be found in subdirectories within: {RESULTS_DIRECTORY}")
-    
+    run_command(results_directory, orthofinder_cmd)
 
     simple_annotations = []
 
@@ -233,7 +223,6 @@ def main(
     extra_tag = ""
     if verbose:
         extra_tag = "_verbose"
-
     protein_file_tag = "_proteins_g_id_main"
 
     for n1, a1 in enumerate(simple_annotations):
@@ -247,8 +236,8 @@ def main(
                 if not a1.target and not a2.target:
                     continue
 
-            mcscan_folder = RESULTS_DIRECTORY / f"{a1.name}_vs_{a2.name}"
-            orthofinder_folder = RESULTS_DIRECTORY
+            mcscan_folder = results_directory / f"{a1.name}_vs_{a2.name}"
+            orthofinder_folder = results_directory
             overlaps_path = f"MODIFY/"
             blasts_path = f"MODIFY/"
 
