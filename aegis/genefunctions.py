@@ -258,7 +258,7 @@ def export_for_dapseq(annotation, genome, chromosome_dictionary:dict={}, genome_
     annotation.rename_chromosomes(equivalences)
     annotation.export_gff(output_folder=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, exclude_non_coding=exclude_non_coding)
 
-def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False):
+def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False, quiet:bool=False):
     """
     This generates equivalences between a set of annotation objects, whether only reporting equivalences to a particular target or between all annotations.
     """
@@ -475,6 +475,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
 
     now = time.time()
     lapse = now - start
-    print(f"\nGenerating overlaps for annotations = '{annotations}' took {round(lapse/60, 1)} minutes\n")
+    if not quiet:
+        print(f"\nGenerating overlaps for annotations = '{annotations}' took {round(lapse/60, 1)} minutes\n")
 
         

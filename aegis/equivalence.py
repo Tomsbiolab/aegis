@@ -32,57 +32,43 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     working_pair_directory.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n\n{annot1.name} vs {annot2.name} pairwise orthology:")
+    liftoff_dir = working_directory / "liftoff"
+    lifton_dir = working_directory / "lifton"
+
+    print(f"\n\n{annot1.name} vs {annot2.name}:")
 
     print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
-    liftoff_1_to_2_gff = working_pair_directory / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
-    liftoff_cmd_1 = [
+    liftoff_gff = liftoff_dir / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
+    liftoff_cmd = [
         "liftoff", str(genome2.file), str(genome1.file),
-        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_1_to_2_gff)
+        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff)
     ]
-    run_command(working_pair_directory, liftoff_cmd_1)
+    run_command(liftoff_dir, liftoff_cmd)
 
-    to_remove = working_pair_directory / "intermediate_files"
+    to_remove = liftoff_dir / "intermediate_files"
 
     if os.path.exists(str(to_remove)):
         shutil.rmtree(str(to_remove))
+        unmapped_file = f"{str(liftoff_dir)}/unmapped_features.txt"
+        if os.path.isfile(unmapped_file):
+            os.remove(unmapped_file)
 
-    liftoff_2_to_1_gff = working_pair_directory / f"liftoff_{annot2.name}_to_{annot1.name}.gff"
-    liftoff_cmd_2 = [
-        "liftoff", str(genome1.file), str(genome2.file),
-        "-g", f"{working_directory}/gffs/{annot2.name}.gff3", "-o", str(liftoff_2_to_1_gff)
-    ]
-    run_command(working_pair_directory, liftoff_cmd_2)
+    
 
-    to_remove = working_pair_directory / "intermediate_files"
+    print(f"\t\tRunning aegis-overlaps on result ")
 
-    if os.path.exists(str(to_remove)):
-        shutil.rmtree(str(to_remove))
 
-    print(f"\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
+    print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
 
-    lifton_1_to_2_gff = working_pair_directory / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
-    lifton_cmd_1 = [
-        "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_1_to_2_gff),
+    lifton_gff = working_pair_directory / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
+    lifton_cmd = [
+        "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
         "-copies", str(genome2.file), str(genome1.file)
     ]
-    run_command(working_pair_directory, lifton_cmd_1)
+    run_command(lifton_dir, lifton_cmd)
 
-    to_remove = working_pair_directory / "lifton_output"
-
-    if os.path.exists(str(to_remove)):
-        shutil.rmtree(str(to_remove))
-
-
-    lifton_2_to_1_gff = working_pair_directory / f"lifton_{annot2.name}_to_{annot1.name}.gff3"
-    lifton_cmd_2 = [
-        "lifton", "-g", f"{working_directory}/gffs/{annot2.name}_for_lifton.gff3", "-o", str(lifton_2_to_1_gff),
-        "-copies", str(genome1.file), str(genome2.file)
-    ]
-    run_command(working_pair_directory, lifton_cmd_2)
-
-    to_remove = working_pair_directory / "lifton_output"
+    to_remove = lifton_dir / "lifton_output"
 
     if os.path.exists(str(to_remove)):
         shutil.rmtree(str(to_remove))
@@ -91,8 +77,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
     cds_dir = working_directory / "CDSs"
     diamond_dir = working_directory / "diamond"
 
-    protein_fasta_1 = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
-    protein_fasta_2 = protein_dir / f"{annot2.name}_proteins_g_id_main.fasta"
+    protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 
     cds_fasta_1 = cds_dir / f"{annot1.name}_CDSs_g_id_main.fasta"
     cds_fasta_2 = cds_dir / f"{annot2.name}_CDSs_g_id_main.fasta"
@@ -100,29 +85,18 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
     cleaned_cds_1 = cds_dir / f"{annot1.name}.cds"
     cleaned_cds_2 = cds_dir / f"{annot2.name}.cds"
 
-    diamond_db_1 = diamond_dir / f"{annot1.name}_diamond_db"
-    diamond_db_2 = diamond_dir / f"{annot1.name}_diamond_db"
+    diamond_db = diamond_dir / f"{annot1.name}_diamond_db"
 
-    diamond_result_1_to_2 = working_pair_directory / f"diamond_{annot1.name}_to_{annot2.name}.txt"
-    diamond_result_2_to_1 = working_pair_directory / f"diamond_{annot2.name}_to_{annot1.name}.txt"
+    diamond_result = diamond_dir / f"diamond_{annot1.name}_to_{annot2.name}.txt"
 
     print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
-    blastp_cmd_1 = [
-        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db_2), "--ultra-sensitive", 
-        "--out", str(diamond_result_1_to_2), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta_1), 
+    blastp_cmd = [
+        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+        "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
         "--max-target-seqs", "1", "--evalue", "0.00001", "--max-hsps", "1"
     ]
-    run_command(working_pair_directory, blastp_cmd_1)
-
-    print(f"\tRunning DIAMOND search ({annot2.name} -> {annot1.name})")
-    blastp_cmd_2 = [
-        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db_1), "--ultra-sensitive",
-        "--out", str(diamond_result_2_to_1), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta_2),
-        "--max-target-seqs", "1", "--evalue", "0.00001", "--max-hsps", "1"
-    ]
-    run_command(working_pair_directory, blastp_cmd_2)
+    run_command(diamond_dir, blastp_cmd)
 
     cds_fasta_1 = cds_dir / f"{annot1.name}_CDSs_g_id_main.fasta"
     cleaned_cds_1 = working_pair_directory / f"{annot1.name}.cds"

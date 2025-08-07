@@ -250,7 +250,7 @@ class Annotation():
     # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False):
+    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False):
         
         start = time.time()
 
@@ -281,7 +281,8 @@ class Annotation():
         self.genome = None
         self.id = self.name
 
-        print(f"\nProcessing {self.id} annotation object\n")
+        if not quiet:
+            print(f"\nProcessing {self.id} annotation object\n")
         self.excluded_chromosomes = []
         self.features = set()
         # genes will be added as {"ch":{"gene_id" : gene_object}}
@@ -387,7 +388,8 @@ class Annotation():
         
         encoding = read_file_with_fallback(self.file)
         file_format = detect_file_format(self.file, encoding)
-        print(f"{file_format} file format detected for file='{self.file}'")
+        if not quiet:
+            print(f"{file_format} file format detected for file='{self.file}'")
 
         if file_format == 'gtf':
             lines = convert_gtf_to_gff3(self.file, encoding)
@@ -448,8 +450,8 @@ class Annotation():
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        # Disable tqdm if stdout or stderr are redirected or quite mode
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -458,7 +460,8 @@ class Annotation():
         transcript_info = {}
 
         if self.features == ["nucleotide_to_protein_match"]:
-            print(f"{self.id} annotation has just nucleotide to protein matches so genes and transcripts will be generated")
+            if not quiet:
+                print(f"{self.id} annotation has just nucleotide to protein matches so genes and transcripts will be generated")
             progress_bar = tqdm(total=len(protein_match_lines),
                     disable=disable,
                     bar_format=(
@@ -474,7 +477,8 @@ class Annotation():
                 ft = line[2]
                 coord = [int(line[3]), int(line[4])]
                 if coord[0] > coord[1]:
-                    print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
+                    if not quiet:
+                        print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
                     coord.sort()
                 score = line[5]
                 strand = line[6]
@@ -487,7 +491,8 @@ class Annotation():
                     if a[0] == "ID":
                         ID = a[1].strip()
                 if not ID:
-                    print(f"Error: ID not found for {ft}: {line}")
+                    if not quiet:
+                        print(f"Error: ID not found for {ft}: {line}")
                     continue
                 if ID not in temp_protein_matches:
                     temp_protein_matches[ID] = [Feature(ID, ch, source, ft, strand,coord[0], coord[1], score, phase, attributes)]
@@ -564,7 +569,8 @@ class Annotation():
                         if a[0] == "ID":
                             ID = a[1].strip()
                     if not ID:
-                        print(f"Error: ID not found for {ft}: {line}")
+                        if not quiet:
+                            print(f"Error: ID not found for {ft}: {line}")
                         continue
 
                     if "pseudo" in ft:
@@ -599,12 +605,13 @@ class Annotation():
                                                  ".",
                                                 f"ID={ID}_{transcript_info[ID][3]}_gene")
                         self.all_transcript_ids[f"{ID}_{transcript_info[ID][3]}"] = (ch, f"{ID}_{transcript_info[ID][3]}_gene")
-                        print(f"{self.id} Warning: repeated transcript ID "
-                            f"{ID}_gene renamed to {ID}_{transcript_info[ID][3]}_gene")
+                        if not quiet:
+                            print(f"{self.id} Warning: repeated transcript ID {ID}_gene renamed to {ID}_{transcript_info[ID][3]}_gene")
 
                 progress_bar.close()
 
-                print(f"{self.id} did not have genes and these were created from transcripts")
+                if not quiet:
+                    print(f"{self.id} did not have genes and these were created from transcripts")
 
             for n, (ft_level, lines) in enumerate(parsed_lines.items()):
                 progress_bar = tqdm(total=len(lines), disable=disable, bar_format=(
@@ -631,15 +638,16 @@ class Annotation():
                         ID = ""
 
                     if coord[0] > coord[1]:
-                        print(f"{self.id} Warning: Decreasing coordinates "
-                                f"for {ft} {ID}")
+                        if not quiet:
+                            print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
                         self.warnings["decreasing_coordinates"].append(ID)
                         coord.sort()
 
                     # genes
                     if n == 0:
                         if coord[0] == coord[1]:
-                            print(f"{self.id} Error: 1bp gene {ID} feature")
+                            if not quiet:
+                                print(f"{self.id} Error: 1bp gene {ID} feature")
                             self.errors["1bp_gene"].append(ID)
                         if ft == "pseudogene":
                             pseudogene = True
@@ -662,14 +670,15 @@ class Annotation():
                                                     coord[1], score, ".",
                                                     attributes)
                         else:
-                            print(f"{self.id} Error: repeated gene ID {ID}")
+                            if not quiet:
+                                print(f"{self.id} Error: repeated gene ID {ID}")
                             self.errors["repeated_gene_IDs"].append(ID)
 
                     # transcripts with created genes
                     elif n == 1 and created_genes:
                         if coord[0] == coord[1]:
-                            print(f"{self.id} Error: 1bp transcript level {ID} "
-                                "feature ")
+                            if not quiet:
+                                print(f"{self.id} Error: 1bp transcript level {ID} feature")
                             self.errors["1bp_transcript"].append(ID)  
                         count =  transcript_info[f"{ID}"][3]
 
@@ -705,13 +714,14 @@ class Annotation():
                                                         f"ID={t_id};Parent={t_parent}")
                                         break
                             if not found:
-                                print("Error: repeated transcript ID {ID} could "
-                                    "not find its newly created gene copy")
+                                if not quiet:
+                                    print("Error: repeated transcript ID {ID} could not find its newly created gene copy")
     
                     # transcripts
                     elif n == 1:
                         if coord[0] == coord[1]:
-                            print(f"{self.id} Error: 1bp transcript level {ID} feature")
+                            if not quiet:
+                                print(f"{self.id} Error: 1bp transcript level {ID} feature")
                             self.errors["1bp_transcript"].append(ID)
                         for term in attributes_l:
                             if "arent=" not in term:
@@ -719,15 +729,15 @@ class Annotation():
                             term = term.split("=")[1]
                             parents = term.split(",")
                             if len(parents) > 1: # does not happen it seems
-                                print(f"{self.id} Error: {ID} transcript refers "
-                                        "to more than 1 gene!")
-                                (self.errors["transcript_to_more_than_1_gene"]
-                                        .append(ID))
+                                if not quiet:
+                                    print(f"{self.id} Error: {ID} transcript refers to more than 1 gene!")
+                                self.errors["transcript_to_more_than_1_gene"].append(ID)
                             else:
                                 parent = parents[0].strip()
                                 if parent in self.chrs[ch]:
                                     if ID in self.chrs[ch][parent].transcripts:
-                                        print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
+                                        if not quiet:
+                                            print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
                                         self.errors["repeat_transcript_same_gene"].append(ID)
                                     else:
                                         self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
@@ -738,16 +748,13 @@ class Annotation():
                                                                                             attributes)
                                         self.all_transcript_ids[ID] = (ch, parent)
                                 elif parent in self.all_gene_ids:
-                                    print(f"{self.id} Error: {ID} transcript " 
-                                            "refers to a gene in a different "
-                                            "chromosome")
-                                    (self.errors["transcript_to_gene_other_chr"]
-                                            .append(ID))
+                                    if not quiet:
+                                        print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome")
+                                    self.errors["transcript_to_gene_other_chr"].append(ID)
                                 else:
-                                    print(f"{self.id} Error: {ID} transcript " 
-                                            "refers to an inexistent gene")
-                                    (self.errors["transcript_to_inexistent_gene"]
-                                            .append(ID))
+                                    if not quiet:
+                                        print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
+                                    self.errors["transcript_to_inexistent_gene"].append(ID)
                                     
                     # transcript subfeatures
                     elif n < (len(parsed_lines) - 1):
@@ -825,7 +832,8 @@ class Annotation():
                                                                     score,  ".",
                                                                     attributes)))                                                  
                                             else:
-                                                print(f"{self.id} Error: {parent} "
+                                                if not quiet:
+                                                    print(f"{self.id} Error: {parent} "
                                                     "pseudogene already had a "
                                                     f"transcript which {ft} "
                                                     f"subfeature {ID} ignores")
@@ -836,7 +844,8 @@ class Annotation():
                                             # gene without transcripts pointed to
                                             if (self.chrs[ch][parent]
                                                 .transcripts) == {}:
-                                                print(f"{self.id} Error: {ft} "
+                                                if not quiet:
+                                                    print(f"{self.id} Error: {ft} "
                                                     f"subfeature {ID} references"
                                                     f" {parent} gene which is "
                                                     "not a pseudogene and has "
@@ -883,7 +892,8 @@ class Annotation():
                                                             coord[1], score,
                                                              ".", attributes)))
                                             else:
-                                                print(f"{self.id} Error: {ft} "
+                                                if not quiet:
+                                                    print(f"{self.id} Error: {ft} "
                                                     f"subfeature {ID} references"
                                                     f"{parent} gene which is not"
                                                     "a pseudogene and has "
@@ -893,7 +903,8 @@ class Annotation():
 
                                     else:
                                         if self.liftoff:
-                                            print(f"{self.id} Warning: {ft} "
+                                            if not quiet:
+                                                print(f"{self.id} Warning: {ft} "
                                                 f"subfeature {ID} references "
                                                 f"{parent} which is not found in"
                                                 " the gff, possibly not "
@@ -902,7 +913,8 @@ class Annotation():
                                             ["missing_subfeature_parent_liftoff"]
                                             .append(ID))
                                         else:
-                                            print(f"{self.id} Warning: {ft} "
+                                            if not quiet:
+                                                print(f"{self.id} Warning: {ft} "
                                                 f"subfeature {ID} references "
                                                 f"{parent} which is not found in"
                                                 " the gff")
@@ -1017,7 +1029,8 @@ class Annotation():
                                                                 score,  ".",
                                                                 attributes)))                                    
                                     if found > 1:
-                                        print(f"{self.id} Error: same {parent} transcript from {ft} {ID} found for different genes.")
+                                        if not quiet:
+                                            print(f"{self.id} Error: same {parent} transcript from {ft} {ID} found for different genes.")
                                         self.errors["repeat_transcript_different_genes"].append(ID)          
                     else:
                         self.atypical_features.append((Feature(ID, ch, source, ft, strand, coord[0], coord[1], score, ".", attributes)))
@@ -1027,7 +1040,8 @@ class Annotation():
         now = time.time()
         lapse = now - start
 
-        print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
+        if not quiet:
+            print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
         
         if self.features == ["nucleotide_to_protein_match"]:
             self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny)
@@ -1040,7 +1054,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2):
+    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2, quiet:bool=False):
         """
 
         """
@@ -1050,7 +1064,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -1093,10 +1107,12 @@ class Annotation():
 
         now = time.time()
         lapse = now - start
-        print(f"\nWhole update process for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
+        if not quiet:
+            print(f"\nWhole update process for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-    def update_suffixes(self):
-        #print(f"\nUpdating suffixes for {self.id}")
+    def update_suffixes(self, quiet:bool=True):
+        if not quiet:
+            print(f"\nUpdating suffixes for {self.id}")
         self.feature_suffix = ""
         self.suffix = ""
 
@@ -1127,10 +1143,12 @@ class Annotation():
             self.suffix += "_dapfit"
         if self.symbols_added:
             self.suffix += "_plus_symbols"
-        #print(f"\nUpdated suffixes for {self.id}")
+        if not quiet:
+            print(f"\nUpdated suffixes for {self.id}")
 
-    def update_features(self, standardise=True):
-        #print(f"\nUpdating features for {self.id}")
+    def update_features(self, standardise=True, quiet:bool=True):
+        if not quiet:
+            print(f"\nUpdating features for {self.id}")
         if standardise:
             for genes in self.chrs.values():
                 for g in genes.values():
@@ -1152,7 +1170,8 @@ class Annotation():
                         new_features.add(e.feature)
         self.features = list(new_features)
         self.features.sort()
-        #print(f"\nUpdated features for {self.id}")
+        if not quiet:
+            print(f"\nUpdated features for {self.id}")
 
     def mark_transposable_element_genes(self, TE_genes_file):
         TE_genes = set()
@@ -1212,8 +1231,9 @@ class Annotation():
                     for t_id in mRNA_transcripts_to_remove:
                         del self.chrs[chrom][g.id].transcripts[t_id]   
 
-    def correct_gene_transcript_and_subfeature_coordinates(self):
-        #print(f"Correcting feature coordinates for {self.id}")
+    def correct_gene_transcript_and_subfeature_coordinates(self, quiet:bool=True):
+        if not quiet:
+            print(f"Correcting feature coordinates for {self.id}")
 
         # fixing exon/CDS sizes
         for genes in self.chrs.values():
@@ -1279,9 +1299,10 @@ class Annotation():
                         g.end = latest_end
                         g.update_size()
                         self.sorted = False
-        #print(f"Corrected feature coordinates for {self.id}")
+        if not quiet:
+            print(f"Corrected feature coordinates for {self.id}")
 
-    def generate_sequences(self, genome:object, just_CDSs:bool=False):
+    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=True):
 
         start = time.time()
         for o in self.atypical_features:
@@ -1309,10 +1330,11 @@ class Annotation():
 
         now = time.time()
         lapse = now - start
-        print(f"\nGenerating sequences for {self.id} annotation object "
-              f"took {round(lapse/60, 1)} minutes\n")
 
-    def clear_sequences(self, just_hard=False, keep_proteins:bool=False):
+        if not quiet:
+            print(f"\nGenerating sequences for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
+
+    def clear_sequences(self, just_hard=False, keep_proteins:bool=False, quiet:bool=True):
         start = time.time()
         for o in self.atypical_features:
             o.clear_sequence(just_hard=just_hard)
@@ -1330,8 +1352,8 @@ class Annotation():
 
         now = time.time()
         lapse = now - start
-        print(f"Clearing sequences of {self.id} annotation object took "
-              f"{round(lapse, 1)} seconds\n")
+        if not quiet:
+            print(f"Clearing sequences of {self.id} annotation object took {round(lapse, 1)} seconds\n")
 
     def generate_promoters(self, genome:object, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):
         """
@@ -1350,13 +1372,13 @@ class Annotation():
                     if generate_sequence:
                         t.promoter.generate_sequence(genome)
 
-    def find_motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str=""):
+    def find_motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -1648,7 +1670,7 @@ class Annotation():
 
         return random_ids
 
-    def export_all_features(self, feature_output:str="main", promoters:bool=True, verbose:bool=True, path:str="", most_specific_id_level="promoter"):
+    def export_all_features(self, feature_output:str="main", promoters:bool=True, verbose:bool=True, path:str="", most_specific_id_level="promoter", quiet:bool=False):
         """
         The "output" parameter can be both, main or all. This parameter only 
         affects promoter, transcript, CDS and protein sequences. If both is selected
@@ -1707,8 +1729,8 @@ class Annotation():
 
         now = time.time()
         lapse = now - start
-        print(f"Extracting {self.id} annotation features took "
-              f"{round(lapse, 1)} seconds\n")
+        if not quiet:
+            print(f"Extracting {self.id} annotation features took {round(lapse, 1)} seconds\n")
             
     def export_proteins(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="protein", unique_proteins_per_gene:bool=False):
         """
@@ -1833,14 +1855,14 @@ class Annotation():
         else:
             print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
 
-    def export_unique_proteins(self, genome:object=None, custom_path:str=""):
+    def export_unique_proteins(self, genome:object=None, custom_path:str="", quiet:bool=False):
         start = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -1902,7 +1924,8 @@ class Annotation():
 
             now = time.time()
             lapse = now - start
-            print(f"\nExporting unique {self.id} proteins took {round(lapse/60, 1)} minutes")
+            if not quiet:
+                print(f"\nExporting unique {self.id} proteins took {round(lapse/60, 1)} minutes")
 
     def export_CDSs(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="CDS", unique_CDSs_per_gene:bool=False):
         """
@@ -2203,14 +2226,15 @@ class Annotation():
         self.combined = True
         self.update_suffixes()
 
-    def sort_genes(self, processes:int=2):
-        print(f"\nSorting genes for {self.id}")
+    def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
+        if not quiet:
+            print(f"\nSorting genes for {self.id}")
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -2222,27 +2246,34 @@ class Annotation():
             '{n}/{total} [{elapsed}<{remaining}]'))
 
         if processes > 1:
-            print(f"Parallel mode chosen for {self.id}")
+            if not quiet:
+                print(f"Parallel mode chosen for {self.id}")
             with Pool(processes=processes) as pool:
-                print(f"Parallel sorting started pool for {self.id}")
+                if not quiet:
+                    print(f"Parallel sorting started pool for {self.id}")
                 for chrom, sorted_genes in pool.starmap(sort_and_update_genes, [(chrom, genes) for chrom, genes in self.chrs.items()]):
-                    #print(f"Parallel sorting {chrom} genes for {self.id}")
+                    if not quiet and noisy:
+                        print(f"Parallel sorting {chrom} genes for {self.id}")
                     self.chrs[chrom] = sorted_genes
                     progress_bar.update(len(sorted_genes))
         else:
-            print(f"Sequential mode chosen for {self.id}")
+            if not quiet:
+                print(f"Sequential mode chosen for {self.id}")
             for chrom, genes in self.chrs.items():
                 sorted_genes = sorted(genes.values())
-                #print(f"Sequential sorting {chrom} genes for {self.id}")
+                if not quiet and noisy:
+                    print(f"Sequential sorting {chrom} genes for {self.id}")
                 self.chrs[chrom] = {g.id: g.copy() for g in sorted_genes}
                 progress_bar.update(len(sorted_genes))
 
         progress_bar.close()
         self.sorted = True
-        print(f"Sorted genes for {self.id}")
+        if not quiet:
+            print(f"Sorted genes for {self.id}")
 
-    def define_synteny(self, original_annotation:object, sort_processes:int=2):
-        print(f"\nDefining synteny for {self.id} annotation genes")
+    def define_synteny(self, original_annotation:object, sort_processes:int=2, quiet:bool=True):
+        if not quiet:
+            print(f"\nDefining synteny for {self.id} annotation genes")
         start = time.time()
         if not self.sorted:
             self.sort_genes(processes=sort_processes)
@@ -2285,7 +2316,8 @@ class Annotation():
                         g.conserved_synteny = False
         now = time.time()
         lapse = now - start
-        print(f"\nDefining synteny for {self.id} annotation genes took {round(lapse, 1)} seconds\n")
+        if not quiet:
+            print(f"\nDefining synteny for {self.id} annotation genes took {round(lapse, 1)} seconds\n")
 
     def calculate_transcript_masking(self, hard_masked_genome:object):
         for genes in self.chrs.values():
@@ -2310,8 +2342,9 @@ class Annotation():
                     for c in t.CDSs.values():
                         c.calculate_gc_content()
 
-    def update_stats(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None):
-        #print(f"\nUpdating stats for {self.id}")
+    def update_stats(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):
+        if not quiet:
+            print(f"\nUpdating stats for {self.id}")
         if not self.generated_all_sequences or not self.contains_protein_sequences:
             if genome != None:
                 self.generate_sequences(genome)
@@ -2491,8 +2524,8 @@ class Annotation():
                 else:
                     f_out.write(f"\n{key}\t{value_temp}")
             f_out.close()
-
-        #print(f"\nUpdated stats for {self.id}")
+        if not quiet:
+            print(f"\nUpdated stats for {self.id}")
 
     def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False):
 
@@ -2543,7 +2576,7 @@ class Annotation():
         self.shared_UTRs = False
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def detect_gene_overlaps(self, other:object=None, sort_processes:int=2, clear=True):
+    def detect_gene_overlaps(self, other:object=None, sort_processes:int=2, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
@@ -2554,7 +2587,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -2778,7 +2811,8 @@ class Annotation():
                     now = time.time()
                     lapse = now - start
                     progress_bar.close()
-                    print(f"\nDetecting overlaps between {other.id} and {self.id} annotations took {round(lapse/60, 1)} minutes")
+                    if not quiet:
+                        print(f"\nDetecting overlaps between {other.id} and {self.id} annotations took {round(lapse/60, 1)} minutes")
             else:
                 print(f"Did not generate overlaps between {other.id} and {self.id} annotations as they are associated to different genomes")
 
@@ -2988,8 +3022,9 @@ class Annotation():
                 progress_bar.close()
                 now = time.time()
                 lapse = now - start
-                print(f"\nDetecting gene overlaps within the {self.id} annotation took {round(lapse/60, 1)} minutes\n")
-                print(f"\nThere are {len(self.self_overlapping)} genes overlapping with other genes in {self.id} annotation\n")
+                if not quiet:
+                    print(f"\nDetecting gene overlaps within the {self.id} annotation took {round(lapse/60, 1)} minutes\n")
+                    print(f"\nThere are {len(self.self_overlapping)} genes overlapping with other genes in {self.id} annotation\n")
                 self.add_qualitative_info_to_overlaps()
 
     def overlaps_as_networks(self, self_mode:bool=True):
@@ -3028,7 +3063,7 @@ class Annotation():
                                 if hit.id not in g.aliases:
                                     g.aliases.append(hit.id)
 
-    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str=""):
+    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False):
         start = time.time()
         if export_self:
             export = "self"
@@ -3158,10 +3193,11 @@ class Annotation():
 
             now = time.time()
             lapse = now - start
-            if export == "self":
-                print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
-            else:
-                print(f"\nExporting {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
+            if not quiet:
+                if export == "self":
+                    print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
+                else:
+                    print(f"\nExporting {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
         
         if return_df:
             return eq_df
@@ -3303,14 +3339,14 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True):
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True, quiet:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -3452,17 +3488,19 @@ class Annotation():
         if no_1bp_features:
             output_suffix += "_for_lifton"
 
+
         if tag == ".gff3":
             tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
-            print(f"Exporting {self.id} gff with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
-        else:
+            if not quiet:
+                print(f"Exporting {self.id} gff with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
+        elif not quiet:
             print(f"Exporting {self.id} gff to {export_folder}{tag}.")
 
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
         f_out.write(out)
         f_out.close()
 
-    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False):
+    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, quiet:bool=False):
 
         self.create_gtf_attributes()
 
@@ -3471,7 +3509,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -3552,15 +3590,16 @@ class Annotation():
 
         if tag == ".gtf":
             tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
-            print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
-        else:
+            if not quiet:
+                print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
+        elif not quiet:
             print(f"Exporting {self.id} gtf to {export_folder}{tag}.")         
 
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
         f_out.write(out)
         f_out.close()
 
-    def merge(self, other:object, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"]):
+    def merge(self, other:object, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
         """
         Priority is given to self annotation
         """
@@ -3576,7 +3615,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -3673,7 +3712,8 @@ class Annotation():
         self.update(rename_features=features_to_rename)
         now = time.time()
         lapse = now - start
-        print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
+        if not quiet:
+            print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
 
     def remove_wrongly_assigned_exons(self):
         for genes in self.chrs.values():
@@ -3697,7 +3737,7 @@ class Annotation():
                         transcripts_to_remove.append((chrom, g.id, t.id))
         for chrom, g_id, t_id in transcripts_to_remove:
             del self.chrs[chrom][g_id].transcripts[t_id]
-            print(f"{t_id} Warning: transcript with no exons whichcould have been removed because of strand inconsistencies")
+            print(f"{t_id} Warning: transcript with no exons which could have been removed because of strand inconsistencies")
             self.warnings["transcript_with_no_exons"].append(t_id)
 
     def remove_transcripts(self, to_remove:set):
@@ -3724,8 +3764,9 @@ class Annotation():
 
         self.update_gene_and_transcript_list()
 
-    def remove_missing_transcript_parent_references(self, extra_attributes=False):
-        #print(f"Removing missing transcript parent references for {self.id} annotation.")
+    def remove_missing_transcript_parent_references(self, extra_attributes=False, quiet:bool=True):
+        if not quiet:
+            print(f"Removing missing transcript parent references for {self.id} annotation.")
         self.remove_wrongly_assigned_exons()
 
         for genes in self.chrs.values():
@@ -3755,9 +3796,10 @@ class Annotation():
                             cs.parents.sort()
 
         self.update_attributes(extra_attributes=extra_attributes)
-        #print(f"Removed missing transcript parent references for {self.id} annotation.")
+        if not quiet:
+            print(f"Removed missing transcript parent references for {self.id} annotation.")
 
-    def rework_CDSs(self, genome:object=None, low_memory:bool=True):
+    def rework_CDSs(self, genome:object=None, low_memory:bool=True, quiet:bool=False):
         start = time.time()
         if low_memory:
             self.clear_sequences()
@@ -3766,7 +3808,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -3799,16 +3841,16 @@ class Annotation():
         self.update(rename_features=["CDS", "exon", "UTR"])
         now = time.time()
         lapse = now - start
-        print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} "
-               "minutes")
+        if not quiet:
+            print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
 
-    def update_gene_and_transcript_list(self):
+    def update_gene_and_transcript_list(self, quiet:bool=True):
                 # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -3867,7 +3909,7 @@ class Annotation():
         self.update_gene_and_transcript_list()
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
 
-    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False):
+    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -3920,7 +3962,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4217,15 +4259,16 @@ class Annotation():
 
         now = time.time()
         lapse = now - start
-        print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
+        if not quiet:
+            print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
-    def update_keys(self):
+    def update_keys(self, quiet:bool=True):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4272,14 +4315,14 @@ class Annotation():
 
         progress_bar.close()
 
-    def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False):
+    def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, quiet:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4484,7 +4527,7 @@ class Annotation():
         else:
             print(f"Warning: {mode} chosen is not in accepted list of choices=['protein', 'CDS', 'transcript', 'gene]")
 
-    def add_qualitative_info_to_overlaps(self):
+    def add_qualitative_info_to_overlaps(self, quiet:bool=True):
         """
         Number of unique full segment overlaps between genes including all transcript variants.
         """
@@ -4493,7 +4536,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4550,68 +4593,6 @@ class Annotation():
 
         progress_bar.close()
 
-    def add_qualitative_info_to_overlaps_old(self):
-
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
-            disable = True
-        else:
-            disable = False
-        total = len(self.all_gene_ids.keys())
-
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mAdding qualitative info to {self.id} overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-        for genes in self.chrs.values():
-            for g in genes.values():
-                progress_bar.update(1)
-                for o in g.overlaps["self"]:
-                    if o.exon_query_percent > 0:
-                        g_exons = []
-                        g_CDSs = []
-                        g_UTRs = []
-                        for t in g.transcripts.values():
-                            if t.main:
-                                g_exons = t.exons.copy()
-                                for c in t.CDSs.values():
-                                    if c.main:
-                                        g_CDSs = c.CDS_segments.copy()
-                                        g_UTRs = c.UTRs.copy()
-                        chrom = self.all_gene_ids[o.id]
-                        o_exons = []
-                        o_CDSs = []
-                        o_UTRs = []
-                        for t in self.chrs[chrom][o.id].transcripts.values():
-                            if t.main:
-                                o_exons = t.exons.copy()
-                                for c in t.CDSs.values():
-                                    if c.main:
-                                        o_CDSs = c.CDS_segments.copy()
-                                        o_UTRs = c.UTRs.copy()
-
-                        for e1 in g_exons:
-                            for e2 in o_exons:
-                                if e1.equal_coordinates(e2):
-                                    o.full_exon_overlaps += 1
-
-                        for c1 in g_CDSs:
-                            for c2 in o_CDSs:
-                                if c1.equal_coordinates(c2):
-                                    o.full_CDS_overlaps += 1
-
-                        for u1 in g_UTRs:
-                            for u2 in o_UTRs:
-                                if u1.equal_coordinates(u2):
-                                    o.full_UTR_overlaps += 1
-        progress_bar.close()
-
     def clear_overlaps_with_selected_CDSs(self):
         for genes in self.chrs.values():
             for g in genes.values():
@@ -4666,13 +4647,13 @@ class Annotation():
                                         if i.start < g.start and i.end > g.end:
                                             g.intron_nested_single = True
 
-    def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True):
+    def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4707,13 +4688,13 @@ class Annotation():
                                 g.remove = True
         progress_bar.close()
 
-    def add_reliable_CDS_evidence_score(self):
+    def add_reliable_CDS_evidence_score(self, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4739,13 +4720,13 @@ class Annotation():
                     g.remove = True
         progress_bar.close()
 
-    def mark_reliable_CDS_evidences(self, unreliable_sources:list=["GlimmerHMM", "geneid_v1.4"]):
+    def mark_reliable_CDS_evidences(self, unreliable_sources:list=["GlimmerHMM", "geneid_v1.4"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4860,7 +4841,7 @@ class Annotation():
         if update:
             self.update()
 
-    def remove_genes(self, to_remove:set=None):
+    def remove_genes(self, to_remove:set=None, quiet:bool=False):
 
         if to_remove is None:
             to_remove = set()
@@ -4870,7 +4851,7 @@ class Annotation():
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4911,13 +4892,13 @@ class Annotation():
         self.remove_missing_genes_in_overlaps()
         self.update_gene_and_transcript_list()
 
-    def remove_missing_genes_in_overlaps(self):
+    def remove_missing_genes_in_overlaps(self, quiet:bool=True):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4942,13 +4923,13 @@ class Annotation():
                 g.overlaps["self"] = new_overlaps
         progress_bar.close()              
 
-    def mark_transcriptomic_supported_genes(self):
+    def mark_transcriptomic_supported_genes(self, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -4972,13 +4953,13 @@ class Annotation():
                                     g.transcriptomic_evidence = True
         progress_bar.close()
 
-    def mark_abinitio_supported_genes(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"]):
+    def mark_abinitio_supported_genes(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5002,13 +4983,13 @@ class Annotation():
                                     g.abinitio_evidence = True
         progress_bar.close()
 
-    def mark_overlap_with_reliable_genes(self):
+    def mark_overlap_with_reliable_genes(self, quiet:bool=False):
                 # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5027,13 +5008,13 @@ class Annotation():
                             g.overlap_reliable = True
         progress_bar.close()
 
-    def find_best_gene_model(self, source_priority:list, just_with_reliables:bool=True):
+    def find_best_gene_model(self, source_priority:list, just_with_reliables:bool=True, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5098,14 +5079,14 @@ class Annotation():
 
         progress_bar.close()
 
-    def mark_overlap_with_other_selected_exons(self):
+    def mark_overlap_with_other_selected_exons(self, quiet:bool=False):
         self.clear_overlaps_with_selected_exons()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5143,14 +5124,14 @@ class Annotation():
                                                         break
         progress_bar.close()        
 
-    def mark_overlap_with_other_selected_CDSs(self):
+    def mark_overlap_with_other_selected_CDSs(self, quiet:bool=False):
         self.clear_overlaps_with_selected_CDSs()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5190,13 +5171,13 @@ class Annotation():
                                                             break
         progress_bar.close()
 
-    def select_best_possible_non_overlapping_UTR(self, exon=False):
+    def select_best_possible_non_overlapping_UTR(self, exon=False, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5293,13 +5274,13 @@ class Annotation():
         self.remove_duplicate_transcripts()
         self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
-    def remove_duplicate_transcripts(self):
+    def remove_duplicate_transcripts(self, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False
@@ -5327,13 +5308,13 @@ class Annotation():
         progress_bar.close()
         self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
-    def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"]):
+    def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
 
         # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected:
+        if stdout_redirected or stderr_redirected or quiet:
             disable = True
         else:
             disable = False

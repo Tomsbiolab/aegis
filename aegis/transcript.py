@@ -343,12 +343,10 @@ class Transcript(Feature):
                         elif (index > start_exon) and (index < end_exon):
                             self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
                                                         f"ID={self.id}_CDS1;Parent={self.id}"))
-                            #print(e.start, e.end)
                         elif index == end_exon:
                             self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
                                                         e.end-surplus_end, e.end, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))   
-                            #print(e.start, e.end-surplus) 
+                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
 
                 elif self.strand == ".":
                     pass

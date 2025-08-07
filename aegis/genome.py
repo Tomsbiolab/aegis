@@ -80,7 +80,7 @@ class Scaffold():
         return copy.deepcopy(self)
 
 class Genome():
-    def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False):
+    def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False, quiet:bool=False):
         start = time.time()
         self.name = name
 
@@ -147,8 +147,9 @@ class Genome():
 
         now = time.time()
         lapse = now - start
-        print(f"\n{self.name} genome chromosomes/scaffolds: {self.features[:30]} ...")
-        print(f"\nCreating {self.name} genome object took {round(lapse, 1)} seconds\n")
+        if not quiet:
+            print(f"\n{self.name} genome chromosomes/scaffolds: {self.features[:30]} ...")
+            print(f"\nCreating {self.name} genome object took {round(lapse, 1)} seconds\n")
 
     def update(self, update_scaffolds:bool=False):
 
@@ -363,7 +364,7 @@ class Genome():
         if export:
             self.export(output_folder=output_folder, file=".fasta")
 
-    def export(self, output_folder:str="", file:str=".fasta"):
+    def export(self, output_folder:str="", file:str=".fasta", quiet:bool=False):
 
         self.update()
 
@@ -385,7 +386,8 @@ class Genome():
             out += f">{scaffold.name}\n{scaffold.seq}\n"
 
         if out:
-            print(f"Exporting {self.name} genome to {file}.")
+            if not quiet:
+                print(f"Exporting {self.name} genome to {file}.")
             f_out = open(f"{export_folder}{file}", "w", encoding="utf-8")
             f_out.write(out)
             f_out.close()

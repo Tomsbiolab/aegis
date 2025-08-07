@@ -168,6 +168,13 @@ def main(
     gff_path = results_directory / "gffs"
     gff_path.mkdir(parents=True, exist_ok=True)
 
+    lifton_path = results_directory / "lifton"
+    lifton_path.mkdir(parents=True, exist_ok=True)
+
+    liftoff_path = results_directory / "liftoff"
+    liftoff_path.mkdir(parents=True, exist_ok=True)
+
+
     # Create gff, protein, CDS files and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
 
@@ -209,6 +216,7 @@ def main(
         "orthofinder",
         "-f", str(protein_path),
         "-t", str(threads),
+        "-a", str(threads),
         "-o", f"{str(protein_path)}/orthofinder/"
     ]
     run_command(results_directory, orthofinder_cmd)
