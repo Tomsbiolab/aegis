@@ -4,6 +4,7 @@ import time
 import os
 import shutil
 import subprocess
+from aegis.annotation import Annotation
 
 from pathlib import Path
 
@@ -28,12 +29,14 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, working_pair_directory: Path, num_threads: int):
-
-    working_pair_directory.mkdir(parents=True, exist_ok=True)
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, original_annot1:object=None):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
+    protein_dir = working_directory / "proteins"
+    cds_dir = working_directory / "CDSs"
+    diamond_dir = working_directory / "diamond"
+    mcscan_dir = working_directory / "mcscan"
 
     print(f"\n\n{annot1.name} vs {annot2.name}:")
 
@@ -54,14 +57,20 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         if os.path.isfile(unmapped_file):
             os.remove(unmapped_file)
 
-    
+    print(f"\t\tRunning aegis-overlaps on liftoff result.")
 
-    print(f"\t\tRunning aegis-overlaps on result ")
+    if original_annot1:
+        a_liftoff = Annotation(str(liftoff_gff), quiet=True)
+    else:
+        a_liftoff = Annotation(str(liftoff_gff), original_annotation=original_annot1, quiet=True)
 
+    a_liftoff.detect_gene_overlaps(annot2, quiet=True)
+
+    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.csv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True)
 
     print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
 
-    lifton_gff = working_pair_directory / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
+    lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
     lifton_cmd = [
         "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
         "-copies", str(genome2.file), str(genome1.file)
@@ -73,17 +82,18 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
     if os.path.exists(str(to_remove)):
         shutil.rmtree(str(to_remove))
 
-    protein_dir = working_directory / "proteins"
-    cds_dir = working_directory / "CDSs"
-    diamond_dir = working_directory / "diamond"
+    print(f"\t\tRunning aegis-overlaps on lifton result.")
+
+    if original_annot1:
+        a_lifton = Annotation(str(lifton_gff), quiet=True)
+    else:
+        a_lifton = Annotation(str(lifton_gff), original_annotation=original_annot1, quiet=True)
+
+    a_lifton.detect_gene_overlaps(annot2, quiet=True)
+
+    a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.csv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True)
 
     protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
-
-    cds_fasta_1 = cds_dir / f"{annot1.name}_CDSs_g_id_main.fasta"
-    cds_fasta_2 = cds_dir / f"{annot2.name}_CDSs_g_id_main.fasta"
-
-    cleaned_cds_1 = cds_dir / f"{annot1.name}.cds"
-    cleaned_cds_2 = cds_dir / f"{annot2.name}.cds"
 
     diamond_db = diamond_dir / f"{annot1.name}_diamond_db"
 
@@ -97,30 +107,6 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         "--max-target-seqs", "1", "--evalue", "0.00001", "--max-hsps", "1"
     ]
     run_command(diamond_dir, blastp_cmd)
-
-    cds_fasta_1 = cds_dir / f"{annot1.name}_CDSs_g_id_main.fasta"
-    cleaned_cds_1 = working_pair_directory / f"{annot1.name}.cds"
-    jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta_1), str(cleaned_cds_1)]
-    run_command(working_pair_directory, jcvi_format_cmd_1)
-
-    cds_fasta_2 = cds_dir / f"{annot2.name}_CDSs_g_id_main.fasta"
-    cleaned_cds_2 = working_pair_directory / f"{annot2.name}.cds"
-    jcvi_format_cmd_2 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta_2), str(cleaned_cds_2)]
-    run_command(working_pair_directory, jcvi_format_cmd_2)
-
-    bed_file_1 = working_pair_directory / f"{annot1.name}.bed"
-    gff_to_bed_cmd_1 = [
-        "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(bed_file_1)
-    ]
-    run_command(working_pair_directory, gff_to_bed_cmd_1)
-
-    bed_file_2 = working_pair_directory / f"{annot2.name}.bed"
-    gff_to_bed_cmd_2 = [
-        "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", f"{working_directory}/gffs/{annot2.name}.gff3", "-o", str(bed_file_2)
-    ]
-    run_command(working_pair_directory, gff_to_bed_cmd_2)
     
     print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
     
@@ -128,7 +114,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         "python", "-m", "jcvi.compara.catalog", "ortholog",
         annot1.name, annot2.name, "--no_strip_names"
     ]
-    run_command(working_pair_directory, jcvi_ortho_cmd)
+    run_command(mcscan_dir, jcvi_ortho_cmd)
 
 def parse_evalue(e):
     e = e.strip()

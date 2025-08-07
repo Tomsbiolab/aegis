@@ -174,8 +174,10 @@ def main(
     liftoff_path = results_directory / "liftoff"
     liftoff_path.mkdir(parents=True, exist_ok=True)
 
+    mcscan_path = results_directory / "mcscan"
+    mcscan_path.mkdir(parents=True, exist_ok=True)
 
-    # Create gff, protein, CDS files and diamond databases in a non-redundant manner
+    # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
 
         a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
@@ -200,6 +202,20 @@ def main(
         ]
         run_command(diamond_path, makedb_cmd)
 
+        cds_fasta = CDS_path / f"{a.name}_CDSs_g_id_main.fasta"
+        cleaned_cds = mcscan_path / f"{a.name}.cds"
+
+        jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
+        run_command(mcscan_path, jcvi_format_cmd_1)
+
+        bed_file = mcscan_path / f"{a.name}.bed"
+        gff_to_bed_cmd_1 = [
+            "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
+            "--key=Parent", "--primary_only", f"{results_directory}/gffs/{a.name}.gff3", "-o", str(bed_file)
+        ]
+        run_command(mcscan_path, gff_to_bed_cmd_1)
+
+
     for n1, a1 in enumerate(annotations):
 
         for n2, a2 in enumerate(annotations):
@@ -207,9 +223,13 @@ def main(
             if n1 == n2:
                 continue
 
-            pair_directory = results_directory / f"{a1.name}_vs_{a2.name}"
+            original_annotation = original_annotation_files[n1].lower()
+            if original_annotation == "na":
+                original_annotation = None
+            else:
+                original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, working_pair_directory=pair_directory, num_threads=threads)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation)
 
     print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
     orthofinder_cmd = [

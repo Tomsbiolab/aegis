@@ -1044,12 +1044,12 @@ class Annotation():
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
         
         if self.features == ["nucleotide_to_protein_match"]:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, quiet=quiet)
         else:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet)
         if "CDS" not in self.features and rework_CDSs:
-            self.rework_CDSs(genome)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained)
+            self.rework_CDSs(genome, quiet=quiet)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet)
 
     def copy(self):
         return copy.deepcopy(self)
@@ -1085,25 +1085,25 @@ class Annotation():
                         self.warnings["multiple_CDSs_per_transcript"].append(t.id)
                 g.update()
         progress_bar.close()
-        self.update_features()
+        self.update_features(quiet=quiet)
         
         if rename_features != []:
-            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes)
-        self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
-        self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes)
-        self.correct_gene_transcript_and_subfeature_coordinates()
+            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet)
+        self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes, quiet=quiet)
+        self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes, quiet=quiet)
+        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
         if not self.sorted:
-            self.sort_genes(processes=sort_processes)
+            self.sort_genes(processes=sort_processes, quiet=quiet)
         if define_synteny:
-            self.define_synteny(original_annotation=original_annotation, sort_processes=sort_processes)
+            self.define_synteny(original_annotation=original_annotation, sort_processes=sort_processes, quiet=quiet)
         if self.liftoff and original_annotation != None:
             for g_id in original_annotation.all_gene_ids:
                 #improve at some point, slow with massive lists
                 if g_id not in self.all_gene_ids:
                     self.unmapped.append(g_id)
-        self.update_stats(genome=genome)
+        self.update_stats(genome=genome, quiet=quiet)
 
-        self.update_suffixes()
+        self.update_suffixes(quiet=quiet)
 
         now = time.time()
         lapse = now - start
@@ -2527,7 +2527,7 @@ class Annotation():
         if not quiet:
             print(f"\nUpdated stats for {self.id}")
 
-    def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False):
+    def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=False):
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -2560,9 +2560,9 @@ class Annotation():
 
         self.shared_exons = True
         self.shared_UTRs = True
-        self.update_attributes(extra_attributes=extra_attributes)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def single_parent_for_exons_utrs(self, extra_attributes:bool=False):
+    def single_parent_for_exons_utrs(self, extra_attributes:bool=False, quiet:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -2574,7 +2574,7 @@ class Annotation():
 
         self.shared_exons = False
         self.shared_UTRs = False
-        self.update_attributes(extra_attributes=extra_attributes)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
     def detect_gene_overlaps(self, other:object=None, sort_processes:int=2, clear=True, quiet:bool=True):
         """
@@ -3074,7 +3074,11 @@ class Annotation():
 
         tag = f"{export_tag}{self.id}{self.feature_suffix}_overlap_t{overlap_threshold}"
         
-        export_folder = Path(custom_path or self.path) / "overlaps"
+
+        if custom_path:
+            export_folder = Path(custom_path)
+        else:
+            export_folder = Path(custom_path or self.path) / "overlaps"
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
@@ -3277,7 +3281,7 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False):
+    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False):
         repeat_CDS_segment_id = False
 
         for genes in self.chrs.values():
@@ -3306,9 +3310,9 @@ class Annotation():
                             for x, cs in enumerate(c.CDS_segments):
                                 cs.id = f"{c.id}_{x+1}"
 
-        self.update_attributes(extra_attributes=extra_attributes)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False):
+    def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False):
         common_protein_CDS_ids = True
 
         for genes in self.chrs.values():
@@ -3337,7 +3341,7 @@ class Annotation():
                             for cs in c.CDS_segments:
                                 cs.id = c.id
 
-        self.update_attributes(extra_attributes=extra_attributes)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
     def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True, quiet:bool=False):
 
@@ -3604,11 +3608,11 @@ class Annotation():
         Priority is given to self annotation
         """
         start = time.time()
-        self.update()
-        other.update()
+        self.update(quiet=quiet)
+        other.update(quiet=quiet)
 
         if exon_overlap_threshold != 100 and gene_overlap_threshold != 100:
-            self.detect_gene_overlaps(other)
+            self.detect_gene_overlaps(other, quiet=quiet)
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3708,8 +3712,8 @@ class Annotation():
         self.generated_protein_sequences = False
         self.contains_protein_sequences = False
         progress_bar.close()
-        self.update_gene_and_transcript_list()
-        self.update(rename_features=features_to_rename)
+        self.update_gene_and_transcript_list(quiet=quiet)
+        self.update(rename_features=features_to_rename, quiet=quiet)
         now = time.time()
         lapse = now - start
         if not quiet:
@@ -3751,7 +3755,7 @@ class Annotation():
 
         self.remove_genes_with_no_transcripts()
 
-    def remove_genes_with_no_transcripts(self):
+    def remove_genes_with_no_transcripts(self, quiet:bool=False):
         genes_to_remove = []
         for chrom, genes in self.chrs.items():
             for g in genes.values():
@@ -3762,7 +3766,7 @@ class Annotation():
             print(f"{g_id} Warning: gene with no transcripts which could have been removed because of strand inconsistencies of its exons")
             self.warnings["gene_with_no_transcripts"].append(g_id)
 
-        self.update_gene_and_transcript_list()
+        self.update_gene_and_transcript_list(quiet=quiet)
 
     def remove_missing_transcript_parent_references(self, extra_attributes=False, quiet:bool=True):
         if not quiet:
@@ -3795,7 +3799,7 @@ class Annotation():
                             cs.parents = new_parents.copy()
                             cs.parents.sort()
 
-        self.update_attributes(extra_attributes=extra_attributes)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
         if not quiet:
             print(f"Removed missing transcript parent references for {self.id} annotation.")
 
@@ -3838,7 +3842,7 @@ class Annotation():
                     t.exon_update()
 
         progress_bar.close()
-        self.update(rename_features=["CDS", "exon", "UTR"])
+        self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)
         now = time.time()
         lapse = now - start
         if not quiet:
@@ -3875,7 +3879,7 @@ class Annotation():
                     self.all_transcript_ids[t.id] = (chr, g.id)
         progress_bar.close()
 
-    def make_alternative_transcripts_into_genes(self):
+    def make_alternative_transcripts_into_genes(self, quiet:bool=False):
         new_chrs = {}
         for chrom, genes in self.chrs.items():
             new_genes = {}
@@ -3906,8 +3910,8 @@ class Annotation():
 
         del new_chrs
 
-        self.update_gene_and_transcript_list()
-        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
+        self.update_gene_and_transcript_list(quiet=quiet)
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
     def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False):
 
@@ -4236,11 +4240,11 @@ class Annotation():
         progress_bar.close()
 
         if repeat_exons_utrs:
-            self.homogenise_parents_for_shared_exons_utrs()
+            self.homogenise_parents_for_shared_exons_utrs(quiet=quiet)
         else:
-            self.update_attributes(extra_attributes=extra_attributes)
-        self.update_keys()
-        self.update_gene_and_transcript_list()
+            self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
+        self.update_keys(quiet=quiet)
+        self.update_gene_and_transcript_list(quiet=quiet)
 
         self.renamed_features = changed_features
 
@@ -4464,9 +4468,9 @@ class Annotation():
 
         self.update_suffixes()
 
-    def create_gtf_attributes(self):
+    def create_gtf_attributes(self, quiet:bool=False):
 
-        self.update_attributes()
+        self.update_attributes(quiet=quiet)
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -4769,7 +4773,7 @@ class Annotation():
 
         self.gff_header = new_header.copy()
 
-    def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2):
+    def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2, quiet:bool=False):
 
         if chosen_features:
             for chosen_feature in chosen_features:
@@ -4785,7 +4789,7 @@ class Annotation():
                 features_to_remove = set(self.chrs) - set(random.sample(list(self.chrs), feature_cap))
             genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
 
-        self.remove_chromosomes(features_to_remove, update=False)
+        self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
         genes_to_remove = set()
 
@@ -4807,13 +4811,13 @@ class Annotation():
                 total_deficit -= surplus
 
         if genes_to_remove:
-            self.remove_genes(genes_to_remove)
+            self.remove_genes(genes_to_remove, quiet=quiet)
         else:
             warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", UserWarning)
 
-        self.update()
+        self.update(quiet=quiet)
 
-    def filter_by_rna_class(self, rna_classes=['mRNA']):
+    def filter_by_rna_class(self, rna_classes=['mRNA'], quiet:bool=False):
 
         transcript_to_remove = set()
 
@@ -4829,17 +4833,17 @@ class Annotation():
 
         self.remove_transcripts(transcript_to_remove)
     
-        self.update()
+        self.update(quiet=quiet)
         
 
-    def remove_chromosomes(self, features_to_remove:set, update:bool=True):
+    def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):
         if features_to_remove:
             for ft in features_to_remove:
                 del self.chrs[ft]
             self.remove_chromosomes_from_header(features_to_remove=features_to_remove)
 
         if update:
-            self.update()
+            self.update(quiet=quiet)
 
     def remove_genes(self, to_remove:set=None, quiet:bool=False):
 
@@ -4889,8 +4893,8 @@ class Annotation():
             del self.all_gene_ids[g_id]
         progress_bar.close()
         
-        self.remove_missing_genes_in_overlaps()
-        self.update_gene_and_transcript_list()
+        self.remove_missing_genes_in_overlaps(quiet=quiet)
+        self.update_gene_and_transcript_list(quiet=quiet)
 
     def remove_missing_genes_in_overlaps(self, quiet:bool=True):
         # Check if stdout or stderr are redirected to files
@@ -5270,9 +5274,9 @@ class Annotation():
                                 g.update()      
 
         progress_bar.close()
-        self.rename_ids()
-        self.remove_duplicate_transcripts()
-        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+        self.rename_ids(quiet=quiet)
+        self.remove_duplicate_transcripts(quiet=quiet)
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
     def remove_duplicate_transcripts(self, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
@@ -5306,7 +5310,7 @@ class Annotation():
                 for t_eliminate in to_eliminate:
                     del g.transcripts[t_eliminate]
         progress_bar.close()
-        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
     def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
@@ -5509,7 +5513,7 @@ class Annotation():
                                             g.remove = True
                                             g.rescue = False
 
-    def rescue_longer_same_frame_CDS(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"]):
+    def rescue_longer_same_frame_CDS(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -5560,9 +5564,9 @@ class Annotation():
 
                         g.transcripts[best_candidate.id] = best_candidate.copy()
 
-        self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+        self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
-    def make_alternative_genes_into_transcripts(self):
+    def make_alternative_genes_into_transcripts(self, quiet:bool=False):
 
         correspondence = {}
 
@@ -5592,7 +5596,7 @@ class Annotation():
             if g in self.chrs[chrom]:
                 del self.chrs[chrom][g]
 
-        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
     def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):
         """
@@ -5647,56 +5651,56 @@ class Annotation():
                     unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in overlaps.")
 
-    def remove_redundancy(self, source_priority:list, hard_masked_genome:object):
-        self.remove_duplicate_transcripts()
-        self.make_alternative_transcripts_into_genes()
-        self.detect_gene_overlaps()
+    def remove_redundancy(self, source_priority:list, hard_masked_genome:object, quiet:bool=False):
+        self.remove_duplicate_transcripts(quiet=quiet)
+        self.make_alternative_transcripts_into_genes(quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
         self.calculate_transcript_masking(hard_masked_genome=hard_masked_genome)
-        self.mark_noisy_genes()
-        self.remove_genes()
-        self.mark_transcriptomic_supported_genes()
-        self.mark_abinitio_supported_genes()
-        self.add_reliable_CDS_evidence_score()
-        self.find_best_gene_model(source_priority)
-        self.mark_overlap_with_reliable_genes()
-        self.find_best_gene_model(source_priority, just_with_reliables=False)
+        self.mark_noisy_genes(quiet=quiet)
+        self.remove_genes(quiet=quiet)
+        self.mark_transcriptomic_supported_genes(quiet=quiet)
+        self.mark_abinitio_supported_genes(quiet=quiet)
+        self.add_reliable_CDS_evidence_score(quiet=quiet)
+        self.find_best_gene_model(source_priority, quiet=quiet)
+        self.mark_overlap_with_reliable_genes(quiet=quiet)
+        self.find_best_gene_model(source_priority, just_with_reliables=False, quiet=quiet)
 
-        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["AUGUSTUS", "Liftoff", "GeneMark.hmm3"])
-        self.detect_gene_overlaps()
+        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["AUGUSTUS", "Liftoff", "GeneMark.hmm3"], quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
 
-        self.rescue_longer_same_frame_CDS()
-        self.detect_gene_overlaps()
+        self.rescue_longer_same_frame_CDS(quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
 
         self.remove_CDS_overlaps(source_priority)
         self.mark_intron_nesting()
         self.remove_fully_intron_nested_genes()
 
-        self.make_alternative_transcripts_into_genes()
-        self.detect_gene_overlaps()
+        self.make_alternative_transcripts_into_genes(quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
 
-        self.mark_overlap_with_other_selected_CDSs()
-        self.mark_overlap_with_other_selected_exons()
-        self.select_best_possible_non_overlapping_UTR()
-        self.detect_gene_overlaps()
+        self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
+        self.mark_overlap_with_other_selected_exons(quiet=quiet)
+        self.select_best_possible_non_overlapping_UTR(quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
 
-        self.mark_overlap_with_other_selected_CDSs()
-        self.mark_overlap_with_other_selected_exons()
-        self.select_best_possible_non_overlapping_UTR(exon=True)
+        self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
+        self.mark_overlap_with_other_selected_exons(quiet=quiet)
+        self.select_best_possible_non_overlapping_UTR(exon=True, quiet=quiet)
 
-        self.remove_genes()
-        self.detect_gene_overlaps()
+        self.remove_genes(quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
 
-        self.make_alternative_genes_into_transcripts()
-        self.detect_gene_overlaps()
+        self.make_alternative_genes_into_transcripts(quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
         self.find_best_gene_model_nested_overlaps(source_priority)
         self.find_best_gene_model_exon_num_overlaps(source_priority)
         self.remove_exon_overlaps(source_priority)
         self.remove_UTRs_from_exon_overlaps()
-        self.remove_genes()
-        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"])
-        self.detect_gene_overlaps()
+        self.remove_genes(quiet=quiet)
+        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.detect_gene_overlaps(quiet=quiet)
 
-    def remove_genes_with_small_CDSs(self, CDS_threshold:int=200):
+    def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):
 
         removed_any = False
 
@@ -5713,13 +5717,13 @@ class Annotation():
                 if remove:
                     g.rescue = False
                     g.remove = True
-        self.remove_genes()
+        self.remove_genes(quiet=quiet)
 
         if removed_any:
             self.small_cds_removed = True
-        self.update()
+        self.update(quiet=quiet)
 
-    def remove_TE_genes(self):
+    def remove_TE_genes(self, quiet:bool=False):
 
         removed_any = False
 
@@ -5730,13 +5734,13 @@ class Annotation():
                     g.remove = True
                     removed_any = True
 
-        self.remove_genes()
+        self.remove_genes(quiet=quiet)
 
         if removed_any:
             self.transposable_removed = True
-        self.update()
+        self.update(quiet=quiet)
 
-    def remove_non_TE_genes(self):
+    def remove_non_TE_genes(self, quiet:bool=False):
 
         removed_any = False
 
@@ -5747,14 +5751,14 @@ class Annotation():
                     g.remove = True
                     removed_any = True
 
-        self.remove_genes()
+        self.remove_genes(quiet=quiet)
         
         if removed_any:
             self.non_transposable_removed = True
 
-        self.update()
+        self.update(quiet=quiet)
 
-    def remove_non_coding_genes_and_transcripts(self):
+    def remove_non_coding_genes_and_transcripts(self, quiet:bool=False):
 
         removed_any = False
 
@@ -5765,16 +5769,16 @@ class Annotation():
                     g.remove = True
                     removed_any = True
 
-        self.remove_genes()
+        self.remove_genes(quiet=quiet)
 
-        removed_any = self.remove_non_coding_transcripts_from_coding_genes(removed_any, False)
+        removed_any = self.remove_non_coding_transcripts_from_coding_genes(removed_any, False, quiet=quiet)
 
         if removed_any:
             self.non_coding_removed = True
 
-        self.update()
+        self.update(quiet=quiet)
 
-    def remove_coding_genes_and_transcripts(self):
+    def remove_coding_genes_and_transcripts(self, quiet:bool=False):
 
         removed_any = False
 
@@ -5785,16 +5789,16 @@ class Annotation():
                     g.remove = True
                     removed_any = True
 
-        self.remove_genes()
+        self.remove_genes(quiet=quiet)
 
-        removed_any = self.remove_coding_transcripts_from_non_coding_genes(removed_any, False)
+        removed_any = self.remove_coding_transcripts_from_non_coding_genes(removed_any, False, quiet=quiet)
 
         if removed_any:
             self.coding_removed = True
 
-        self.update()
+        self.update(quiet=quiet)
 
-    def remove_coding_transcripts_from_non_coding_genes(self, removed_any:bool=False, update=True):
+    def remove_coding_transcripts_from_non_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):
         transcripts_to_remove = []
 
         for chrom, genes in self.chrs.items():
@@ -5816,11 +5820,11 @@ class Annotation():
         self.clear_overlaps()
 
         if update:
-            self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+            self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
         return removed_any
 
-    def remove_non_coding_transcripts_from_coding_genes(self, removed_any:bool=False, update=True):
+    def remove_non_coding_transcripts_from_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):
         transcripts_to_remove = []
 
         for chrom, genes in self.chrs.items():
@@ -5842,27 +5846,27 @@ class Annotation():
         self.clear_overlaps()
 
         if update:
-            self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+            self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
         return removed_any
 
-    def clear_gene_names_and_symbols(self):
+    def clear_gene_names_and_symbols(self, quiet:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 g.names = []
                 g.symbols = []
                 g.synonyms = []
-        self.update()
+        self.update(quiet=quiet)
 
-    def remove_genes_without_symbols(self):
+    def remove_genes_without_symbols(self, quiet:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 if g.symbols == []:
                     g.remove = True
-        self.remove_genes()
-        self.update()
+        self.remove_genes(quiet=quiet)
+        self.update(quiet=quiet)
 
-    def rename_chromosomes(self, equivalences, dap:bool=False):
+    def rename_chromosomes(self, equivalences, dap:bool=False, quiet:bool=False):
 
         renamed_scaffolds = False
         for old, new in equivalences.items():
@@ -5903,9 +5907,9 @@ class Annotation():
         elif renamed_scaffolds:
             self.confrenamed = True
 
-        self.update_suffixes()
+        self.update_suffixes(quiet=quiet)
 
-    def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
+    def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t", quiet:bool=False):
         if clear:
             self.clear_gene_names_and_symbols()
 
@@ -5951,9 +5955,9 @@ class Annotation():
 
         self.symbols_added = True
 
-        self.update_attributes(extra_attributes=False, symbols=True)
+        self.update_attributes(extra_attributes=False, symbols=True, quiet=quiet)
 
-    def add_gene_symbols(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
+    def add_gene_symbols(self, file_path:str, clear:bool=True, header:bool=False, sep:str="\t", quiet:bool=False):
         if clear:
             self.clear_gene_names_and_symbols()
 
@@ -5978,9 +5982,9 @@ class Annotation():
 
         self.symbols_added = True
 
-        self.update_attributes(extra_attributes=False, symbols=True)
+        self.update_attributes(extra_attributes=False, symbols=True, quiet=quiet)
 
-    def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False):
+    def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):
         if clear_aliases:
             self.clear_aliases()
         self.name = name
@@ -5999,10 +6003,10 @@ class Annotation():
                         for u in c.UTRs:
                             u.source = source_name
 
-        self.update(extra_attributes=extra_attributes)
-        self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"])
-        self.update(extra_attributes=extra_attributes)
-        self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs)
+        self.update(extra_attributes=extra_attributes, quiet=quiet)
+        self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.update(extra_attributes=extra_attributes, quiet=quiet)
+        self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
 
     def __str__(self):
         return str(self.id)
