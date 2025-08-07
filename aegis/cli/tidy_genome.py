@@ -1,7 +1,7 @@
 import typer
 import os
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, read_file_with_fallback
+from aegis.annotation import Annotation
 from aegis.genome import Genome
 
 app = typer.Typer(add_completion=False)
@@ -17,23 +17,24 @@ def main(
         "-gn", "--genome-name", help="Genome assembly version, name or tag."
     )] = "{genome-fasta}",
     remove_scaffolds: Annotated[bool, typer.Option(
-        "-rs", "--remove-scaffolds", help="Remove scaffolds."
+        "-rs", "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs."
     )] = False,
     remove_organelles: Annotated[bool, typer.Option(
-        "-ro", "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes."
+        "-ro", "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only active if --remove-scaffolds is used."
     )] = False,
     remove_chr00: Annotated[bool, typer.Option(
-        "-r0", "--remove_chr00", help="Remove unknown chromosome or chr00."
+        "-r0", "--remove_chr00", help="Remove chromosome named 'chr00' or similar unknown chromosomes. Only active if --remove-scaffolds is used."
     )] = False,
-    rename_chromosomes: Annotated[str, typer.Option(
-        "-rc", "--rename-chromosomes", help="Path to the table with correspondences between original chromosome and new name. Tab sepparated file without header."
+    rename_map_path: Annotated[str, typer.Option(
+        "-rc", "--rename-map-path", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, no header."
     )] = None,
     output_folder: Annotated[str, typer.Option(
         "-o", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/"
 ):
     """
-    Removes scaffolds, chloroplast and mitochondrial chromosomes from genome fasta file.
+    Cleans a genome FASTA file by optionally removing scaffolds, organellar DNA, 
+    and unknown chromosomes. It can also rename chromosomes based on a provided map file.
     """
 
     if genome_name == "{genome-fasta}" and genome_file != "":
@@ -45,7 +46,11 @@ def main(
 
     genome = Genome(name = genome_name, genome_file_path = genome_file)
 
-    genome.rename_features_dap(chromosome_dict={'chr01_kk' : 'chr01_jeje'})
+    if rename_map_path is not None:
+        with open(rename_map_path, encoding='utf-8') as f:
+            chromosomes_to_rename_dic = {linea.split('\t')[0]: linea.split('\t')[1].strip() for linea in f}
+
+        genome.rename_features_dap(chromosome_dict=chromosomes_to_rename_dic)
 
     if remove_scaffolds:
         genome.remove_scaffolds(remove_00=remove_chr00, remove_organelles=remove_organelles)
