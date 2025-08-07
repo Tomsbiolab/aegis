@@ -325,9 +325,8 @@ class Genome():
             for scaffold_id, scaffold in self.scaffolds.items():
                 if scaffold.chromosome:
                     new_scaffolds[scaffold_id] = scaffold.copy()
-                elif not remove_00:
-                    if scaffold.unknown_chromosome:
-                        new_scaffolds[scaffold_id] = scaffold.copy()
+                elif not remove_00 and scaffold.unknown_chromosome:
+                    new_scaffolds[scaffold_id] = scaffold.copy()
 
             self.scaffolds = new_scaffolds.copy()
             del new_scaffolds
