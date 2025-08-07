@@ -6,7 +6,7 @@ from typing import List
 from typing_extensions import Annotated
 from aegis.annotation import Annotation
 from aegis.genome import Genome
-from aegis.equivalence import Simple_annotation, perform_pairwise_comparison, run_command
+from aegis.equivalence import Simple_annotation, pairwise_orthology, run_command
 
 app = typer.Typer(add_completion=False)
 
@@ -151,14 +151,70 @@ def main(
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-
     output_folder = Path(output_folder).resolve() / "orthologues"
     output_folder.mkdir(parents=True, exist_ok=True)
     output_folder = str(output_folder) + "/"
 
-    RESULTS_DIRECTORY = Path(f"{output_folder}temp/")
+    results_directory = Path(f"{output_folder}temp/")
+    protein_path = results_directory / "proteins"
+    protein_path.mkdir(parents=True, exist_ok=True)
 
-    all_protein_files = set()
+    CDS_path = results_directory / "CDSs"
+    CDS_path.mkdir(parents=True, exist_ok=True)
+
+    diamond_path = results_directory / "diamond"
+    diamond_path.mkdir(parents=True, exist_ok=True)
+
+    gff_path = results_directory / "gffs"
+    gff_path.mkdir(parents=True, exist_ok=True)
+
+    lifton_path = results_directory / "lifton"
+    lifton_path.mkdir(parents=True, exist_ok=True)
+
+    liftoff_path = results_directory / "liftoff"
+    liftoff_path.mkdir(parents=True, exist_ok=True)
+
+    mcscan_path = results_directory / "mcscan"
+    mcscan_path.mkdir(parents=True, exist_ok=True)
+
+    # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
+    for n, a in enumerate(annotations):
+
+        a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+        a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False)
+
+        a_lifton = a.copy()
+        a_lifton.CDS_to_CDS_segment_ids()
+        a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
+        a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True)
+
+        del a_lifton
+
+        a.generate_sequences(genomes[n])
+        a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
+        a.export_CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
+
+        protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
+
+        diamond_db_file = diamond_path / f"{a.name}_diamond_db"
+        makedb_cmd = [
+            "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
+        ]
+        run_command(diamond_path, makedb_cmd)
+
+        cds_fasta = CDS_path / f"{a.name}_CDSs_g_id_main.fasta"
+        cleaned_cds = mcscan_path / f"{a.name}.cds"
+
+        jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
+        run_command(mcscan_path, jcvi_format_cmd_1)
+
+        bed_file = mcscan_path / f"{a.name}.bed"
+        gff_to_bed_cmd_1 = [
+            "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
+            "--key=Parent", "--primary_only", f"{results_directory}/gffs/{a.name}.gff3", "-o", str(bed_file)
+        ]
+        run_command(mcscan_path, gff_to_bed_cmd_1)
+
 
     for n1, a1 in enumerate(annotations):
 
@@ -166,62 +222,24 @@ def main(
 
             if n1 == n2:
                 continue
-            # Create a dedicated directory for the results of this pair
-            pair_directory = RESULTS_DIRECTORY / f"{a1.name}_vs_{a2.name}"
+
+            original_annotation = original_annotation_files[n1].lower()
+            if original_annotation == "na":
+                original_annotation = None
+            else:
+                original_annotation = Annotation(original_annotation_files[n1])
             
-            ### CAMBIO ###
-            # Capturar las rutas de los ficheros de proteínas devueltos por la función.
-            protein_path_1, protein_path_2 = perform_pairwise_comparison(
-                annot1=a1,
-                annot2=a2,
-                genome1=genomes[n1],
-                genome2=genomes[n2],
-                working_directory=pair_directory,
-                num_threads=threads
-            )
-            # Añadir las rutas al conjunto
-            all_protein_files.add(protein_path_1)
-            all_protein_files.add(protein_path_2)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation)
 
-    print("\n--- ALL PAIRWISE ANALYSES COMPLETE ---")
-    
-    ### CAMBIO ###
-    # --- 3. RUN ORTHOFINDER ON ALL PROTEOMES ---
-    print("\n[STARTING ORTHOFINDER ANALYSIS]")
-    
-    # 3.1 Crear el directorio de entrada para OrthoFinder
-    orthofinder_input_dir = RESULTS_DIRECTORY / "orthofinder_input"
-    orthofinder_input_dir.mkdir(parents=True, exist_ok=True)
-    print(f"  Created OrthoFinder input directory: {orthofinder_input_dir}")
-
-    # 3.2 Copiar todos los ficheros de proteínas al directorio de entrada
-    print("  Copying protein files to OrthoFinder input directory...")
-    for protein_file in all_protein_files:
-        if protein_file.exists():
-            print(f"    - Copying {protein_file.name}")
-            shutil.copy(protein_file, orthofinder_input_dir)
-        else:
-            print(f"    - WARNING: Protein file not found, skipping: {protein_file}")
-
-    # 3.3 Ejecutar OrthoFinder
-    print("\n  Running OrthoFinder... (this can take a very long time)")
+    print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
     orthofinder_cmd = [
         "orthofinder",
-        "-f", str(orthofinder_input_dir),
-        "-t", str(threads) # Usar los mismos hilos que en los otros pasos
+        "-f", str(protein_path),
+        "-t", str(threads),
+        "-a", str(threads),
+        "-o", f"{str(protein_path)}/orthofinder/"
     ]
-    
-    # OrthoFinder se ejecuta en el directorio de resultados principal.
-    # Sus resultados se crearán en una subcarpeta dentro de `orthofinder_input`.
-    run_command(RESULTS_DIRECTORY, orthofinder_cmd)
-    
-    print("\n--- ORTHOFINDER ANALYSIS COMPLETE ---")
-
-
-    
-    print("\n--- ALL ANALYSES COMPLETE ---")
-    print(f"All results can be found in subdirectories within: {RESULTS_DIRECTORY}")
-    
+    run_command(results_directory, orthofinder_cmd)
 
     simple_annotations = []
 
@@ -233,7 +251,6 @@ def main(
     extra_tag = ""
     if verbose:
         extra_tag = "_verbose"
-
     protein_file_tag = "_proteins_g_id_main"
 
     for n1, a1 in enumerate(simple_annotations):
@@ -247,26 +264,21 @@ def main(
                 if not a1.target and not a2.target:
                     continue
 
-            mcscan_folder = RESULTS_DIRECTORY / f"{a1.name}_vs_{a2.name}"
-            orthofinder_folder = RESULTS_DIRECTORY
-            overlaps_path = f"MODIFY/"
-            blasts_path = f"MODIFY/"
-
-            a1.add_mcscan_equivalences(f"{mcscan_folder}{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
-            a1.add_mcscan_equivalences(f"{mcscan_folder}{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
-            a1.add_orthofinder_equivalences(f"{orthofinder_folder}Orthologues/{a1.name}{protein_file_tag}.tsv", a2.name, group_names[n2])
+            a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
+            a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
+            a1.add_orthofinder_equivalences(f"{protein_path}/orthofinder/Results*/{a1.name}{protein_file_tag}.tsv", a2.name, group_names[n2])
             
-            a1.add_reciprocal_overlap_equivalences(overlaps_path, a1.name, a2.name, group_names[n2])
+            a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2])
 
-            a1.add_reciprocal_overlap_equivalences(overlaps_path, a1.name, a2.name, group_names[n2], liftoff=False)
+            a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False)
 
-            a1.add_blast_equivalences(f"{blasts_path}", a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts)
+            a1.add_blast_equivalences(f"{diamond_path}", a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts)
 
-        output_file = f"{equivalences_path}{a1.name}_equivalences{extra_tag}.tsv"
+        output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
 
-        output_file_filtered = f"{equivalences_path}{a1.name}_equivalences_filtered{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs_and_rbhs = f"{equivalences_path}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs = f"{equivalences_path}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
+        output_file_filtered = f"{output_folder}{a1.name}_equivalences_filtered{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
 
         a1.export_summary_equivalences(output_file, verbose=verbose)
 

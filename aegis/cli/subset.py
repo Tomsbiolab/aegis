@@ -89,7 +89,7 @@ def main(
             chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
 
     a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap)
-    a.export_gff(custom_path=output_folder, tag=output_annot_file, subfolder=False)
+    a.export_gff(custom_path=output_folder, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
     if genome_fasta:
         g.subset(chosen_features=chosen_chromosomes)

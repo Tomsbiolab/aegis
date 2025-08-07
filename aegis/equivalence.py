@@ -2,7 +2,9 @@ import pandas as pd
 import re
 import time
 import os
+import shutil
 import subprocess
+from aegis.annotation import Annotation
 
 from pathlib import Path
 
@@ -19,7 +21,6 @@ def run_command(working_directory: Path, command: list):
         subprocess.CalledProcessError: If the command fails.
     """
     try:
-        print(f"    Executing command: {' '.join(command)}")
         result = subprocess.run(command, check=True, capture_output=True, text=True, cwd=working_directory)
         return result
     except subprocess.CalledProcessError as e:
@@ -28,167 +29,92 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, original_annot1:object=None):
 
-def perform_pairwise_comparison(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int) -> tuple[Path, Path]:
+    liftoff_dir = working_directory / "liftoff"
+    lifton_dir = working_directory / "lifton"
+    protein_dir = working_directory / "proteins"
+    cds_dir = working_directory / "CDSs"
+    diamond_dir = working_directory / "diamond"
+    mcscan_dir = working_directory / "mcscan"
 
-    print(f"\n[STARTING ANALYSIS] Comparing {annot1.name} with {annot2.name}")
-    print(f"Results will be stored in: {working_directory}")
-    working_directory.mkdir(parents=True, exist_ok=True)
+    print(f"\n\n{annot1.name} vs {annot2.name}:")
 
-    # --- 1. ANNOTATION LIFTOVER (Liftoff and Lifton) ---
-    print("\n[STEP 1.1] Running Liftoff to map annotations...")
+    print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
-    # Direction: Species 1 -> Species 2
-    liftoff_1_to_2_gff = working_directory / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
-    liftoff_cmd_1 = [
+    liftoff_gff = liftoff_dir / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
+    liftoff_cmd = [
         "liftoff", str(genome2.file), str(genome1.file),
-        "-g", str(annot1.file), "-o", str(liftoff_1_to_2_gff)
+        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff)
     ]
-    run_command(working_directory, liftoff_cmd_1)
+    run_command(liftoff_dir, liftoff_cmd)
 
-    # Direction: Species 2 -> Species 1
-    liftoff_2_to_1_gff = working_directory / f"liftoff_{annot2.name}_to_{annot1.name}.gff"
-    liftoff_cmd_2 = [
-        "liftoff", str(genome1.file), str(genome2.file),
-        "-g", str(annot2.file), "-o", str(liftoff_2_to_1_gff)
-    ]
-    run_command(working_directory, liftoff_cmd_2)
+    to_remove = liftoff_dir / "intermediate_files"
 
-    print("\n[STEP 1.2] Running Lifton to map annotations...")
+    if os.path.exists(str(to_remove)):
+        shutil.rmtree(str(to_remove))
+        unmapped_file = f"{str(liftoff_dir)}/unmapped_features.txt"
+        if os.path.isfile(unmapped_file):
+            os.remove(unmapped_file)
 
-    # Direction: Species 1 -> Species 2
-    lifton_1_to_2_gff = working_directory / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
-    lifton_cmd_1 = [
-        "lifton", "-g", str(annot1.file), "-o", str(lifton_1_to_2_gff),
+    print(f"\t\tRunning aegis-overlaps on liftoff result.")
+
+    if original_annot1:
+        a_liftoff = Annotation(str(liftoff_gff), quiet=True)
+    else:
+        a_liftoff = Annotation(str(liftoff_gff), original_annotation=original_annot1, quiet=True)
+
+    a_liftoff.detect_gene_overlaps(annot2, quiet=True)
+
+    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.csv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True)
+
+    print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
+
+    lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
+    lifton_cmd = [
+        "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
         "-copies", str(genome2.file), str(genome1.file)
     ]
-    run_command(working_directory, lifton_cmd_1)
+    run_command(lifton_dir, lifton_cmd)
 
-    # Direction: Species 2 -> Species 1
-    lifton_2_to_1_gff = working_directory / f"lifton_{annot2.name}_to_{annot1.name}.gff3"
-    lifton_cmd_2 = [
-        "lifton", "-g", str(annot2.file), "-o", str(lifton_2_to_1_gff),
-        "-copies", str(genome1.file), str(genome2.file)
-    ]
-    run_command(working_directory, lifton_cmd_2)
+    to_remove = lifton_dir / "lifton_output"
 
-    # --- 2. SEQUENCE EXTRACTION (Proteins and CDS) ---
-    print("\n[STEP 2] Extracting protein and CDS sequences...")
-    
-    # Process species 1
-    print(f"  Processing {annot1.name}...")
-    annot1.generate_sequences(genome1)
-    annot1.export_proteins(only_main=True, custom_path=str(working_directory), used_id="gene", verbose=False)
-    annot1.export_CDSs(only_main=True, custom_path=str(working_directory), used_id="gene", verbose=False)
+    if os.path.exists(str(to_remove)):
+        shutil.rmtree(str(to_remove))
 
-    # Process species 2
-    print(f"  Processing {annot2.name}...")
-    annot2.generate_sequences(genome2)
-    annot2.export_proteins(only_main=True, custom_path=str(working_directory), used_id="gene", verbose=False)
-    annot2.export_CDSs(only_main=True, custom_path=str(working_directory), used_id="gene", verbose=False)
+    print(f"\t\tRunning aegis-overlaps on lifton result.")
 
-    features_dir = working_directory / "features"
-    protein_fasta_1 = features_dir / f"{annot1.name}_proteins_g_id_main.fasta"
-    protein_fasta_2 = features_dir / f"{annot2.name}_proteins_g_id_main.fasta"
-    cds_fasta_1 = features_dir / f"{annot1.name}_CDSs_g_id_main.fasta"
-    cds_fasta_2 = features_dir / f"{annot2.name}_CDSs_g_id_main.fasta"
+    if original_annot1:
+        a_lifton = Annotation(str(lifton_gff), quiet=True)
+    else:
+        a_lifton = Annotation(str(lifton_gff), original_annotation=original_annot1, quiet=True)
 
-    # --- 3. RECIPROCAL BEST HIT (RBH) HOMOLOGY SEARCH (DIAMOND) ---
-    print("\n[STEP 3] Running reciprocal homology analysis with DIAMOND...")
-    
-    diamond_db_1 = working_directory / f"{annot1.name}_diamond_db"
-    diamond_db_2 = working_directory / f"{annot2.name}_diamond_db"
-    diamond_result_1_to_2 = working_directory / f"diamond_{annot1.name}_to_{annot2.name}.txt"
-    diamond_result_2_to_1 = working_directory / f"diamond_{annot2.name}_to_{annot1.name}.txt"
+    a_lifton.detect_gene_overlaps(annot2, quiet=True)
 
-    print(f"  Creating DIAMOND database for {annot1.name}...")
-    makedb_cmd_1 = [
-        "diamond", "makedb", "-p", str(num_threads), "--in", str(protein_fasta_1), "-d", str(diamond_db_1)
-    ]
-    run_command(working_directory, makedb_cmd_1)
+    a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.csv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True)
 
-    print(f"  Creating DIAMOND database for {annot2.name}...")
-    makedb_cmd_2 = [
-        "diamond", "makedb", "-p", str(num_threads), "--in", str(protein_fasta_2), "-d", str(diamond_db_2)
-    ]
-    run_command(working_directory, makedb_cmd_2)
+    protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 
-    print(f"  Running DIAMOND search ({annot1.name} -> {annot2.name})...")
-    blastp_cmd_1 = [
-        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db_2), "--ultra-sensitive", 
-        "--out", str(diamond_result_1_to_2), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta_1), 
+    diamond_db = diamond_dir / f"{annot1.name}_diamond_db"
+
+    diamond_result = diamond_dir / f"diamond_{annot1.name}_to_{annot2.name}.txt"
+
+    print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
+    blastp_cmd = [
+        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+        "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
         "--max-target-seqs", "1", "--evalue", "0.00001", "--max-hsps", "1"
     ]
-    run_command(working_directory, blastp_cmd_1)
-
-    print(f"  Running DIAMOND search ({annot2.name} -> {annot1.name})...")
-    blastp_cmd_2 = [
-        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db_1), "--ultra-sensitive",
-        "--out", str(diamond_result_2_to_1), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta_2),
-        "--max-target-seqs", "1", "--evalue", "0.00001", "--max-hsps", "1"
-    ]
-    run_command(working_directory, blastp_cmd_2)
-
-    # --- 4. SYNTENY-BASED ORTHOLOG SEARCH (JCVI) ---
-    print("\n[STEP 4] Preparing files for JCVI synteny analysis...")
-
-    # JCVI requires specific file naming conventions
-    jcvi_name_1 = f"{annot1.name}_jcvi"
-    jcvi_name_2 = f"{annot2.name}_jcvi"
+    run_command(diamond_dir, blastp_cmd)
     
-    cleaned_cds_1 = working_directory / f"{jcvi_name_1}.cds"
-    cleaned_cds_2 = working_directory / f"{jcvi_name_2}.cds"
-    bed_file_1 = working_directory / f"{jcvi_name_1}.bed"
-    bed_file_2 = working_directory / f"{jcvi_name_2}.bed"
+    print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
     
-    # 4.1 Format CDS files for JCVI
-    jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta_1), str(cleaned_cds_1)]
-    run_command(working_directory, jcvi_format_cmd_1)
-    
-    jcvi_format_cmd_2 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta_2), str(cleaned_cds_2)]
-    run_command(working_directory, jcvi_format_cmd_2)
-
-    annot1.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
-    annot1.export_gff(custom_path=str(working_directory), tag=f"{jcvi_name_1}.gff3")
-
-
-    annot2.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False)
-    annot2.export_gff(custom_path=str(working_directory), tag=f"{jcvi_name_2}.gff3")
-
-
-    #os.chdir(working_directory)
-
-    gff_to_bed_cmd_1 = [
-        "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", f"{str(Path(working_directory) / "out_gffs")}/{jcvi_name_1}.gff3", "-o", str(bed_file_1)
-    ]
-
-    print(gff_to_bed_cmd_1)
-    run_command(working_directory, gff_to_bed_cmd_1)
-
-    gff_to_bed_cmd_2 = [
-        "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-        "--key=Parent", "--primary_only", f"{str(Path(working_directory) / "out_gffs")}/{jcvi_name_2}.gff3", "-o", str(bed_file_2)
-    ]
-    run_command(working_directory, gff_to_bed_cmd_2)
-    
-    # 4.3. Run JCVI ortholog analysis
-    print("\n[STEP 4.3] Running JCVI ortholog analysis (this may take a while)...")
-    
-    # This command finds reciprocal best hits and creates the .anchors file
     jcvi_ortho_cmd = [
         "python", "-m", "jcvi.compara.catalog", "ortholog",
-        jcvi_name_1, jcvi_name_2, "--no_strip_names"
+        annot1.name, annot2.name, "--no_strip_names"
     ]
-    run_command(working_directory, jcvi_ortho_cmd)
-    
-    print(f"\n--- PAIRWISE ANALYSIS COMPLETE: {annot1.name} vs {annot2.name} ---")
-
-    ### CAMBIO ###
-    # Devuelve las rutas a los ficheros de proteínas generados.
-    return protein_fasta_1, protein_fasta_2
+    run_command(mcscan_dir, jcvi_ortho_cmd)
 
 def parse_evalue(e):
     e = e.strip()
@@ -574,6 +500,7 @@ class Simple_annotation():
         self.name = name
         self.genes = {}
         self.species = species
+        self.target = annotation_object.target
         for gene in annotation_object.all_gene_ids:
             if gene not in self.genes:
                 self.genes[gene] = Simple_gene(gene)
