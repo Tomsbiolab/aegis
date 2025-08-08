@@ -53,6 +53,9 @@ def main(
     )] = False,
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Whether to include more details in the orthologue summary."
+    )] = False,
+    keep_intermediate: Annotated[bool, typer.Option(
+        "-k", "--keep_intermediate", help="Keep intermediate files, useful for identifying errors."
     )] = False
 ):
     """
