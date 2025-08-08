@@ -59,7 +59,7 @@ def main(
     )] = False,
     cds_segment_ids: Annotated[bool, typer.Option(
         "-u", "--unique_cds_entry_ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
-    )] = False,
+    )] = False, 
     for_lifton: Annotated[bool, typer.Option(
         "-l", "--for_lifton", help="Ensures output has individual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
     )] = False,
@@ -67,7 +67,7 @@ def main(
         "-cf", "--clean_features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
     )] = False,
     rna_classes: Annotated[str, typer.Option(
-        "-r", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
+        "-rc", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
         callback=split_callback
     )] = ""
 
