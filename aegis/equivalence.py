@@ -29,7 +29,9 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, original_annot1:object=None):
+
+
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, original_annot1:object=None, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -45,8 +47,11 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
     liftoff_gff = liftoff_dir / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
     liftoff_cmd = [
         "liftoff", str(genome2.file), str(genome1.file),
-        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff)
+        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1"
     ]
+    if copies:
+        liftoff_cmd.append("-copies")
+
     run_command(liftoff_dir, liftoff_cmd)
 
     to_remove = liftoff_dir / "intermediate_files"
@@ -66,15 +71,21 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     a_liftoff.detect_gene_overlaps(annot2, quiet=True)
 
-    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.csv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True)
+    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
 
     print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
 
     lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
     lifton_cmd = [
         "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
-        "-copies", str(genome2.file), str(genome1.file)
+        "-flank",  "0.1"
     ]
+    if copies:
+        liftoff_cmd.append("-copies")
+
+    lifton_cmd.append(str(genome2.file))
+    lifton_cmd.append(str(genome1.file))
+
     run_command(lifton_dir, lifton_cmd)
 
     to_remove = lifton_dir / "lifton_output"
@@ -91,21 +102,32 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     a_lifton.detect_gene_overlaps(annot2, quiet=True)
 
-    a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.csv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True)
+    a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
 
     protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 
-    diamond_db = diamond_dir / f"{annot1.name}_diamond_db"
+    diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
 
-    diamond_result = diamond_dir / f"diamond_{annot1.name}_to_{annot2.name}.txt"
+    diamond_result = diamond_dir / f"single_{annot1.name}_to_{annot2.name}.txt"
+    diamond_result_best = diamond_dir / f"single_best_{annot1.name}_to_{annot2.name}.txt"
 
     print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
     blastp_cmd = [
         "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
         "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
         "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
-        "--max-target-seqs", "1", "--evalue", "0.00001", "--max-hsps", "1"
+        "--evalue", str(evalue), "--max-hsps", str(max_hsps), "--query-cover", str(coverage)
     ]
+
+    run_command(diamond_dir, blastp_cmd)
+
+    blastp_cmd = [
+        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+        "--out", str(diamond_result_best), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
+        "--max-target-seqs", "1", "--evalue", str(evalue), "--max-hsps", str(max_hsps)
+    ]
+
     run_command(diamond_dir, blastp_cmd)
     
     print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
@@ -146,7 +168,7 @@ class Equivalence():
         self.type = type_
         self.species = species
         self.score = score
-        self.target_ = target_annotation
+        self.target_annotation = target_annotation
         self.reliability = reliability
 
         self.aegis_score = None
@@ -509,7 +531,7 @@ class Simple_annotation():
 
         self.added_equivalences = {}
 
-    def export_summary_equivalences(self, output_file, filtered:bool=False, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), verbose:bool=True):
+    def export_summary_equivalences(self, output_file, filtered:bool=False, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), verbose:bool=True, quiet:bool=False):
         
         start = time.time()
         
@@ -546,7 +568,8 @@ class Simple_annotation():
 
         end = time.time()
         lapse = end - start
-        print(f"Exporting all filtered={filtered} equivalences for {self.name} took {round(lapse/60, 2)} minutes\n")
+        if not quiet:
+            print(f"Exporting all filtered={filtered} equivalences for {self.name} took {round(lapse/60, 2)} minutes\n")
 
     def add_mcscan_equivalences(self, file, key_col, target_annotation, species):
         """
@@ -582,15 +605,16 @@ class Simple_annotation():
 
         if os.path.isfile(file):
             df = pd.read_csv(file, sep="\t", dtype=str)
+            df.columns = ["orthogroup", "query", "target"]
             for index, row in df.iterrows():
-                gene_queries = row[file.split("/")[-1].split(".tsv")[0]].split(", ")
-                gene_targets = row["Orthologs"].split(", ")
-                score = row["Orthogroup"]
+                gene_queries = row["query"].split(", ")
+                gene_targets = row["target"].split(", ")
+                score = row["orthogroup"]
                 for gene_query in gene_queries:
                     for gene_target in gene_targets:
                         self.genes[gene_query].equivalences.append(Equivalence(gene_target, "orthofinder", target_annotation, species, score))
 
-    def add_blast_equivalences(self, blast_folder, query_annotation, target_annotation, species, skip_rbhs:bool=False, skip_unidirectional_blasts:bool=False, proteins:bool=True):
+    def add_blast_equivalences(self, blast_folder, query_annotation, target_annotation, species, skip_rbhs:bool=False, skip_unidirectional_blasts:bool=False, proteins:bool=True, quiet:bool=False):
 
         if not skip_unidirectional_blasts and skip_rbhs:
             print("Warning: It makes no sense to skip RBHs when unidirectional blasts are not being skipped.")
@@ -610,8 +634,8 @@ class Simple_annotation():
             query_col_identity = "identity_x"
             target_col_identity = "identity_y"
 
-            rbbh_file = f"{blast_folder}/rbh/rbbh_{query_annotation}_against_{target_annotation}.csv"
-            rbh_file = f"{blast_folder}/rbh/rbh_{query_annotation}_against_{target_annotation}.csv"
+            rbbh_file = f"{blast_folder}/rbbh_{query_annotation}_to_{target_annotation}.txt"
+            rbh_file = f"{blast_folder}/rbh_{query_annotation}_to_{target_annotation}.txt"
             if not os.path.isfile(rbbh_file):
                 query_col = "subject_x"
                 target_col = "query_x"
@@ -623,16 +647,12 @@ class Simple_annotation():
                 target_col_coverage = "coverage_x"
                 query_col_identity = "identity_y"
                 target_col_identity = "identity_x"
-                rbbh_file = f"{blast_folder}/rbh/rbbh_{target_annotation}_against_{query_annotation}.csv"
-                rbh_file = f"{blast_folder}/rbh/rbh_{target_annotation}_against_{query_annotation}.csv"
 
-            fwd_file = f"{blast_folder}fwd_{query_annotation}_against_{target_annotation}.csv"
-            if not os.path.isfile(fwd_file):
-                fwd_file = f"{blast_folder}rev_{query_annotation}_against_{target_annotation}.csv"
+                rbbh_file = f"{blast_folder}/rbbh_{target_annotation}_to_{query_annotation}.txt"
+                rbh_file = f"{blast_folder}/rbh_{target_annotation}_to_{query_annotation}.txt"
 
-            rev_file = f"{blast_folder}rev_{target_annotation}_against_{query_annotation}.csv"
-            if not os.path.isfile(rev_file):
-                rev_file = f"{blast_folder}fwd_{target_annotation}_against_{query_annotation}.csv"
+            fwd_file = f"{blast_folder}/single_{query_annotation}_to_{target_annotation}.txt"
+            rev_file = f"{blast_folder}/single_{target_annotation}_to_{query_annotation}.txt"
 
             rbbh_hits = set()
 
@@ -657,7 +677,8 @@ class Simple_annotation():
 
             end = time.time()
             lapse = end - temp_start
-            print(f"Adding RBBH equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
+            if not quiet:
+                print(f"Adding RBBH equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
 
             if not skip_rbhs:
 
@@ -683,7 +704,8 @@ class Simple_annotation():
 
                 end = time.time()
                 lapse = end - temp_start
-                print(f"Adding RBH equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
+                if not quiet:
+                    print(f"Adding RBH equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
 
                 if not skip_unidirectional_blasts:
 
@@ -735,24 +757,26 @@ class Simple_annotation():
 
                     end = time.time()
                     lapse = end - temp_start
-                    print(f"Adding fwd/rev blast equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
+                    if not quiet:
+                        print(f"Adding fwd/rev blast equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
 
             end = time.time()
             lapse = end - start
             
-            if skip_unidirectional_blasts and not skip_rbhs:
-                print(f"Adding RBBH, and RBH equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
-            else:
-                print(f"Adding RBBH, RBH, and fwd/rev blast equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
+            if not quiet:
+                if skip_unidirectional_blasts and not skip_rbhs:
+                    print(f"Adding RBBH, and RBH equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
+                else:
+                    print(f"Adding RBBH, RBH, and fwd/rev blast equivalences to {self.name} '{query_annotation} vs {target_annotation}' took {round(lapse/60, 2)} minutes")
 
-    def add_reciprocal_overlap_equivalences(self, folder, query_tag, target_tag, species, liftoff:bool=True):
+    def add_reciprocal_overlap_equivalences(self, folder, query_tag, target_tag, species, liftoff:bool=True, quiet:bool=False, synteny_present:bool=False):
 
-        program = "Liftoff"
+        program = "liftoff"
         if not liftoff:
-            program = "Lifton"
+            program = "lifton"
 
-        fwd_file = f"{folder}{query_tag}_equivalences_{program}_on_{target_tag}.tsv"
-        rev_file = f"{folder}{target_tag}_equivalences_{program}_on_{query_tag}.tsv"
+        fwd_file = f"{folder}/{program}_{query_tag}_to_{target_tag}_overlaps.tsv"
+        rev_file = f"{folder}/{program}_{target_tag}_to_{query_tag}_overlaps.tsv"
 
         if os.path.isfile(fwd_file) and os.path.isfile(rev_file):
             start = time.time()
@@ -761,7 +785,7 @@ class Simple_annotation():
 
             fwd_df = pd.read_csv(fwd_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
 
-            duplicates = fwd_df[fwd_df.duplicated(subset=["query_id", "target_id"], keep=False)]
+            duplicates = fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
 
             if not duplicates.empty:
                 print(f"Error: Duplicate query and target id pairs for fwd {program}:")
@@ -770,7 +794,7 @@ class Simple_annotation():
 
             rev_df = pd.read_csv(rev_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
 
-            duplicates = rev_df[rev_df.duplicated(subset=["query_id", "target_id"], keep=False)]
+            duplicates = rev_df[rev_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
 
             if not duplicates.empty:
                 print(f"Error: Duplicate query and target id pairs for rev {program}:")
@@ -779,18 +803,17 @@ class Simple_annotation():
 
             if go_ahead:
 
-                fwd_df = fwd_df[fwd_df["query_id"] != "NA"]
-                rev_df = rev_df[rev_df["query_id"] != "NA"]
+                fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
+                rev_df = rev_df[rev_df["gene_id_A"] != "NA"]
 
-                fwd_df = fwd_df[fwd_df["target_id"] != "NA"]
-                rev_df = rev_df[rev_df["target_id"] != "NA"]
+                fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
+                rev_df = rev_df[rev_df["gene_id_B"] != "NA"]
 
-                fwd_df["query_origin"] = fwd_df["query_origin"].apply(clean_annotation_tag)
+                fwd_df["gene_id_A_origin"] = fwd_df["gene_id_A_origin"].apply(clean_annotation_tag)
+                rev_df["gene_id_B_origin"] = rev_df["gene_id_B_origin"].apply(clean_annotation_tag)
 
-                rev_df["target_origin"] = rev_df["target_origin"].apply(clean_annotation_tag)
-
-                fwd_df = fwd_df[fwd_df["query_origin"] == self.name]
-                rev_df = rev_df[rev_df["target_origin"] == self.name]
+                fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
+                rev_df = rev_df[rev_df["gene_id_B_origin"] == self.name]
 
                 if liftoff:
                     equivalence_suffix = "liftoff_aegis"
@@ -801,8 +824,8 @@ class Simple_annotation():
             
                 for index, row in fwd_df.iterrows():
 
-                    gene_query = row["query_id"]
-                    gene_target = row["target_id"]
+                    gene_query = row["gene_id_A"]
+                    gene_target = row["gene_id_B"]
 
                     copies = False
                     if re.search(r"_\d{1,4}$", gene_query):
@@ -817,9 +840,13 @@ class Simple_annotation():
 
                     pair = f"{gene_query}---{gene_target}"
 
-                    synteny = True
-                    if row["query_synteny_conserved"] == "False" or row["target_synteny_conserved"] == "False":
+                    if synteny_present:
+                        synteny = True
+                        if row["gene_id_A_synteny_conserved"] == "False" or row["gene_id_B_synteny_conserved"] == "False":
+                            synteny = False
+                    else:
                         synteny = False
+
                     score = row["overlap_score"]
 
                     if synteny and copies:
@@ -864,8 +891,8 @@ class Simple_annotation():
             
                 for index, row in rev_df.iterrows():
 
-                    gene_query = row["target_id"]
-                    gene_target = row["query_id"]
+                    gene_query = row["gene_id_B"]
+                    gene_target = row["gene_id_A"]
 
                     copies = False
                     if re.search(r"_\d{1,4}$", gene_query):
@@ -880,9 +907,13 @@ class Simple_annotation():
 
                     pair = f"{gene_query}---{gene_target}"
 
-                    synteny = True
-                    if row["target_synteny_conserved"] == "False" or row["query_synteny_conserved"] == "False":
+                    if synteny_present:
+                        synteny = True
+                        if row["gene_id_B_synteny_conserved"] == "False" or row["gene_id_A_synteny_conserved"] == "False":
+                            synteny = False
+                    else:
                         synteny = False
+
                     score = row["overlap_score"]
 
                     if synteny and copies:
@@ -950,7 +981,8 @@ class Simple_annotation():
 
                 end = time.time()
                 lapse = end - start
-                print(f"Adding {program} overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
+                if not quiet:
+                    print(f"Adding {program} overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
 
         else:
             print(f"Warning: {fwd_file} or {rev_file} is missing.")
@@ -963,10 +995,19 @@ class Simple_annotation():
 
 
 def clean_annotation_tag(annotation_tag):
+
+    annotation_tag = annotation_tag.replace("Lifton_", "")
+    annotation_tag = annotation_tag.replace("Liftoff_", "")
+    annotation_tag = annotation_tag.replace("Lifton_", "")
+    annotation_tag = annotation_tag.replace("liftoff_", "")
+
     annotation_tag = annotation_tag.replace("Lifton", "")
+    annotation_tag = annotation_tag.replace("Liftoff", "")
+    annotation_tag = annotation_tag.replace("Lifton", "")
+    annotation_tag = annotation_tag.replace("liftoff", "")
 
     annotation_tag = annotation_tag.split("_from_")[0]
-
     annotation_tag = annotation_tag.split("_on_")[0]
+    annotation_tag = annotation_tag.split("_to_")[0]
     
     return annotation_tag

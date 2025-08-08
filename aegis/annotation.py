@@ -1085,25 +1085,25 @@ class Annotation():
                         self.warnings["multiple_CDSs_per_transcript"].append(t.id)
                 g.update()
         progress_bar.close()
-        self.update_features(quiet=quiet)
+        self.update_features()
         
         if rename_features != []:
             self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet)
-        self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes, quiet=quiet)
-        self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes, quiet=quiet)
-        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
+        self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
+        self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes)
+        self.correct_gene_transcript_and_subfeature_coordinates()
         if not self.sorted:
-            self.sort_genes(processes=sort_processes, quiet=quiet)
+            self.sort_genes(processes=sort_processes)
         if define_synteny:
-            self.define_synteny(original_annotation=original_annotation, sort_processes=sort_processes, quiet=quiet)
+            self.define_synteny(original_annotation=original_annotation, sort_processes=sort_processes)
         if self.liftoff and original_annotation != None:
             for g_id in original_annotation.all_gene_ids:
                 #improve at some point, slow with massive lists
                 if g_id not in self.all_gene_ids:
                     self.unmapped.append(g_id)
-        self.update_stats(genome=genome, quiet=quiet)
+        self.update_stats(genome=genome)
 
-        self.update_suffixes(quiet=quiet)
+        self.update_suffixes()
 
         now = time.time()
         lapse = now - start
@@ -2536,7 +2536,7 @@ class Annotation():
         if not quiet:
             print(f"\nUpdated stats for {self.id}")
 
-    def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=False):
+    def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -2571,7 +2571,7 @@ class Annotation():
         self.shared_UTRs = True
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def single_parent_for_exons_utrs(self, extra_attributes:bool=False, quiet:bool=False):
+    def single_parent_for_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -3322,7 +3322,7 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False):
+    def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=True):
         common_protein_CDS_ids = True
 
         for genes in self.chrs.values():
@@ -3386,7 +3386,7 @@ class Annotation():
             out += "\n".join(self.gff_header) + "\n"
 
         if repeat_exons_utrs:
-            self.single_parent_for_exons_utrs()
+            self.single_parent_for_exons_utrs(quiet=quiet)
 
         for genes in self.chrs.values():
             progress_bar.update(len(genes))
