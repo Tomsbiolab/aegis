@@ -317,6 +317,26 @@ class Genome():
 
             print(f"Warning: {self.name} genome is already fit for DAP-Seq analysis, so it will not be modified.")
 
+    def rename_features_from_dic(self, rename_map: dict) -> dict:
+
+        new_scaffolds = {}
+        final_equivalences = {}
+
+        for scaffold_id, scaffold in self.scaffolds.items():
+            
+            original_name = scaffold.original_name
+            new_name = rename_map.get(original_name, scaffold.name)
+            scaffold.name = new_name
+
+            final_equivalences[original_name] = new_name
+
+            new_scaffolds[new_name] = copy.copy(scaffold)
+
+        self.scaffolds = new_scaffolds
+        self.update()
+
+        return final_equivalences
+
     def remove_scaffolds(self, output_folder:str="", export:bool=False, chromosome_dict:dict={}, remove_00:bool=True, remove_organelles:bool=False):
         
         if self.non_chromosomal_scaffolds:
