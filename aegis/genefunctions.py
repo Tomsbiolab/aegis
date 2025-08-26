@@ -10,7 +10,6 @@ Module with an array of genomic functions.
 
 from pathlib import Path
 from collections import Counter
-from os import system
 import pandas as pd
 from Bio.Data import CodonTable
 from Bio.Seq import Seq
@@ -58,33 +57,6 @@ def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
                     if codon2 in stop_codons:
                         if not readthrough_stop:
                             break
-    return orfs
-
-def find_ORFs_old(in_seq:str, stop_codon_within_orf=False):
-    """
-    This function identifies and returns all open reading frames (ORFs) 
-    in a given nucleotide sequence. An ORF is by default only considered to
-    exist if it begins with a start codon and ends with a stop codon and has
-    no stop codons inbetween. An option is included to get ORFs even when they
-    have stop codons within the sequence.
-    """
-    orfs = []
-    start_codon = "ATG"
-    stop_codons = ['TAA', 'TAG', 'TGA']
-    for frame in range(3):
-        for i in range(frame, len(in_seq)-2, 3):
-            codon = in_seq[i:i+3]
-            if codon == start_codon:
-                for j in range(i+3, len(in_seq), 3):
-                    codon = in_seq[j:j+3]
-                    if codon in stop_codons:
-                        if not stop_codon_within_orf:
-                            break
-                    else:
-                        orf = in_seq[i:j+3]
-                        if len(orf) % 3 == 0:
-                            orfs.append((orf, i, j + 2))
-                            
     return orfs
 
 def longest_ORF(orfs:list):
