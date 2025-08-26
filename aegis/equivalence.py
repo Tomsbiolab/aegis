@@ -4,7 +4,7 @@ import time
 import os
 import shutil
 import subprocess
-from aegis.annotation import Annotation
+from .annotation import Annotation
 
 from pathlib import Path
 
