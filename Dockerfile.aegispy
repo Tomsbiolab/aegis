@@ -1,70 +1,65 @@
 # -----------------------------------------------------------------------------
-# ETAPA 1: BASE Y DEPENDENCIAS DEL SISTEMA
+# STAGE 1: BASE IMAGE & SYSTEM DEPENDENCIES
 # -----------------------------------------------------------------------------
-# Usar Ubuntu 20.04 LTS como imagen base, que es versátil y estable.
 FROM ubuntu:20.04
 
-# Evitar diálogos interactivos durante la instalación de paquetes
+# Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar todas las dependencias del sistema necesarias para compilar código,
-# descargar archivos y ejecutar nuestras herramientas.
+# Install all required system dependencies for building code,
+# downloading files, and running tools.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Herramientas de construcción y compilación
     build-essential \
     cmake \
     gfortran \
     autoconf \
-    # Librerías necesarias para paquetes de Python y otras herramientas
     libopenblas-dev \
     liblapack-dev \
     libatlas-base-dev \
     zlib1g-dev \
-    # Utilidades generales
     wget \
     git \
     unzip \
     ca-certificates \
-    # Limpieza para reducir el tamaño de la imagen
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# ETAPA 2: INSTALACIÓN DE MINICONDA Y MAMBA
+# STAGE 2: INSTALLING MINICONDA & MAMBA
 # -----------------------------------------------------------------------------
-# Instalar Miniconda para gestionar los entornos y paquetes de Python/Bioinformática.
+# Install Miniconda to manage Python/Bioinformatics environments and packages.
 ENV CONDA_DIR /opt/conda
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
     /bin/bash ~/miniconda.sh -b -p $CONDA_DIR && \
     rm ~/miniconda.sh
 
-# Añadir Conda al PATH del sistema.
+# Add Conda to the system PATH.
 ENV PATH=$CONDA_DIR/bin:$PATH
 
-# Aceptar los Términos de Servicio de Anaconda para los canales necesarios
+# Accept Anaconda Terms of Service for the required channels
 RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 
-# Instalar mamba para una gestión de paquetes más rápida
+# Install Mamba for faster package management
 RUN conda install -n base -c conda-forge mamba -y
 
 # -----------------------------------------------------------------------------
-# ETAPA 3: CREACIÓN DEL ENTORNO Y INSTALACIÓN DE SOFTWARE
+# STAGE 3: ENVIRONMENT CREATION & SOFTWARE INSTALLATION
 # -----------------------------------------------------------------------------
-# Instalamos la mayoría de los paquetes directamente con Mamba.
-# Esto es más robusto y evita problemas de compilación y dependencias.
-# Mamba encontrará versiones compatibles de todos estos paquetes para Python 3.10.
+# Install most packages directly with Mamba.
+# This is more reliable and avoids compilation/dependency issues.
+# Mamba will resolve compatible versions for Python 3.10.
 RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
     python=3.10 \
     pip \
-    # Herramientas Bioinformáticas
+    # Bioinformatics tools
     jcvi \
     last \
     diamond \
     minimap2 \
     liftoff \
     orthofinder \
-    # Librerías de Python
+    # Python libraries
     pandas \
     plotly \
     python-kaleido \
@@ -74,18 +69,18 @@ RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
     colorlover \
     tqdm
 
-# Activamos el entorno para los siguientes comandos
+# Activate the environment for subsequent commands
 SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]
 
-# Ahora solo usamos pip para paquetes que no están en Conda o para instalaciones locales
+# Use pip only for packages not available on Conda or for local installs
 ENV PYTHONUNBUFFERED=1
 
-# Instalar LiftOn (que necesita numpy, networkx, etc., ahora instalados por Mamba)
+# Install LiftOn (requires numpy, networkx, etc., already installed by Mamba)
 RUN git clone https://github.com/Kuanhao-Chao/LiftOn /opt/LiftOn && \
     cd /opt/LiftOn && \
     pip install .
 
-# Instalar miniprot
+# Install miniprot
 RUN git clone https://github.com/lh3/miniprot /opt/miniprot && \
     cd /opt/miniprot && \
     make
@@ -93,20 +88,20 @@ RUN git clone https://github.com/lh3/miniprot /opt/miniprot && \
 ENV PATH="/opt/miniprot:${PATH}"
 
 # -----------------------------------------------------------------------------
-# ETAPA 4: CONFIGURACIÓN DE LA APLICACIÓN 'AEGIS'
+# STAGE 4: 'AEGIS' APPLICATION SETUP
 # -----------------------------------------------------------------------------
-# Volvemos al shell por defecto para las operaciones de copia
+# Switch back to the default shell for copy operations
 SHELL ["/bin/bash", "-c"]
 COPY aegis /aegis
 WORKDIR /aegis
 ENV PYTHONPATH="/aegis"
 
-# Volvemos al shell del entorno de conda para instalar el paquete local
+# Switch to Conda shell to install the local package
 SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]
 RUN pip install -e .
 
 # -----------------------------------------------------------------------------
-# ETAPA 5: EJECUCIÓN DEL CONTENEDOR
+# STAGE 5: CONTAINER EXECUTION
 # -----------------------------------------------------------------------------
 WORKDIR /aegis
 ENTRYPOINT ["conda", "run", "-n", "bio_env", "--no-capture-output"]
