@@ -1,0 +1,9 @@
+biopython>=1.81
+colorlover>=0.3.0
+matplotlib>=3.5.3
+networkx>=2.6.3
+pandas>=1.1.5
+plotly>=5.18.0
+scipy>=1.7.3
+tqdm>=4.67.1
+typer>=0.16.1
