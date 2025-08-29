@@ -56,6 +56,12 @@ def main(
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Whether to include more details in the orthologue summary."
     )] = False,
+    lift_feature_types: Annotated[str, typer.Option(
+        "-lt", "--lift_feature_types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
+    )] = "ALL",
+    skip_lifton: Annotated[bool, typer.Option(
+        "-sl", "--skip_lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
+    )] = False,
     skip_copies: Annotated[bool, typer.Option(
         "-cl", "--skip_copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
     )] = False,
@@ -118,7 +124,7 @@ def main(
     if len(genome_files) != len(set(genome_files)):
         raise ValueError("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
 
-    if original_annotation_files != []:
+    if original_annotation_files:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
             raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
@@ -127,7 +133,7 @@ def main(
         synteny = False
         original_annotation_files = ["NA"] * len(annotation_files)
     
-    if group_names != "":
+    if group_names:
         if len(annotation_files) != len(group_names):
             raise ValueError(f"The provided number of groups do not match the number of annotation file(s).")
         
@@ -176,8 +182,10 @@ def main(
     gff_path = results_directory / "gffs"
     gff_path.mkdir(parents=True, exist_ok=True)
 
-    lifton_path = results_directory / "lifton"
-    lifton_path.mkdir(parents=True, exist_ok=True)
+    if not skip_lifton:
+
+        lifton_path = results_directory / "lifton"
+        lifton_path.mkdir(parents=True, exist_ok=True)
 
     liftoff_path = results_directory / "liftoff"
     liftoff_path.mkdir(parents=True, exist_ok=True)
@@ -240,7 +248,7 @@ def main(
             else:
                 original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types)
 
 
     # Obtaining RBHs and RBBHs from single blast results
@@ -379,7 +387,8 @@ def main(
                 a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
             a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=True)
-            a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=True)
+            if not skip_lifton:
+                a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=True)
 
             a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=True)
 

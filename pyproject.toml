@@ -9,7 +9,7 @@ authors = [
 	{ name = "Amandine Velt", email = "Amandine.Velt@inrae.fr" },
 ]
 name = "aegis-bio"
-version = "0.0.1"
+version = "0.1.1"
 description = "Annotation Extraction Genomic Integration Suite."
 readme = "README.md"
 requires-python = ">=3.7"

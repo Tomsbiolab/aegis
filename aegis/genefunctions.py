@@ -78,8 +78,8 @@ def trim_surplus(in_seq:str):
     surplus = len(in_seq) % 3
     if surplus != 0:
         nucleotide_surplus = True
-        orfs = find_ORFs_old(in_seq, stop_codon_within_orf=True)
-        orf, coding_start, coding_end = longest_ORF(orfs)
+        orfs = find_ORFs(in_seq, readthrough_stop=True)
+        orf, _, _ = longest_ORF(orfs)
         excess = len(in_seq) - len(orf)
         # this aims to trim at most 2 complete or incomplete codons: one from
         # the beginning of the sequence and one from the end
