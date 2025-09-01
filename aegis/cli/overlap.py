@@ -90,7 +90,7 @@ def main(
         
     if len(annotation_files) == 1:
         if original_annotation_files[0] != "NA":
-            warnings.warn(f"Note that he provided original annotation file {original_annotation_files[0]} will not be used as synteny analysis is not implemented when evaluating gene overlaps within a single annotation = {annotation_names[0]}.")
+            warnings.warn(f"Note that he provided original annotation file {original_annotation_files[0]} will not be used as synteny analysis is not implemented when evaluating gene overlaps within a single annotation = {annotation_names[0]}.", category=UserWarning)
 
     annotations = []
 

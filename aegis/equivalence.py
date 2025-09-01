@@ -29,9 +29,7 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-
-
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, original_annot1:object=None, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, types:list=["ALL"]):
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, original_annot1:object=None, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -46,14 +44,10 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
     liftoff_gff = liftoff_dir / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
     liftoff_cmd = [
         "liftoff", str(genome2.file), str(genome1.file),
-        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1"
+        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types
     ]
     if copies:
         liftoff_cmd.append("-copies")
-
-    if types != ["ALL"]:
-        types_s = ",".join(types)
-        liftoff_cmd.append(f"-f {types_s}")
 
     run_command(liftoff_dir, liftoff_cmd)
 
@@ -83,14 +77,10 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
         lifton_cmd = [
             "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
-            "-flank",  "0.1"
+            "-flank",  "0.1", "-f", types
         ]
         if copies:
             lifton_cmd.append("-copies")
-
-        if types != ["ALL"]:
-            types_s = ",".join(types)
-            lifton_cmd.append(f"-f {types_s}")
 
         lifton_cmd.append(str(genome2.file))
         lifton_cmd.append(str(genome1.file))

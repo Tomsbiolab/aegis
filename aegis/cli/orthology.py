@@ -143,7 +143,6 @@ def main(
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
             raise ValueError(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
-        
 
     skip_unidirectional_blasts = not (include_single_blasts)
 
@@ -161,6 +160,8 @@ def main(
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, original_annotation=original_annotation))
         else:
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
+
+        annotations[-1].rename_ids(strip_gene_tag=True)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
@@ -183,7 +184,6 @@ def main(
     gff_path.mkdir(parents=True, exist_ok=True)
 
     if not skip_lifton:
-
         lifton_path = results_directory / "lifton"
         lifton_path.mkdir(parents=True, exist_ok=True)
 
@@ -192,6 +192,19 @@ def main(
 
     mcscan_path = results_directory / "mcscan"
     mcscan_path.mkdir(parents=True, exist_ok=True)
+
+    if lift_feature_types == ["ALL"]:
+        lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"]
+    
+    lift_feature_types_file = results_directory / "chosen_liftover_features.txt"
+    lift_feature_types_file = str(lift_feature_types_file)
+
+    f_in = open(lift_feature_types_file, "w", encoding="utf-8")
+
+    for ft in lift_feature_types:
+        ft = ft.strip()
+        f_in.write(f"{ft}\n")
+    f_in.close()
 
     identity = 30
     coverage = 30
@@ -202,12 +215,14 @@ def main(
         a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
         a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=True)
 
-        a_lifton = a.copy()
-        a_lifton.CDS_to_CDS_segment_ids(quiet=True)
-        a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
-        a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True, quiet=True)
+        if not skip_lifton:
 
-        del a_lifton
+            a_lifton = a.copy()
+            a_lifton.CDS_to_CDS_segment_ids(quiet=True)
+            a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
+            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True, quiet=True)
+
+            del a_lifton
 
         a.generate_sequences(genomes[n])
         a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
@@ -234,7 +249,6 @@ def main(
         ]
         run_command(mcscan_path, gff_to_bed_cmd_1)
 
-
     for n1, a1 in enumerate(annotations):
 
         for n2, a2 in enumerate(annotations):
@@ -248,8 +262,7 @@ def main(
             else:
                 original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types)
-
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file)
 
     # Obtaining RBHs and RBBHs from single blast results
     checked_pairs = []
@@ -379,9 +392,9 @@ def main(
             matching_files = list(protein_path.glob(orthofile_pattern))
 
             if not matching_files:
-                warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.")
+                warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
             elif len(matching_files) > 1:
-                warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.")
+                warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
             else:
                 ortho_file_path = matching_files[0]
                 a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
