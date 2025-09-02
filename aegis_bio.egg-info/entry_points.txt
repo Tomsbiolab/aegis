@@ -1,0 +1,14 @@
+[console_scripts]
+aegis-extract = aegis.cli.extract:app
+aegis-merge = aegis.cli.merge:app
+aegis-motifs = aegis.cli.motifs:app
+aegis-orthology = aegis.cli.orthology:app
+aegis-overlap = aegis.cli.overlap:app
+aegis-prune = aegis.cli.prune:app
+aegis-reformat = aegis.cli.reformat:app
+aegis-rename = aegis.cli.rename:app
+aegis-subset = aegis.cli.subset:app
+aegis-summary = aegis.cli.summary:app
+aegis-symbols = aegis.cli.symbols:app
+aegis-tidy = aegis.cli.tidy:app
+aegis-tidy-genome = aegis.cli.tidy_genome:app
