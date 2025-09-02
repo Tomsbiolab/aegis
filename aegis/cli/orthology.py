@@ -53,9 +53,6 @@ def main(
     skip_rbhs: Annotated[bool, typer.Option(
         "-rb", "--skip_RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Whether to include more details in the orthologue summary."
-    )] = False,
     lift_feature_types: Annotated[str, typer.Option(
         "-lt", "--lift_feature_types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
     )] = "ALL",
@@ -371,8 +368,6 @@ def main(
     del annotations
 
     extra_tag = ""
-    if verbose:
-        extra_tag = "_verbose"
 
     for n1, a1 in enumerate(simple_annotations):
 
@@ -406,21 +401,18 @@ def main(
             a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=True)
 
         output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
-
-        output_file_filtered = f"{output_folder}{a1.name}_equivalences_filtered{extra_tag}.tsv"
         output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
         output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
 
-        a1.export_summary_equivalences(output_file, verbose=verbose, quiet=True)
 
         if skip_rbhs and skip_unidirectional_blasts:
-            a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=verbose, quiet=True)
+            a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=True)
 
         elif skip_unidirectional_blasts:
-            a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=verbose, quiet=True)
+            a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
 
         else:
-            a1.export_summary_equivalences(output_file_filtered, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=verbose, quiet=True)
+            a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
 
         if not keep_intermediate:
             if os.path.exists(str(results_directory)):

@@ -495,7 +495,7 @@ class Genome():
             scaffolds_to_remove = set(self.scaffolds) - chosen_features
         else:
             if cap > len(self.scaffolds):
-                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset genome {self.id}.", UserWarning)
+                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset genome {self.id}.", category=UserWarning)
                 return
             scaffolds_to_remove = set(self.scaffolds) - set(random.sample(list(self.scaffolds), cap))
 
