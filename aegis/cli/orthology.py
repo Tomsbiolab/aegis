@@ -158,7 +158,7 @@ def main(
         else:
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
 
-        annotations[-1].rename_ids(strip_gene_tag=True)
+        annotations[-1].rename_ids(strip_gene_tag=True, quiet=True)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
@@ -414,9 +414,9 @@ def main(
         else:
             a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
 
-        if not keep_intermediate:
-            if os.path.exists(str(results_directory)):
-                shutil.rmtree(str(results_directory))
+    if not keep_intermediate:
+        if os.path.exists(str(results_directory)):
+            shutil.rmtree(str(results_directory))
 
 if __name__ == "__main__":
     app()

@@ -3960,9 +3960,7 @@ class Annotation():
             elif keep_ids_with_gene_id_contained:
                 warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.", category=UserWarning)
 
-        export_folder = Path(custom_path or self.path) / "out_gffs"
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -4259,6 +4257,10 @@ class Annotation():
         self.renamed_features = changed_features
 
         if correspondences:
+
+            export_folder = Path(custom_path or self.path) / "out_gffs"
+            export_folder.mkdir(parents=True, exist_ok=True)
+            export_folder = str(export_folder) + "/"
 
             if "gene" in changed_features:
                 out_text = "old_gene_id\tnew_gene_id\n"
