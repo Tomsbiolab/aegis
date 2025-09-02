@@ -15,10 +15,12 @@ readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
 	"Programming Language :: Python :: 3",
-	"Operating System :: OS Independent",
+	"Operating System :: OS Independent"
 ]
 
 license = "GPL-3.0-or-later"
+license-files = ["LICENSE.md"]
+
 dependencies = [
     "biopython>=1.81",
     "colorlover>=0.3.0",
