@@ -52,7 +52,7 @@ def main(
 
 ):
     """
-    Scans a set of “query” genes (and optionally background sets) to locate all occurrences of a specified DNA motif within their upstream promoter regions.
+    Scans a set of “query” genes to locate all occurrences of a specified DNA motif within their upstream promoter regions.
     """
 
     if annotation_name == "{annotation-file}":
@@ -80,7 +80,7 @@ def main(
 
     annotation.generate_promoters(genome=genome, promoter_size=promoter_size, promoter_type=promoter_type, generate_sequence=True)
 
-    _ = annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_folder)
+    annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_folder)
     
 if __name__ == "__main__":
     app()

@@ -85,7 +85,7 @@ singularity run -B `pwd`:`pwd` aegis.sif aegis-extract -f protein test_data/arab
 Alternatively, you can install Aegis directly from the source by cloning the repository and installing the required Python dependencies.
 
 ```bash
-git clone https://github.com/your-username/aegis.git
+git clone https://github.com/Tomsbiolab/aegis.git
 cd aegis
 pip install -r requirements.txt
 ```
