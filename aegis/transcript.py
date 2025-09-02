@@ -26,12 +26,12 @@ class Transcript(Feature):
         for exon in self.exons:
             self.size += exon.size
 
-    def update(self):
+    def update(self, quiet:bool=False):
         if self.feature == "lncRNA" or not self.coding:
             self.CDSs = {}
             self.coding = False
 
-        self.generate_CDSs()
+        self.generate_CDSs(quiet=quiet)
         if self.exons == []:
             self.generate_exons()
         self.exons.sort()
@@ -369,7 +369,7 @@ class Transcript(Feature):
                     break
         return almost_equal
 
-    def generate_CDSs(self):
+    def generate_CDSs(self, quiet:bool=False):
         """
         Creates CDS objects are based on the CDS segments of a transcript.
         Assumptions:
@@ -399,9 +399,9 @@ class Transcript(Feature):
             self.temp_CDSs.sort()
             # more than 1 CDS is determined by overlaps
             if len(self.temp_CDSs) > 1:
-                for segment1 in self.temp_CDSs:
-                    for segment2 in self.temp_CDSs:
-                        if segment1 == segment2:
+                for sn1, segment1 in enumerate(self.temp_CDSs):
+                    for sn2, segment2 in enumerate(self.temp_CDSs):
+                        if sn1 == sn2:
                             continue
                         # not interested in overlap_bp
                         overlapping, _ = overlap(segment1, segment2)
@@ -429,13 +429,13 @@ class Transcript(Feature):
                                          self.temp_CDSs[-1].end,
                                          self.temp_CDSs[0].score,
                                          ".", self.temp_CDSs[0].attributes)
-                if (more_than_1_segment_with_same_ID 
-                    and more_than_1_segment_with_different_ID):
-                    print(f"Warning: Transcript {self.id} may be "
-                           "polycistronic although CDS segments were all "
-                           "combined into the same CDS since the most likely "
-                           "scenario is that some mistake has been made in the"
-                           " gff, please check")   
+                if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
+                    if not quiet:
+                        print(f"Warning: Transcript {self.id} may be "
+                            "polycistronic although CDS segments were all "
+                            "combined into the same CDS since the most likely "
+                            "scenario is that some mistake has been made in the"
+                            " gff, please check")   
                     self.polycistronic = "maybe"
             elif more_than_1_CDS and more_than_1_segment_with_different_ID:
                 CDS_temp = {}
@@ -450,19 +450,21 @@ class Transcript(Feature):
                                        segments[0].strand, segments[0].start,
                                        segments[-1].end, segments[0].score,
                                        ".", segments[0].attributes)
-                print(f"Warning: Transcript {self.id} is likely to be "
-                       "polycistronic since CDS segments overlap and they "
-                       "have different IDs, the CDS segments have been "
-                       "separated into their corresponding CDS ids, however, "
-                       "please check that it truly is a polycistronic gene "
-                       "and not a gff mistake")
+                if not quiet:
+                    print(f"Warning: Transcript {self.id} is likely to be "
+                        "polycistronic since CDS segments overlap and they "
+                        "have different IDs, the CDS segments have been "
+                        "separated into their corresponding CDS ids, however, "
+                        "please check that it truly is a polycistronic gene "
+                        "and not a gff mistake")
                 self.polycistronic = "yes" 
             elif more_than_1_CDS:
-                print(f"Error: Transcript {self.id} is likely to have a "
-                       "problem in the annotation of CDS segments (it could "
-                       "also be a consequence of liftoff) as the segments "
-                       "overlap but they share the same id, please fix the "
-                       "gff.")
+                if not quiet:
+                    print(f"Error: Transcript {self.id} is likely to have a "
+                        "problem in the annotation of CDS segments (it could "
+                        "also be a consequence of liftoff) as the segments "
+                        "overlap but they share the same id, please fix the "
+                        "gff.")
                 self.polycistronic = "maybe"
             del self.temp_CDSs
         self.determine_main_CDS()

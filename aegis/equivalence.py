@@ -29,14 +29,11 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-
-
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, original_annot1:object=None, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False):
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, original_annot1:object=None, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
     protein_dir = working_directory / "proteins"
-    cds_dir = working_directory / "CDSs"
     diamond_dir = working_directory / "diamond"
     mcscan_dir = working_directory / "mcscan"
 
@@ -47,7 +44,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
     liftoff_gff = liftoff_dir / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
     liftoff_cmd = [
         "liftoff", str(genome2.file), str(genome1.file),
-        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1"
+        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types
     ]
     if copies:
         liftoff_cmd.append("-copies")
@@ -73,36 +70,38 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
 
-    print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
+    if not skip_lifton:
 
-    lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
-    lifton_cmd = [
-        "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
-        "-flank",  "0.1"
-    ]
-    if copies:
-        liftoff_cmd.append("-copies")
+        print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
 
-    lifton_cmd.append(str(genome2.file))
-    lifton_cmd.append(str(genome1.file))
+        lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
+        lifton_cmd = [
+            "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
+            "-flank",  "0.1", "-f", types
+        ]
+        if copies:
+            lifton_cmd.append("-copies")
 
-    run_command(lifton_dir, lifton_cmd)
+        lifton_cmd.append(str(genome2.file))
+        lifton_cmd.append(str(genome1.file))
 
-    to_remove = lifton_dir / "lifton_output"
+        run_command(lifton_dir, lifton_cmd)
 
-    if os.path.exists(str(to_remove)):
-        shutil.rmtree(str(to_remove))
+        to_remove = lifton_dir / "lifton_output"
 
-    print(f"\t\tRunning aegis-overlaps on lifton result.")
+        if os.path.exists(str(to_remove)):
+            shutil.rmtree(str(to_remove))
 
-    if original_annot1:
-        a_lifton = Annotation(str(lifton_gff), quiet=True)
-    else:
-        a_lifton = Annotation(str(lifton_gff), original_annotation=original_annot1, quiet=True)
+        print(f"\t\tRunning aegis-overlaps on lifton result.")
 
-    a_lifton.detect_gene_overlaps(annot2, quiet=True)
+        if original_annot1:
+            a_lifton = Annotation(str(lifton_gff), quiet=True)
+        else:
+            a_lifton = Annotation(str(lifton_gff), original_annotation=original_annot1, quiet=True)
 
-    a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
+        a_lifton.detect_gene_overlaps(annot2, quiet=True)
+
+        a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
 
     protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 

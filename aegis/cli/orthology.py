@@ -53,8 +53,11 @@ def main(
     skip_rbhs: Annotated[bool, typer.Option(
         "-rb", "--skip_RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Whether to include more details in the orthologue summary."
+    lift_feature_types: Annotated[str, typer.Option(
+        "-lt", "--lift_feature_types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
+    )] = "ALL",
+    skip_lifton: Annotated[bool, typer.Option(
+        "-sl", "--skip_lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
     )] = False,
     skip_copies: Annotated[bool, typer.Option(
         "-cl", "--skip_copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
@@ -118,7 +121,7 @@ def main(
     if len(genome_files) != len(set(genome_files)):
         raise ValueError("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
 
-    if original_annotation_files != []:
+    if original_annotation_files:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
             raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
@@ -127,7 +130,7 @@ def main(
         synteny = False
         original_annotation_files = ["NA"] * len(annotation_files)
     
-    if group_names != "":
+    if group_names:
         if len(annotation_files) != len(group_names):
             raise ValueError(f"The provided number of groups do not match the number of annotation file(s).")
         
@@ -137,7 +140,6 @@ def main(
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
             raise ValueError(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
-        
 
     skip_unidirectional_blasts = not (include_single_blasts)
 
@@ -155,6 +157,8 @@ def main(
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, original_annotation=original_annotation))
         else:
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
+
+        annotations[-1].rename_ids(strip_gene_tag=True, quiet=True)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
@@ -176,14 +180,28 @@ def main(
     gff_path = results_directory / "gffs"
     gff_path.mkdir(parents=True, exist_ok=True)
 
-    lifton_path = results_directory / "lifton"
-    lifton_path.mkdir(parents=True, exist_ok=True)
+    if not skip_lifton:
+        lifton_path = results_directory / "lifton"
+        lifton_path.mkdir(parents=True, exist_ok=True)
 
     liftoff_path = results_directory / "liftoff"
     liftoff_path.mkdir(parents=True, exist_ok=True)
 
     mcscan_path = results_directory / "mcscan"
     mcscan_path.mkdir(parents=True, exist_ok=True)
+
+    if lift_feature_types == ["ALL"]:
+        lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"]
+    
+    lift_feature_types_file = results_directory / "chosen_liftover_features.txt"
+    lift_feature_types_file = str(lift_feature_types_file)
+
+    f_in = open(lift_feature_types_file, "w", encoding="utf-8")
+
+    for ft in lift_feature_types:
+        ft = ft.strip()
+        f_in.write(f"{ft}\n")
+    f_in.close()
 
     identity = 30
     coverage = 30
@@ -194,12 +212,14 @@ def main(
         a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
         a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=True)
 
-        a_lifton = a.copy()
-        a_lifton.CDS_to_CDS_segment_ids(quiet=True)
-        a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
-        a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True, quiet=True)
+        if not skip_lifton:
 
-        del a_lifton
+            a_lifton = a.copy()
+            a_lifton.CDS_to_CDS_segment_ids(quiet=True)
+            a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
+            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True, quiet=True)
+
+            del a_lifton
 
         a.generate_sequences(genomes[n])
         a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
@@ -226,7 +246,6 @@ def main(
         ]
         run_command(mcscan_path, gff_to_bed_cmd_1)
 
-
     for n1, a1 in enumerate(annotations):
 
         for n2, a2 in enumerate(annotations):
@@ -240,8 +259,7 @@ def main(
             else:
                 original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny)
-
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file)
 
     # Obtaining RBHs and RBBHs from single blast results
     checked_pairs = []
@@ -350,8 +368,6 @@ def main(
     del annotations
 
     extra_tag = ""
-    if verbose:
-        extra_tag = "_verbose"
 
     for n1, a1 in enumerate(simple_annotations):
 
@@ -371,38 +387,36 @@ def main(
             matching_files = list(protein_path.glob(orthofile_pattern))
 
             if not matching_files:
-                warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.")
+                warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
             elif len(matching_files) > 1:
-                warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.")
+                warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
             else:
                 ortho_file_path = matching_files[0]
                 a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
             a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=True)
-            a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=True)
+            if not skip_lifton:
+                a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=True)
 
             a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=True)
 
         output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
-
-        output_file_filtered = f"{output_folder}{a1.name}_equivalences_filtered{extra_tag}.tsv"
         output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
         output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
 
-        a1.export_summary_equivalences(output_file, verbose=verbose, quiet=True)
 
         if skip_rbhs and skip_unidirectional_blasts:
-            a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=verbose, quiet=True)
+            a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=True)
 
         elif skip_unidirectional_blasts:
-            a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=verbose, quiet=True)
+            a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
 
         else:
-            a1.export_summary_equivalences(output_file_filtered, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=verbose, quiet=True)
+            a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
 
-        if not keep_intermediate:
-            if os.path.exists(str(results_directory)):
-                shutil.rmtree(str(results_directory))
+    if not keep_intermediate:
+        if os.path.exists(str(results_directory)):
+            shutil.rmtree(str(results_directory))
 
 if __name__ == "__main__":
     app()

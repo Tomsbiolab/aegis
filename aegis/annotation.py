@@ -1078,7 +1078,7 @@ class Annotation():
             for g in genes.values():
                 progress_bar.update(1)
                 for t in g.transcripts.values():
-                    t.update()
+                    t.update(quiet=quiet)
                     if t.polycistronic == "maybe":
                         self.warnings["possible_policistronic_transcript"].append(t.id) 
                     elif t.polycistronic == "yes":
@@ -3761,7 +3761,7 @@ class Annotation():
                 g_id = self.all_transcript_ids[t][1]
                 del self.chrs[chrom][g_id].transcripts[t]
             else:
-                warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}")
+                warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}", category=UserWarning)
 
         self.remove_genes_with_no_transcripts(quiet=quiet)
 
@@ -3943,31 +3943,29 @@ class Annotation():
                     ignored_options.append("features")
                 if remove_point_suffix:
                     ignored_options.append("remove_point_suffix")
-                warnings.warn(f"Providing a prefix '{prefix}' means all features will be renamed based on the prefix, the following provided options are to be ignored: {ignored_options}.")
+                warnings.warn(f"Providing a prefix '{prefix}' means all features will be renamed based on the prefix, the following provided options are to be ignored: {ignored_options}.", category=UserWarning)
 
         elif suffix:
-            warnings.warn(f"Provided suffix={suffix} will have no effect as no prefix was provided and custom renaming will therefore be skipped.")
+            warnings.warn(f"Provided suffix={suffix} will have no effect as no prefix was provided and custom renaming will therefore be skipped.", category=UserWarning)
 
         if cds_segment_ids and "CDS" not in features:
-            warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.")
+            warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.", category=UserWarning)
 
 
         if repeat_exons_utrs:
             if keep_subfeature_numbers and keep_ids_with_gene_id_contained:
-                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' and 'keep_ids_with_gene_id_contained' parameters will be ignored.")
+                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' and 'keep_ids_with_gene_id_contained' parameters will be ignored.", category=UserWarning)
             elif keep_subfeature_numbers:
-                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' parameter will be ignored.")
+                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' parameter will be ignored.", category=UserWarning)
             elif keep_ids_with_gene_id_contained:
-                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.")
+                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.", category=UserWarning)
 
-        export_folder = Path(custom_path or self.path) / "out_gffs"
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+
 
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
-                    t.update()
+                    t.update(quiet=quiet)
                 g.update()
 
         start = time.time()
@@ -4017,10 +4015,10 @@ class Annotation():
                         base_id_missing = True
                     
                 if base_id_present and base_id_missing:
-                    warnings.warn(f"{self.id} annotation gene {g.original_id} has a mix of transcript id formats and renaming errors could occur!")
+                    warnings.warn(f"{self.id} annotation gene {g.original_id} has a mix of transcript id formats and renaming errors could occur!", category=UserWarning)
                 
                 if tmains > 1:
-                    raise ValueError(f"There shouldn't be more than one main transcript for {g.original_id} in {self.id} annotation.")
+                    raise ValueError(f"There should not be more than one main transcript for {g.original_id} in {self.id} annotation.")
 
 
                 t_count = 1
@@ -4071,7 +4069,7 @@ class Annotation():
                                 base_id_missing = True
 
                     if base_id_present and base_id_missing:
-                        warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of CDS id formats and renaming errors could occur!")
+                        warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of CDS id formats and renaming errors could occur!", category=UserWarning)
 
                     if cmains > 1:
                         raise ValueError(f"There shouldn't be more than one main CDS for transcript {t.original_id} in {self.id} annotation.")
@@ -4109,7 +4107,7 @@ class Annotation():
                                 base_id_missing = True
 
                         if base_id_present and base_id_missing:
-                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
+                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
 
                         if t.strand == "-":
                             e_count = e_count_rev
@@ -4139,7 +4137,7 @@ class Annotation():
                                     base_id_missing = True
 
                         if base_id_present and base_id_missing:
-                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!")
+                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
 
                         if t.strand == "-":
                             u_count = u_count_rev
@@ -4260,6 +4258,10 @@ class Annotation():
 
         if correspondences:
 
+            export_folder = Path(custom_path or self.path) / "out_gffs"
+            export_folder.mkdir(parents=True, exist_ok=True)
+            export_folder = str(export_folder) + "/"
+
             if "gene" in changed_features:
                 out_text = "old_gene_id\tnew_gene_id\n"
                 for k, v in correspondences_d.items():
@@ -4269,7 +4271,7 @@ class Annotation():
                 f_out.close()
 
             else:
-                warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.")
+                warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.", category=UserWarning)
 
         now = time.time()
         lapse = now - start
@@ -4770,16 +4772,18 @@ class Annotation():
                     g.remove = True
         progress_bar.close()
 
-    def remove_chromosomes_from_header(self, features_to_remove:set):
+    def remove_chromosomes_from_header(self):
         new_header = []
-
+        ft_to_keep = set(self.chrs)
+        
         for line in self.gff_header:
             if line.startswith("##sequence-region"):
-                temp = line.strip().split(" ")
-                ft = temp[3].strip()
-                if ft in features_to_remove:
-                    continue
-            new_header.append(line)
+                keep_header = False
+                for ft in ft_to_keep:
+                    if ft in line:
+                        keep_header = True
+                if keep_header:
+                    new_header.append(line)
 
         self.gff_header = new_header.copy()
 
@@ -4793,7 +4797,7 @@ class Annotation():
             genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
         else:
             if feature_cap > len(self.chrs):
-                warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", UserWarning)
+                warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", category=UserWarning)
                 features_to_remove = set()
             else:
                 features_to_remove = set(self.chrs) - set(random.sample(list(self.chrs), feature_cap))
@@ -4823,7 +4827,7 @@ class Annotation():
         if genes_to_remove:
             self.remove_genes(genes_to_remove, quiet=quiet)
         else:
-            warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", UserWarning)
+            warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
 
         self.update(quiet=quiet)
 
@@ -4850,7 +4854,7 @@ class Annotation():
         if features_to_remove:
             for ft in features_to_remove:
                 del self.chrs[ft]
-            self.remove_chromosomes_from_header(features_to_remove=features_to_remove)
+            self.remove_chromosomes_from_header()
 
         if update:
             self.update(quiet=quiet)
@@ -4888,7 +4892,7 @@ class Annotation():
                 chrom = self.all_gene_ids[gene]
                 self.chrs[chrom][gene].remove = True
             else:
-                warnings.warn(f"Gene {gene} is not present in annotation {self.id}.")
+                warnings.warn(f"Gene {gene} is not present in annotation {self.id}.", category=UserWarning)
 
         genes_to_remove = set()
         for genes in self.chrs.values():
