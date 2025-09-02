@@ -20,24 +20,24 @@ Requires-Dist: tqdm>=4.67.1
 Requires-Dist: typer>=0.16.1
 Dynamic: license-file
 
-# Aegis: Annotation Extraction Genomic Integration Suite
+# AEGIS: Annotation Extraction Genomic Integration Suite
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python Version](https://img.shields.io/badge/python-3.7%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
-**Aegis** is a powerful and flexible Python-based suite for the manipulation, analysis, and integration of genomic annotations. It provides a robust, object-oriented framework for working with genomic data, enabling complex analyses and data transformations with intuitive, high-level commands.
+**AEGIS** is a powerful and flexible Python-based suite for the manipulation, analysis, and integration of genomic annotations. It provides a robust, object-oriented framework for working with genomic data, enabling complex analyses and data transformations with intuitive, high-level commands.
 
 ## Key Features
 
-- **Object-Oriented Design**: Aegis represents genomic features (genes, transcripts, exons, etc.) as a hierarchical system of Python classes, providing a clean and intuitive API for data manipulation.
+- **Object-Oriented Design**: AEGIS represents genomic features (genes, transcripts, exons, etc.) as a hierarchical system of Python classes, providing a clean and intuitive API for data manipulation.
 - **Comprehensive Annotation Handling**: Seamlessly parse, process, and export genomic annotations in GFF3 format.
 - **Sequence Extraction**: Easily extract sequences for any genomic feature, including genes, transcripts, CDS, proteins, and promoters.
 - **Comparative Genomics**: Perform comparative analyses, such as identifying orthologs and syntenic regions between different species.
-- **Extensible and Modular**: The modular design of Aegis allows for easy extension and integration with other bioinformatics tools and pipelines.
+- **Extensible and Modular**: The modular design of AEGIS allows for easy extension and integration with other bioinformatics tools and pipelines.
 
-## The Aegis Class System
+## The AEGIS Class System
 
-The core of Aegis is its sophisticated class system, which models the hierarchical nature of genomic annotations. This object-oriented approach provides several key advantages over traditional, line-by-line processing of annotation files:
+The core of AEGIS is its sophisticated class system, which models the hierarchical nature of genomic annotations. This object-oriented approach provides several key advantages over traditional, line-by-line processing of annotation files:
 
 - **Intuitive Data Representation**: Genomic features are not just lines in a file; they are objects with properties and relationships. A `Gene` object contains `Transcript` objects, which in turn contain `Exon` and `CDS` objects. This makes the code more readable, maintainable, and less error-prone.
 - **Data Integrity**: The class system enforces data consistency. For example, when a `Gene` object is updated, all its associated `Transcript` and sub-feature objects are updated accordingly, ensuring that the annotation remains coherent.
@@ -56,11 +56,11 @@ The core of Aegis is its sophisticated class system, which models the hierarchic
 
 ## Installation
 
-You can install and run Aegis in several ways. Using a container (Docker or Singularity) is the recommended approach as it handles all dependencies automatically.
+You can install and run AEGIS in several ways. Using a container (Docker or Singularity) is the recommended approach as it handles all dependencies automatically.
 
 ### Using Docker (Recommended)
 
-If you have Docker installed, you can easily pull and run the pre-built Aegis image from Docker Hub. This image includes Aegis and all third-party software used for orthology analyses.
+If you have Docker installed, you can easily pull and run the pre-built AEGIS image from Docker Hub. This image includes AEGIS and all third-party software used for orthology analyses.
 
 **1. Pull the image from Docker Hub:**
 
@@ -68,7 +68,7 @@ If you have Docker installed, you can easily pull and run the pre-built Aegis im
 docker pull tomsbiolab/aegis
 ```
 
-**2. Run an Aegis command:**
+**2. Run an AEGIS command:**
 The following command runs `aegis-extract` on a test dataset. The `-v` flag is crucial as it makes your current directory accessible inside the container.
 
 ```bash
@@ -95,26 +95,70 @@ singularity build aegis.sif docker://tomsbiolab/aegis
 
 This will create a single `aegis.sif` file in your current directory.
 
-**2. Run an Aegis command:**
-Use the `singularity run` command to execute Aegis. The `-B` flag mounts your current directory into the container.
+**2. Run an AEGIS command:**
+Use the `singularity run` command to execute AEGIS. The `-B` flag mounts your current directory into the container.
 
 ```bash
 singularity run -B `pwd`:`pwd` aegis.sif aegis-extract -f protein test_data/arabidopsis_tair10.gff3 test_data/arabidopsis_tair10.fasta
 ```
 
+### From PyPI (Python Package Index)
+
+Easiest way to install, however, some dependencies will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use aegis-orthology you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. 
+
+```bash
+pip3 install aegis-bio
+```
+
 ### From Source
 
-Alternatively, you can install Aegis directly from the source by cloning the repository and installing the required Python dependencies.
+Alternatively, you can install AEGIS directly from the source by cloning the repository and installing the required Python dependencies.
 
 ```bash
 git clone https://github.com/Tomsbiolab/aegis.git
 cd aegis
-pip install -r requirements.txt
+pip3 install -r requirements.txt
+pip3 install -e .
 ```
 
 ## Usage
 
-Aegis is designed to be used as a library in your Python scripts. Here is a simple example of how to load an annotation and extract the sequences of all genes:
+Aegis is designed to be used as a library in your Python scripts or directly through the CLI
+
+### CLI commands
+
+All of the commands are called with aegis-{subcommand} in a terminal:
+
+- Extract
+	- Extracts all kinds of fasta features from an annotation.
+- Overlap
+	- Overlap quantification of gene models (and their subfeatures) between any number of gffs associated to same genome
+- Rename
+	- Rename gff feature ids.
+- Orthology
+	- Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level.
+- Summary
+	- Outputs tabular annotation stats as well as a series of plots.
+- Tidy
+	- Cleans annotation files, fixes errors, issues warnings, and provides custom formatting options for extra flexibility/compatibility with third party tools.
+- Tidy-genome
+	- Allows removal and/or renaming of genome features.
+- Merge
+	- Custom merge of any number of gffs, prevent id clashes and control redundancy in same loci.
+- Symbols
+	- Allows to add gene symbols into an annotation file based on tabular input
+- Motifs
+	- Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
+- Subset
+	- Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
+- Prune
+	- Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
+- Reformat:
+	- Converts between gtf and gff formats.
+
+### As a Python library
+
+Here is a simple example of how to load an annotation and extract the sequences of all genes:
 
 ```python
 from aegis.annotation import Annotation
@@ -131,8 +175,8 @@ annotation.export_genes()
 
 ## Contributing
 
-Contributions to Aegis are welcome! Please feel free to submit a pull request or open an issue on the GitHub repository.
+Contributions to AEGIS are welcome! Please feel free to submit a pull request or open an issue on the GitHub repository.
 
 ## License
 
-Aegis is licensed under the GNU General Public License v3.0. See the `LICENSE.md` file for more details. Third-party tools included in the Docker image are distributed under their respective licenses.
+AEGIS is licensed under the GNU General Public License v3.0. See the `LICENSE.md` file for more details. Third-party tools included in the Docker image are distributed under their respective licenses.
