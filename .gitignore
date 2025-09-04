@@ -1,4 +1,4 @@
 __pycache__
 *.code-workspace
-aegis_bio.egg-info/
+*.egg-info/
 dist/
