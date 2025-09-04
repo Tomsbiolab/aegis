@@ -117,24 +117,31 @@ def main(
     if annotation_names == "{annotation-filename(s)}":
         annotation_names = []
         for annotation_file in annotation_files:
-            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
+            annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+            annotation_name = annotation_name.replace(".", "_")
+            annotation_names.append(annotation_name)
 
     if len(annotation_files) != len(annotation_names):
-        raise ValueError(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+        raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+    
+    
+    for annotation_name in annotation_names:
+        if "." in annotation_name:
+            raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.'.")
 
     if len(annotation_names) != len(set(annotation_names)):
-        raise ValueError("Avoid repeated annotation tag(s)/name(s).")
+        raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
     
     if len(annotation_files) != len(set(annotation_files)):
-        raise ValueError("Avoid repeated annotation filename(s).")
+        raise typer.BadParameter("Avoid repeated annotation filename(s).")
     
     if len(genome_files) != len(set(genome_files)):
-        raise ValueError("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
+        raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
 
     if original_annotation_files:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
-            raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
+            raise typer.BadParameter(f"The provided number of original annotation files do not match the number of annotation file(s).")
         
     else:
         synteny = False
@@ -142,19 +149,19 @@ def main(
     
     if group_names:
         if len(annotation_files) != len(group_names):
-            raise ValueError(f"The provided number of groups do not match the number of annotation file(s).")
+            raise typer.BadParameter(f"The provided number of groups do not match the number of annotation file(s).")
         
     else:
         group_names = ["NA"] * len(annotation_files)
 
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
-            raise ValueError(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
+            raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
 
     skip_unidirectional_blasts = not (include_single_blasts)
 
     if skip_rbhs and not skip_unidirectional_blasts:
-        raise ValueError(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
+        raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
     genomes = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g) for n, g in enumerate(genome_files) ]
 
