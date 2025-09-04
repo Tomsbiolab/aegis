@@ -1,6 +1,7 @@
 import typer
 import os
 import pandas as pd
+import numpy as np
 import warnings
 import shutil
 from pathlib import Path
@@ -30,9 +31,13 @@ def main(
         "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2,name3,name4",
         callback=split_callback
     )] = "{annotation-filename(s)}",
+
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/",
+    output_filename: Annotated[str, typer.Option(
+        "-o", "--output_file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
+    )] = "equivalences{other_tags}.tsv",
     group_names: Annotated[str, typer.Option(
         "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
         callback=split_callback
@@ -64,7 +69,12 @@ def main(
     )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep_intermediate", help="Keep intermediate files, useful for identifying errors."
-    )] = False
+    )] = False,
+    include_duplicates: Annotated[bool, typer.Option(
+        "-du", "--include_duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
+    )] = False,
+
+
 ):
     """
     Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCScan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
@@ -107,24 +117,31 @@ def main(
     if annotation_names == "{annotation-filename(s)}":
         annotation_names = []
         for annotation_file in annotation_files:
-            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
+            annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+            annotation_name = annotation_name.replace(".", "_")
+            annotation_names.append(annotation_name)
 
     if len(annotation_files) != len(annotation_names):
-        raise ValueError(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+        raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+    
+    
+    for annotation_name in annotation_names:
+        if "." in annotation_name:
+            raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.'.")
 
     if len(annotation_names) != len(set(annotation_names)):
-        raise ValueError("Avoid repeated annotation tag(s)/name(s).")
+        raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
     
     if len(annotation_files) != len(set(annotation_files)):
-        raise ValueError("Avoid repeated annotation filename(s).")
+        raise typer.BadParameter("Avoid repeated annotation filename(s).")
     
     if len(genome_files) != len(set(genome_files)):
-        raise ValueError("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
+        raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
 
     if original_annotation_files:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
-            raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
+            raise typer.BadParameter(f"The provided number of original annotation files do not match the number of annotation file(s).")
         
     else:
         synteny = False
@@ -132,19 +149,19 @@ def main(
     
     if group_names:
         if len(annotation_files) != len(group_names):
-            raise ValueError(f"The provided number of groups do not match the number of annotation file(s).")
+            raise typer.BadParameter(f"The provided number of groups do not match the number of annotation file(s).")
         
     else:
         group_names = ["NA"] * len(annotation_files)
 
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
-            raise ValueError(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
+            raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
 
     skip_unidirectional_blasts = not (include_single_blasts)
 
     if skip_rbhs and not skip_unidirectional_blasts:
-        raise ValueError(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
+        raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
     genomes = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g) for n, g in enumerate(genome_files) ]
 
@@ -401,18 +418,45 @@ def main(
             a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=True)
 
         output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs_and_rbhs{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_filtered_just_rbbhs{extra_tag}.tsv"
-
+        output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
 
         if skip_rbhs and skip_unidirectional_blasts:
-            a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=True)
+            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=True, return_df=True, export_csv=False)
 
         elif skip_unidirectional_blasts:
-            a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
+            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True, return_df=True, export_csv=False)
 
         else:
-            a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True)
+            df = a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True, return_df=True, export_csv=False)
+
+        if n1 == 0:
+            final_df = df.copy()
+        else:
+            final_df = pd.concat([final_df, df], ignore_index=True)
+
+    if output_filename != "equivalences{other_tags}.tsv":
+        final_output_file = f"{output_folder}{output_filename}.tsv"
+    elif skip_rbhs and skip_unidirectional_blasts:
+        final_output_file = f"{output_folder}equivalences_just_rbbhs{extra_tag}.tsv"
+    elif skip_unidirectional_blasts:
+        final_output_file = f"{output_folder}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+    else:
+        final_output_file = f"{output_folder}equivalences{extra_tag}.tsv"
+
+    if not include_duplicates:
+
+        final_df['gene_id_tuple'] = pd.DataFrame(np.sort(final_df[['gene_id_A', 'gene_id_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
+        final_df['annotation_tuple'] = pd.DataFrame(np.sort(final_df[['annotation_A', 'annotation_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
+        final_df['species_tuple'] = pd.DataFrame(np.sort(final_df[['species_A', 'species_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
+
+        subset_for_duplicates = ["gene_id_tuple", "annotation_tuple", "species_tuple"]
+
+        final_df.drop_duplicates(subset=subset_for_duplicates, keep='first', inplace=True)
+
+        final_df.drop(subset_for_duplicates, axis=1, inplace=True)
+
+    final_df.to_csv(final_output_file, sep="\t", encoding="utf-8", index=False)
 
     if not keep_intermediate:
         if os.path.exists(str(results_directory)):

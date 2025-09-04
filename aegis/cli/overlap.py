@@ -67,18 +67,18 @@ def main(
             annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
 
     if len(annotation_files) != len(annotation_names):
-        raise ValueError(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+        raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
 
     if len(annotation_names) != len(set(annotation_names)):
-        raise ValueError("Avoid repeated annotation tag(s)/name(s).")
+        raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
     
     if len(annotation_files) != len(set(annotation_files)):
-        raise ValueError("Avoid repeated annotation filename(s).")
+        raise typer.BadParameter("Avoid repeated annotation filename(s).")
 
     if original_annotation_files != []:
         synteny = True
         if len(annotation_files) != len(original_annotation_files):
-            raise ValueError(f"The provided number of original annotation files do not match the number of annotation file(s).")
+            raise typer.BadParameter(f"The provided number of original annotation files do not match the number of annotation file(s).")
         
     else:
         synteny = False
@@ -86,7 +86,7 @@ def main(
     
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
-            raise ValueError(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
+            raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
         
     if len(annotation_files) == 1:
         if original_annotation_files[0] != "NA":
@@ -126,7 +126,7 @@ def main(
         export_group_equivalences(annotations, output_folder=output_folder, verbose=verbose, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False)
 
     else:
-        raise ValueError(f"No annotation-files provided.")
+        raise typer.BadParameter(f"No annotation-files provided.")
 
 
 if __name__ == "__main__":
