@@ -447,6 +447,8 @@ def main(
 
         final_df.drop_duplicates(subset=subset_for_duplicates, keep='first', inplace=True)
 
+        final_df.drop(subset_for_duplicates, axis=1, inplace=True)
+
     final_df.to_csv(final_output_file, sep="\t", encoding="utf-8", index=False)
 
     if not keep_intermediate:
