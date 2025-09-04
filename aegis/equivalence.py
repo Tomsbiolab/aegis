@@ -391,13 +391,13 @@ class Equivalence():
         return self._rank() == other._rank()
 
     def __str__(self):
-        return f"{self.id}\t{self.type}\t{self.target_annotation}\t{self.species}\t{self.score}"
+        return f"{self.id}\t{self.type}\t{self.score}\t{self.target_annotation}\t{self.species}"
 
     def __repr__(self):
-        return f"{self.id}\t{self.type}\t{self.target_annotation}\t{self.species}\t{self.score}"
+        return f"{self.id}\t{self.type}\t{self.score}\t{self.target_annotation}\t{self.species}"
 
     def verbose(self):
-        return f"{self.id}\t{self.type}\t{self.target_annotation}\t{self.species}\t{self.score}\t{self.reliability}"
+        return f"{self.id}\t{self.type}\t{self.score}\t{self.target_annotation}\t{self.species}\t{self.reliability}"
 
 class Simple_gene():
     def __init__(self, id):
@@ -530,11 +530,11 @@ class Simple_annotation():
 
         self.added_equivalences = {}
 
-    def export_summary_equivalences(self, output_file, filtered:bool=False, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), verbose:bool=True, quiet:bool=False):
+    def export_summary_equivalences(self, output_file, filtered:bool=False, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), verbose:bool=True, quiet:bool=False, export_csv:bool=True, return_df:bool=False):
         
         start = time.time()
         
-        out = ["gene\tequivalence\ttype\ttarget_annotation\ttarget_species\tscore"]
+        out = ["gene_id_A\tgene_id_B\tscore\tsummary_score\tannotation_A\tannotation_B\tspecies_A\tspecies_B"]
         if verbose:
             out[0] += "\treliability"
 
@@ -548,27 +548,37 @@ class Simple_annotation():
                 gene.filtered_equivalences = sorted(gene.filtered_equivalences)
                 for equivalence in gene.filtered_equivalences:
                     if verbose:
-                        out.append(f"{gene.id}\t{equivalence.verbose()}")
+                        out.append(f"{gene.id}\t{equivalence.id}\t{equivalence.type}\t{equivalence.score}\t{self.name}\t{equivalence.target_annotation}\t{self.species}\t{equivalence.species}\t{equivalence.reliability}")
                     else:
-                        out.append(f"{gene.id}\t{equivalence}")
+                        out.append(f"{gene.id}\t{equivalence.id}\t{equivalence.type}\t{equivalence.score}\t{self.name}\t{equivalence.target_annotation}\t{self.species}\t{equivalence.species}")
         else:
             for gene in self.genes.values():
                 for equivalence in gene.equivalences:
                     if verbose:
-                        out.append(f"{gene.id}\t{equivalence.verbose()}")
+                        out.append(f"{gene.id}\t{equivalence.id}\t{equivalence.type}\t{equivalence.score}\t{self.name}\t{equivalence.target_annotation}\t{self.species}\t{equivalence.species}\t{equivalence.reliability}")
                     else:
-                        out.append(f"{gene.id}\t{equivalence}")
+                        out.append(f"{gene.id}\t{equivalence.id}\t{equivalence.type}\t{equivalence.score}\t{self.name}\t{equivalence.target_annotation}\t{self.species}\t{equivalence.species}")
 
-        out = "\n".join(out)
-
-        f_out = open(output_file, "w", encoding="utf-8")
-        f_out.write(out)
-        f_out.close()
+        if return_df:
+            columns = out[0].split('\t')
+            data = [line.split('\t') for line in out[1:]]
+            df = pd.DataFrame(data, columns=columns, dtype=str)
+        
+        if export_csv:
+            out = "\n".join(out)
+            f_out = open(output_file, "w", encoding="utf-8")
+            f_out.write(out)
+            f_out.close()
 
         end = time.time()
         lapse = end - start
         if not quiet:
             print(f"Exporting all filtered={filtered} equivalences for {self.name} took {round(lapse/60, 2)} minutes\n")
+
+        if return_df:
+            return df
+        
+
 
     def add_mcscan_equivalences(self, file, key_col, target_annotation, species):
         """
