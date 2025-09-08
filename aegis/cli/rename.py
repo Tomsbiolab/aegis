@@ -27,8 +27,8 @@ def main(
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation file."
     )] = "{annotation-name}_renamed.gff3",
-    feature_type: Annotated[str, typer.Option(
-        "-f", "--feature_type", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {features}.",
+    feature_types: Annotated[str, typer.Option(
+        "-f", "--feature_types", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {features}.",
         callback=split_callback
     )] = "transcript,CDS,exon,UTR",
     keep_ids_with_gene_id_contained: Annotated[bool, typer.Option(
@@ -58,12 +58,12 @@ def main(
     t_id_digits: Annotated[int, typer.Option(
         "-td", "--transcript-id-digits", help="Choose the number of digits to use for the transcript id number suffix. With the default three digits and the '_' separator the first transcript of every gene would have the '_t001' suffix."
     )] = 3,
-    strip_gene_tag: Annotated[int, typer.Option(
+    strip_gene_tag: Annotated[bool, typer.Option(
         "-rt", "--remove-gene-tag", help="Some gffs have a flanking literal 'gene' tag. Use this flag to remove it. e.g. 'gene-Solyc00g174340' would become just 'Solyc00g174340'"
-    )] = True,
-    remove_point_suffix: Annotated[int, typer.Option(
+    )] = False,
+    remove_point_suffix: Annotated[bool, typer.Option(
         "-rp", "--remove-point-suffix", help="Some gene id formats carry an '.annotation-version' suffix that is in some cases not welcome. Use this flag to remove it: e.g. 'Solyc00g174340.2' would become just 'Solyc00g174340'."
-    )] = True,
+    )] = False,
     gene_id_correspondences: Annotated[bool, typer.Option(
         "-c", "--gene-id-correspondences", help="Whether to produce a tsv file with correspondences between old and renamed gene ids '{annotation-name}_renamed_correspondences.tsv'."
     )] = False,
@@ -71,9 +71,16 @@ def main(
     """
     Rename feature ids of an annotation file.
     """
+    for feature_type in feature_types:
+        if feature_type not in features:
+            raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
+        
+    if (remove_point_suffix or strip_gene_tag) and "gene" not in feature_types:
+        typer.echo(f"'gene' was not included in feature_types={feature_types} but --remove_point_suffix or --strip_gene_tag flags were used, therefore, 'gene' was added to the list of modified feature_types.", err=True)
+        feature_types.append("gene")
 
-    if feature_type not in features:
-        raise typer.BadParameter(f"Invalid feature leve: {feature_type}. Choose from: {features}")
+    if feature_types == []:
+        raise typer.BadParameter(f"No features were chosen to rename their ids. Select from: {features}.")
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -85,7 +92,7 @@ def main(
     if output_file == "{annotation-name}_renamed.gff3":
         output_file = f"{annotation_name}_renamed.gff3"
 
-    annotation.rename_ids(custom_path=output_folder, features=features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=cds_segment_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences)
+    annotation.rename_ids(custom_path=output_folder, features=feature_types, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=cds_segment_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences)
 
     annotation.export_gff(custom_path=output_folder, tag=output_file)
 

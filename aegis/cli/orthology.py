@@ -463,4 +463,11 @@ def main(
             shutil.rmtree(str(results_directory))
 
 if __name__ == "__main__":
-    app()
+    try:
+        app()
+    except Exception as e:
+        import traceback
+        typer.echo("aegis-orthology crashed with an unexpected error:", err=True)
+        typer.echo(str(e), err=True)
+        typer.echo(traceback.format_exc(), err=True)
+        raise

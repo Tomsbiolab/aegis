@@ -3943,6 +3943,8 @@ class Annotation():
                     ignored_options.append("features")
                 if remove_point_suffix:
                     ignored_options.append("remove_point_suffix")
+                if strip_gene_tag:
+                    ignored_options.append("strip_gene_tag")
                 warnings.warn(f"Providing a prefix '{prefix}' means all features will be renamed based on the prefix, the following provided options are to be ignored: {ignored_options}.", category=UserWarning)
 
         elif suffix:
