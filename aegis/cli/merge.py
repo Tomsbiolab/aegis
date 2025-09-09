@@ -29,7 +29,7 @@ def main(
         help="Exon overlap threshold in percentage (0-100). A gene will not be added if the maximum overlap of its exons with those of the prioritized annotations exceeds this value. The default 100 disables this check."
     )] = 100,
     skip_feature_renaming: Annotated[bool, typer.Option(
-        "-f", "--feature_type",
+        "-f", "--feature-type",
         help=f"Skip feature renaming of transcript,CDS,exon,UTR.",
     )] = False,
 ):

@@ -34,37 +34,37 @@ def main(
         "-m", "--main", help="Whether to include only a main transcript and main CDS per gene."
     )] = False,
     include_UTRs: Annotated[bool, typer.Option(
-        "-ut", "--include_UTRs", help="Include UTRs in output gff, normally these are not required by external tools as they can be deduced from exons and CDS features."
+        "-ut", "--include-UTRs", help="Include UTRs in output gff, normally these are not required by external tools as they can be deduced from exons and CDS features."
     )] = False,
     just_genes: Annotated[bool, typer.Option(
-        "-g", "--just_genes", help="Whether to only include gene level features."
+        "-g", "--just-genes", help="Whether to only include gene level features."
     )] = False,
     remove_symbols: Annotated[bool, typer.Option(
-        "-s", "--remove_symbols", help="Removes symbol attributes from gff output."
+        "-s", "--remove-symbols", help="Removes symbol attributes from gff output."
     )] = False,
     remove_aliases: Annotated[bool, typer.Option(
-        "-al", "--remove_aliases", help="Removes alias attributes from gff output."
+        "-al", "--remove-aliases", help="Removes alias attributes from gff output."
     )] = False,
     clean_attributes: Annotated[bool, typer.Option(
-        "-c", "--clean_attributes", help="Removes non-standard attributes from a gff, may help with external tool compatibility issues."
+        "-c", "--clean-attributes", help="Removes non-standard attributes from a gff, may help with external tool compatibility issues."
     )] = False,
     for_featurecounts: Annotated[bool, typer.Option(
-        "-f", "--for_featurecounts", help="Creates a special attribute 'featurecounts_id' which has the gene-id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the gene-id level."
+        "-f", "--for-featurecounts", help="Creates a special attribute 'featurecounts_id' which has the gene-id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the gene-id level."
     )] = False,
     symbols_as_descriptors: Annotated[bool, typer.Option(
-        "-sd", "--symbols_as_descriptors", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display."
+        "-sd", "--symbols-as-descriptors", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display."
     )] = False,
     repeat_exons_utrs: Annotated[bool, typer.Option(
-        "-r", "--repeat_exons_utrs", help="Creates individual exon/UTR entries with individual parental references for cases where a feature has more than one transcript level parent."
+        "-r", "--repeat-exons-utrs", help="Creates individual exon/UTR entries with individual parental references for cases where a feature has more than one transcript level parent."
     )] = False,
     cds_segment_ids: Annotated[bool, typer.Option(
-        "-u", "--unique_cds_entry_ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
+        "-u", "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
     )] = False, 
     for_lifton: Annotated[bool, typer.Option(
-        "-l", "--for_lifton", help="Ensures output has individual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
+        "-l", "--for-lifton", help="Ensures output has individual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
     )] = False,
     clean_features: Annotated[bool, typer.Option(
-        "-cf", "--clean_features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
+        "-cf", "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
     )] = False,
     rna_classes: Annotated[str, typer.Option(
         "-rc", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",

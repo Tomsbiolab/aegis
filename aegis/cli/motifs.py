@@ -41,10 +41,10 @@ def main(
         "-g", "--genome-name", help="Genome assembly version, name or tag."
     )] = "{genome-fasta}",
     query_tag: Annotated[str, typer.Option(
-        "-q", "--genelist_tag", help="Query gene list tag/name to improve output description."
+        "-q", "--genelist-tag", help="Query gene list tag/name to improve output description."
     )] = "query_genes",
     motif_tag: Annotated[str, typer.Option(
-        "-m", "--motif_tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'."
+        "-m", "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'."
     )] = "query_motif",
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."

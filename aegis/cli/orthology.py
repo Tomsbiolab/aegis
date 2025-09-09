@@ -36,7 +36,7 @@ def main(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/",
     output_filename: Annotated[str, typer.Option(
-        "-o", "--output_file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
+        "-o", "--output-file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
     )] = "equivalences{other_tags}.tsv",
     group_names: Annotated[str, typer.Option(
         "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
@@ -50,28 +50,28 @@ def main(
         "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
     )] = "None",
     include_single_blasts: Annotated[bool, typer.Option(
-        "-b", "--include_single_blasts", help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary."
+        "-b", "--include-single-blasts", help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary."
     )] = False,
     threads: Annotated[int, typer.Option(
         "-t", "--threads", help="Number of threads."
     )] = 5,
     skip_rbhs: Annotated[bool, typer.Option(
-        "-rb", "--skip_RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
+        "-rb", "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
     lift_feature_types: Annotated[str, typer.Option(
-        "-lt", "--lift_feature_types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
+        "-lt", "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
     )] = "ALL",
     skip_lifton: Annotated[bool, typer.Option(
-        "-sl", "--skip_lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
+        "-sl", "--skip-lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
     )] = False,
     skip_copies: Annotated[bool, typer.Option(
-        "-cl", "--skip_copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
+        "-cl", "--skip-copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
     )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
-        "-k", "--keep_intermediate", help="Keep intermediate files, useful for identifying errors."
+        "-k", "--keep-intermediate", help="Keep intermediate files, useful for identifying errors."
     )] = False,
     include_duplicates: Annotated[bool, typer.Option(
-        "-du", "--include_duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
+        "-du", "--include-duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
     )] = False,
 
 
@@ -461,6 +461,8 @@ def main(
     if not keep_intermediate:
         if os.path.exists(str(results_directory)):
             shutil.rmtree(str(results_directory))
+
+    print(f"aegis-orthology run complete.")
 
 if __name__ == "__main__":
     try:
