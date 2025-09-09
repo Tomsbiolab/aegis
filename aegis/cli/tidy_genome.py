@@ -26,7 +26,7 @@ def main(
         "-ro", "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only effective if --remove-scaffolds is also enabled."
     )] = False,
     remove_chr00: Annotated[bool, typer.Option(
-        "-r0", "--remove_chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled."
+        "-r0", "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled."
     )] = False,
     rename_map_path: Annotated[str, typer.Option(
         "-rc", "--rename-map-path", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, without a header."

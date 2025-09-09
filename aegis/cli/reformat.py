@@ -14,7 +14,7 @@ def main(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     input_format: Annotated[str, typer.Option(
-        "-m", "--input_format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override."
+        "-m", "--input-format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override."
     )] = "Auto Detect",
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."

@@ -28,7 +28,7 @@ def main(
         "-o", "--output-file", help="Path to the output annotation file."
     )] = "{annotation-name}_renamed.gff3",
     feature_types: Annotated[str, typer.Option(
-        "-f", "--feature_types", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {features}.",
+        "-f", "--feature-types", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {features}.",
         callback=split_callback
     )] = "transcript,CDS,exon,UTR",
     keep_ids_with_gene_id_contained: Annotated[bool, typer.Option(
@@ -38,7 +38,7 @@ def main(
         "-n", "--keep-numbering", help="Try to retain original gene subfeature id numbering. I.e. rename a transcript id from 'gene_id_t004' to 'gene_id_T.4' without losing the original transcript number."
     )] = False,
     cds_segment_ids: Annotated[bool, typer.Option(
-        "-u", "--unique_cds_entry_ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
+        "-u", "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
     )] = False,
     prefix: Annotated[str, typer.Option(
         "-b", "--gene-id-prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. swich from 'VIT...' to 'Vitvi...'. Together with other options such as -sf, -sp, -se, and -gd the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id."
