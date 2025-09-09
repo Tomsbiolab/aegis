@@ -76,7 +76,7 @@ SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]
 ENV PYTHONUNBUFFERED=1
 
 # Install LiftOn (requires numpy, networkx, etc., already installed by Mamba)
-RUN git clone https://github.com/Kuanhao-Chao/LiftOn /opt/LiftOn && \
+RUN git clone https://github.com/davnapa/LiftOn.git /opt/LiftOn && \
     cd /opt/LiftOn && \
     pip install .
 
