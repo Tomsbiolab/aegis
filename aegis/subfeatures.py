@@ -211,7 +211,7 @@ class CDS(Feature):
         same = True
         if len(self.CDS_segments) == len(other.CDS_segments):
             for n, segment in enumerate(self.CDS_segments):
-                if not segment.almost_equal(other.CDS_segments[n]):
+                if not segment.equal_sequence(other.CDS_segments[n]):
                     same = False
         else:
             same = False

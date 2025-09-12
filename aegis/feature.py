@@ -149,14 +149,9 @@ class Feature():
     def __str__(self):
         return str(self.id)
 
-    def almost_equal(self, other):
-        """
-        Id or attributes may or may not be equal, it still returns True
-        """
+    def equal_sequence(self, other):
         return (self.start == other.start and self.end == other.end
-                and self.ch == other.ch
-                and self.strand == other.strand and self.score == other.score 
-                and self.phase == other.phase)
+                and self.ch == other.ch and self.strand == other.strand)
     
     def equal_coordinates(self, other):
         return self.start == other.start and self.end == other.end and self.ch == other.ch
@@ -169,7 +164,7 @@ class Feature():
     
     def __eq__(self, other):
         """
-        Is a feature is exactly the same as each other
+        If a feature is exactly the same as each other
         """
         return (self.start == other.start and self.end == other.end
                 and self.ch == other.ch and self.id == other.id
