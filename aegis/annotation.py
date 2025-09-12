@@ -1741,7 +1741,7 @@ class Annotation():
         if not quiet:
             print(f"Extracting {self.id} annotation features took {round(lapse, 1)} seconds\n")
             
-    def export_proteins(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="protein", unique_proteins_per_gene:bool=False):
+    def export_proteins(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="protein", unique_proteins_per_gene:bool=False, only_cds_main:bool=True):
         """
         Main proteins means only proteins obtained from the main CDSs of the
         main transcripts. This equates to one protein per gene.
@@ -1769,7 +1769,12 @@ class Annotation():
 
         out = ""
 
-        only_cds_main = only_main
+        if unique_proteins_per_gene:
+            only_main = False
+            only_cds_main = False
+            if used_id == "gene":
+                used_id = "protein"
+                warnings.warn(f"Used id 'gene' has been changed to 'protein' as unique proteins per gene was selected.", category=UserWarning)
 
         if used_id == "gene":
             only_main = True
@@ -1779,17 +1784,19 @@ class Annotation():
             if used_id == "transcript":
                 only_cds_main = True
                 output_file += "_t_id"
+                if unique_proteins_per_gene:
+                    warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' or 'protein' if all CDSs are to be considered.", category=UserWarning)
             elif used_id == "CDS":
                 output_file += "_c_id"
             elif used_id == "protein":
                 output_file += "_p_id"
 
-            if only_main:
+            if unique_proteins_per_gene:
+                output_file += "_unique_per_gene"
+            elif only_main:
                 output_file += "_main"
             else:
                 output_file += "_all"
-                if unique_proteins_per_gene:
-                    output_file += "_unique_per_gene"
 
         if verbose:
             output_file += "_coordinates"
@@ -1803,6 +1810,7 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 temp_cs = []
+
                 for t in g.transcripts.values():
                     if only_main:
                         if t.main:
@@ -1846,7 +1854,7 @@ class Annotation():
                     elif used_id == "CDS":
                         out += f">{c.id}"
                     elif used_id == "transcript":
-                        out += f">{t.id}"
+                        out += f">{c.parents[0]}"
                     elif used_id == "gene":
                         out += f">{g.id}"
 
@@ -1936,7 +1944,7 @@ class Annotation():
             if not quiet:
                 print(f"\nExporting unique {self.id} proteins took {round(lapse/60, 1)} minutes")
 
-    def export_CDSs(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="CDS", unique_CDSs_per_gene:bool=False):
+    def export_CDSs(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="CDS", unique_CDSs_per_gene:bool=False, only_cds_main:bool=True):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -1964,7 +1972,12 @@ class Annotation():
 
         out = ""
 
-        only_cds_main = only_main
+        if unique_CDSs_per_gene:
+            only_main = False
+            only_cds_main = False
+            if used_id == "gene":
+                used_id = "CDS"
+                warnings.warn(f"Used id 'gene' has been changed to 'CDS' as unique CDSs per gene was selected.", category=UserWarning)
 
         if used_id == "gene":
             only_main = True
@@ -1974,15 +1987,17 @@ class Annotation():
             if used_id == "transcript":
                 only_cds_main = True
                 output_file += "_t_id"
+                if unique_CDSs_per_gene:
+                    warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' if all CDSs are to be considered.", category=UserWarning)
             elif used_id == "CDS":
                 output_file += "_c_id"
 
-            if only_main:
+            if unique_CDSs_per_gene:
+                output_file += "_unique_per_gene"
+            elif only_main:
                 output_file += "_main"
             else:
                 output_file += "_all"
-                if unique_CDSs_per_gene:
-                    output_file += "_unique_per_gene"
 
         if verbose:
             output_file += "_coordinates"
@@ -2009,7 +2024,7 @@ class Annotation():
                     else:
                         for c in t.CDSs.values():
                             if c.seq != "":
-                                if only_main:
+                                if only_cds_main:
                                     if c.main:
                                         temp_cs.append(c)
                                 else:
@@ -2037,7 +2052,7 @@ class Annotation():
                     if used_id == "CDS":
                         out += f">{c.id}"
                     elif used_id == "transcript":
-                        out += f">{t.id}"
+                        out += f">{c.parents[0]}"
                     elif used_id == "gene":
                         out += f">{g.id}"
 
@@ -2546,7 +2561,7 @@ class Annotation():
                             if tid1 == tid2:
                                 continue
                             for e2 in t2.exons:
-                                if e1.almost_equal(e2):
+                                if e1.equal_sequence(e2):
                                     for p in e2.parents:
                                         if p not in e1.parents:
                                             e1.parents.append(p)
@@ -2560,7 +2575,7 @@ class Annotation():
                                     if cid1 == cid2 and tid1 == tid2:
                                         continue
                                     for u2 in c2.UTRs:
-                                        if u1.almost_equal(u2):
+                                        if u1.equal_sequence(u2):
                                             for p in u2.parents:
                                                 if p not in u1.parents:
                                                     u1.parents.append(p)
@@ -3448,7 +3463,7 @@ class Annotation():
                         for e in t.exons:
                             add = True
                             for ts in exons:
-                                if e.almost_equal(ts):
+                                if e.equal_sequence(ts):
                                     add = False
                             if add:
                                 exons.append(e)
