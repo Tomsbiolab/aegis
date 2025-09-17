@@ -150,6 +150,10 @@ annotation = Annotation(name = "my_annotation", annot_file_path = "path/to/annot
 annotation.generate_sequences(genome)
 annotation.export_genes()
 ```
+## Documentation
+For further and more detailed information on how to use the **AEGIS** package, including **Jupyter Notebook examples**, please refer to the **GitHub Wiki**. The wiki provides comprehensive guides and tutorials to help you get the most out of the suite.
+
+**Link to Wiki:** https://github.com/Tomsbiolab/aegis/wiki
 
 ## Contributing
 
