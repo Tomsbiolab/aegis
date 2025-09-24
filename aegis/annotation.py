@@ -4816,9 +4816,11 @@ class Annotation():
             if feature_cap > len(self.chrs):
                 warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", category=UserWarning)
                 features_to_remove = set()
+                genes_to_keep_per_chromosome = math.ceil(gene_cap / len(self.chrs))
             else:
                 features_to_remove = set(self.chrs) - set(random.sample(list(self.chrs), feature_cap))
-            genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
+
+                genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
 
         self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
@@ -4834,12 +4836,22 @@ class Annotation():
 
         for genes in self.chrs.values():
 
-            if len(genes) > (genes_to_keep_per_chromosome + total_deficit):
-                genes_to_remove.update(set(genes) - set(random.sample(list(genes), genes_to_keep_per_chromosome)))
-
+            gene_list = list(genes)
             surplus = len(genes) - genes_to_keep_per_chromosome
-            if surplus > 0:
-                total_deficit -= surplus
+
+            if surplus > 0 :
+
+                contribution_to_cover_deficit = min(surplus, total_deficit)
+
+                final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
+                
+                if len(gene_list) > final_genes_to_keep:
+                    genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                    
+                    genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
+                    genes_to_remove.update(genes_to_remove_from_this_chr)
+                    
+                total_deficit -= contribution_to_cover_deficit
 
         if genes_to_remove:
             self.remove_genes(genes_to_remove, quiet=quiet)
