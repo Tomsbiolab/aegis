@@ -61,7 +61,7 @@ def main(
         "-u", "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
     )] = False, 
     for_lifton: Annotated[bool, typer.Option(
-        "-l", "--for-lifton", help="Ensures output has individual CDS entry ids (-u) and 1bp features are removed, both of these modifications are required for LifOn compatibility in its current version."
+        "-l", "--for-lifton", help="Ensures output has individual CDS entry ids (-u) as it is required for LifOn compatibility in its current version."
     )] = False,
     clean_features: Annotated[bool, typer.Option(
         "-cf", "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
@@ -106,7 +106,7 @@ def main(
 
     annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases))
 
-    annotation.export_gff(custom_path=output_folder, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, no_1bp_features=for_lifton, skip_atypical_fts=clean_features)
+    annotation.export_gff(custom_path=output_folder, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features)
 
 if __name__ == "__main__":
     app()

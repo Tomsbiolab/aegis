@@ -234,7 +234,7 @@ def main(
             a_lifton = a.copy()
             a_lifton.CDS_to_CDS_segment_ids(quiet=True)
             a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
-            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, no_1bp_features=True, quiet=True)
+            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=True)
 
             del a_lifton
 
