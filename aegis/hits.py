@@ -2,7 +2,7 @@ class OverlapHit():
     def __init__(self, ID, origin, orientation, gene_query_percent,
                  gene_target_percent, exons_in_both, exon_query_percent,
                  exon_target_percent, CDSs_in_both, CDS_query_percent, 
-                 CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved):
+                 CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):
         self.full_exon_overlaps = 0
         self.full_protein_overlaps = 0
         self.full_CDS_overlaps = 0
@@ -10,6 +10,7 @@ class OverlapHit():
         self.score = 1
         self.id = ID
         self.origin = origin
+        self.extra_copy = target_copy
         if gene_query_percent is not None:
             self.gene_query_percent = round(gene_query_percent, 1)
         else:

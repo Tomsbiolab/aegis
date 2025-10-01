@@ -38,7 +38,6 @@ class Feature():
         self.aliases = []
         self.blast_hits = []
         self.renamed = False
-
         self.id_number = None
         self.original_id_number = None
 
@@ -46,6 +45,8 @@ class Feature():
         if attributes_l == [""]:
             attributes_l = []
         misc_attributes = []
+
+        self.extra_copy = False
 
         for a in attributes_l:
             a_label = a.split("=")[0].lower()
@@ -79,6 +80,11 @@ class Feature():
                     if name not in self.names and name != "":
                         name = name.strip()
                         self.names.append(name)
+            elif "extra_copy_number" in a_label:
+                a_value = int(a_value.strip())
+                if a_value > 0:
+                    self.extra_copy = True
+
             elif a.strip() != "":
                 misc_attributes.append(a.strip())
         self.update_numbering(original=True)

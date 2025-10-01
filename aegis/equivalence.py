@@ -68,7 +68,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     a_liftoff.detect_gene_overlaps(annot2, quiet=True)
 
-    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
+    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny, copies_info=True)
 
     if not skip_lifton:
 
@@ -101,7 +101,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
         a_lifton.detect_gene_overlaps(annot2, quiet=True)
 
-        a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny)
+        a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=True, synteny=synteny, copies_info=True)
 
     protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 
@@ -837,12 +837,12 @@ class Simple_annotation():
                     gene_target = row["gene_id_B"]
 
                     copies = False
-                    if re.search(r"_\d{1,4}$", gene_query):
+                    if row["gene_id_A_copy"] == "True":
                         copies = True
                         gene_query = gene_query.split("_")[:-1]
                         gene_query = "_".join(gene_query)
 
-                    if re.search(r"_\d{1,4}$", gene_target):
+                    if row["gene_id_B_copy"] == "True":
                         copies = True
                         gene_target = gene_target.split("_")[:-1]
                         gene_target = "_".join(gene_target)
@@ -904,12 +904,12 @@ class Simple_annotation():
                     gene_target = row["gene_id_A"]
 
                     copies = False
-                    if re.search(r"_\d{1,4}$", gene_query):
+                    if row["gene_id_B_copy"] == "True":
                         copies = True
                         gene_query = gene_query.split("_")[:-1]
                         gene_query = "_".join(gene_query)
 
-                    if re.search(r"_\d{1,4}$", gene_target):
+                    if row["gene_id_A_copy"] == "True":
                         copies = True
                         gene_target = gene_target.split("_")[:-1]
                         gene_target = "_".join(gene_target)

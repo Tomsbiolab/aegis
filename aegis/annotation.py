@@ -2815,7 +2815,8 @@ class Annotation():
                                                                     CDS_target_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                    g2.conserved_synteny))
+                                                                    g2.conserved_synteny,
+                                                                    g2.extra_copy))
 
                                     g2.overlaps["other"].append(OverlapHit(g1.id,
                                                                     self.name,
@@ -2830,7 +2831,8 @@ class Annotation():
                                                                     CDS_query_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                    g1.conserved_synteny))
+                                                                    g1.conserved_synteny,
+                                                                    g1.extra_copy))
                     self.add_aliases()
                     other.add_aliases()
                     now = time.time()
@@ -3023,7 +3025,8 @@ class Annotation():
                                                                 CDS_target_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                                g2.conserved_synteny))
+                                                                g2.conserved_synteny,
+                                                                g2.extra_copy))
 
                             g2.overlaps["self"].append(OverlapHit(g1.id, self.name,
                                                                 gene_orientation,
@@ -3037,7 +3040,8 @@ class Annotation():
                                                                 CDS_query_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                                g1.conserved_synteny))
+                                                                g1.conserved_synteny,
+                                                                g1.extra_copy))
                         try:
                             gl.remove(g1.id)
                         except:
@@ -3088,7 +3092,7 @@ class Annotation():
                                 if hit.id not in g.aliases:
                                     g.aliases.append(hit.id)
 
-    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False):
+    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False, copies_info:bool=False):
         start = time.time()
         if export_self:
             export = "self"
@@ -3107,7 +3111,7 @@ class Annotation():
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
-        correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score"]
+        correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
 
         rows = []
 
@@ -3137,6 +3141,10 @@ class Annotation():
                                 row["min_exon_percent"] = hit.min_exon_percent
                                 row["min_CDS_percent"] = hit.min_CDS_percent
 
+                            if copies_info:
+                                row["gene_id_A_copy"] = g.extra_copy
+                                row["gene_id_B_copy"] = hit.extra_copy
+
                             rows.append(row)
 
         eq_df = pd.DataFrame(rows)
@@ -3159,39 +3167,81 @@ class Annotation():
 
             na_rows = []
 
-            if export == "self":
+            if not copies_info:
 
-                for genes in self.chrs.values():
-                    for g in genes.values():
-                        if g.id not in overlapping_genes:
+                if export == "self":
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "overlap_score": 0
+                                })
+
+                    if synteny:
+                        if g_id not in overlapping_genes:
                             na_rows.append({
-                                "gene_id_A": g.id,
-                                "overlap_score": 0
+                                "gene_id_A": g_id
                             })
 
-                if synteny:
-                    if g_id not in overlapping_genes:
-                        na_rows.append({
-                            "gene_id_A": g_id
-                        })
+                else:
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_origin": self.name,
+                                    "overlap_score": 0
+                                })
+
+                    if synteny:
+                        for g_id in self.unmapped:
+                            na_rows.append({
+                                "gene_id_A": g_id,
+                                "gene_id_A_origin": self.name
+                            })
 
             else:
 
-                for genes in self.chrs.values():
-                    for g in genes.values():
-                        if g.id not in overlapping_genes:
+                if export == "self":
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_copy": g.extra_copy,
+                                    "overlap_score": 0
+                                })
+
+                    if synteny:
+                        if g_id not in overlapping_genes:
                             na_rows.append({
-                                "gene_id_A": g.id,
-                                "gene_id_A_origin": self.name,
-                                "overlap_score": 0
+                                "gene_id_A": g_id,
+                                "gene_id_A_copy": g.extra_copy
                             })
 
-                if synteny:
-                    for g_id in self.unmapped:
-                        na_rows.append({
-                            "gene_id_A": g_id,
-                            "gene_id_A_origin": self.name
-                        })
+                else:
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_origin": self.name,
+                                    "overlap_score": 0,
+                                    "gene_id_A_copy": g.extra_copy
+                                })
+
+                    if synteny:
+                        for g_id in self.unmapped:
+                            na_rows.append({
+                                "gene_id_A": g_id,
+                                "gene_id_A_origin": self.name,
+                                "gene_id_A_copy": g.extra_copy
+                            })          
 
             # Combine with the original df
             if na_rows:
