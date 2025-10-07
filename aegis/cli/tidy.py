@@ -66,6 +66,9 @@ def main(
     clean_features: Annotated[bool, typer.Option(
         "-cf", "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
     )] = False,
+    infer_CDSs: Annotated[bool, typer.Option(
+        "-ic", "--infer-CDSs", help="Detects and creates CDSs or reworks them if they already exist."
+    )] = False,
     rna_classes: Annotated[str, typer.Option(
         "-rc", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
         callback=split_callback
@@ -87,7 +90,7 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_CDSs=infer_CDSs)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
