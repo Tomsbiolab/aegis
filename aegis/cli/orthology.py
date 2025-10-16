@@ -73,6 +73,15 @@ def main(
     include_duplicates: Annotated[bool, typer.Option(
         "-du", "--include-duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
     )] = False,
+    identity: Annotated[float, typer.Option(
+        "-i", "--identity", help="Minimum identity threshold for BLAST hits."
+    )] = 30.0,
+    coverage: Annotated[float, typer.Option(
+        "-c", "--coverage", help="Minimum coverage threshold for BLAST hits."
+    )] = 30.0,
+    evalue: Annotated[float, typer.Option(
+        "-e", "--evalue", help="Maximum e-value threshold for BLAST hits."
+    )] = 0.00001,
 
 
 ):
@@ -220,8 +229,7 @@ def main(
         f_in.write(f"{ft}\n")
     f_in.close()
 
-    identity = 30
-    coverage = 30
+    
 
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
@@ -276,7 +284,7 @@ def main(
             else:
                 original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, coverage=coverage, evalue=evalue)
 
     # Obtaining RBHs and RBBHs from single blast results
     checked_pairs = []
