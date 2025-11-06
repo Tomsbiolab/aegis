@@ -3356,7 +3356,7 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False):
+    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):
         repeat_CDS_segment_id = False
 
         for genes in self.chrs.values():
@@ -3367,7 +3367,7 @@ class Annotation():
                             for x2, cs2 in enumerate(c.CDS_segments):
                                 if x1 == x2:
                                     continue
-                                if cs1 == cs2:
+                                if cs1.id == cs2.id:
                                     repeat_CDS_segment_id = True
                                     break
 
@@ -3385,7 +3385,7 @@ class Annotation():
                             for x, cs in enumerate(c.CDS_segments):
                                 cs.id = f"{c.id}_{x+1}"
 
-        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet, clean=clean)
 
     def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=True):
         common_protein_CDS_ids = True

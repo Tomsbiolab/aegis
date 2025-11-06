@@ -61,7 +61,7 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    if annotation_names == "{annotation-filename(s)}":
+    if annotation_names != "{annotation-filename(s)}":
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])

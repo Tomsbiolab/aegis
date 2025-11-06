@@ -113,8 +113,9 @@ def main(
             err=True,
         )
         raise typer.Exit(code=1)
+    
 
-    if annotation_names == "{annotation-filename(s)}":
+    if annotation_names != "{annotation-filename(s)}":
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -233,7 +234,6 @@ def main(
 
             a_lifton = a.copy()
             a_lifton.CDS_to_CDS_segment_ids(quiet=True)
-            a_lifton.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
             a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=True)
 
             del a_lifton
