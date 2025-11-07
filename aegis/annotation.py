@@ -1312,7 +1312,7 @@ class Annotation():
         if not quiet:
             print(f"Corrected feature coordinates for {self.id}")
 
-    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=True):
+    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=False):
 
         start = time.time()
         for o in self.atypical_features:
@@ -1889,7 +1889,7 @@ class Annotation():
             if genome == None:
                 print(f"You forgot to provide the genome for {self.id} and no sequences exist for CDSs")
             else:
-                self.generate_sequences(genome)
+                self.generate_sequences(genome, quiet=quiet)
                 self.export_unique_proteins(custom_path=custom_path)
         else:
             if custom_path:
@@ -2372,7 +2372,7 @@ class Annotation():
             print(f"\nUpdating stats for {self.id}")
         if not self.generated_all_sequences or not self.contains_protein_sequences:
             if genome != None:
-                self.generate_sequences(genome)
+                self.generate_sequences(genome, quiet=quiet)
                 self.clear_sequences(keep_proteins=True)
 
         self.calculate_gc_content()
