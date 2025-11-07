@@ -42,10 +42,9 @@ def main(
         "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
         callback=split_callback
     )] = "",
-    original_annotation_files: Annotated[str, typer.Option(
-        "-ot", "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer, separated by commas. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
-        callback=split_callback
-    )] = "",
+    skip_synteny: Annotated[bool, typer.Option(
+        "-s", "--skip-synteny", help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome."
+    )] = False,
     reference_annotation: Annotated[str, typer.Option(
         "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
     )] = "None",
@@ -106,6 +105,7 @@ def main(
     """
 
     quiet=not(verbose)
+    synteny=not(skip_synteny)
 
     if len(annotation_files) < 2:
         raise typer.BadParameter(f"At least 2 annotation-files must be provided.")
@@ -142,15 +142,6 @@ def main(
     
     if len(genome_files) != len(set(genome_files)):
         raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
-
-    if original_annotation_files:
-        synteny = True
-        if len(annotation_files) != len(original_annotation_files):
-            raise typer.BadParameter(f"The provided number of original annotation files do not match the number of annotation file(s).")
-        
-    else:
-        synteny = False
-        original_annotation_files = ["NA"] * len(annotation_files)
     
     if group_names:
         if len(annotation_files) != len(group_names):
@@ -174,11 +165,7 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        if original_annotation_files[n].lower() != "na":
-            original_annotation = Annotation(name=f"{annotation_names[n]}_original", genome=genome_files[n], annot_file_path=original_annotation_files[n])
-            annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, original_annotation=original_annotation))
-        else:
-            annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
+        annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
@@ -275,13 +262,8 @@ def main(
             if n1 == n2:
                 continue
 
-            original_annotation = original_annotation_files[n1].lower()
-            if original_annotation == "na":
-                original_annotation = None
-            else:
-                original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, quiet=quiet)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, quiet=quiet)
 
     # Obtaining RBHs and RBBHs from single blast results
     checked_pairs = []

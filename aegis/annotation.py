@@ -734,27 +734,28 @@ class Annotation():
                                 self.errors["transcript_to_more_than_1_gene"].append(ID)
                             else:
                                 parent = parents[0].strip()
-                                if parent in self.chrs[ch]:
-                                    if ID in self.chrs[ch][parent].transcripts:
+                                if parent != ID:
+                                    if parent in self.chrs[ch]:
+                                        if ID in self.chrs[ch][parent].transcripts:
+                                            if not quiet:
+                                                print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
+                                            self.errors["repeat_transcript_same_gene"].append(ID)
+                                        else:
+                                            self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
+                                                                                                ft, 
+                                                                                                strand, coord[0],
+                                                                                                coord[1], score,
+                                                                                                ".",
+                                                                                                attributes)
+                                            self.all_transcript_ids[ID] = (ch, parent)
+                                    elif parent in self.all_gene_ids:
                                         if not quiet:
-                                            print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
-                                        self.errors["repeat_transcript_same_gene"].append(ID)
+                                            print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome")
+                                        self.errors["transcript_to_gene_other_chr"].append(ID)
                                     else:
-                                        self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
-                                                                                            ft, 
-                                                                                            strand, coord[0],
-                                                                                            coord[1], score,
-                                                                                            ".",
-                                                                                            attributes)
-                                        self.all_transcript_ids[ID] = (ch, parent)
-                                elif parent in self.all_gene_ids:
-                                    if not quiet:
-                                        print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome")
-                                    self.errors["transcript_to_gene_other_chr"].append(ID)
-                                else:
-                                    if not quiet:
-                                        print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
-                                    self.errors["transcript_to_inexistent_gene"].append(ID)
+                                        if not quiet:
+                                            print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
+                                        self.errors["transcript_to_inexistent_gene"].append(ID)
                                     
                     # transcript subfeatures
                     elif n < (len(parsed_lines) - 1):

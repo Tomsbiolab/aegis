@@ -29,7 +29,7 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, original_annot1:object=None, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, quiet=True):
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, quiet=True):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -61,10 +61,10 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     print(f"\t\tRunning aegis-overlaps on liftoff result.")
 
-    if original_annot1:
-        a_liftoff = Annotation(str(liftoff_gff), quiet=quiet)
+    if synteny:
+        a_liftoff = Annotation(str(liftoff_gff), original_annotation=annot1, quiet=quiet)
     else:
-        a_liftoff = Annotation(str(liftoff_gff), original_annotation=original_annot1, quiet=quiet)
+        a_liftoff = Annotation(str(liftoff_gff), quiet=quiet)
 
     a_liftoff.detect_gene_overlaps(annot2, quiet=quiet)
 
@@ -96,10 +96,10 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
         print(f"\t\tRunning aegis-overlaps on lifton result.")
 
-        if original_annot1:
-            a_lifton = Annotation(str(lifton_gff), quiet=quiet)
+        if synteny:
+            a_lifton = Annotation(str(lifton_gff), original_annotation=annot1, quiet=quiet)
         else:
-            a_lifton = Annotation(str(lifton_gff), original_annotation=original_annot1, quiet=quiet)
+            a_lifton = Annotation(str(lifton_gff), quiet=quiet)
 
         a_lifton.detect_gene_overlaps(annot2, quiet=quiet)
 
