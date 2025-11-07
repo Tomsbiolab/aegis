@@ -232,6 +232,7 @@ def main(
         a.generate_sequences(genomes[n], quiet=quiet)
         a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
         a.export_CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
+        a.clear_sequences(quiet=quiet)
 
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
@@ -254,7 +255,7 @@ def main(
         ]
         run_command(mcscan_path, gff_to_bed_cmd_1)
 
-        a.clear_sequences(quiet=quiet)
+        
 
     for n1, a1 in enumerate(annotations):
 

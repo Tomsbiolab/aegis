@@ -14,12 +14,10 @@ class CDS(Feature):
         #self.codon_usage = {}
         self.five_prime_UTR_seq = ""
         self.three_prime_UTR_seq = ""
-        self.size = 0
         self.full_UTR_exons = 0
         self.frame = "."
         self.protein = None
-        for segment in self.CDS_segments:
-            self.size += segment.size
+        self.update_size()
 
     def update(self):
         self.update_size()

@@ -1080,7 +1080,9 @@ class Annotation():
                 progress_bar.update(1)
                 for t in g.transcripts.values():
                     t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
-                    if t.polycistronic == "maybe":
+                    if t.polycistronic == "no":
+                        continue
+                    elif t.polycistronic == "maybe":
                         self.warnings["possible_policistronic_transcript"].append(t.id) 
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].append(t.id)
