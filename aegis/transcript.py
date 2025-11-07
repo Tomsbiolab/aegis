@@ -27,10 +27,6 @@ class Transcript(Feature):
             self.size += exon.size
 
     def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
-        if self.feature == "lncRNA" or not self.coding:
-            self.CDSs = {}
-            self.coding = False
-
         if self.exons == []:
             self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
@@ -383,6 +379,7 @@ class Transcript(Feature):
 
         if hasattr(self, "temp_CDSs"):
             if self.temp_CDSs != []:
+                self.coding = True
                 if consider_polycistronic:
                     # This is one of three options = ["yes", "no", "maybe"]
                     self.polycistronic = "no"
@@ -398,8 +395,6 @@ class Transcript(Feature):
                     more_than_1_CDS = False
                     more_than_1_segment_with_same_ID = False
                     more_than_1_segment_with_different_ID = False
-                    if len(self.temp_CDSs) > 0:
-                        self.coding = True
                     self.temp_CDSs.sort()
                     # more than 1 CDS is determined by overlaps
                     if len(self.temp_CDSs) > 1:
