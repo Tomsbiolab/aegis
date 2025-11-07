@@ -180,7 +180,7 @@ class Gene(Feature):
             t.clear_UTRs()
         self.update()
 
-    def combine_transcripts(self, genome:object, low_memory:bool=True, respect_non_coding:bool=False, quiet=bool=False):
+    def combine_transcripts(self, genome:object, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
         """
         Useful for RNA-Seq read counting for transcript variants as "one" gene.
         """
