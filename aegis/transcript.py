@@ -20,6 +20,7 @@ class Transcript(Feature):
         self.overlaps = {"self" : [], "other" : []}
         self.renamed_exons = False
         self.renamed_utrs = False
+        self.polycistronic = "no"
     
     def update_size(self):
         self.size = 0
@@ -381,8 +382,6 @@ class Transcript(Feature):
             if self.temp_CDSs != []:
                 self.coding = True
                 if consider_polycistronic:
-                    # This is one of three options = ["yes", "no", "maybe"]
-                    self.polycistronic = "no"
                     grant_ids = True
                     for segment in self.temp_CDSs:
                         if segment.id != "":
@@ -464,7 +463,6 @@ class Transcript(Feature):
                     
 
                 else:
-                    self.polycistronic = "no"
                     if self.strand == "+":
                         temp_id = self.temp_CDSs[0].id
                     else:
