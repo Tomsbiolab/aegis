@@ -54,7 +54,7 @@ def main(
     )] = False,
     threads: Annotated[int, typer.Option(
         "-t", "--threads", help="Number of threads."
-    )] = 5,
+    )] = 1,
     skip_rbhs: Annotated[bool, typer.Option(
         "-rb", "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
@@ -73,7 +73,9 @@ def main(
     include_duplicates: Annotated[bool, typer.Option(
         "-du", "--include-duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
     )] = False,
-
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error."
+    )] = False
 
 ):
     """
@@ -102,6 +104,8 @@ def main(
     All external tool commands are executed via Docker to ensure a reproducible
     environment.
     """
+
+    quiet=not(verbose)
 
     if len(annotation_files) < 2:
         raise typer.BadParameter(f"At least 2 annotation-files must be provided.")
@@ -176,7 +180,7 @@ def main(
         else:
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
 
-        annotations[-1].rename_ids(strip_gene_tag=True, quiet=True)
+        annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
@@ -227,20 +231,21 @@ def main(
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
 
-        a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=True)
-        a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=True)
+        a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=quiet)
+        a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=quiet)
 
         if not skip_lifton:
 
             a_lifton = a.copy()
-            a_lifton.CDS_to_CDS_segment_ids(quiet=True)
-            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=True)
+            a_lifton.CDS_to_CDS_segment_ids(quiet=quiet)
+            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=quiet)
 
             del a_lifton
 
         a.generate_sequences(genomes[n])
         a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
         a.export_CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
+        a.clear_sequences(quiet=quiet)
 
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
@@ -276,7 +281,7 @@ def main(
             else:
                 original_annotation = Annotation(original_annotation_files[n1])
             
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, original_annot1=original_annotation, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, quiet=quiet)
 
     # Obtaining RBHs and RBBHs from single blast results
     checked_pairs = []
@@ -411,24 +416,24 @@ def main(
                 ortho_file_path = matching_files[0]
                 a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
-            a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=True)
+            a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
             if not skip_lifton:
-                a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=True)
+                a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet)
 
-            a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=True)
+            a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
 
         output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
         output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
         output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
 
         if skip_rbhs and skip_unidirectional_blasts:
-            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=True, return_df=True, export_csv=False)
+            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=quiet, return_df=True, export_csv=False)
 
         elif skip_unidirectional_blasts:
-            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True, return_df=True, export_csv=False)
+            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=quiet, return_df=True, export_csv=False)
 
         else:
-            df = a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=True, return_df=True, export_csv=False)
+            df = a1.export_summary_equivalences(output_file, filtered=True, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=quiet, return_df=True, export_csv=False)
 
         if n1 == 0:
             final_df = df.copy()
