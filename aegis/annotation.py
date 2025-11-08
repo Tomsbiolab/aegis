@@ -2637,7 +2637,7 @@ class Annotation():
 
                 if self.genome == None:
                     if not quiet:
-                        print(f"Warning: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
+                        print(f"Note: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
                 
                 if other.name in self.overlapped_annotations or self.name in other.overlapped_annotations:
                     print(f"Overlaps between {self.id} and {other.id} "
@@ -3152,134 +3152,141 @@ class Annotation():
 
         eq_df = pd.DataFrame(rows)
 
-        if export == "self":
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
-            eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
-            eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
+        if not eq_df.empty:
 
-        else:
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f'{row["gene_id_A"]}_{row["gene_id_A_origin"]}', f'{row["gene_id_B"]}_{row["gene_id_B_origin"]}'])), axis=1)
-            eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
-
-        if NAs:
-            tag += "_gene_id_A_NAs"
             if export == "self":
-                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
+                eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
+                eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
+                eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
+
             else:
-                overlapping_genes = set(eq_df["gene_id_A"].dropna())
+                eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f'{row["gene_id_A"]}_{row["gene_id_A_origin"]}', f'{row["gene_id_B"]}_{row["gene_id_B_origin"]}'])), axis=1)
+                eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
-            na_rows = []
-
-            if not copies_info:
-
+            if NAs:
+                tag += "_gene_id_A_NAs"
                 if export == "self":
+                    overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
+                else:
+                    overlapping_genes = set(eq_df["gene_id_A"].dropna())
 
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
+                na_rows = []
+
+                if not copies_info:
+
+                    if export == "self":
+
+                        for genes in self.chrs.values():
+                            for g in genes.values():
+                                if g.id not in overlapping_genes:
+                                    na_rows.append({
+                                        "gene_id_A": g.id,
+                                        "overlap_score": 0
+                                    })
+
+                        if synteny:
+                            if g_id not in overlapping_genes:
                                 na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "overlap_score": 0
+                                    "gene_id_A": g_id
                                 })
 
-                    if synteny:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "gene_id_A": g_id
-                            })
+                    else:
+
+                        for genes in self.chrs.values():
+                            for g in genes.values():
+                                if g.id not in overlapping_genes:
+                                    na_rows.append({
+                                        "gene_id_A": g.id,
+                                        "gene_id_A_origin": self.name,
+                                        "overlap_score": 0
+                                    })
+
+                        if synteny:
+                            for g_id in self.unmapped:
+                                na_rows.append({
+                                    "gene_id_A": g_id,
+                                    "gene_id_A_origin": self.name
+                                })
 
                 else:
 
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
+                    if export == "self":
+
+                        for genes in self.chrs.values():
+                            for g in genes.values():
+                                if g.id not in overlapping_genes:
+                                    na_rows.append({
+                                        "gene_id_A": g.id,
+                                        "gene_id_A_copy": g.extra_copy,
+                                        "overlap_score": 0
+                                    })
+
+                        if synteny:
+                            if g_id not in overlapping_genes:
                                 na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_origin": self.name,
-                                    "overlap_score": 0
-                                })
-
-                    if synteny:
-                        for g_id in self.unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": self.name
-                            })
-
-            else:
-
-                if export == "self":
-
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_copy": g.extra_copy,
-                                    "overlap_score": 0
-                                })
-
-                    if synteny:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_copy": g.extra_copy
-                            })
-
-                else:
-
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_origin": self.name,
-                                    "overlap_score": 0,
+                                    "gene_id_A": g_id,
                                     "gene_id_A_copy": g.extra_copy
                                 })
 
-                    if synteny:
-                        for g_id in self.unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": self.name,
-                                "gene_id_A_copy": g.extra_copy
-                            })          
+                    else:
 
-            # Combine with the original df
-            if na_rows:
-                eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
+                        for genes in self.chrs.values():
+                            for g in genes.values():
+                                if g.id not in overlapping_genes:
+                                    na_rows.append({
+                                        "gene_id_A": g.id,
+                                        "gene_id_A_origin": self.name,
+                                        "overlap_score": 0,
+                                        "gene_id_A_copy": g.extra_copy
+                                    })
 
-        eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
+                        if synteny:
+                            for g_id in self.unmapped:
+                                na_rows.append({
+                                    "gene_id_A": g_id,
+                                    "gene_id_A_origin": self.name,
+                                    "gene_id_A_copy": g.extra_copy
+                                })          
 
-        if synteny:
-            column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
-            ascending = [True, True, False, False, False, True, True]
-        elif export == "self":
-            column_sort_order = ["overlap_score", "gene_id_A", "gene_id_B"]
-            ascending = [False, True, True]
-        else:
-            column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A", "gene_id_B"]
-            ascending = [True, True, False, True, True]            
+                # Combine with the original df
+                if na_rows:
+                    eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
 
-        eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
-        eq_df.reset_index(drop=True, inplace=True)
-        
-        if export_csv:
-            if output_file:
-                export_path = f"{export_folder}{output_file}"
+            eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
+
+            if synteny:
+                column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
+                ascending = [True, True, False, False, False, True, True]
+            elif export == "self":
+                column_sort_order = ["overlap_score", "gene_id_A", "gene_id_B"]
+                ascending = [False, True, True]
             else:
-                export_path = f"{export_folder}{tag}.csv"
+                column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A", "gene_id_B"]
+                ascending = [True, True, False, True, True]            
 
-            eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
-
-            now = time.time()
-            lapse = now - start
-            if not quiet:
-                if export == "self":
-                    print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
+            eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
+            eq_df.reset_index(drop=True, inplace=True)
+            
+            if export_csv:
+                if output_file:
+                    export_path = f"{export_folder}{output_file}"
                 else:
-                    print(f"\nExporting {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
+                    export_path = f"{export_folder}{tag}.csv"
+
+                eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
+
+                now = time.time()
+                lapse = now - start
+                if not quiet:
+                    if export == "self":
+                        print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
+                    else:
+                        print(f"\nExporting {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
+        else:
+            if export == "self":
+                print(f"\nNo {self.id} self overlaps were detected.")
+            else:
+                print(f"\nNo {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' were detected.")
         
         if return_df:
             return eq_df
