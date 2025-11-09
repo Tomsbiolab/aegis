@@ -4914,7 +4914,7 @@ class Annotation():
 
             num_genes_in_chosen_features = 0
             for ft in chosen_features:
-                num_genes_in_chosen_features += len(self.chrs[ft].genes)
+                num_genes_in_chosen_features += len(self.chrs[ft])
 
             remaining_to_chose_from = total_chromosomes - chosen_features
             chr_cap_overriden = False
@@ -4927,8 +4927,8 @@ class Annotation():
                 remaining_to_chose_from = total_chromosomes - chosen_features
 
                 num_genes_in_chosen_features = 0
-                    for ft in chosen_features:
-                        num_genes_in_chosen_features += len(self.chrs[ft].genes)
+                for ft in chosen_features:
+                    num_genes_in_chosen_features += len(self.chrs[ft])
 
             if chr_cap_overriden:
                 print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")

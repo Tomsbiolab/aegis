@@ -170,6 +170,10 @@ class Genome():
         self.chromosome_size = sum(scaffold.size for scaffold in self.scaffolds.values() if scaffold.chromosome)
         self.nuclear_chromosome_size = sum(scaffold.size for scaffold in self.scaffolds.values() if scaffold.chromosome and not scaffold.organelle)
 
+        self.chromosome_names = set()
+        self.scaffold_names = set()
+        self.accessory_chromosome_names = set()
+
         for scaffold_id, scaffold in self.scaffolds.items():
 
             if update_scaffolds:
@@ -195,10 +199,15 @@ class Genome():
                 self.chromosomes = True
                 if scaffold.mitochondria:
                     self.mitochondria = True
+                    self.accessory_chromosome_names.add(scaffold.name)
                 elif scaffold.chloroplast:
                     self.chloroplast = True
+                    self.accessory_chromosome_names.add(scaffold.name)
+                else:
+                    self.chromosome_names.add(scaffold.name)
             else:
                 self.non_chromosomal_scaffolds = True
+                self.scaffold_names.add(scaffold.name)
 
             if update_scaffolds:
                 scaffold.update()
@@ -223,7 +232,7 @@ class Genome():
 
         if self.unknown_chromosome:
             self.suffix += "_chr00"
-        
+
     def export_feature_sizes(self, custom_path:str=""):
 
         self.update()

@@ -50,7 +50,7 @@ def main(
     )] = "{genome-name}_subset.fasta"
 ):
     """
-    Obtain subsets of a gff, random or directed. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
+    Obtain subsets of a gff, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
     """
 
     if annotation_name == "{annotation-file}":
@@ -73,6 +73,9 @@ def main(
         g = Genome(genome_name, genome_fasta)
         a = Annotation(annotation_file, annotation_name, genome=g)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
+        common_actual_chromosomes = common_chromosomes - g.scaffold_names
+        common_actual_chromosomes_minus_mt_chl = common_actual_chromosomes - g.accessory_chromosome_names
+
         if not common_chromosomes:
             raise ValueError(f"There are no common scaffolds/chromosomes between provided annotation and genome file.")
     else:
@@ -86,6 +89,10 @@ def main(
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) common to both genome and annotation files. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
             else:
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
+        elif chr_cap <= len(common_actual_chromosomes_minus_mt_chl):
+            chosen_chromosomes = set(random.sample(list(common_actual_chromosomes_minus_mt_chl), chr_cap))
+        elif chr_cap <= len(common_actual_chromosomes):
+            chosen_chromosomes = set(random.sample(list(common_actual_chromosomes), chr_cap))
         else:
             chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
 
