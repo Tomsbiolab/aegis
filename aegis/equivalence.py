@@ -94,11 +94,11 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         if os.path.exists(str(to_remove)):
             shutil.rmtree(str(to_remove))
 
-        print(f"\t\tRunning aegis-overlaps on lifton result.")
-
         if not os.path.isfile(lifton_gff):
             with open(lifton_gff, "w") as f:
                 f.write("##gff-version 3\n")
+
+        print(f"\t\tRunning aegis-overlaps on lifton result.")
 
         if synteny:
             a_lifton = Annotation(str(lifton_gff), original_annotation=annot1, quiet=quiet)
