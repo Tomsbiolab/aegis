@@ -757,7 +757,7 @@ class Annotation():
                                             print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
                                         self.errors["transcript_to_inexistent_gene"].append(ID)
 
-                                else:
+                                elif not quiet:
                                     print(f"Warning: Transcript {ID} has its own id as a parent")
                                     
                     # transcript subfeatures
