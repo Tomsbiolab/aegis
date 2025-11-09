@@ -24,12 +24,15 @@ def main(
         "-cc", "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s)."
     )] = 2,
     chosen_chromosomes: Annotated[str, typer.Option(
-    "-c", "--chosen-chromosomes", help="Overrides -cc. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
+        "-c", "--chosen-chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
     callback=split_callback
     )] = None,
     gene_cap: Annotated[int, typer.Option(
         "-gc", "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,
+    min_genes: Annotated[int, typer.Option(
+        "-mg", "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chosen-chromosomes if used."
+    )] = 1500,
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
@@ -69,16 +72,14 @@ def main(
     if genome_fasta:
         g = Genome(genome_name, genome_fasta)
         a = Annotation(annotation_file, annotation_name, genome=g)
-
+        common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
+        if not common_chromosomes:
+            raise ValueError(f"There are no common scaffolds/chromosomes between provided annotation and genome file.")
     else:
         a = Annotation(annotation_file, annotation_name)
+        common_chromosomes = set(a.chrs)
 
     if not chosen_chromosomes:
-        if genome_fasta:
-            common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
-        else:
-            common_chromosomes = set(a.chrs)
-        
         if chr_cap > len(common_chromosomes):
             chosen_chromosomes = common_chromosomes.copy()
             if genome_fasta:
@@ -88,7 +89,12 @@ def main(
         else:
             chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
 
-    a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap)
+        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=min_genes)
+    
+    else:
+        # if chosen_chromosomes is selected min_genes parameter is ignored
+        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0)
+
     a.export_gff(custom_path=output_folder, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
     if genome_fasta:

@@ -173,6 +173,11 @@ def main(
             annotations[n].target = True
 
     output_folder = Path(output_folder).resolve() / "orthologues"
+
+    if output_folder.exists():
+        raise FileExistsError(
+            f"The folder '{output_folder}' already exists. Please choose a directory without an existing 'orthologues' folder, or delete it first.")
+
     output_folder.mkdir(parents=True, exist_ok=True)
     output_folder = str(output_folder) + "/"
 

@@ -4896,23 +4896,45 @@ class Annotation():
 
         self.gff_header = new_header.copy()
 
-    def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2, quiet:bool=False):
+    def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set=None, min_genes:int=1500, quiet:bool=False):
 
-        if chosen_features:
-            for chosen_feature in chosen_features:
-                if chosen_feature not in self.chrs:
-                    raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome. Choose from '{self.chrs.keys()}'")
-            features_to_remove = set(self.chrs) - chosen_features
-            genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
+        initial_chosen_features = chosen_features.copy()
+
+        for chosen_feature in chosen_features:
+            if chosen_feature not in self.chrs:
+                raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome. Choose from '{self.chrs.keys()}'")
+
+        if common_chromosomes is None:
+            total_chromosomes = set(self.chrs)
+
         else:
-            if feature_cap > len(self.chrs):
-                warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", category=UserWarning)
-                features_to_remove = set()
-                genes_to_keep_per_chromosome = math.ceil(gene_cap / len(self.chrs))
-            else:
-                features_to_remove = set(self.chrs) - set(random.sample(list(self.chrs), feature_cap))
+            total_chromosomes = common_chromosomes.copy()
 
-                genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
+        if min_genes > 0:
+
+            num_genes_in_chosen_features = 0
+            for ft in chosen_features:
+                num_genes_in_chosen_features += len(self.chrs[ft].genes)
+
+            remaining_to_chose_from = total_chromosomes - chosen_features
+            chr_cap_overriden = False
+
+            while num_genes_in_chosen_features < min_genes and remaining_to_chose_from:
+                chr_cap_overriden = True
+                
+                chosen_features.add(random.choice(list(remaining_to_chose_from)))
+
+                remaining_to_chose_from = total_chromosomes - chosen_features
+
+                num_genes_in_chosen_features = 0
+                    for ft in chosen_features:
+                        num_genes_in_chosen_features += len(self.chrs[ft].genes)
+
+            if chr_cap_overriden:
+                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+
+        features_to_remove = set(self.chrs) - chosen_features
+        genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
 
         self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
@@ -4951,6 +4973,8 @@ class Annotation():
             warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
 
         self.update(quiet=quiet)
+
+        return chosen_features
 
     def filter_by_rna_class(self, rna_classes=['mRNA'], quiet:bool=False):
 
