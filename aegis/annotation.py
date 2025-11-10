@@ -1059,9 +1059,6 @@ class Annotation():
         return copy.deepcopy(self)
     
     def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
-        """
-
-        """
         start = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -4360,7 +4357,7 @@ class Annotation():
         progress_bar.close()
 
         if repeat_exons_utrs:
-            self.homogenise_parents_for_shared_exons_utrs(quiet=quiet)
+            self.homogenise_parents_for_shared_exons_utrs(quiet=quiet, extra_attributes=extra_attributes)
         else:
             self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
         self.update_keys(quiet=quiet)

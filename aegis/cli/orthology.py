@@ -229,7 +229,7 @@ def main(
         if not skip_lifton:
 
             a_lifton = a.copy()
-            a_lifton.CDS_to_CDS_segment_ids(quiet=quiet)
+            a_lifton.CDS_to_CDS_segment_ids(quiet=quiet, clean=True)
             a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=quiet)
 
             del a_lifton

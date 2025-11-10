@@ -50,7 +50,7 @@ def main(
     )] = "{genome-name}_subset.fasta"
 ):
     """
-    Obtain subsets of a gff, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
+    Obtain subsets of an annotation file, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
     """
 
     if annotation_name == "{annotation-file}":
