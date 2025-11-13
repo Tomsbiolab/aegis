@@ -3499,9 +3499,6 @@ class Annotation():
             progress_bar.update(len(genes))
             for x, g in enumerate(genes.values()):
                 
-                if just_genes:
-                    continue
-                
                 if no_1bp_features:
                     gene_1bp_feature = False
                     for t in g.transcripts.values():
@@ -3520,6 +3517,9 @@ class Annotation():
                         continue
 
                 out += g.print_gff()
+
+                if just_genes:
+                    continue
 
                 if repeat_exons_utrs:
                     for t in g.transcripts.values():
@@ -3653,10 +3653,7 @@ class Annotation():
         for genes in self.chrs.values():
             progress_bar.update(len(genes))
             for x, g in enumerate(genes.values()):
-                
-                if just_genes:
-                    continue
-                
+
                 if no_1bp_features:
                     gene_1bp_feature = False
                     for t in g.transcripts.values():
@@ -3675,6 +3672,9 @@ class Annotation():
                         continue
 
                 out += g.print_gtf()
+
+                if just_genes:
+                    continue
 
                 for t in g.transcripts.values():
                     if main_only:
