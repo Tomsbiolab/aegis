@@ -20,23 +20,22 @@ class Transcript(Feature):
         self.overlaps = {"self" : [], "other" : []}
         self.renamed_exons = False
         self.renamed_utrs = False
+        self.polycistronic = "no"
     
     def update_size(self):
         self.size = 0
         for exon in self.exons:
             self.size += exon.size
 
-    def update(self, quiet:bool=False):
-        if self.feature == "lncRNA" or not self.coding:
-            self.CDSs = {}
-            self.coding = False
-
-        self.generate_CDSs(quiet=quiet)
+    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
         if self.exons == []:
+            self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
-        self.exons.sort()
-        self.generate_UTRs()
-        self.update_UTRs()
+            self.exons.sort()
+        else:
+            self.exons.sort()
+            self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
+
         self.update_size()
         self.generate_introns()
         self.exon_update()
@@ -351,7 +350,6 @@ class Transcript(Feature):
                 elif self.strand == ".":
                     pass
 
-
                 self.generate_CDSs()
                 if low_memory:
                     self.clear_sequence()
@@ -369,106 +367,128 @@ class Transcript(Feature):
                     break
         return almost_equal
 
-    def generate_CDSs(self, quiet:bool=False):
+    def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
         """
         Creates CDS objects are based on the CDS segments of a transcript.
-        Assumptions:
+        Assumptions (when considering polycistronic transcripts):
         1 - if more than 1 CDS segment shares an ID that means that we can rely
             on the IDs to generate the different CDSs in a polycistronic gene
         2 - polycistronic genes with non-overlapping CDSs are unlikely to exist
             and if they do exist they are probably annotated as different ID
             transcripts
         """
-        # This is one of three options = ["yes", "no", "maybe"]
-        self.polycistronic = "no"
-        if hasattr(self, "temp_CDSs") and hasattr(self, "temp_UTRs"):
-            grant_ids = True
-            for segment in self.temp_CDSs:
-                if segment.id != "":
-                    grant_ids = False
 
-            if grant_ids:
-                for n, _ in enumerate(self.temp_CDSs):
-                    self.temp_CDSs[n].id = f"{self.id}_CDS1"
-
-            more_than_1_CDS = False
-            more_than_1_segment_with_same_ID = False
-            more_than_1_segment_with_different_ID = False
-            if len(self.temp_CDSs) > 0:
+        if hasattr(self, "temp_CDSs"):
+            if self.temp_CDSs != []:
                 self.coding = True
-            self.temp_CDSs.sort()
-            # more than 1 CDS is determined by overlaps
-            if len(self.temp_CDSs) > 1:
-                for sn1, segment1 in enumerate(self.temp_CDSs):
-                    for sn2, segment2 in enumerate(self.temp_CDSs):
-                        if sn1 == sn2:
-                            continue
-                        # not interested in overlap_bp
-                        overlapping, _ = overlap(segment1, segment2)
-                        if overlapping:
-                            more_than_1_CDS = True
-                        if segment1.id == segment2.id:
-                            more_than_1_segment_with_same_ID = True
+                if consider_polycistronic:
+                    grant_ids = True
+                    for segment in self.temp_CDSs:
+                        if segment.id != "":
+                            grant_ids = False
+
+                    if grant_ids:
+                        for n, _ in enumerate(self.temp_CDSs):
+                            self.temp_CDSs[n].id = f"{self.id}_CDS1"
+
+                    more_than_1_CDS = False
+                    more_than_1_segment_with_same_ID = False
+                    more_than_1_segment_with_different_ID = False
+                    self.temp_CDSs.sort()
+                    # more than 1 CDS is determined by overlaps
+                    if len(self.temp_CDSs) > 1:
+                        for sn1, segment1 in enumerate(self.temp_CDSs):
+                            for sn2, segment2 in enumerate(self.temp_CDSs):
+                                if sn1 == sn2:
+                                    continue
+                                # not interested in overlap_bp
+                                overlapping, _ = overlap(segment1, segment2)
+                                if overlapping:
+                                    more_than_1_CDS = True
+                                if segment1.id == segment2.id:
+                                    more_than_1_segment_with_same_ID = True
+                                else:
+                                    more_than_1_segment_with_different_ID = True
+                    if not more_than_1_CDS and self.temp_CDSs != []:
+                        # CDS object with segments as a property
+                        if self.strand == "+":
+                            temp_id = self.temp_CDSs[0].id
                         else:
-                            more_than_1_segment_with_different_ID = True
-            if not more_than_1_CDS and self.temp_CDSs != []:
-                # CDS object with segments as a property
-                if self.strand == "+":
-                    temp_id = self.temp_CDSs[0].id
+                            temp_id = self.temp_CDSs[-1].id
+                        self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
+                                                self.temp_CDSs[0].ch, 
+                                                self.temp_CDSs[0].source, 
+                                                self.temp_CDSs[0].feature,
+                                                self.temp_CDSs[0].strand, 
+                                                self.temp_CDSs[0].start,
+                                                self.temp_CDSs[-1].end,
+                                                self.temp_CDSs[0].score,
+                                                ".", self.temp_CDSs[0].attributes)
+                        if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
+                            if not quiet:
+                                print(f"Warning: Transcript {self.id} may be "
+                                    "polycistronic although CDS segments were all "
+                                    "combined into the same CDS since the most likely "
+                                    "scenario is that some mistake has been made in the"
+                                    " gff, please check")   
+                            self.polycistronic = "maybe"
+                    elif more_than_1_CDS and more_than_1_segment_with_different_ID:
+                        CDS_temp = {}
+                        for c in self.temp_CDSs:
+                            if c.id not in CDS_temp:
+                                CDS_temp[c.id] = [c]
+                            else:
+                                CDS_temp[c.id].append(c)
+                        for c_id, segments in CDS_temp.items():
+                            self.CDSs[c_id] = CDS(segments.copy(), c_id, segments[0].ch,
+                                            segments[0].source, segments[0].feature,
+                                            segments[0].strand, segments[0].start,
+                                            segments[-1].end, segments[0].score,
+                                            ".", segments[0].attributes)
+                        if not quiet:
+                            print(f"Warning: Transcript {self.id} is likely to be "
+                                "polycistronic since CDS segments overlap and they "
+                                "have different IDs, the CDS segments have been "
+                                "separated into their corresponding CDS ids, however, "
+                                "please check that it truly is a polycistronic gene "
+                                "and not a gff mistake")
+                        self.polycistronic = "yes" 
+                    elif more_than_1_CDS:
+                        if not quiet:
+                            print(f"Error: Transcript {self.id} is likely to have a "
+                                "problem in the annotation of CDS segments (it could "
+                                "also be a consequence of liftoff) as the segments "
+                                "overlap but they share the same id, please fix the gff.")
+                        self.polycistronic = "maybe"
+                    
+
                 else:
-                    temp_id = self.temp_CDSs[-1].id
-                #these two lines resulted in repeated CDS ids
-                #pattern = r"(?i)(CDS|cds)(\d+)$"
-                #temp_id = sub(pattern, r"\g<1>1", temp_id)
-                self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
-                                         self.temp_CDSs[0].ch, 
-                                         self.temp_CDSs[0].source, 
-                                         self.temp_CDSs[0].feature,
-                                         self.temp_CDSs[0].strand, 
-                                         self.temp_CDSs[0].start,
-                                         self.temp_CDSs[-1].end,
-                                         self.temp_CDSs[0].score,
-                                         ".", self.temp_CDSs[0].attributes)
-                if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
-                    if not quiet:
-                        print(f"Warning: Transcript {self.id} may be "
-                            "polycistronic although CDS segments were all "
-                            "combined into the same CDS since the most likely "
-                            "scenario is that some mistake has been made in the"
-                            " gff, please check")   
-                    self.polycistronic = "maybe"
-            elif more_than_1_CDS and more_than_1_segment_with_different_ID:
-                CDS_temp = {}
-                for c in self.temp_CDSs:
-                    if c.id not in CDS_temp:
-                        CDS_temp[c.id] = [c]
+                    if self.strand == "+":
+                        temp_id = self.temp_CDSs[0].id
                     else:
-                        CDS_temp[c.id].append(c)
-                for c_id, segments in CDS_temp.items():
-                    self.CDSs[c_id] = CDS(segments.copy(), c_id, segments[0].ch,
-                                       segments[0].source, segments[0].feature,
-                                       segments[0].strand, segments[0].start,
-                                       segments[-1].end, segments[0].score,
-                                       ".", segments[0].attributes)
-                if not quiet:
-                    print(f"Warning: Transcript {self.id} is likely to be "
-                        "polycistronic since CDS segments overlap and they "
-                        "have different IDs, the CDS segments have been "
-                        "separated into their corresponding CDS ids, however, "
-                        "please check that it truly is a polycistronic gene "
-                        "and not a gff mistake")
-                self.polycistronic = "yes" 
-            elif more_than_1_CDS:
-                if not quiet:
-                    print(f"Error: Transcript {self.id} is likely to have a "
-                        "problem in the annotation of CDS segments (it could "
-                        "also be a consequence of liftoff) as the segments "
-                        "overlap but they share the same id, please fix the "
-                        "gff.")
-                self.polycistronic = "maybe"
+                        temp_id = self.temp_CDSs[-1].id
+                    self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
+                                            self.temp_CDSs[0].ch, 
+                                            self.temp_CDSs[0].source, 
+                                            self.temp_CDSs[0].feature,
+                                            self.temp_CDSs[0].strand, 
+                                            self.temp_CDSs[0].start,
+                                            self.temp_CDSs[-1].end,
+                                            self.temp_CDSs[0].score,
+                                            ".", self.temp_CDSs[0].attributes)
+
             del self.temp_CDSs
+
         self.determine_main_CDS()
-        self.assign_UTRs()
+
+        if not consider_read_utrs:
+            self.generate_UTRs()
+        else:
+            # consider_read_utrs is True
+            if not hasattr(self, "temp_UTRs") or self.temp_UTRs == [] or self.polycistronic == "yes":
+                self.generate_UTRs()
+            else:
+                self.assign_UTRs()
 
         for c in self.CDSs.values():
             c.update()
@@ -500,24 +520,14 @@ class Transcript(Feature):
 
     def assign_UTRs(self):
         if hasattr(self, "temp_UTRs"):
-            if self.temp_UTRs == []:
-                self.generate_UTRs()
-            else:
-                self.temp_UTRs.sort()
-                if self.polycistronic == "no" or self.polycistronic == "maybe":
-                    if len(self.CDSs) == 1:
-                        for c in self.CDSs.values():
-                            c.UTRs = self.temp_UTRs.copy()
-                        del self.temp_UTRs
-                    elif len(self.CDSs) > 1:
-                        print(f"Error in code: More than 1 CDS object for {self.id} transcript")
-                elif self.exons == []:
-                    print("Error: Unable to assign UTRs as GFF has no exons "
-                        f"and several CDSs exist for this {self.id} transcript")
-                elif self.polycistronic == "yes":
-                    self.generate_UTRs()
-    
+            self.temp_UTRs.sort()
+            for c in self.CDSs.values():
+                c.UTRs = self.temp_UTRs.copy()
+            del self.temp_UTRs
+
     def generate_UTRs(self):
+        if hasattr(self, "temp_UTRs"):
+            del self.temp_UTRs
         for c in self.CDSs.values():
             c.UTRs = []
             for exon in self.exons:

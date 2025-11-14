@@ -250,7 +250,7 @@ class Annotation():
     # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=True, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False):
+    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
         
         start = time.time()
 
@@ -734,27 +734,31 @@ class Annotation():
                                 self.errors["transcript_to_more_than_1_gene"].append(ID)
                             else:
                                 parent = parents[0].strip()
-                                if parent in self.chrs[ch]:
-                                    if ID in self.chrs[ch][parent].transcripts:
+                                if parent != ID:
+                                    if parent in self.chrs[ch]:
+                                        if ID in self.chrs[ch][parent].transcripts:
+                                            if not quiet:
+                                                print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
+                                            self.errors["repeat_transcript_same_gene"].append(ID)
+                                        else:
+                                            self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
+                                                                                                ft, 
+                                                                                                strand, coord[0],
+                                                                                                coord[1], score,
+                                                                                                ".",
+                                                                                                attributes)
+                                            self.all_transcript_ids[ID] = (ch, parent)
+                                    elif parent in self.all_gene_ids:
                                         if not quiet:
-                                            print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
-                                        self.errors["repeat_transcript_same_gene"].append(ID)
+                                            print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome")
+                                        self.errors["transcript_to_gene_other_chr"].append(ID)
                                     else:
-                                        self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
-                                                                                            ft, 
-                                                                                            strand, coord[0],
-                                                                                            coord[1], score,
-                                                                                            ".",
-                                                                                            attributes)
-                                        self.all_transcript_ids[ID] = (ch, parent)
-                                elif parent in self.all_gene_ids:
-                                    if not quiet:
-                                        print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome")
-                                    self.errors["transcript_to_gene_other_chr"].append(ID)
-                                else:
-                                    if not quiet:
-                                        print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
-                                    self.errors["transcript_to_inexistent_gene"].append(ID)
+                                        if not quiet:
+                                            print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
+                                        self.errors["transcript_to_inexistent_gene"].append(ID)
+
+                                elif not quiet:
+                                    print(f"Warning: Transcript {ID} has its own id as a parent")
                                     
                     # transcript subfeatures
                     elif n < (len(parsed_lines) - 1):
@@ -1044,20 +1048,17 @@ class Annotation():
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
         
         if self.features == ["nucleotide_to_protein_match"]:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, quiet=quiet)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
         else:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
         if "CDS" not in self.features and rework_CDSs:
             self.rework_CDSs(genome, quiet=quiet)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
 
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2, quiet:bool=False):
-        """
-
-        """
+    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
         start = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1078,8 +1079,10 @@ class Annotation():
             for g in genes.values():
                 progress_bar.update(1)
                 for t in g.transcripts.values():
-                    t.update(quiet=quiet)
-                    if t.polycistronic == "maybe":
+                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+                    if t.polycistronic == "no":
+                        continue
+                    elif t.polycistronic == "maybe":
                         self.warnings["possible_policistronic_transcript"].append(t.id) 
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].append(t.id)
@@ -1088,7 +1091,7 @@ class Annotation():
         self.update_features()
         
         if rename_features != []:
-            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet)
+            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
         self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
         self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes)
         self.correct_gene_transcript_and_subfeature_coordinates()
@@ -1311,7 +1314,7 @@ class Annotation():
         if not quiet:
             print(f"Corrected feature coordinates for {self.id}")
 
-    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=True):
+    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=False):
 
         start = time.time()
         for o in self.atypical_features:
@@ -1888,7 +1891,7 @@ class Annotation():
             if genome == None:
                 print(f"You forgot to provide the genome for {self.id} and no sequences exist for CDSs")
             else:
-                self.generate_sequences(genome)
+                self.generate_sequences(genome, quiet=quiet)
                 self.export_unique_proteins(custom_path=custom_path)
         else:
             if custom_path:
@@ -2371,7 +2374,7 @@ class Annotation():
             print(f"\nUpdating stats for {self.id}")
         if not self.generated_all_sequences or not self.contains_protein_sequences:
             if genome != None:
-                self.generate_sequences(genome)
+                self.generate_sequences(genome, quiet=quiet)
                 self.clear_sequences(keep_proteins=True)
 
         self.calculate_gc_content()
@@ -2634,7 +2637,7 @@ class Annotation():
 
                 if self.genome == None:
                     if not quiet:
-                        print(f"Warning: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
+                        print(f"Note: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
                 
                 if other.name in self.overlapped_annotations or self.name in other.overlapped_annotations:
                     print(f"Overlaps between {self.id} and {other.id} "
@@ -2815,7 +2818,8 @@ class Annotation():
                                                                     CDS_target_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                    g2.conserved_synteny))
+                                                                    g2.conserved_synteny,
+                                                                    g2.extra_copy))
 
                                     g2.overlaps["other"].append(OverlapHit(g1.id,
                                                                     self.name,
@@ -2830,7 +2834,8 @@ class Annotation():
                                                                     CDS_query_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                    g1.conserved_synteny))
+                                                                    g1.conserved_synteny,
+                                                                    g1.extra_copy))
                     self.add_aliases()
                     other.add_aliases()
                     now = time.time()
@@ -3023,7 +3028,8 @@ class Annotation():
                                                                 CDS_target_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                                g2.conserved_synteny))
+                                                                g2.conserved_synteny,
+                                                                g2.extra_copy))
 
                             g2.overlaps["self"].append(OverlapHit(g1.id, self.name,
                                                                 gene_orientation,
@@ -3037,7 +3043,8 @@ class Annotation():
                                                                 CDS_query_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                                g1.conserved_synteny))
+                                                                g1.conserved_synteny,
+                                                                g1.extra_copy))
                         try:
                             gl.remove(g1.id)
                         except:
@@ -3088,7 +3095,7 @@ class Annotation():
                                 if hit.id not in g.aliases:
                                     g.aliases.append(hit.id)
 
-    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False):
+    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False, copies_info:bool=False):
         start = time.time()
         if export_self:
             export = "self"
@@ -3107,7 +3114,7 @@ class Annotation():
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
-        correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score"]
+        correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
 
         rows = []
 
@@ -3137,9 +3144,52 @@ class Annotation():
                                 row["min_exon_percent"] = hit.min_exon_percent
                                 row["min_CDS_percent"] = hit.min_CDS_percent
 
+                            if copies_info:
+                                row["gene_id_A_copy"] = g.extra_copy
+                                row["gene_id_B_copy"] = hit.extra_copy
+
                             rows.append(row)
 
         eq_df = pd.DataFrame(rows)
+
+
+        if eq_df.empty:
+
+            if export == "self":
+                print(f"\nNo {self.id} self overlaps were detected.")
+            else:
+                print(f"\nNo {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' were detected.")
+            cols = [
+                "gene_id_A",
+                "gene_id_B",
+                "gene_id_A_origin",
+                "gene_id_B_origin",
+                "overlap_score",
+            ]
+
+            if synteny:
+                cols += [
+                    "gene_id_A_synteny_conserved",
+                    "gene_id_B_synteny_conserved",
+                ]
+
+            if verbose:
+                cols += [
+                    "same_strand",
+                    "min_gene_percent",
+                    "min_exon_percent",
+                    "min_CDS_percent",
+                ]
+
+            if copies_info:
+                cols += [
+                    "gene_id_A_copy",
+                    "gene_id_B_copy",
+                ]
+            rows = []
+            eq_df = pd.DataFrame(rows, columns=cols)
+
+
 
         if export == "self":
             eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
@@ -3159,39 +3209,81 @@ class Annotation():
 
             na_rows = []
 
-            if export == "self":
+            if not copies_info:
 
-                for genes in self.chrs.values():
-                    for g in genes.values():
-                        if g.id not in overlapping_genes:
+                if export == "self":
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "overlap_score": 0
+                                })
+
+                    if synteny:
+                        if g_id not in overlapping_genes:
                             na_rows.append({
-                                "gene_id_A": g.id,
-                                "overlap_score": 0
+                                "gene_id_A": g_id
                             })
 
-                if synteny:
-                    if g_id not in overlapping_genes:
-                        na_rows.append({
-                            "gene_id_A": g_id
-                        })
+                else:
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_origin": self.name,
+                                    "overlap_score": 0
+                                })
+
+                    if synteny:
+                        for g_id in self.unmapped:
+                            na_rows.append({
+                                "gene_id_A": g_id,
+                                "gene_id_A_origin": self.name
+                            })
 
             else:
 
-                for genes in self.chrs.values():
-                    for g in genes.values():
-                        if g.id not in overlapping_genes:
+                if export == "self":
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_copy": g.extra_copy,
+                                    "overlap_score": 0
+                                })
+
+                    if synteny:
+                        if g_id not in overlapping_genes:
                             na_rows.append({
-                                "gene_id_A": g.id,
-                                "gene_id_A_origin": self.name,
-                                "overlap_score": 0
+                                "gene_id_A": g_id,
+                                "gene_id_A_copy": g.extra_copy
                             })
 
-                if synteny:
-                    for g_id in self.unmapped:
-                        na_rows.append({
-                            "gene_id_A": g_id,
-                            "gene_id_A_origin": self.name
-                        })
+                else:
+
+                    for genes in self.chrs.values():
+                        for g in genes.values():
+                            if g.id not in overlapping_genes:
+                                na_rows.append({
+                                    "gene_id_A": g.id,
+                                    "gene_id_A_origin": self.name,
+                                    "overlap_score": 0,
+                                    "gene_id_A_copy": g.extra_copy
+                                })
+
+                    if synteny:
+                        for g_id in self.unmapped:
+                            na_rows.append({
+                                "gene_id_A": g_id,
+                                "gene_id_A_origin": self.name,
+                                "gene_id_A_copy": g.extra_copy
+                            })          
 
             # Combine with the original df
             if na_rows:
@@ -3306,7 +3398,7 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
-    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False):
+    def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):
         repeat_CDS_segment_id = False
 
         for genes in self.chrs.values():
@@ -3317,7 +3409,7 @@ class Annotation():
                             for x2, cs2 in enumerate(c.CDS_segments):
                                 if x1 == x2:
                                     continue
-                                if cs1 == cs2:
+                                if cs1.id == cs2.id:
                                     repeat_CDS_segment_id = True
                                     break
 
@@ -3335,7 +3427,7 @@ class Annotation():
                             for x, cs in enumerate(c.CDS_segments):
                                 cs.id = f"{c.id}_{x+1}"
 
-        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet, clean=clean)
 
     def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=True):
         common_protein_CDS_ids = True
@@ -3407,9 +3499,6 @@ class Annotation():
             progress_bar.update(len(genes))
             for x, g in enumerate(genes.values()):
                 
-                if just_genes:
-                    continue
-                
                 if no_1bp_features:
                     gene_1bp_feature = False
                     for t in g.transcripts.values():
@@ -3428,6 +3517,9 @@ class Annotation():
                         continue
 
                 out += g.print_gff()
+
+                if just_genes:
+                    continue
 
                 if repeat_exons_utrs:
                     for t in g.transcripts.values():
@@ -3561,10 +3653,7 @@ class Annotation():
         for genes in self.chrs.values():
             progress_bar.update(len(genes))
             for x, g in enumerate(genes.values()):
-                
-                if just_genes:
-                    continue
-                
+
                 if no_1bp_features:
                     gene_1bp_feature = False
                     for t in g.transcripts.values():
@@ -3583,6 +3672,9 @@ class Annotation():
                         continue
 
                 out += g.print_gtf()
+
+                if just_genes:
+                    continue
 
                 for t in g.transcripts.values():
                     if main_only:
@@ -3938,7 +4030,7 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
-    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False):
+    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -3982,7 +4074,7 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
-                    t.update(quiet=quiet)
+                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
                 g.update()
 
         start = time.time()
@@ -4265,7 +4357,7 @@ class Annotation():
         progress_bar.close()
 
         if repeat_exons_utrs:
-            self.homogenise_parents_for_shared_exons_utrs(quiet=quiet)
+            self.homogenise_parents_for_shared_exons_utrs(quiet=quiet, extra_attributes=extra_attributes)
         else:
             self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
         self.update_keys(quiet=quiet)
@@ -4804,23 +4896,45 @@ class Annotation():
 
         self.gff_header = new_header.copy()
 
-    def subset(self, chosen_features:set=None, gene_cap:int=3000, feature_cap:int=2, quiet:bool=False):
+    def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set=None, min_genes:int=1500, quiet:bool=False):
 
-        if chosen_features:
-            for chosen_feature in chosen_features:
-                if chosen_feature not in self.chrs:
-                    raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome. Choose from '{self.chrs.keys()}'")
-            features_to_remove = set(self.chrs) - chosen_features
-            genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
+        initial_chosen_features = chosen_features.copy()
+
+        for chosen_feature in chosen_features:
+            if chosen_feature not in self.chrs:
+                raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome. Choose from '{self.chrs.keys()}'")
+
+        if common_chromosomes is None:
+            total_chromosomes = set(self.chrs)
+
         else:
-            if feature_cap > len(self.chrs):
-                warnings.warn(f"Cap value {feature_cap} exceeds the number of available scaffolds/chrosomomes ({len(self.chrs)}). No features removed in subset annotation {self.id}.", category=UserWarning)
-                features_to_remove = set()
-                genes_to_keep_per_chromosome = math.ceil(gene_cap / len(self.chrs))
-            else:
-                features_to_remove = set(self.chrs) - set(random.sample(list(self.chrs), feature_cap))
+            total_chromosomes = common_chromosomes.copy()
 
-                genes_to_keep_per_chromosome = math.ceil(gene_cap / feature_cap)
+        if min_genes > 0:
+
+            num_genes_in_chosen_features = 0
+            for ft in chosen_features:
+                num_genes_in_chosen_features += len(self.chrs[ft])
+
+            remaining_to_chose_from = total_chromosomes - chosen_features
+            chr_cap_overriden = False
+
+            while num_genes_in_chosen_features < min_genes and remaining_to_chose_from:
+                chr_cap_overriden = True
+                
+                chosen_features.add(random.choice(list(remaining_to_chose_from)))
+
+                remaining_to_chose_from = total_chromosomes - chosen_features
+
+                num_genes_in_chosen_features = 0
+                for ft in chosen_features:
+                    num_genes_in_chosen_features += len(self.chrs[ft])
+
+            if chr_cap_overriden:
+                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+
+        features_to_remove = set(self.chrs) - chosen_features
+        genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
 
         self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
@@ -4859,6 +4973,8 @@ class Annotation():
             warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
 
         self.update(quiet=quiet)
+
+        return chosen_features
 
     def filter_by_rna_class(self, rna_classes=['mRNA'], quiet:bool=False):
 

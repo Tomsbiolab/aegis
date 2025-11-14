@@ -9,7 +9,7 @@ class Feature():
     editing. Or used on its own for CDS segments.
     """
     # These attributes cannot be mistaken by misc attributes or any other
-    attributes_to_ignore_when_reading_gff = ["id", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps"]
+    attributes_to_ignore_when_reading_gff = ["id", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "featurecounts_id"]
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str):
         
         self.id = feature_id
@@ -38,7 +38,6 @@ class Feature():
         self.aliases = []
         self.blast_hits = []
         self.renamed = False
-
         self.id_number = None
         self.original_id_number = None
 
@@ -46,6 +45,8 @@ class Feature():
         if attributes_l == [""]:
             attributes_l = []
         misc_attributes = []
+
+        self.extra_copy = False
 
         for a in attributes_l:
             a_label = a.split("=")[0].lower()
@@ -79,6 +80,11 @@ class Feature():
                     if name not in self.names and name != "":
                         name = name.strip()
                         self.names.append(name)
+            elif "extra_copy_number" in a_label:
+                a_value = int(a_value.strip())
+                if a_value > 0:
+                    self.extra_copy = True
+
             elif a.strip() != "":
                 misc_attributes.append(a.strip())
         self.update_numbering(original=True)
