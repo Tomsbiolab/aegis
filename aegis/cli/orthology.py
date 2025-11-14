@@ -75,6 +75,16 @@ def main(
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error."
     )] = False
+    identity: Annotated[float, typer.Option(
+        "-i", "--identity", help="Minimum identity threshold for BLAST hits."
+    )] = 30.0,
+    coverage: Annotated[float, typer.Option(
+        "-c", "--coverage", help="Minimum coverage threshold for BLAST hits."
+    )] = 30.0,
+    evalue: Annotated[float, typer.Option(
+        "-e", "--evalue", help="Maximum e-value threshold for BLAST hits."
+    )] = 0.00001,
+
 
 ):
     """
@@ -217,8 +227,7 @@ def main(
         f_in.write(f"{ft}\n")
     f_in.close()
 
-    identity = 30
-    coverage = 30
+    
 
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
@@ -269,7 +278,8 @@ def main(
             if n1 == n2:
                 continue
 
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, quiet=quiet)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, coverage=coverage, evalue=evalue, quiet=quiet)
+
 
     # Obtaining RBHs and RBBHs from single blast results
     checked_pairs = []
