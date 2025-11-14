@@ -74,7 +74,7 @@ def main(
     )] = False,
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error."
-    )] = False
+    )] = False,
     identity: Annotated[float, typer.Option(
         "-i", "--identity", help="Minimum identity threshold for BLAST hits."
     )] = 30.0,
@@ -83,7 +83,7 @@ def main(
     )] = 30.0,
     evalue: Annotated[float, typer.Option(
         "-e", "--evalue", help="Maximum e-value threshold for BLAST hits."
-    )] = 0.00001,
+    )] = 0.00001
 
 
 ):
