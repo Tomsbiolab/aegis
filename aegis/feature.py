@@ -23,7 +23,10 @@ class Feature():
         self.strand = strand
         self.phase = phase
         self.frame = "."
-        self.attributes = attributes
+        if isinstance(attributes, list):
+            self.attributes = attributes
+        else:
+            self.attributes = [x.strip() for x in attributes.split(";") if x.strip()]
         self.gtf_attributes = ""
         self.size = (self.end - self.start) + 1
         self.seq = ""
@@ -41,14 +44,11 @@ class Feature():
         self.id_number = None
         self.original_id_number = None
 
-        attributes_l = attributes.split(";")
-        if attributes_l == [""]:
-            attributes_l = []
-        misc_attributes = []
+        self.misc_attributes = []
 
         self.extra_copy = False
 
-        for a in attributes_l:
+        for a in attributes:
             a_label = a.split("=")[0].lower()
             if len(a.split("=")) > 1:
                 a_value = a.split("=")[1]
@@ -85,11 +85,10 @@ class Feature():
                 if a_value > 0:
                     self.extra_copy = True
 
-            elif a.strip() != "":
-                misc_attributes.append(a.strip())
+            else:
+                self.misc_attributes.append(a)
         self.update_numbering(original=True)
 
-        self.misc_attributes = ";".join(misc_attributes)
         self.masked_fraction = 0
 
     def update_numbering(self, original:bool=False):
@@ -139,15 +138,16 @@ class Feature():
             self.gc_content = round((gc_count / self.size), 2)
 
     def print_gff(self):
+        attribute_string = ";".join(self.attributes)
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t"
                f"{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t"
-               f"{self.attributes}\n")
+               f"{attribute_string}\n")
 
     def print_gtf(self):
-
+        attribute_string = "; ".join(self.gtf_attributes)
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t"
                f"{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t"
-               f"{self.gtf_attributes}\n")
+               f"{attribute_string}\n")
     
     def copy(self):
         return copy.deepcopy(self)

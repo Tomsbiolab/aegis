@@ -17,6 +17,7 @@ import networkx as nx
 import os
 import warnings
 import math
+import gc
 
 from .plots import pie_chart, barplot
 from .genefunctions import overlap, reverse_complement, find_all_occurrences
@@ -240,7 +241,7 @@ def convert_gtf_to_gff3(gtf_file, encoding):
 
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
-    sorted_genes = {g.id: g.copy() for g in genes}
+    sorted_genes = {g.id: g for g in genes} 
     return chrom, sorted_genes
 
 class Annotation():
@@ -250,7 +251,7 @@ class Annotation():
     # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=2, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
+    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
         
         start = time.time()
 
@@ -432,19 +433,20 @@ class Annotation():
                 else:
                     self.gff_header.append(("#" + "\t".join(line)))
 
+        del lines
         sorted_lines = sorted(temp, key=lambda x: (int(x[3]), int(x[4])))
         protein_match_lines = sorted(protein_match_lines, key=lambda x: (int(x[3]), int(x[4])))
-        temp.clear()
+        del temp
         for line in sorted_lines:
             parsed_lines[default_features_r[line[2]]].append(line)
-        sorted_lines.clear()
+        del sorted_lines
         chromosomes_t = list(chromosomes_t)
         chromosomes_t.sort()
         for ch in chromosomes_t:
             self.chrs[ch] = {}
         self.features = list(self.features)
 
-        
+        gc.collect()
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -498,7 +500,8 @@ class Annotation():
                     temp_protein_matches[ID] = [Feature(ID, ch, source, ft, strand,coord[0], coord[1], score, phase, attributes)]
                 else:
                     temp_protein_matches[ID].append(Feature(ID, ch, source, ft, strand,coord[0], coord[1], score, phase, attributes))
-            
+
+            del protein_match_lines
             progress_bar.close()
             progress_bar = tqdm(total=len(temp_protein_matches.keys()),
                     disable=disable,
@@ -1058,7 +1061,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=2, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
+    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
         start = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -2290,7 +2293,7 @@ class Annotation():
                 sorted_genes = sorted(genes.values())
                 if not quiet and noisy:
                     print(f"Sequential sorting {chrom} genes for {self.id}")
-                self.chrs[chrom] = {g.id: g.copy() for g in sorted_genes}
+                self.chrs[chrom] = {g.id: g for g in sorted_genes}
                 progress_bar.update(len(sorted_genes))
 
         progress_bar.close()
@@ -2298,7 +2301,7 @@ class Annotation():
         if not quiet:
             print(f"Sorted genes for {self.id}")
 
-    def define_synteny(self, original_annotation:object, sort_processes:int=2, quiet:bool=True):
+    def define_synteny(self, original_annotation:object, sort_processes:int=1, quiet:bool=True):
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
         start = time.time()
@@ -2603,7 +2606,7 @@ class Annotation():
         self.shared_UTRs = False
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def detect_gene_overlaps(self, other:object=None, sort_processes:int=2, clear=True, quiet:bool=True):
+    def detect_gene_overlaps(self, other:object=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
@@ -3344,7 +3347,7 @@ class Annotation():
         """
         Exports gene lengths as total exon length of main transcript.
         """
-        out = ""
+        out = []
 
         export_folder = Path(custom_path or self.path) / "gene_lengths"
         export_folder.mkdir(parents=True, exist_ok=True)
@@ -3355,7 +3358,7 @@ class Annotation():
                 for g in genes.values():
                     for t in g.transcripts.values():
                         if t.main:
-                            out += f"{g.id}\t{t.size}\n"
+                            out.append(f"{g.id}\t{t.size}")
             tag = f"{self.id}{self.feature_suffix}_gene_lengths_all.tsv"
         else:
             for genes in self.chrs.values():
@@ -3363,9 +3366,10 @@ class Annotation():
                     if not g.pseudogene and not g.transposable:
                         for t in g.transcripts.values():
                             if t.main:
-                                out += f"{g.id}\t{t.size}\n"
+                                out.append(f"{g.id}\t{t.size}")
             tag = f"{self.id}{self.feature_suffix}_gene_lengths.tsv"
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
+        out = "\n".join(out)
         f_out.write(out)
         f_out.close()
 
@@ -3374,9 +3378,9 @@ class Annotation():
         Exports gene coordinates.
         """
         if lengths:
-            out = "gene_id\tchromosome\tgene_start\tgene_end\tgene_length\n"
+            out = ["gene_id\tchromosome\tgene_start\tgene_end\tgene_length"]
         else:
-            out = "gene_id\tchromosome\tgene_start\tgene_end\n"
+            out = ["gene_id\tchromosome\tgene_start\tgene_end"]
 
         export_folder = Path(custom_path or self.path) / "gene_coordinates"
         export_folder.mkdir(parents=True, exist_ok=True)
@@ -3385,16 +3389,17 @@ class Annotation():
         if lengths:
             for chrom, genes in self.chrs.items():
                 for g in genes.values():
-                    out += f"{g.id}\t{chrom}\t{g.start}\t{g.end}\t{g.size}\n"    
+                    out.append(f"{g.id}\t{chrom}\t{g.start}\t{g.end}\t{g.size}") 
         else:
             for chrom, genes in self.chrs.items():
                 for g in genes.values():
-                    out += f"{g.id}\t{chrom}\t{g.start}\t{g.end}\n"
+                    out.append(f"{g.id}\t{chrom}\t{g.start}\t{g.end}")
         if self.dapmod:
             tag = f"{self.id}{self.feature_suffix}_gene_coordinates_dapmod.tsv"
         else:
             tag = f"{self.id}{self.feature_suffix}_gene_coordinates.tsv"
         f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
+        out = "\n".join(out)
         f_out.write(out)
         f_out.close()
 
@@ -4372,10 +4377,11 @@ class Annotation():
             export_folder = str(export_folder) + "/"
 
             if "gene" in changed_features:
-                out_text = "old_gene_id\tnew_gene_id\n"
+                out_text = ["old_gene_id\tnew_gene_id"]
                 for k, v in correspondences_d.items():
-                    out_text += f"{v}\t{k}\n"
+                    out_text.append(f"{v}\t{k}")
                 f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
+                out_text = "\n".join(out_text)
                 f_out.write(out_text)
                 f_out.close()
 
@@ -4468,89 +4474,95 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                g.attributes = f"ID={g.id}"
-                g.attributes += f";Name={g.id}"
+                g.attributes = [f"ID={g.id}"]
+                g.attributes.append(f"Name={g.id}")
                 new_symbols = ",".join(g.symbols)
-                if new_symbols != "" and symbols:
-                    g.attributes += f";Symbol={new_symbols}"
-                if new_symbols != "" and symbols_as_descriptors:
-                    g.attributes += f";Description={new_symbols}"
-                if not clean and g.misc_attributes != "":
-                    g.attributes += f";{g.misc_attributes}"
+                if new_symbols:
+                    if symbols:
+                        g.attributes.append(f"Symbol={new_symbols}")
+                    if symbols_as_descriptors:
+                        g.attributes.append(f"Description={new_symbols}")
+                if not clean:
+                    g.attributes += g.misc_attributes
 
                 if g.pseudogene:
-                    g.attributes += f";pseudogene={g.pseudogene}"
+                    g.attributes.append(f"pseudogene={g.pseudogene}")
                 if g.transposable:
-                    g.attributes += f";transposable={g.transposable}"
+                    g.attributes.append(f"transposable={g.transposable}")
 
                 if featurecountsID:
-                    g.attributes += f";featurecounts_id={g.id}"
+                    g.attributes.append(f"featurecounts_id={g.id}")
                 if aliases and g.aliases != []:
                     new_aliases = ",".join(g.aliases)
-                    g.attributes += f";Alias={new_aliases}"
+                    g.attributes.append(f"Alias={new_aliases}")
                 for t in g.transcripts.values():
                     new_parents = ",".join(t.parents)
-                    t.attributes = f"ID={t.id};Parent={new_parents}"
-                    if not clean and t.misc_attributes != "":
-                        t.attributes += f";{t.misc_attributes}"
+                    t.attributes = [f"ID={t.id}"]
+                    t.attributes.append(f"Parent={new_parents}")
+                    if not clean:
+                        t.attributes += t.misc_attributes
                     if featurecountsID:
-                        t.attributes += f";featurecounts_id={g.id}"
+                        t.attributes.append(f"featurecounts_id={g.id}")
                     if aliases and t.aliases != []:
                         new_aliases = ",".join(t.aliases)
-                        t.attributes += f";Alias={new_aliases}"
+                        t.attributes.append(f"Alias={new_aliases}")
                     for e in t.exons:
                         new_parents = ",".join(e.parents)
-                        e.attributes = f"ID={e.id};Parent={new_parents}"
-                        if not clean and e.misc_attributes != "":
-                            e.attributes += f";{e.misc_attributes}"
+                        e.attributes = [f"ID={e.id}"]
+                        e.attributes.append(f"Parent={new_parents}")
+                        if not clean:
+                            e.attributes += e.misc_attributes
                         if featurecountsID:
-                            e.attributes += f";featurecounts_id={g.id}"
+                            e.attributes.append(f"featurecounts_id={g.id}")
                     for c in t.CDSs.values():
                         new_parents = ",".join(c.parents)
-                        c.attributes = f"ID={c.id};Parent={new_parents}"
-                        if not clean and c.misc_attributes != "":
-                            c.attributes += f";{c.misc_attributes}"
+                        c.attributes = [f"ID={c.id}"]
+                        c.attributes.append(f"Parent={new_parents}")
+                        if not clean:
+                            c.attributes += c.misc_attributes
                         if featurecountsID:
-                            c.attributes += f";featurecounts_id={g.id}"
+                            c.attributes.append(f"featurecounts_id={g.id}")
                         for cs in c.CDS_segments:
                             new_parents = ",".join(cs.parents)
-                            cs.attributes = f"ID={cs.id};Parent={new_parents}"
-                            if not clean and cs.misc_attributes != "":
-                                cs.attributes += f";{cs.misc_attributes}"
+                            cs.attributes = [f"ID={cs.id}"]
+                            cs.attributes.append(f"Parent={new_parents}")
+                            if not clean:
+                                cs.attributes += cs.misc_attributes
                             if featurecountsID:
-                                cs.attributes += f";featurecounts_id={g.id}"
+                                cs.attributes.append(f"featurecounts_id={g.id}")
                         for u in c.UTRs:
                             new_parents = ",".join(u.parents)
-                            u.attributes = f"ID={u.id};Parent={new_parents}"
-                            if not clean and u.misc_attributes != "":
-                                u.attributes += f";{u.misc_attributes}"
+                            u.attributes = [f"ID={u.id}"]
+                            u.attributes.append(f"Parent={new_parents}")
+                            if not clean:
+                                u.attributes += u.misc_attributes
                             if featurecountsID:
-                                u.attributes += f";featurecounts_id={g.id}"
+                                u.attributes.append(f"featurecounts_id={g.id}")
         
         if extra_attributes:
             for genes in self.chrs.values():
                 for g in genes.values():
                     progress_bar.update(1)
                     
-                    g.attributes += f";reliable_score={g.reliable_score}"
-                    g.attributes += f";remove={g.remove}"
-                    g.attributes += f";rescue={g.rescue}"
+                    g.attributes.append(f"reliable_score={g.reliable_score}")
+                    g.attributes.append(f"remove={g.remove}")
+                    g.attributes.append(f"rescue={g.rescue}")
                     blasts = []
                     for b in g.blast_hits:
                         blasts.append(f"{b.source}_{b.score}")
                     blasts = ",".join(blasts)
-                    if blasts != "":
-                        g.attributes += f";blasts={blasts}"
+                    if blasts:
+                        g.attributes.append(f"blasts={blasts}")
                     alternative_transcript_rescue = ",".join(list(g.alternative_transcript_rescue))
-                    if alternative_transcript_rescue != "":
-                        g.attributes += f";alternative_transcript_rescue={alternative_transcript_rescue}"
+                    if alternative_transcript_rescue:
+                        g.attributes.append(f"alternative_transcript_rescue={alternative_transcript_rescue}")
                     overlaps = []
                     for o in g.overlaps["self"]:
                         if o.score >= 5:
                             overlaps.append(o.id)
                     overlaps = ",".join(overlaps)
-                    if overlaps != "":
-                        g.attributes += f";CDS_orientated_overlaps={overlaps}"
+                    if overlaps:
+                        g.attributes.append(f"CDS_orientated_overlaps={overlaps}")
 
                     gene_masked_fraction = g.masked_fraction
                     transcript_masked_fraction = 0
@@ -4568,16 +4580,16 @@ class Annotation():
                                     CDS_masked_fraction = c.masked_fraction
                                     CDS_GC_content = c.gc_content
 
-                    g.attributes += f";gene_masked_fraction={gene_masked_fraction}"
-                    g.attributes += f";transcript_masked_fraction={transcript_masked_fraction}"
-                    g.attributes += f";CDS_masked_fraction={CDS_masked_fraction}"
-                    g.attributes += f";gene_GC_content={gene_GC_content}"
-                    g.attributes += f";transcript_GC_content={transcript_GC_content}"
-                    g.attributes += f";CDS_GC_content={CDS_GC_content}"
-                    g.attributes += f";intron_nested={g.intron_nested}"
-                    g.attributes += f";intron_nested_fully_contained={g.intron_nested_fully_contained}"
-                    g.attributes += f";intron_nested_single={g.intron_nested_single}"
-                    g.attributes += f";intron_UTR_nested={g.UTR_intron_nested}"
+                    g.attributes.append(f"gene_masked_fraction={gene_masked_fraction}")
+                    g.attributes.append(f"transcript_masked_fraction={transcript_masked_fraction}")
+                    g.attributes.append(f"CDS_masked_fraction={CDS_masked_fraction}")
+                    g.attributes.append(f"gene_GC_content={gene_GC_content}")
+                    g.attributes.append(f"transcript_GC_content={transcript_GC_content}")
+                    g.attributes.append(f"CDS_GC_content={CDS_GC_content}")
+                    g.attributes.append(f"intron_nested={g.intron_nested}")
+                    g.attributes.append(f"intron_nested_fully_contained={g.intron_nested_fully_contained}")
+                    g.attributes.append(f"intron_nested_single={g.intron_nested_single}")
+                    g.attributes.append(f"intron_UTR_nested={g.UTR_intron_nested}")
 
         progress_bar.close()
 
@@ -4596,25 +4608,26 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
 
-                g.gtf_attributes = f'gene_id "{g.id}";'
+                g.gtf_attributes = [f'gene_id "{g.id}"']
+            
                 if g.symbols != []:
                     name_string = ",".join(g.symbols)
-                    g.gtf_attributes += f' gene_name "{name_string}";'
+                    g.gtf_attributes.append(f'gene_name "{name_string}"')
                 elif g.names != []:
                     name_string = ",".join(g.names)
-                    g.gtf_attributes += f' gene_name "{name_string}";'
+                    g.gtf_attributes.append(f'gene_name "{name_string}"')
 
                 for t in g.transcripts.values():
-                    t.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                    t.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
                     for x, e in enumerate(t.exons):
-                        e.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}"; exon_number "{x+1}";'
+                        e.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"', f'exon_number "{x+1}"']
 
                     for c in t.CDSs.values():
-                        c.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                        c.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
                         for cs in c.CDS_segments:
-                            cs.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                            cs.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
                         for u in c.UTRs:
-                            u.gtf_attributes = f'gene_id "{g.id}"; transcript_id "{t.id}";'
+                            u.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
 
     def add_blast_hits(self, source, blastfile, mode:str="protein"):
         """
