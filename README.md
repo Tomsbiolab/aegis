@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
+</p>
+
 # AEGIS: Annotation Extraction Genomic Integration Suite
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
