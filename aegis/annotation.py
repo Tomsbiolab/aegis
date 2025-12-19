@@ -40,7 +40,8 @@ default_noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA",
                             "miRNA_primary_transcript", "ncRNA", "lncRNA",
                             "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
                             "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
-default_codons = ['start_codon', 'stop_codon']
+default_codons = ["start_codon", "stop_codon"]
+default_introns = ["intron"]
 # Some features are clearly transcript level features but they cannot be
 # classed as coding/noncoding just by looking at the name   
 default_features["transcript"] = (["transcript", "transcript_region", "primary_transcript",
@@ -51,7 +52,7 @@ default_features["exon"] = ["exon", "pseudogenic_exon"]
 default_features["CDS"] = ["CDS"]
 default_features["other_subfeature"] = ["miRNA"]
 
-default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"]
+default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"] + default_introns
 
 default_features_r = {}
 for key, values in default_features.items():
@@ -237,6 +238,7 @@ def convert_gtf_to_gff3(gtf_file, encoding):
 
     
     print(f"Successfully converted file='{gtf_file} to a gff file")
+
     return gff_lines
 
 def sort_and_update_genes(chrom, genes_dict):
@@ -245,10 +247,6 @@ def sort_and_update_genes(chrom, genes_dict):
     return chrom, sorted_genes
 
 class Annotation():
-    # These categories must be updated based on different gff terms, since 
-    # these are not fixed, the more gffs are looked at the more terms appear
-    # so add them here to be read into the annotation object as long as they
-    # are unambiguous
     
     bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
     def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
