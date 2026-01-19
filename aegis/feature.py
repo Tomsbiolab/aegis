@@ -23,10 +23,22 @@ class Feature():
         self.strand = strand
         self.phase = phase
         self.frame = "."
-        if isinstance(attributes, list):
+
+        if isinstance(attributes, dict):
+            self.attributes = []
+            for key, value in attributes.items():
+                if isinstance(value, list):
+                    # Join list items with a comma
+                    combined_value = ",".join(value)
+                    self.attributes.append(f"{key}={combined_value}")
+                else:
+                    self.attributes.append(f"{key}={value}")
+
+        elif isinstance(attributes, list):
             self.attributes = attributes
         else:
             self.attributes = [x.strip() for x in attributes.split(";") if x.strip()]
+        
         self.gtf_attributes = ""
         self.size = (self.end - self.start) + 1
         self.seq = ""
@@ -48,7 +60,7 @@ class Feature():
 
         self.extra_copy = False
 
-        for a in attributes:
+        for a in self.attributes:
             a_label = a.split("=")[0].lower()
             if len(a.split("=")) > 1:
                 a_value = a.split("=")[1]
@@ -90,6 +102,7 @@ class Feature():
         self.update_numbering(original=True)
 
         self.masked_fraction = 0
+
 
     def update_numbering(self, original:bool=False):
 

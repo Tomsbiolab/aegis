@@ -17,6 +17,87 @@ import time
 import re
 import warnings
 
+def parse_gff_line(line, quiet:bool=True):
+    if isinstance(line, list):
+        parts = line
+    else:
+        if line.startswith("#"):
+            return None
+        parts = line.strip().split("\t")
+
+    if len(parts) < 9:
+        if not quiet:
+            print(f"Error: Line contains less than the expected 9 columns: {line}")
+        return None
+
+    if "pseudo" in parts[2]:
+        pseudogene = True
+    else:
+        pseudogene = False
+
+    start = int(parts[3])
+    end = int(parts[4])
+
+    if start > end:
+        decreasing_coordinates = True
+        start = int(parts[4])
+        end = int(parts[3])
+    else:
+        decreasing_coordinates = False
+
+    if "transposable" in parts[2] or "transposable=True" in parts[8] or "transposon" in parts[2] or "transposon=True" in parts[8]:
+        transposable = True
+    else:
+        transposable = False
+
+    attr_dict = parse_gff_attributes(parts[8])
+
+    # Store as a dict (lightweight)
+    entry = {
+        "ch": parts[0],
+        "source": parts[1],
+        "feature": parts[2],
+        "start": start,
+        "end": end,
+        "score": parts[5],
+        "strand": parts[6],
+        "phase": parts[7],
+        "attributes": attr_dict,
+        "id": attr_dict.get("id", ""),
+        "parents": attr_dict.get("parent", []),
+        "pseudogene": pseudogene,
+        "transposable": transposable,
+        "decreasing_coordinates": decreasing_coordinates
+    }
+
+    return entry
+
+def parse_gff_attributes(attributes):
+
+    if not attributes or attributes == ".":
+        return {}
+
+    parsed = {}
+    
+    for p in attributes.split(";"):
+        p = p.strip()
+        if not p: 
+            continue
+
+        if "=" in p:
+            key, val = p.split("=", 1)
+
+            key = key.strip().lower()
+            val = val.strip()
+
+            if key in ["parent", "parents"]:
+                parsed["parent"] = [x.strip() for x in val.split(",") if x.strip()]
+            else:
+                parsed[key] = val
+
+    return parsed
+
+
 def count_occurrences(string, char):
     return Counter(string)[char]
 

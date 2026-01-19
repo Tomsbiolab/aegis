@@ -72,7 +72,13 @@ def main(
     rna_classes: Annotated[str, typer.Option(
         "-rc", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
         callback=split_callback
-    )] = ""
+    )] = "",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
+    skip_features_without_id: Annotated[bool, typer.Option(
+        "-si", "--no-features-without-id", help="Skips features without a specific id."
+    )] = False
 
 ):
     """
@@ -90,7 +96,7 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_CDSs=infer_CDSs)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_CDSs=infer_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
@@ -107,9 +113,9 @@ def main(
         annotation.filter_by_rna_class(rna_classes=rna_classes)
         clean_features = True
 
-    annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases))
+    annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases), quiet=quiet)
 
-    annotation.export_gff(custom_path=output_folder, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features)
+    annotation.export_gff(custom_path=output_folder, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
 
 if __name__ == "__main__":
     app()
