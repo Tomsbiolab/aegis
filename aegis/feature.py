@@ -48,7 +48,7 @@ class Feature():
 
         self.extra_copy = False
 
-        for a in attributes:
+        for a in self.attributes:
             a_label = a.split("=")[0].lower()
             if len(a.split("=")) > 1:
                 a_value = a.split("=")[1]
