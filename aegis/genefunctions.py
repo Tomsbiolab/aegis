@@ -70,6 +70,9 @@ def parse_gff_line(line, quiet:bool=True):
         "decreasing_coordinates": decreasing_coordinates
     }
 
+    if entry["feature"] == "nucleotide_to_protein_match":
+        entry["ch"] = entry["ch"].split(":")[0]
+
     return entry
 
 def parse_gff_attributes(attributes):
@@ -90,7 +93,7 @@ def parse_gff_attributes(attributes):
             key = key.strip().lower()
             val = val.strip()
 
-            if key in ["parent", "parents"]:
+            if key in ["parent", "parents", "derives_from"]:
                 parsed["parent"] = [x.strip() for x in val.split(",") if x.strip()]
             else:
                 parsed[key] = val
