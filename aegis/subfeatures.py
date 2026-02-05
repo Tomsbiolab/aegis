@@ -3,6 +3,12 @@ from .misc_features import Protein
 from .genefunctions import reverse_complement
 
 class CDS(Feature):
+
+    __slots__ = (
+        'main', 'CDS_segments', 'five_prime_UTR_seq', 'three_prime_UTR_seq',
+        'full_UTR_exons', 'protein', 'UTRs'
+    )
+
     def __init__(self, CDS_segments:list, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str, start:int, 
                  end:int, score:str, phase:str, attributes:str):
@@ -217,14 +223,16 @@ class CDS(Feature):
         return same
 
 class Exon(Feature):
+
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
                  attributes:str):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
-        self.coding = False
 
 class UTR(Feature):
+
+    __slots__ = ('prime',)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
                  attributes:str):
@@ -233,6 +241,10 @@ class UTR(Feature):
         self.prime = "3'"
 
 class Intron(Feature):
+    __slots__ = (
+        'intra_coding', 'boundary', 'canonical',
+        'splice_site_donor', 'splice_site_acceptor'
+    )
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 

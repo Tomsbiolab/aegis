@@ -91,13 +91,14 @@ def parse_gff_attributes(attributes):
         if "=" in p:
             key, val = p.split("=", 1)
 
-            key = sys.intern(key.strip().lower())
+            key = key.strip().lower()
             val = val.strip()
 
             if key in ["parent", "parents", "derives_from"]:
                 parent_key = sys.intern("parent")
                 parsed[parent_key] = [x.strip() for x in val.split(",") if x.strip()]
             else:
+                key = sys.intern(key)
                 parsed[key] = val
 
     return parsed

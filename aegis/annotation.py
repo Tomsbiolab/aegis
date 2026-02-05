@@ -230,7 +230,7 @@ def sort_and_update_genes(chrom, genes_dict):
     sorted_genes = {g.id: g for g in genes} 
     return chrom, sorted_genes
 
-def get_lines_by_category(filename, category, encoding, chosen_chromosomes:int=None, chosen_coordinates:int=None):
+def get_lines_by_category(filename, categories, encoding, chosen_chromosomes:int=None, chosen_coordinates:int=None):
     with open(filename, encoding=encoding) as f:
         for line in f:
 
@@ -264,7 +264,7 @@ def get_lines_by_category(filename, category, encoding, chosen_chromosomes:int=N
 
             ft_type = parts[2]
             cat = default_features_r.get(ft_type, "atypical")
-            if cat == category:
+            if cat in categories:
                 yield line
 
 def get_header_lines(filename, encoding):
@@ -324,7 +324,7 @@ def get_chromosomes_and_features(filename, encoding, chosen_chromosomes:bool=Non
 
 class Annotation():
     
-    bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
+    bar_colors = ["31", "32", "33", "34"]
     def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True):
         
         start_time = time.time()
@@ -507,29 +507,42 @@ class Annotation():
         self._gene_info = {}
         self._transcript_info = {}
 
-        categories = ["gene", "transcript", "exon", "CDS", "UTR", "other_subfeature", "atypical"]
+        categories = [["gene"], ["transcript"], ["exon", "CDS", "UTR", "other_subfeature"], ["atypical"]]
+        category_tags = ["gene", "transcript", "subfeature", "atypical"]
 
-        for n, category in enumerate(categories):
-            progress_bar = tqdm(total=self.features[category], disable=disable, bar_format=(
-                f'\033[1;{Annotation.bar_colors[n]}mAdding {category}s:\033[0m '
+        batch_size = 5000
+
+        for n, category_list in enumerate(categories):
+
+            total_len = 0
+
+            for category in category_list:
+                total_len += self.features[category]
+
+            progress_bar = tqdm(total=total_len, disable=disable, bar_format=(
+                f'\033[1;{Annotation.bar_colors[n]}mAdding {category_tags[n]}s:\033[0m '
                 '{percentage:3.0f}%|'
                 f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
                 '{n}/{total} [{elapsed}<{remaining}]'))
             
-            for line in get_lines_by_category(gff_file, category, encoding, chosen_chromosomes, chosen_coordinates):
+            count = 0
+            
+            for line in get_lines_by_category(gff_file, category_list, encoding, chosen_chromosomes, chosen_coordinates):
                 entry = parse_gff_line(line)
                 ID = entry["id"]
 
                 if not ID:
-                    
-                    progress_bar.update(1)
+                    count += 1
+                    if count >= batch_size:
+                        progress_bar.update(count)
+                        count = 0
 
                     if not quiet:
                         print(f"{self.id} Warning: ID not found for {ft}: {line}")
-                    if category in ["gene", "transcript"] and not skip_features_without_id:
+                    if category_tags[n] in ["gene", "transcript"] and not skip_features_without_id:
                          self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
                          continue
-                    elif category in ["exon", "UTR", "CDS"] and not skip_subfeatures_without_id:
+                    elif category_tags[n] == "subfeature" and not skip_subfeatures_without_id:
                          self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
                          continue
                     elif skip_features_without_id:
@@ -552,17 +565,23 @@ class Annotation():
                     if not quiet:
                         print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
 
-                if category == "gene":
+                if category_tags[n] == "gene":
                     self._add_gene(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, quiet=quiet)
-                elif category == "transcript":
+                elif category_tags[n] == "transcript":
                     self._add_transcript(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, infer_gene_from_transcript=infer_genes_from_transcripts, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
-                elif category in ["exon", "CDS", "UTR", "other_subfeature"]:
+                elif category_tags[n] == "subfeature":
                     ft_level = default_features_r.get(ft, "atypical")
                     self._add_subfeature(entry, ft_level=ft_level, infer_gene_and_transcript_from_subfeatures=infer_genes_from_subfeatures, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
-                elif category == "atypical":
+                elif category_tags[n] == "atypical" and not skip_atypical_features:
                     self.atypical_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
 
-                progress_bar.update(1)
+                count += 1
+                if count >= batch_size:
+                    progress_bar.update(count)
+                    count = 0
+
+            if count > 0:
+                progress_bar.update(count)
 
             progress_bar.close()
             gc.collect()
@@ -571,6 +590,9 @@ class Annotation():
         del self._transcript_info
 
         gc.collect()
+
+        if self.file != gff_file:
+            os.remove(gff_file)
 
         now = time.time()
         lapse = now - start_time
@@ -1087,6 +1109,10 @@ class Annotation():
             disable = True
         else:
             disable = False
+
+        batch_size = 1000
+        count = 0
+
         progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
                                 bar_format=(
                     f'\033[1;62mUpdating {self.id} genes:\033[0m '
@@ -1095,7 +1121,10 @@ class Annotation():
                     '{n}/{total} [{elapsed}<{remaining}]'))
         for genes in self.chrs.values():
             for g in genes.values():
-                progress_bar.update(1)
+                count += 1
+                if count >= batch_size:
+                    progress_bar.update(count)
+                    count = 0
                 for t in g.transcripts.values():
                     t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
                     if t.polycistronic == "no":
@@ -1105,6 +1134,10 @@ class Annotation():
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].add(t.id)
                 g.update()
+
+        if count > 0:
+            progress_bar.update(count)
+        
         progress_bar.close()
         self.update_features()
         

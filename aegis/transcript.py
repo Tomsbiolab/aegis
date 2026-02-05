@@ -5,6 +5,15 @@ from .genefunctions import find_ORFs, longest_ORF, translate, overlap
 
 
 class Transcript(Feature):
+
+    __slots__ = (
+        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'coding', 'main',
+        'miRNAs', 'overlaps', 'renamed_exons', 'renamed_utrs', 'polycistronic',
+        'coding_ratio', 'promoter', 'protein_start', 'protein_end_stop',
+        'protein_early_stop', 'protein_nucleotide_surplus', 'protein_gaps',
+        'protein_seq', 'coding_start', 'coding_end', 'introns'
+    )
+
     def __init__(self, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str, 
                  phase:str, attributes:str):
@@ -14,7 +23,6 @@ class Transcript(Feature):
         self.CDSs = {}
         self.temp_CDSs = []
         self.temp_UTRs = []
-        self.coding = False
         self.main = False
         self.miRNAs = []
         self.overlaps = {"self" : [], "other" : []}
