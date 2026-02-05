@@ -429,10 +429,12 @@ class Annotation():
                 progress_bar.update(count)
 
             progress_bar.close()
+            staging[stage] = None
             gc.collect()
 
         del self._gene_info
         del self._transcript_info
+        del staging
 
         gc.collect()
 

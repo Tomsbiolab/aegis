@@ -618,12 +618,9 @@ class Transcript(Feature):
                         if i != j:
                             interval1 = tempft1.size
                             interval2 = tempft2.size
-                            small = min(tempft1.start, tempft1.end, 
-                                        tempft2.start, tempft2.end)
-                            large = max(tempft1.start, tempft1.end,
-                                        tempft2.start, tempft2.end)
-                            overlap_bp = ((interval1 + interval2)
-                                            - ((large - small) + 1))
+                            small = min(tempft1.start, tempft1.end, tempft2.start, tempft2.end)
+                            large = max(tempft1.start, tempft1.end, tempft2.start, tempft2.end)
+                            overlap_bp = ((interval1 + interval2) - ((large - small) + 1))
                             # >= is crucial to combine contiguous features
                             if overlap_bp >= 0:
                                 temp = Exon("combined", self.ch, self.source, 
