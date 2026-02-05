@@ -22,11 +22,17 @@ def parse_gff_line(line):
     parts = line.strip().split("\t")
 
     # Interning high-frequency strings
-    ch = sys.intern(parts[0])
+
     source = sys.intern(parts[1])
     feature = sys.intern(parts[2])
     strand = sys.intern(parts[6])
     phase = sys.intern(parts[7])
+
+    if feature == "nucleotide_to_protein_match":
+        ch = sys.intern(parts[0].split(":")[0])
+    
+    else:
+        ch = sys.intern(parts[0])
 
     if "pseudo" in feature:
         pseudogene = True
@@ -71,8 +77,6 @@ def parse_gff_line(line):
         "decreasing_coordinates": decreasing_coordinates
     }
 
-    if entry["feature"] == "nucleotide_to_protein_match":
-        entry["ch"] = sys.intern(entry["ch"].split(":")[0])
 
     return entry
 

@@ -230,102 +230,10 @@ def sort_and_update_genes(chrom, genes_dict):
     sorted_genes = {g.id: g for g in genes} 
     return chrom, sorted_genes
 
-def get_lines_by_category(filename, categories, encoding, chosen_chromosomes:int=None, chosen_coordinates:int=None):
-    with open(filename, encoding=encoding) as f:
-        for line in f:
-
-            line = line.strip()
-
-            if not line:
-                continue
-            if line[0] == "#":
-                continue
-
-            parts = line.split("\t")
-
-            if len(parts) <= 2:
-                continue
-            if len(parts) < 9:
-                continue
-
-            if chosen_chromosomes is not None:
-                if parts[0] not in chosen_chromosomes:
-                    continue
-
-            if chosen_coordinates is not None:
-
-                start_pos = int(parts[3])
-                end_pos = int(parts[4])
-
-                if start_pos < chosen_coordinates[0]:
-                    continue
-                if end_pos > chosen_coordinates[1]:
-                    continue
-
-            ft_type = parts[2]
-            cat = default_features_r.get(ft_type, "atypical")
-            if cat in categories:
-                yield line
-
-def get_header_lines(filename, encoding):
-    with open(filename, encoding=encoding) as f:
-        for line in f:
-
-            line = line.strip()
-
-            if not line:
-                continue
-
-            if line[0] == "#":
-                if line == "###" or line == "#":
-                    continue
-                yield line
-
-            parts = line.split("\t")
-            if len(parts) <= 2:
-                yield f"#{line}"
-
-def get_chromosomes_and_features(filename, encoding, chosen_chromosomes:bool=None, chosen_coordinates:bool=None):
-    with open(filename, encoding=encoding) as f:
-        for line in f:
-
-            line = line.strip()
-
-            if not line:
-                continue
-            if line[0] == "#":
-                continue
-
-            parts = line.split("\t")
-
-            if len(parts) <= 2:
-                continue
-            if len(parts) < 9:
-                continue
-
-            if chosen_chromosomes is not None:
-                if parts[0] not in chosen_chromosomes:
-                    continue
-
-            if chosen_coordinates is not None:
-
-                start_pos = int(parts[3])
-                end_pos = int(parts[4])
-
-                if start_pos < chosen_coordinates[0]:
-                    continue
-                if end_pos > chosen_coordinates[1]:
-                    continue
-
-            chromosome = parts[0]
-            feature = parts[2]
-
-            yield chromosome, feature
-
 class Annotation():
     
-    bar_colors = ["31", "32", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True):
+    bar_colors = ["31", "32", "33", "33", "33", "34"]
+    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True):
         
         start_time = time.time()
 
@@ -477,22 +385,7 @@ class Annotation():
         else:
             gff_file = self.file
 
-        chromosomes_t = set()
-
-        for line in get_header_lines(gff_file, encoding):
-            self.gff_header.append(line)
-
-        for chromosome, feature in get_chromosomes_and_features(gff_file, encoding, chosen_chromosomes, chosen_coordinates):
-            chromosomes_t.add(chromosome)
-            standard_feature = default_features_r.get(feature, "atypical")
-            if standard_feature not in self.features:
-                self.features[standard_feature] = 1
-            else:
-                self.features[standard_feature] += 1
-
-        chromosomes_t = sorted(list(chromosomes_t))
-        for ch in chromosomes_t:
-            self.chrs[ch] = {}
+        staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_features_without_id=skip_features_without_id, skip_atypical_features=skip_atypical_features, skip_orphaned_features=skip_orphaned_features, skip_subfeatures_without_id=skip_subfeatures_without_id, quiet=quiet)
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -507,73 +400,25 @@ class Annotation():
         self._gene_info = {}
         self._transcript_info = {}
 
-        categories = [["gene"], ["transcript"], ["exon", "CDS", "UTR", "other_subfeature"], ["atypical"]]
-        category_tags = ["gene", "transcript", "subfeature", "atypical"]
-
         batch_size = 5000
 
-        for n, category_list in enumerate(categories):
+        for n, stage in enumerate(staging):
 
-            total_len = 0
-
-            for category in category_list:
-                total_len += self.features[category]
-
-            progress_bar = tqdm(total=total_len, disable=disable, bar_format=(
-                f'\033[1;{Annotation.bar_colors[n]}mAdding {category_tags[n]}s:\033[0m '
+            progress_bar = tqdm(total=len(staging[stage]), disable=disable, bar_format=(
+                f'\033[1;{Annotation.bar_colors[n]}mAdding {stage}s:\033[0m '
                 '{percentage:3.0f}%|'
                 f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
                 '{n}/{total} [{elapsed}<{remaining}]'))
             
             count = 0
-            
-            for line in get_lines_by_category(gff_file, category_list, encoding, chosen_chromosomes, chosen_coordinates):
-                entry = parse_gff_line(line)
-                ID = entry["id"]
 
-                if not ID:
-                    count += 1
-                    if count >= batch_size:
-                        progress_bar.update(count)
-                        count = 0
-
-                    if not quiet:
-                        print(f"{self.id} Warning: ID not found for {ft}: {line}")
-                    if category_tags[n] in ["gene", "transcript"] and not skip_features_without_id:
-                         self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
-                         continue
-                    elif category_tags[n] == "subfeature" and not skip_subfeatures_without_id:
-                         self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
-                         continue
-                    elif skip_features_without_id:
-                        continue
-
-                    continue
-
-                start = entry["start"]
-                end = entry["end"]
-                ch = entry["ch"]
-                source = entry["source"]
-                ft = entry["feature"]
-                strand = entry["strand"]
-                score = entry["score"]
-                attributes = entry["attributes"]
-                decreasing_coordinates = entry["decreasing_coordinates"]
-
-                if decreasing_coordinates:
-                    self.warnings["decreasing_coordinates"].add(ID)
-                    if not quiet:
-                        print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
-
-                if category_tags[n] == "gene":
-                    self._add_gene(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, quiet=quiet)
-                elif category_tags[n] == "transcript":
+            for entry in staging[stage]:
+                if stage in ["UTR", "CDS", "exon", "other_subfeature"]:
+                    self._add_subfeature(entry, ft_level=stage, infer_gene_and_transcript_from_subfeatures=infer_genes_from_subfeatures, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
+                elif stage == "transcript":
                     self._add_transcript(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, infer_gene_from_transcript=infer_genes_from_transcripts, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
-                elif category_tags[n] == "subfeature":
-                    ft_level = default_features_r.get(ft, "atypical")
-                    self._add_subfeature(entry, ft_level=ft_level, infer_gene_and_transcript_from_subfeatures=infer_genes_from_subfeatures, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
-                elif category_tags[n] == "atypical" and not skip_atypical_features:
-                    self.atypical_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                else:
+                    self._add_gene(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, quiet=quiet)
 
                 count += 1
                 if count >= batch_size:
@@ -605,6 +450,106 @@ class Annotation():
         if rework_all_CDSs or work_out_missing_CDSs:
             self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
             self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+
+    def load_data(self, gff_file, encoding, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):
+        
+        staging = {"gene": [], "transcript": [], "exon": [], "CDS": [], "UTR": [], "other_subfeature": []}
+
+        chromosomes_t = set()
+
+        with open(gff_file, encoding=encoding) as f:
+
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                if line[0] == "#":
+                    if line == "###" or line == "#":
+                        continue
+                    self.gff_header.append(line)
+                    continue
+
+                parts = line.split("\t")
+                if len(parts) <= 2:
+                    self.gff_header.append(line)
+                    continue
+
+                if len(parts) < 9:
+                    continue
+
+                entry = parse_gff_line(line)
+
+                ID = entry["id"]
+                ft = entry["feature"]
+                ch = entry["ch"]
+                start = entry["start"]
+                end = entry["end"]
+
+                if chosen_chromosomes is not None:
+                    if ch not in chosen_chromosomes:
+                        continue
+
+                if chosen_coordinates is not None:
+
+                    if start < chosen_coordinates[0]:
+                        continue
+                    if end > chosen_coordinates[1]:
+                        continue
+
+                cat = default_features_r.get(ft, "atypical")
+
+                if not ID:
+                    if not quiet:
+                        print(f"{self.id} Warning: ID not found for {ft}: {line}")
+
+                    if skip_features_without_id and skip_subfeatures_without_id:
+                        continue
+                    elif not skip_features_without_id:
+                        if cat in ["gene", "transcript"]:
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                            continue
+                    else:
+                        if cat in ["exon", "CDS", "UTR", "other_subfeature"]:
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                            continue
+
+                source = entry["source"]
+                strand = entry["strand"]
+                score = entry["score"]
+                attributes = entry["attributes"]
+                decreasing_coordinates = entry["decreasing_coordinates"]
+
+                if decreasing_coordinates:
+                    self.warnings["decreasing_coordinates"].add(ID)
+                    if not quiet:
+                        print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
+
+                if cat == "atypical":
+                    if not skip_atypical_features:
+                        if ft not in self.features:
+                            self.features[ft] = 1
+                        else:
+                            self.features[ft] += 1
+                        chromosomes_t.add(ch)
+                        self.atypical_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                else:
+                    if ft not in self.features:
+                        self.features[ft] = 1
+                    else:
+                        self.features[ft] += 1
+                    chromosomes_t.add(ch)
+                    staging[cat].append(entry)
+
+        chromosomes_t = sorted(list(chromosomes_t))
+        for ch in chromosomes_t:
+            self.chrs[ch] = {}
+
+        return staging
+
 
     def _add_gene(self, entry, rename_repeated_id:bool=False, quiet:bool=False):
         ID = entry["id"]
@@ -3754,7 +3699,7 @@ class Annotation():
                     if main_only:
                         if not t.main:
                             continue
-                    original_feature = t.ft
+                    original_feature = t.feature
                     t.feature = "transcript"
                     out += t.print_gtf()
                     t.feature = original_feature
