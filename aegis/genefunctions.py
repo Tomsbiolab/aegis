@@ -16,21 +16,19 @@ from Bio.Seq import Seq
 import time
 import re
 import warnings
+import sys
 
-def parse_gff_line(line, quiet:bool=True):
-    if isinstance(line, list):
-        parts = line
-    else:
-        if line.startswith("#"):
-            return None
-        parts = line.strip().split("\t")
+def parse_gff_line(line):
+    parts = line.strip().split("\t")
 
-    if len(parts) < 9:
-        if not quiet:
-            print(f"Error: Line contains less than the expected 9 columns: {line}")
-        return None
+    # Interning high-frequency strings
+    ch = sys.intern(parts[0])
+    source = sys.intern(parts[1])
+    feature = sys.intern(parts[2])
+    strand = sys.intern(parts[6])
+    phase = sys.intern(parts[7])
 
-    if "pseudo" in parts[2]:
+    if "pseudo" in feature:
         pseudogene = True
     else:
         pseudogene = False
@@ -40,28 +38,31 @@ def parse_gff_line(line, quiet:bool=True):
 
     if start > end:
         decreasing_coordinates = True
-        start = int(parts[4])
-        end = int(parts[3])
+        actual_start, actual_end = (int(parts[4]), int(parts[3]))
     else:
         decreasing_coordinates = False
+        actual_start, actual_end = (start, end)
 
-    if "transposable" in parts[2] or "transposable=True" in parts[8] or "transposon" in parts[2] or "transposon=True" in parts[8]:
+    if "transposable" in feature or "transposon" in feature:
         transposable = True
     else:
         transposable = False
 
     attr_dict = parse_gff_attributes(parts[8])
+    
+    if not transposable:
+        if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
+            transposable = True
 
-    # Store as a dict (lightweight)
     entry = {
-        "ch": parts[0],
-        "source": parts[1],
-        "feature": parts[2],
-        "start": start,
-        "end": end,
+        "ch": ch,
+        "source": source,
+        "feature": feature,
+        "start": actual_start,
+        "end": actual_end,
         "score": parts[5],
-        "strand": parts[6],
-        "phase": parts[7],
+        "strand": strand,
+        "phase": phase,
         "attributes": attr_dict,
         "id": attr_dict.get("id", ""),
         "parents": attr_dict.get("parent", []),
@@ -71,7 +72,7 @@ def parse_gff_line(line, quiet:bool=True):
     }
 
     if entry["feature"] == "nucleotide_to_protein_match":
-        entry["ch"] = entry["ch"].split(":")[0]
+        entry["ch"] = sys.intern(entry["ch"].split(":")[0])
 
     return entry
 
@@ -90,11 +91,12 @@ def parse_gff_attributes(attributes):
         if "=" in p:
             key, val = p.split("=", 1)
 
-            key = key.strip().lower()
+            key = sys.intern(key.strip().lower())
             val = val.strip()
 
             if key in ["parent", "parents", "derives_from"]:
-                parsed["parent"] = [x.strip() for x in val.split(",") if x.strip()]
+                parent_key = sys.intern("parent")
+                parsed[parent_key] = [x.strip() for x in val.split(",") if x.strip()]
             else:
                 parsed[key] = val
 
@@ -144,7 +146,7 @@ def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
     return orfs
 
 def longest_ORF(orfs:list):
-    longest = ("", 0, 0) #dumb ORF
+    longest = ("", 0, 0)
     for orf in orfs:
         if len(orf[0]) > len(longest[0]):
             longest = orf

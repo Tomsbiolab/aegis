@@ -165,53 +165,44 @@ def format_gff3_attributes(attrs, feature_type):
             
     return ";".join(gff3_attrs)
 
-def convert_gtf_to_gff3(gtf_file, encoding):
+def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
     """
     Reads a GTF file, converts it to GFF3 format, and writes to an output file.
     """
+    with open(gtf_file, 'r', encoding=encoding) as infile, open(gff3_file, 'w', encoding=encoding) as outfile:
 
-    gff_lines = []
-
-    with open(gtf_file, 'r', encoding=encoding) as infile:
-
-        gff_lines.append("##gff-version 3\n")
+        outfile.write("##gff-version 3\n")
 
         seen_genes = set()
         seen_transcripts = set()
 
         for line in infile:
-
             if line.startswith('#'):
-
                 if not line.startswith('##'):
-                    gff_lines.append(f"#{line}")
+                    outfile.write(f"#{line}")
                 continue
 
             parts = line.strip().split('\t')
             if len(parts) != 9:
-                sys.stderr.write(f"Warning: Skipping malformed line in file='{gtf_file}': {line.strip()}\n")
+                if not quiet:
+                    sys.stderr.write(f"Warning: Skipping malformed line: {line.strip()}\n")
                 continue
 
             seqname, source, feature, start, end, score, strand, frame, attr_string = parts
             attributes = parse_gtf_attributes(attr_string)
 
-            
             if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes and feature in default_features["gene"]:
                 gene_attrs = {'gene_id': attributes['gene_id']}
                 if 'gene_name' in attributes:
                     gene_attrs['gene_name'] = attributes['gene_name']
                 if 'gene_biotype' in attributes:
                     gene_attrs['gene_biotype'] = attributes['gene_biotype']
-                    
                 gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
                 gene_line = "\t".join([seqname, source, 'gene', start, end, score, strand, frame, gene_attr_str])
-
-                gff_lines.append(gene_line + '\n')
+                outfile.write(gene_line + '\n')
                 seen_genes.add(attributes['gene_id'])
 
-
             if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts and feature in default_features["transcript"]:
-
                 tx_attrs = {k: v for k, v in attributes.items() if 'transcript' in k or 'gene' in k}
                 tx_feature_type = 'transcript'
                 if 'transcript_biotype' in attributes:
@@ -220,26 +211,116 @@ def convert_gtf_to_gff3(gtf_file, encoding):
 
                 tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
                 tx_line = "\t".join([seqname, source, tx_feature_type, start, end, score, strand, frame, tx_attr_str])
-                gff_lines.append(tx_line + '\n')
+                outfile.write(tx_line + '\n')
                 seen_transcripts.add(attributes['transcript_id'])
 
-            if feature in default_features["transcript"] or feature in default_features["gene"]:
+            if feature not in default_features["transcript"] and feature not in default_features["gene"]:
                 continue
 
             gff3_attr_string = format_gff3_attributes(attributes, feature)
 
             gff3_line = "\t".join([seqname, source, feature, start, end, score, strand, frame, gff3_attr_string])
-            gff_lines.append(gff3_line + '\n')
+            outfile.append(gff3_line + '\n')
 
-    
-    print(f"Successfully converted file='{gtf_file} to a gff file")
-
-    return gff_lines
+    if not quiet:
+        print(f"Successfully converted {gtf_file} to a gff format")
 
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
     sorted_genes = {g.id: g for g in genes} 
     return chrom, sorted_genes
+
+def get_lines_by_category(filename, category, encoding, chosen_chromosomes:int=None, chosen_coordinates:int=None):
+    with open(filename, encoding=encoding) as f:
+        for line in f:
+
+            line = line.strip()
+
+            if not line:
+                continue
+            if line[0] == "#":
+                continue
+
+            parts = line.split("\t")
+
+            if len(parts) <= 2:
+                continue
+            if len(parts) < 9:
+                continue
+
+            if chosen_chromosomes is not None:
+                if parts[0] not in chosen_chromosomes:
+                    continue
+
+            if chosen_coordinates is not None:
+
+                start_pos = int(parts[3])
+                end_pos = int(parts[4])
+
+                if start_pos < chosen_coordinates[0]:
+                    continue
+                if end_pos > chosen_coordinates[1]:
+                    continue
+
+            ft_type = parts[2]
+            cat = default_features_r.get(ft_type, "atypical")
+            if cat == category:
+                yield line
+
+def get_header_lines(filename, encoding):
+    with open(filename, encoding=encoding) as f:
+        for line in f:
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line[0] == "#":
+                if line == "###" or line == "#":
+                    continue
+                yield line
+
+            parts = line.split("\t")
+            if len(parts) <= 2:
+                yield f"#{line}"
+
+def get_chromosomes_and_features(filename, encoding, chosen_chromosomes:bool=None, chosen_coordinates:bool=None):
+    with open(filename, encoding=encoding) as f:
+        for line in f:
+
+            line = line.strip()
+
+            if not line:
+                continue
+            if line[0] == "#":
+                continue
+
+            parts = line.split("\t")
+
+            if len(parts) <= 2:
+                continue
+            if len(parts) < 9:
+                continue
+
+            if chosen_chromosomes is not None:
+                if parts[0] not in chosen_chromosomes:
+                    continue
+
+            if chosen_coordinates is not None:
+
+                start_pos = int(parts[3])
+                end_pos = int(parts[4])
+
+                if start_pos < chosen_coordinates[0]:
+                    continue
+                if end_pos > chosen_coordinates[1]:
+                    continue
+
+            chromosome = parts[0]
+            feature = parts[2]
+
+            yield chromosome, feature
 
 class Annotation():
     
@@ -247,6 +328,8 @@ class Annotation():
     def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True):
         
         start_time = time.time()
+
+        pid = os.getpid()
 
         self.file = str(Path(annot_file_path).resolve())
         self.path = str(Path(annot_file_path).resolve().parent) + "/"
@@ -278,7 +361,7 @@ class Annotation():
         if not quiet:
             print(f"\nProcessing {self.id} annotation object\n")
         self.excluded_chromosomes = []
-        self.features = set()
+        self.features = {}
         # genes will be added as {"ch":{"gene_id" : gene_object}}
         self.chrs = {}
         # we save here chr as the value corresponding to each gene id
@@ -382,70 +465,34 @@ class Annotation():
 
         del keys
         
-        parsed_lines = {key: [] for key in default_features}
-        parsed_lines["atypical"] = []
-        
         encoding = read_file_with_fallback(self.file)
         file_format = detect_file_format(self.file, encoding)
         if not quiet:
             print(f"{file_format} file format detected for file='{self.file}'")
 
         if file_format == 'gtf':
-            lines = convert_gtf_to_gff3(self.file, encoding)
+            gff_file = f"{self.name}_{pid}.tmp"
+            convert_gtf_to_gff3(self.file, gff_file, encoding, quiet=quiet)
 
         else:
-            with open(self.file, encoding=encoding) as f:
-                lines = f.readlines()
+            gff_file = self.file
 
-        lines_original_order = []
-        protein_match_lines = []
         chromosomes_t = set()
-        # Read lines from input file, filtering out lines consisting of "###\n"
-        for line in lines:
-            line = line.strip()
-            if line == "" or line == "###" or line == "#":
-                continue
-            if line.startswith("#"):
-                self.gff_header.append(line)
+
+        for line in get_header_lines(gff_file, encoding):
+            self.gff_header.append(line)
+
+        for chromosome, feature in get_chromosomes_and_features(gff_file, encoding, chosen_chromosomes, chosen_coordinates):
+            chromosomes_t.add(chromosome)
+            standard_feature = default_features_r.get(feature, "atypical")
+            if standard_feature not in self.features:
+                self.features[standard_feature] = 1
             else:
-                line = line.split("\t")
-                if len(line) > 2:
-                    if chosen_chromosomes != None:
-                        if line[0] not in chosen_chromosomes:
-                            continue
-                        else:
-                            if chosen_coordinates != None:
-                                if int(line[3]) < chosen_coordinates[0] or int(line[4]) > chosen_coordinates[1]:
-                                    continue
-                    self.features.add(line[2])
-                    if line[2] == "nucleotide_to_protein_match":
-                        # exonerate modifies genome features by adding coordinates after ':', this must be removed
-                        chromosomes_t.add(line[0].split(":")[0])
-                    else:
-                        chromosomes_t.add(line[0])
+                self.features[standard_feature] += 1
 
-                    if line[2] in default_features_r:
-                        lines_original_order.append(line)
-                    else:
-                        parsed_lines["atypical"].append(line)
-                else:
-                    self.gff_header.append(("#" + "\t".join(line)))
-
-        del lines
-        sorted_lines = sorted(lines_original_order, key=lambda x: (int(x[3]), int(x[4])))
-        protein_match_lines = sorted(protein_match_lines, key=lambda x: (int(x[3]), int(x[4])))
-        del lines_original_order
-        for line in sorted_lines:
-            parsed_lines[default_features_r[line[2]]].append(line)
-        del sorted_lines
-        chromosomes_t = list(chromosomes_t)
-        chromosomes_t.sort()
+        chromosomes_t = sorted(list(chromosomes_t))
         for ch in chromosomes_t:
             self.chrs[ch] = {}
-        self.features = list(self.features)
-        del chromosomes_t
-
-        gc.collect()
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -460,38 +507,36 @@ class Annotation():
         self._gene_info = {}
         self._transcript_info = {}
 
-        for n, (ft_level, lines) in enumerate(parsed_lines.items()):
-            progress_bar = tqdm(total=len(lines), disable=disable, bar_format=(
-                        f'\033[1;{Annotation.bar_colors[n]}mAdding {ft_level}s:\033[0m '
-                        '{percentage:3.0f}%|'
-                        f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
-                        '{n}/{total} [{elapsed}<{remaining}]'))
+        categories = ["gene", "transcript", "exon", "CDS", "UTR", "other_subfeature", "atypical"]
 
-            for line in lines:
-                
-                entry = parse_gff_line(line, quiet=quiet)
-
-                if not entry:
-                    continue
-
+        for n, category in enumerate(categories):
+            progress_bar = tqdm(total=self.features[category], disable=disable, bar_format=(
+                f'\033[1;{Annotation.bar_colors[n]}mAdding {category}s:\033[0m '
+                '{percentage:3.0f}%|'
+                f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
+                '{n}/{total} [{elapsed}<{remaining}]'))
+            
+            for line in get_lines_by_category(gff_file, category, encoding, chosen_chromosomes, chosen_coordinates):
+                entry = parse_gff_line(line)
                 ID = entry["id"]
 
                 if not ID:
+                    
+                    progress_bar.update(1)
+
                     if not quiet:
                         print(f"{self.id} Warning: ID not found for {ft}: {line}")
-                    if ft_level == "gene" or ft_level == "transcript":
-                        if skip_features_without_id:
-                            continue
-                        else:
-                            self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
-                    elif ft_level == "exon" or ft_level == "UTR" or ft_level == "CDS":
-                        if skip_subfeatures_without_id:
-                            continue
-                        else:
-                            self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                    if category in ["gene", "transcript"] and not skip_features_without_id:
+                         self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                         continue
+                    elif category in ["exon", "UTR", "CDS"] and not skip_subfeatures_without_id:
+                         self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                         continue
                     elif skip_features_without_id:
                         continue
-                        
+
+                    continue
+
                 start = entry["start"]
                 end = entry["end"]
                 ch = entry["ch"]
@@ -507,31 +552,28 @@ class Annotation():
                     if not quiet:
                         print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
 
-                if ft_level == "gene":
+                if category == "gene":
                     self._add_gene(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, quiet=quiet)
-
-                elif ft_level == "transcript":
+                elif category == "transcript":
                     self._add_transcript(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, infer_gene_from_transcript=infer_genes_from_transcripts, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
-
-                elif ft_level == "exon" or ft_level == "CDS" or ft_level == "UTR" or ft_level == "other_subfeature":
+                elif category in ["exon", "CDS", "UTR", "other_subfeature"]:
+                    ft_level = default_features_r.get(ft, "atypical")
                     self._add_subfeature(entry, ft_level=ft_level, infer_gene_and_transcript_from_subfeatures=infer_genes_from_subfeatures, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
-
-                elif not skip_atypical_features:
-                    self.atypical_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                elif category == "atypical":
+                    self.atypical_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
 
                 progress_bar.update(1)
 
             progress_bar.close()
-
-        del parsed_lines
+            gc.collect()
 
         del self._gene_info
         del self._transcript_info
 
+        gc.collect()
+
         now = time.time()
         lapse = now - start_time
-
-        gc.collect()
 
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
@@ -1141,18 +1183,41 @@ class Annotation():
                             c.feature = "CDS"
                             for cs in c.CDS_segments:
                                 cs.feature = "CDS"
-        new_features = set()
+        
+        self.features = {}
         for genes in self.chrs.values():
             for g in genes.values():
-                new_features.add(g.feature)
+                if g.feature not in self.features:
+                    self.features[g.feature] = 1
+                else:
+                    self.features[g.feature] += 1
                 for t in g.transcripts.values():
-                    new_features.add(t.feature)
+                    if t.feature not in self.features:
+                        self.features[t.feature] = 1
+                    else:
+                        self.features[t.feature] += 1
                     for c in t.CDSs.values():
-                        new_features.add(c.feature)
+                        if c.feature not in self.features:
+                            self.features[c.feature] = 1
+                        else:
+                            self.features[c.feature] += 1
                     for e in t.exons:
-                        new_features.add(e.feature)
-        self.features = list(new_features)
-        self.features.sort()
+                        if e.feature not in self.features:
+                            self.features[e.feature] = 1
+                        else:
+                            self.features[e.feature] += 1
+
+        for ft in self.atypical_features:
+            if ft.feature not in self.features:
+                self.features[ft.feature] = 1
+            else:
+                self.features[ft.feature] += 1
+        for ft in self.orphaned_features:
+            if ft.feature not in self.features:
+                self.features[ft.feature] = 1
+            else:
+                self.features[ft.feature] += 1
+
         if not quiet:
             print(f"\nUpdated features for {self.id}")
 
@@ -2378,30 +2443,17 @@ class Annotation():
         for key in to_tally:
             self.stats[key] = []
 
-        for ft in self.features:
-            self.stats[ft] = 0
+        for ft, value in self.features.items():
+            self.stats[ft] = value
 
         self.stats["five_prime_UTRs"] = 0
         self.stats["three_prime_UTRs"] = 0
 
-        for ft in self.atypical_features:
-            self.stats[ft.feature] = 0
-        for ft in self.orphaned_features:
-            self.stats[ft.feature] = 0
-        
-
-        for ft in self.atypical_features:
-            self.stats[ft.feature] += 1
-        for ft in self.orphaned_features:
-            self.stats[ft.feature] += 1
-
         for genes in self.chrs.values():
             for g in genes.values():
-                self.stats[g.feature] += 1
                 self.stats["mean_transcripts"].append(len(g.transcripts))
                 self.stats["mean_gene_size"].append(g.size)
                 for t in g.transcripts.values():
-                    self.stats[t.feature] += 1
                     if t.main:
                         if hasattr(t, "introns"):
                             for i in t.introns:
@@ -2409,7 +2461,6 @@ class Annotation():
 
                         if t.coding:
                             for c in t.CDSs.values():
-                                self.stats[c.feature] += 1
                                 if c.main:
                                     self.stats["mean_CDS_size"].append(c.size)
                                     if hasattr(c, "UTRs"):
@@ -2440,14 +2491,11 @@ class Annotation():
                             self.stats["noncoding_genes"].append(g.id)
 
                         for e in t.exons:
-                            self.stats[e.feature] += 1
                             self.stats["mean_exon_size"].append(e.size)
 
                         self.stats["mean_exons"].append(len(t.exons))
                         
                         self.stats["mean_transcript_size"].append(t.size)
-
-        self.stats["UTRs"] = self.stats["five_prime_UTRs"] + self.stats["three_prime_UTRs"]
 
         # anything with mean will be also plotted as distribution plots:
         if export:
