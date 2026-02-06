@@ -29,7 +29,7 @@ def run_command(working_directory: Path, command: list):
         print(f"STDERR: {e.stderr}")
         raise
 
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, quiet=True):
+def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet=True):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -137,13 +137,14 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     run_command(diamond_dir, blastp_cmd)
     
-    print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
-    
-    jcvi_ortho_cmd = [
-        "python", "-m", "jcvi.compara.catalog", "ortholog",
-        annot1.name, annot2.name, "--no_strip_names"
-    ]
-    run_command(mcscan_dir, jcvi_ortho_cmd)
+    if not skip_mcscan:
+        print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
+        
+        jcvi_ortho_cmd = [
+            "python", "-m", "jcvi.compara.catalog", "ortholog",
+            annot1.name, annot2.name, "--no_strip_names"
+        ]
+        run_command(mcscan_dir, jcvi_ortho_cmd)
 
 def parse_evalue(e):
     e = e.strip()
