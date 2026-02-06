@@ -66,6 +66,9 @@ def main(
     skip_copies: Annotated[bool, typer.Option(
         "-cl", "--skip-copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
     )] = False,
+    skip_mcscan: Annotated[bool, typer.Option(
+        "-sm", "--skip-mcscan", help="Skip the JCVI toolkit synteny and collinearity analysis (MCScan). Useful when JCVI is causing compatibility issues."
+    )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep-intermediate", help="Keep intermediate files, useful for identifying errors."
     )] = False,
@@ -211,8 +214,9 @@ def main(
     liftoff_path = results_directory / "liftoff"
     liftoff_path.mkdir(parents=True, exist_ok=True)
 
-    mcscan_path = results_directory / "mcscan"
-    mcscan_path.mkdir(parents=True, exist_ok=True)
+    if not skip_mcscan:
+        mcscan_path = results_directory / "mcscan"
+        mcscan_path.mkdir(parents=True, exist_ok=True)
 
     if lift_feature_types == ["ALL"]:
         lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"]
@@ -256,18 +260,19 @@ def main(
         ]
         run_command(diamond_path, makedb_cmd)
 
-        cds_fasta = CDS_path / f"{a.name}_CDSs_g_id_main.fasta"
-        cleaned_cds = mcscan_path / f"{a.name}.cds"
+        if not skip_mcscan:
+            cds_fasta = CDS_path / f"{a.name}_CDSs_g_id_main.fasta"
+            cleaned_cds = mcscan_path / f"{a.name}.cds"
 
-        jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
-        run_command(mcscan_path, jcvi_format_cmd_1)
+            jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
+            run_command(mcscan_path, jcvi_format_cmd_1)
 
-        bed_file = mcscan_path / f"{a.name}.bed"
-        gff_to_bed_cmd_1 = [
-            "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-            "--key=Parent", "--primary_only", f"{gff_path}/{a.name}.gff3", "-o", str(bed_file)
-        ]
-        run_command(mcscan_path, gff_to_bed_cmd_1)
+            bed_file = mcscan_path / f"{a.name}.bed"
+            gff_to_bed_cmd_1 = [
+                "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
+                "--key=Parent", "--primary_only", f"{gff_path}/{a.name}.gff3", "-o", str(bed_file)
+            ]
+            run_command(mcscan_path, gff_to_bed_cmd_1)
 
         
 
@@ -278,7 +283,7 @@ def main(
             if n1 == n2:
                 continue
 
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, types=lift_feature_types_file, coverage=coverage, evalue=evalue, quiet=quiet)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, quiet=quiet)
 
 
     # Obtaining RBHs and RBBHs from single blast results
@@ -400,8 +405,9 @@ def main(
                 if not a1.target and not a2.target:
                     continue
 
-            a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
-            a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
+            if not skip_mcscan:
+                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
+                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
 
             orthofile_pattern = f"orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
             matching_files = list(protein_path.glob(orthofile_pattern))

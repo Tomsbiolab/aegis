@@ -55,7 +55,7 @@ RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
     # Bioinformatics tools
     jcvi \
     last \
-    diamond \
+    diamond=2.1.8 \
     minimap2 \
     liftoff \
     orthofinder \
