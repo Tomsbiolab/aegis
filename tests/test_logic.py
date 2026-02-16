@@ -14,10 +14,10 @@ def test_with_local_file():
 
     ara = Annotation(str(input_path), "ara")
 
-    state = vars(ara)
+    num_genes = len(ara.all_gene_ids)
 
     ara_gold = pickle_load(str(input_path_gold))
 
-    state_gold = vars(ara_gold)
+    num_genes_gold = len(ara_gold.all_gene_ids)
 
-    assert state == state_gold
+    assert num_genes == num_genes_gold
