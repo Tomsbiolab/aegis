@@ -31,6 +31,7 @@ dependencies = [
     "scipy>=1.7.3",
     "tqdm>=4.67.1",
     "typer>=0.16.1",
+	"pytest>=8.4.1"
 ]
 
 [tool.setuptools]
