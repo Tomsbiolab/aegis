@@ -1,0 +1,19 @@
+name: Python Tests
+
+on: [push, pull_request] # Runs on every commit
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # Downloads your code
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12.3'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Tests
+        env:
+          PYTHONPATH: .
+        run: pytest

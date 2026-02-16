@@ -6244,5 +6244,6 @@ class Annotation():
         self.update(extra_attributes=extra_attributes, quiet=quiet)
         self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
 
+
     def __str__(self):
         return str(self.id)
