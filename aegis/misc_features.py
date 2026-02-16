@@ -3,6 +3,9 @@ from .genefunctions import translate
 from .feature import Feature
 
 class Protein():
+
+    __slots__ = ("id", "ch", "summary_tag", "readthrough", "blast_hits", "start", "end_stop", "early_stop", "nucleotide_surplus", "gaps", "seq", "coding_start", "coding_end", "partial", "truncated", "size")
+
     def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):
         self.id = prot_id
         self.ch = chrom
@@ -73,6 +76,7 @@ class Protein():
         return query_best
 
 class Promoter(Feature):
+    __slots__ = ('type',)
     def __init__(self, promoter_type, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str,
                  phase:str, attributes:str):

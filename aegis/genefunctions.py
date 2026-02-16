@@ -16,6 +16,97 @@ from Bio.Seq import Seq
 import time
 import re
 import warnings
+import sys
+
+def parse_gff_line(line):
+    parts = line.strip().split("\t")
+
+    # Interning high-frequency strings
+
+    source = sys.intern(parts[1])
+    feature = sys.intern(parts[2])
+    strand = sys.intern(parts[6])
+    phase = sys.intern(parts[7])
+
+    if feature == "nucleotide_to_protein_match":
+        ch = sys.intern(parts[0].split(":")[0])
+    
+    else:
+        ch = sys.intern(parts[0])
+
+    if "pseudo" in feature:
+        pseudogene = True
+    else:
+        pseudogene = False
+
+    start = int(parts[3])
+    end = int(parts[4])
+
+    if start > end:
+        decreasing_coordinates = True
+        actual_start, actual_end = (int(parts[4]), int(parts[3]))
+    else:
+        decreasing_coordinates = False
+        actual_start, actual_end = (start, end)
+
+    if "transposable" in feature or "transposon" in feature:
+        transposable = True
+    else:
+        transposable = False
+
+    attr_dict = parse_gff_attributes(parts[8])
+    
+    if not transposable:
+        if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
+            transposable = True
+
+    entry = {
+        "ch": ch,
+        "source": source,
+        "feature": feature,
+        "start": actual_start,
+        "end": actual_end,
+        "score": parts[5],
+        "strand": strand,
+        "phase": phase,
+        "attributes": attr_dict,
+        "id": attr_dict.get("id", ""),
+        "parents": attr_dict.get("parent", []),
+        "pseudogene": pseudogene,
+        "transposable": transposable,
+        "decreasing_coordinates": decreasing_coordinates
+    }
+
+
+    return entry
+
+def parse_gff_attributes(attributes):
+
+    if not attributes or attributes == ".":
+        return {}
+
+    parsed = {}
+    
+    for p in attributes.split(";"):
+        p = p.strip()
+        if not p: 
+            continue
+
+        if "=" in p:
+            key, val = p.split("=", 1)
+
+            key = key.strip().lower()
+            val = val.strip()
+
+            if key in ["parent", "parents", "derives_from"]:
+                parent_key = sys.intern("parent")
+                parsed[parent_key] = [x.strip() for x in val.split(",") if x.strip()]
+            else:
+                key = sys.intern(key)
+                parsed[key] = val
+
+    return parsed
+
 
 def count_occurrences(string, char):
     return Counter(string)[char]
@@ -60,7 +151,7 @@ def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
     return orfs
 
 def longest_ORF(orfs:list):
-    longest = ("", 0, 0) #dumb ORF
+    longest = ("", 0, 0)
     for orf in orfs:
         if len(orf[0]) > len(longest[0]):
             longest = orf

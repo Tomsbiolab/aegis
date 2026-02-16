@@ -20,7 +20,7 @@ import math
 import gc
 
 from .plots import pie_chart, barplot
-from .genefunctions import overlap, reverse_complement, find_all_occurrences
+from .genefunctions import overlap, reverse_complement, find_all_occurrences, parse_gff_line
 from .feature import Feature
 from .gene import Gene
 from .transcript import Transcript
@@ -36,22 +36,18 @@ from pathlib import Path
 default_features = {}
 default_features["gene"] = ["gene", "pseudogene", "transposable_element_gene"]
 default_coding_transcripts = ["mRNA"]
-default_noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA", 
-                            "miRNA_primary_transcript", "ncRNA", "lncRNA",
-                            "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-                            "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
-default_codons = ['start_codon', 'stop_codon']
+default_noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA", "miRNA_primary_transcript", "ncRNA", "lncRNA", "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA", "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
+default_codons = ["start_codon", "stop_codon"]
+default_introns = ["intron"]
 # Some features are clearly transcript level features but they cannot be
 # classed as coding/noncoding just by looking at the name   
-default_features["transcript"] = (["transcript", "transcript_region", "primary_transcript",
-                            "pseudotranscript", "pseudogenic_transcript", "mRNA_TE_gene"] 
-                            + default_coding_transcripts + default_noncoding_transcripts)
+default_features["transcript"] = (["transcript", "transcript_region", "primary_transcript", "pseudotranscript", "pseudogenic_transcript", "mRNA_TE_gene"] + default_coding_transcripts + default_noncoding_transcripts)
 default_features["UTR"] = ["UTR", "three_prime_UTR", "five_prime_UTR", "five_prime_utr", "three_prime_utr"]
 default_features["exon"] = ["exon", "pseudogenic_exon"]
-default_features["CDS"] = ["CDS"]
+default_features["CDS"] = ["CDS", "nucleotide_to_protein_match"]
 default_features["other_subfeature"] = ["miRNA"]
 
-default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"]
+default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"] + default_introns
 
 default_features_r = {}
 for key, values in default_features.items():
@@ -154,10 +150,10 @@ def format_gff3_attributes(attrs, feature_type):
 
         if 'exon_number' in attrs:
             feature_id += f"_e{attrs['exon_number']}"
+            gff3_attrs.append(f"ID={feature_id}")
+        elif feature_type in default_features["CDS"]:
+            gff3_attrs.append(f"ID={feature_id}_CDS1")
 
-        if 'exon_number' in attrs or feature_type in default_features["CDS"] or feature_type in default_codons:
-             gff3_attrs.append(f"ID={feature_id}")
-    
     if 'gene_name' in attrs:
         gff3_attrs.append(f"Symbol={attrs['gene_name']}")
     elif 'transcript_name' in attrs:
@@ -169,53 +165,44 @@ def format_gff3_attributes(attrs, feature_type):
             
     return ";".join(gff3_attrs)
 
-def convert_gtf_to_gff3(gtf_file, encoding):
+def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
     """
     Reads a GTF file, converts it to GFF3 format, and writes to an output file.
     """
+    with open(gtf_file, 'r', encoding=encoding) as infile, open(gff3_file, 'w', encoding=encoding) as outfile:
 
-    gff_lines = []
-
-    with open(gtf_file, 'r', encoding=encoding) as infile:
-
-        gff_lines.append("##gff-version 3\n")
+        outfile.write("##gff-version 3\n")
 
         seen_genes = set()
         seen_transcripts = set()
 
         for line in infile:
-
             if line.startswith('#'):
-
                 if not line.startswith('##'):
-                    gff_lines.append(f"#{line}")
+                    outfile.write(f"#{line}")
                 continue
 
             parts = line.strip().split('\t')
             if len(parts) != 9:
-                sys.stderr.write(f"Warning: Skipping malformed line in file='{gtf_file}': {line.strip()}\n")
+                if not quiet:
+                    sys.stderr.write(f"Warning: Skipping malformed line: {line.strip()}\n")
                 continue
 
             seqname, source, feature, start, end, score, strand, frame, attr_string = parts
             attributes = parse_gtf_attributes(attr_string)
 
-            
             if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes and feature in default_features["gene"]:
                 gene_attrs = {'gene_id': attributes['gene_id']}
                 if 'gene_name' in attributes:
                     gene_attrs['gene_name'] = attributes['gene_name']
                 if 'gene_biotype' in attributes:
                     gene_attrs['gene_biotype'] = attributes['gene_biotype']
-                    
                 gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
                 gene_line = "\t".join([seqname, source, 'gene', start, end, score, strand, frame, gene_attr_str])
-
-                gff_lines.append(gene_line + '\n')
+                outfile.write(gene_line + '\n')
                 seen_genes.add(attributes['gene_id'])
 
-
             if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts and feature in default_features["transcript"]:
-
                 tx_attrs = {k: v for k, v in attributes.items() if 'transcript' in k or 'gene' in k}
                 tx_feature_type = 'transcript'
                 if 'transcript_biotype' in attributes:
@@ -224,20 +211,19 @@ def convert_gtf_to_gff3(gtf_file, encoding):
 
                 tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
                 tx_line = "\t".join([seqname, source, tx_feature_type, start, end, score, strand, frame, tx_attr_str])
-                gff_lines.append(tx_line + '\n')
+                outfile.write(tx_line + '\n')
                 seen_transcripts.add(attributes['transcript_id'])
 
-            if feature in default_features["transcript"] or feature in default_features["gene"]:
+            if feature not in default_features["transcript"] and feature not in default_features["gene"]:
                 continue
 
             gff3_attr_string = format_gff3_attributes(attributes, feature)
 
             gff3_line = "\t".join([seqname, source, feature, start, end, score, strand, frame, gff3_attr_string])
-            gff_lines.append(gff3_line + '\n')
+            outfile.append(gff3_line + '\n')
 
-    
-    print(f"Successfully converted file='{gtf_file} to a gff file")
-    return gff_lines
+    if not quiet:
+        print(f"Successfully converted {gtf_file} to a gff format")
 
 def sort_and_update_genes(chrom, genes_dict):
     genes = sorted(genes_dict.values())
@@ -245,15 +231,13 @@ def sort_and_update_genes(chrom, genes_dict):
     return chrom, sorted_genes
 
 class Annotation():
-    # These categories must be updated based on different gff terms, since 
-    # these are not fixed, the more gffs are looked at the more terms appear
-    # so add them here to be read into the annotation object as long as they
-    # are unambiguous
     
-    bar_colors = ["31", "32", "33", "33", "33", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_CDSs:bool=False, chosen_chromosomes:list=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
+    bar_colors = ["31", "32", "33", "33", "33", "34"]
+    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True):
         
-        start = time.time()
+        start_time = time.time()
+
+        pid = os.getpid()
 
         self.file = str(Path(annot_file_path).resolve())
         self.path = str(Path(annot_file_path).resolve().parent) + "/"
@@ -272,7 +256,7 @@ class Annotation():
         self.gff_header = []
         self.target = target
         self.to_overlap = to_overlap
-        self.liftoff = False
+        self.liftover = False
         self.merged = False
         self.sorted = False
         
@@ -285,7 +269,7 @@ class Annotation():
         if not quiet:
             print(f"\nProcessing {self.id} annotation object\n")
         self.excluded_chromosomes = []
-        self.features = set()
+        self.features = {}
         # genes will be added as {"ch":{"gene_id" : gene_object}}
         self.chrs = {}
         # we save here chr as the value corresponding to each gene id
@@ -294,8 +278,10 @@ class Annotation():
         self.all_transcript_ids = {}
         self.all_protein_ids = {}
         self.unmapped = []
-        # Here we insert any feature which did not fit the current standards
+        # Here we insert any feature which is of an unknown category
         self.atypical_features = []
+        # Here we insert any recognisable feature that was impossible to fit into the current structure
+        self.orphaned_features = []
         self.self_overlapping = []
         self.overlapped_annotations = []
 
@@ -366,26 +352,26 @@ class Annotation():
 
         self.promoter_types = "standard"
         if original_annotation != None:
-            self.liftoff = True
+            self.liftover = True
 
-        self.errors = {"repeated_gene_IDs": [], "1bp_gene": [],
-                       "1bp_transcript": [], "subfeature_to_gene": [],
-                       "transcript_to_more_than_1_gene": [],
-                       "transcript_to_inexistent_gene": [],
-                       "repeat_transcript_different_genes": [],
-                       "repeat_transcript_same_gene": [],
-                       "transcript_to_gene_other_chr": []}
+        keys = [
+            "repeated_gene_IDs", "1bp_gene", "1bp_transcript", "subfeature_to_gene",
+            "transcript_to_more_than_1_gene", "transcript_to_gene_other_chr", "subfeature_to_transcript_other_chr", "subfeature_to_gene_other_chr"
+        ]
+        # Create a dictionary where every value is an empty set
+        self.errors = {key: set() for key in keys}
         
-        self.warnings = {"1bp_exon": [], "1bp_CDS": [], "1bp_UTR": [], "decreasing_coordinates": [],
-                         "missing_subfeature_parent": [],
-                         "missing_subfeature_parent_liftoff": [],
-                         "multiple_CDSs_per_transcript": [],
-                         "possible_policistronic_transcript": [],
-                         "transcript_with_no_exons": [],
-                         "gene_with_no_transcripts": []}
-        
-        parsed_lines = {key: [] for key in default_features}
-        parsed_lines["atypical"] = []
+        keys = [
+            "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_other_subfeature", "decreasing_coordinates",
+            "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
+            "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
+            "possible_policistronic_transcript", "transcript_with_no_exons",
+            "gene_with_no_transcripts", "subfeature_with_no_parent", "repeat_transcript_different_genes", "repeat_transcript_same_gene"
+        ]
+
+        self.warnings = {key: set() for key in keys}
+
+        del keys
         
         encoding = read_file_with_fallback(self.file)
         file_format = detect_file_format(self.file, encoding)
@@ -393,60 +379,13 @@ class Annotation():
             print(f"{file_format} file format detected for file='{self.file}'")
 
         if file_format == 'gtf':
-            lines = convert_gtf_to_gff3(self.file, encoding)
+            gff_file = f"{self.name}_{pid}.tmp"
+            convert_gtf_to_gff3(self.file, gff_file, encoding, quiet=quiet)
 
         else:
-            with open(self.file, encoding=encoding) as f:
-                lines = f.readlines()
+            gff_file = self.file
 
-        temp = []
-        protein_match_lines = []
-        chromosomes_t = set()
-        # Read lines from input file, filtering out lines consisting of "###\n"
-        for line in lines:
-            line = line.strip()
-            if line == "" or line == "###" or line == "#":
-                continue
-            if line.startswith("#"):
-                self.gff_header.append(line)
-            else:
-                line = line.split("\t")
-                if len(line) > 2:
-                    if chosen_chromosomes != None:
-                        if line[0] not in chosen_chromosomes:
-                            continue
-                        else:
-                            if chosen_coordinates != None:
-                                if int(line[3]) < chosen_coordinates[0] or int(line[4]) > chosen_coordinates[1]:
-                                    continue
-                    self.features.add(line[2])
-                    if line[2] == "nucleotide_to_protein_match":
-                        #to check why ":"
-                        chromosomes_t.add(line[0].split(":")[0])
-                        protein_match_lines.append(line)
-                    elif line[2] in default_features_r:
-                        chromosomes_t.add(line[0])
-                        temp.append(line)
-                    else:
-                        chromosomes_t.add(line[0])
-                        parsed_lines["atypical"].append(line)
-                else:
-                    self.gff_header.append(("#" + "\t".join(line)))
-
-        del lines
-        sorted_lines = sorted(temp, key=lambda x: (int(x[3]), int(x[4])))
-        protein_match_lines = sorted(protein_match_lines, key=lambda x: (int(x[3]), int(x[4])))
-        del temp
-        for line in sorted_lines:
-            parsed_lines[default_features_r[line[2]]].append(line)
-        del sorted_lines
-        chromosomes_t = list(chromosomes_t)
-        chromosomes_t.sort()
-        for ch in chromosomes_t:
-            self.chrs[ch] = {}
-        self.features = list(self.features)
-
-        gc.collect()
+        staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_features_without_id=skip_features_without_id, skip_atypical_features=skip_atypical_features, skip_orphaned_features=skip_orphaned_features, skip_subfeatures_without_id=skip_subfeatures_without_id, quiet=quiet)
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -458,611 +397,656 @@ class Annotation():
         else:
             disable = False
 
-        created_genes = False
-        transcript_info = {}
+        self._gene_info = {}
+        self._transcript_info = {}
 
-        if self.features == ["nucleotide_to_protein_match"]:
-            if not quiet:
-                print(f"{self.id} annotation has just nucleotide to protein matches so genes and transcripts will be generated")
-            progress_bar = tqdm(total=len(protein_match_lines),
-                    disable=disable,
-                    bar_format=(
-            f'\033[1;{Annotation.bar_colors[0]}mReading protein match features:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;{Annotation.bar_colors[0]}m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
-            temp_protein_matches = {}
-            for line in protein_match_lines:
-                progress_bar.update(1)
-                ch = line[0].split(":")[0]
-                source = line[1]
-                ft = line[2]
-                coord = [int(line[3]), int(line[4])]
-                if coord[0] > coord[1]:
-                    if not quiet:
-                        print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
-                    coord.sort()
-                score = line[5]
-                strand = line[6]
-                phase = line[7]
-                attributes = line[8].strip(";")
-                attributes_l = attributes.split(";")
-                ID = False
-                for a in attributes_l:
-                    a = a.split("=")
-                    if a[0] == "ID":
-                        ID = a[1].strip()
-                if not ID:
-                    if not quiet:
-                        print(f"Error: ID not found for {ft}: {line}")
-                    continue
-                if ID not in temp_protein_matches:
-                    temp_protein_matches[ID] = [Feature(ID, ch, source, ft, strand,coord[0], coord[1], score, phase, attributes)]
+        batch_size = 5000
+
+        for n, stage in enumerate(staging):
+
+            progress_bar = tqdm(total=len(staging[stage]), disable=disable, bar_format=(
+                f'\033[1;{Annotation.bar_colors[n]}mAdding {stage}s:\033[0m '
+                '{percentage:3.0f}%|'
+                f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
+                '{n}/{total} [{elapsed}<{remaining}]'))
+            
+            count = 0
+
+            for entry in staging[stage]:
+                if stage in ["UTR", "CDS", "exon", "other_subfeature"]:
+                    self._add_subfeature(entry, ft_level=stage, infer_gene_and_transcript_from_subfeatures=infer_genes_from_subfeatures, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
+                elif stage == "transcript":
+                    self._add_transcript(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, infer_gene_from_transcript=infer_genes_from_transcripts, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
                 else:
-                    temp_protein_matches[ID].append(Feature(ID, ch, source, ft, strand,coord[0], coord[1], score, phase, attributes))
+                    self._add_gene(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, quiet=quiet)
 
-            del protein_match_lines
-            progress_bar.close()
-            progress_bar = tqdm(total=len(temp_protein_matches.keys()),
-                    disable=disable,
-                    bar_format=(
-            f'\033[1;{Annotation.bar_colors[0]}mCreating genes for nucleotide to protein matches:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;{Annotation.bar_colors[0]}m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+                count += 1
+                if count >= batch_size:
+                    progress_bar.update(count)
+                    count = 0
 
-            for ID, features in temp_protein_matches.items():
-                progress_bar.update(1)
-                count = 0
-                gene_id = f"{ID}_gene"
-                sorted_features = features.copy()
-                sorted_features.sort()
-                if gene_id not in self.all_gene_ids:
-                    self.chrs[sorted_features[0].ch][gene_id] = Gene(False, False,
-                                                        gene_id, sorted_features[0].ch,
-                                                        sorted_features[0].source, "gene",
-                                                        sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
-                                                        sorted_features[0].score, ".", f"ID={gene_id}")
-                    self.all_gene_ids[gene_id] = sorted_features[0].ch
-                else:
-                    while gene_id in self.all_gene_ids:
-                        count += 1
-                        gene_id = f"{ID}_{count}_gene"
-                    self.chrs[sorted_features[0].ch][gene_id] = Gene(False, False,
-                                                        gene_id, sorted_features[0].ch,
-                                                        sorted_features[0].source, "gene",
-                                                        sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
-                                                        sorted_features[0].score, ".", f"ID={gene_id}")
-                    self.all_gene_ids[gene_id] = sorted_features[0].ch
-                
-                self.chrs[sorted_features[0].ch][gene_id].transcripts["temp_t"] = Transcript("temp_t", sorted_features[0].ch, sorted_features[0].source, "mRNA",
-                                                        sorted_features[0].strand, sorted_features[0].start, sorted_features[-1].end,
-                                                        sorted_features[0].score, ".", f"ID=temp_t;Parent={gene_id}")
-                self.all_transcript_ids["temp_t"] = (sorted_features[0].ch, gene_id)
-                for f in sorted_features:
-                    self.chrs[f.ch][gene_id].transcripts["temp_t"].temp_CDSs.append(Feature("temp_CDS", f.ch, f.source, "CDS", f.strand, f.start, f.end, f.score, f.phase, f"ID=temp_CDS;Parent=temp_t"))
-                    self.chrs[f.ch][gene_id].transcripts["temp_t"].exons.append(Feature(f"temp_exon", f.ch, f.source, "exon", f.strand, f.start, f.end, f.score,  ".", f"ID=temp_exon;Parent=temp_t"))
+            if count > 0:
+                progress_bar.update(count)
 
             progress_bar.close()
+            staging[stage] = None
+            gc.collect()
 
-        else:
-            if "gene" not in self.features:
-                created_genes = True
-                progress_bar = tqdm(total=len(parsed_lines["transcript"]),
-                                    disable=disable,
-                                    bar_format=(
-                        f'\033[1;{Annotation.bar_colors[0]}mCreating Genes:\033[0m '
-                        '{percentage:3.0f}%|'
-                        f'\033[1;{Annotation.bar_colors[0]}m{{bar}}\033[0m| '
-                        '{n}/{total} [{elapsed}<{remaining}]'))
-                for line in parsed_lines["transcript"]:
-                    progress_bar.update(1)
-                    ch = line[0]
-                    source = line[1]
-                    ft = line[2]
-                    coord = [int(line[3]), int(line[4])]
-                    score = line[5]
-                    strand = line[6]
-                    phase = line[7]
-                    attributes = line[8].strip(";")
-                    attributes_l = attributes.split(";")
-                    ID = False
-                    for a in attributes_l:
-                        a = a.split("=")
-                        if a[0] == "ID":
-                            ID = a[1].strip()
-                    if not ID:
-                        if not quiet:
-                            print(f"Error: ID not found for {ft}: {line}")
-                        continue
+        del self._gene_info
+        del self._transcript_info
+        del staging
 
-                    if "pseudo" in ft:
-                        pseudogene = True
-                    else:
-                        pseudogene = False
+        gc.collect()
 
-                    if ft == "transposable_element_gene":
-                            transposable = True
-                    elif "transposable=True" in attributes:
-                        transposable = True
-                    else:
-                        transposable = False                  
-
-                    #improve at some point, slow with massive lists
-                    if ID not in self.all_transcript_ids:
-                        self.all_transcript_ids[f"{ID}"] = (ch, f"{ID}_gene")
-                        self.all_gene_ids[f"{ID}_gene"] = ch
-                        transcript_info[f"{ID}"] = [ch, coord[0], coord[1], 1]
-                        self.chrs[ch][f"{ID}_gene"] = Gene(pseudogene, transposable,
-                                                    f"{ID}_gene", ch,
-                                                    source, "gene",
-                                                    strand, coord[0], coord[1],
-                                                    score, ".", f"ID={ID}_gene")
-                    else:
-                        transcript_info[f"{ID}"][3] += 1
-                        self.all_gene_ids[f"{ID}_{transcript_info[ID][3]}_gene"] = ch
-                        self.chrs[ch][f"{ID}_{transcript_info[ID][3]}_gene"] = Gene(pseudogene, transposable,
-                                                f"{ID}_{transcript_info[ID][3]}_gene",
-                                                ch, source, "gene", 
-                                                strand, coord[0], coord[1], score,
-                                                 ".",
-                                                f"ID={ID}_{transcript_info[ID][3]}_gene")
-                        self.all_transcript_ids[f"{ID}_{transcript_info[ID][3]}"] = (ch, f"{ID}_{transcript_info[ID][3]}_gene")
-                        if not quiet:
-                            print(f"{self.id} Warning: repeated transcript ID {ID}_gene renamed to {ID}_{transcript_info[ID][3]}_gene")
-
-                progress_bar.close()
-
-                if not quiet:
-                    print(f"{self.id} did not have genes and these were created from transcripts")
-
-            for n, (ft_level, lines) in enumerate(parsed_lines.items()):
-                progress_bar = tqdm(total=len(lines), disable=disable, bar_format=(
-                            f'\033[1;{Annotation.bar_colors[n]}mAdding {ft_level}s:\033[0m '
-                            '{percentage:3.0f}%|'
-                            f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
-                            '{n}/{total} [{elapsed}<{remaining}]'))
-                for line in lines:
-                    ch = line[0]
-                    source = line[1]
-                    ft = line[2]
-                    coord = [int(line[3]), int(line[4])]
-                    score = line[5]
-                    strand = line[6]
-                    phase = line[7]
-                    attributes = line[8].strip(";")
-                    attributes_l = attributes.split(";")
-                    ID = False
-                    for a in attributes_l:
-                        a = a.split("=")
-                        if a[0] == "ID":
-                            ID = a[1].strip()
-                    if not ID:
-                        ID = ""
-
-                    if coord[0] > coord[1]:
-                        if not quiet:
-                            print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
-                        self.warnings["decreasing_coordinates"].append(ID)
-                        coord.sort()
-
-                    # genes
-                    if n == 0:
-                        if coord[0] == coord[1]:
-                            if not quiet:
-                                print(f"{self.id} Error: 1bp gene {ID} feature")
-                            self.errors["1bp_gene"].append(ID)
-                        if ft == "pseudogene":
-                            pseudogene = True
-                        else:
-                            pseudogene = False
-
-                        if ft == "transposable_element_gene":
-                            transposable = True
-                        elif "transposable=True" in attributes:
-                            transposable = True
-                        else:
-                            transposable = False
-
-                        #improve at some point, slow with massive lists
-                        if ID not in self.all_gene_ids:
-                            self.all_gene_ids[ID] = ch
-                            self.chrs[ch][ID] = Gene(pseudogene, transposable,
-                                                    ID, ch,
-                                                    source, ft, strand, coord[0],
-                                                    coord[1], score, ".",
-                                                    attributes)
-                        else:
-                            if not quiet:
-                                print(f"{self.id} Error: repeated gene ID {ID}")
-                            self.errors["repeated_gene_IDs"].append(ID)
-
-                    # transcripts with created genes
-                    elif n == 1 and created_genes:
-                        if coord[0] == coord[1]:
-                            if not quiet:
-                                print(f"{self.id} Error: 1bp transcript level {ID} feature")
-                            self.errors["1bp_transcript"].append(ID)  
-                        count =  transcript_info[f"{ID}"][3]
-
-                        if count == 1:
-                            self.chrs[ch][f"{ID}_gene"].transcripts[ID] = Transcript(ID, ch, source, ft, 
-                                                            strand, coord[0],
-                                                            coord[1], score,
-                                                            ".",
-                                                        f"ID={ID};Parent={ID}_gene")
-                        else:
-                            found = False
-                            for x in range(count):
-                                if x == 0:
-                                    t_parent = f"{ID}_gene"
-                                    t_id = f"{ID}"
-                                else:
-                                    t_parent = f"{ID}_{x+1}_gene"
-                                    t_id = f"{ID}_{x+1}"
-
-                                if t_parent in self.chrs[ch]:
-                                    start_parent = self.chrs[ch][t_parent].start
-                                    end_parent = self.chrs[ch][t_parent].end
-                                    if ((start_parent <= coord[0])
-                                        and (end_parent >= coord[1])):
-                                        found = True
-                                        (self.chrs[ch][t_parent]
-                                        .transcripts[t_id]) = Transcript(t_id, ch,
-                                                                    source, ft,
-                                                                    strand,
-                                                                    coord[0],
-                                                                    coord[1], score,
-                                                                    ".",
-                                                        f"ID={t_id};Parent={t_parent}")
-                                        break
-                            if not found:
-                                if not quiet:
-                                    print("Error: repeated transcript ID {ID} could not find its newly created gene copy")
-    
-                    # transcripts
-                    elif n == 1:
-                        if coord[0] == coord[1]:
-                            if not quiet:
-                                print(f"{self.id} Error: 1bp transcript level {ID} feature")
-                            self.errors["1bp_transcript"].append(ID)
-                        for term in attributes_l:
-                            if "arent=" not in term:
-                                continue # skip term if not parent term
-                            term = term.split("=")[1]
-                            parents = term.split(",")
-                            if len(parents) > 1: # does not happen it seems
-                                if not quiet:
-                                    print(f"{self.id} Error: {ID} transcript refers to more than 1 gene!")
-                                self.errors["transcript_to_more_than_1_gene"].append(ID)
-                            else:
-                                parent = parents[0].strip()
-                                if parent != ID:
-                                    if parent in self.chrs[ch]:
-                                        if ID in self.chrs[ch][parent].transcripts:
-                                            if not quiet:
-                                                print(f"{self.id} Error: duplicated {ID} transcript for {parent} gene")
-                                            self.errors["repeat_transcript_same_gene"].append(ID)
-                                        else:
-                                            self.chrs[ch][parent].transcripts[ID] = Transcript(ID, ch, source,
-                                                                                                ft, 
-                                                                                                strand, coord[0],
-                                                                                                coord[1], score,
-                                                                                                ".",
-                                                                                                attributes)
-                                            self.all_transcript_ids[ID] = (ch, parent)
-                                    elif parent in self.all_gene_ids:
-                                        if not quiet:
-                                            print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome")
-                                        self.errors["transcript_to_gene_other_chr"].append(ID)
-                                    else:
-                                        if not quiet:
-                                            print(f"{self.id} Error: {ID} transcript refers to an inexistent gene")
-                                        self.errors["transcript_to_inexistent_gene"].append(ID)
-
-                                elif not quiet:
-                                    print(f"Warning: Transcript {ID} has its own id as a parent")
-                                    
-                    # transcript subfeatures
-                    elif n < (len(parsed_lines) - 1):
-                        if coord[0] == coord[1] and n == 3:
-                            self.warnings["1bp_exon"].append(ID)
-                        if coord[0] == coord[1] and n == 4:
-                            self.warnings["1bp_CDS"].append(ID)
-                        if coord[0] == coord[1] and n == 2:
-                            self.warnings["1bp_UTR"].append(ID)
-
-                        for term in attributes_l:
-                            if "arent=" not in term:
-                                continue # skip term if not parent term
-                            term = term.split("=")[1]
-                            parents = term.split(",")
-                            for parent in parents:
-                                if not parent:
-                                    continue
-                                parent = parent.strip()
-                                #improve at some point, slow with massive lists
-                                # parent not found within transcripts
-                                if parent not in self.all_transcript_ids:
-                                    if parent in self.chrs[ch]:
-                                        # subset of cases where subfeature
-                                        # directly references a pseudogene
-                                        if self.chrs[ch][parent].pseudogene:
-                                            # creating a pseudotranscript
-                                            # for the pseudogene
-                                            if parent[0:4] == "gene":
-                                                pseudo_t = f"pseudo_t_{parent[5:]}"
-                                            else:
-                                                pseudo_t = f"pseudo_t_{parent}"
-
-                                            if self.chrs[ch][parent].transcripts == {}:
-                                                # PSEUDOGENES refered to by
-                                                # transcript subfeatures
-                                                # are given a single
-                                                # pseudotranscript
-                                                self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, ".", self.chrs[ch][parent].attributes)
-                                                
-                                            if pseudo_t in self.chrs[ch][parent].transcripts:
-                                                if n == 4:
-                                                    # CDS segments
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[pseudo_t]
-                                                    .temp_CDSs.append(Feature
-                                                            (ID, ch, source, ft, 
-                                                            strand, coord[0],
-                                                            coord[1], score, phase, 
-                                                            attributes)))
-                                                elif n == 3:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[pseudo_t]
-                                                    .exons.append
-                                                    (Exon(ID, ch, source, ft, 
-                                                        strand, coord[0],
-                                                        coord[1], score, ".", 
-                                                        attributes)))
-                                                elif n == 2:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[pseudo_t]
-                                                    .temp_UTRs.append(UTR
-                                                            (ID, ch, source, ft, 
-                                                            strand, coord[0],
-                                                            coord[1], score, 
-                                                            ".", attributes)))
-                                                else:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[pseudo_t].miRNAs
-                                                    .append(Feature(ID, ch, 
-                                                                    source, ft,
-                                                                    strand,
-                                                                    coord[0],
-                                                                    coord[1],
-                                                                    score,  ".",
-                                                                    attributes)))                                                  
-                                            else:
-                                                if not quiet:
-                                                    print(f"{self.id} Error: {parent} "
-                                                    "pseudogene already had a "
-                                                    f"transcript which {ft} "
-                                                    f"subfeature {ID} ignores")
-
-                                        # subset of cases where subfeature directly
-                                        # points to a gene that is not a pseudogene
-                                        else:
-                                            # gene without transcripts pointed to
-                                            if (self.chrs[ch][parent]
-                                                .transcripts) == {}:
-                                                if not quiet:
-                                                    print(f"{self.id} Error: {ft} "
-                                                    f"subfeature {ID} references"
-                                                    f" {parent} gene which is "
-                                                    "not a pseudogene and has "
-                                                    "no transcripts")
-                                                (self.errors["subfeature_to_gene"]
-                                                .append(ID))
-                                            # correctly linking the subfeature to 
-                                            # the single transcript that exists
-                                            elif (len(self.chrs[ch][parent]
-                                                    .transcripts) == 1):
-                                                temp_id = list(self.chrs[ch]
-                                                            [parent].transcripts
-                                                            .keys())[0]
-                                                if n == 4:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[temp_id]
-                                                    .temp_CDSs.append(Feature
-                                                            (ID, ch, source, ft, 
-                                                            strand, coord[0],
-                                                            coord[1], score,
-                                                            phase, attributes)))
-                                                elif n == 3:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[temp_id].exons
-                                                    .append
-                                                    (Exon(ID, ch, source, ft, 
-                                                        strand, coord[0],
-                                                        coord[1], score, ".", 
-                                                        attributes)))
-                                                elif n == 2:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[temp_id]
-                                                    .temp_UTRs.append(UTR
-                                                            (ID, ch, source, ft, 
-                                                            strand, coord[0],
-                                                            coord[1], score,
-                                                            ".", attributes)))
-                                                else:
-                                                    (self.chrs[ch][parent]
-                                                    .transcripts[temp_id]
-                                                    .miRNAs.append(Feature
-                                                            (ID, ch, source, ft, 
-                                                            strand, coord[0],
-                                                            coord[1], score,
-                                                             ".", attributes)))
-                                            else:
-                                                if not quiet:
-                                                    print(f"{self.id} Error: {ft} "
-                                                    f"subfeature {ID} references"
-                                                    f"{parent} gene which is not"
-                                                    "a pseudogene and has "
-                                                    "multiple transcripts")
-                                                (self.errors["subfeature_to_gene"]
-                                                .append(ID))
-
-                                    else:
-                                        if self.liftoff:
-                                            if not quiet:
-                                                print(f"{self.id} Warning: {ft} "
-                                                f"subfeature {ID} references "
-                                                f"{parent} which is not found in"
-                                                " the gff, possibly not "
-                                                "transfered during liftoff")
-                                            (self.warnings
-                                            ["missing_subfeature_parent_liftoff"]
-                                            .append(ID))
-                                        else:
-                                            if not quiet:
-                                                print(f"{self.id} Warning: {ft} "
-                                                f"subfeature {ID} references "
-                                                f"{parent} which is not found in"
-                                                " the gff")
-                                            (self.warnings
-                                            ["missing_subfeature_parent"]
-                                            .append(ID))
-
-                                elif created_genes:
-                                    count = transcript_info[parent][3]
-                                    if count > 1:
-                                        for x in range(count):
-                                            if f"{parent}_{x+1}_gene" in self.chrs[ch]:
-                                                if f"{parent}_{x+1}" in self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts:
-                                                    start_parent = self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts[f"{parent}_{x+1}"].start
-                                                    end_parent = self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts[f"{parent}_{x+1}"].end
-                                                    if ((start_parent <= coord[0])
-                                                        and (end_parent >= coord[1])):
-                                                        if n == 4:
-                                                            # CDS segments
-                                                            (self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts[f"{parent}_{x+1}"].temp_CDSs
-                                                            .append(Feature(ID, ch, source,
-                                                                            ft, strand, 
-                                                                            coord[0], coord[1],
-                                                                            score, phase, 
-                                                                            f"ID={ID},Parent={ID}_{x+1}")))
-                                                        
-                                                        elif n == 3:
-                                                            (self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts[f"{parent}_{x+1}"].exons
-                                                            .append(Exon(ID, ch, source, ft, 
-                                                                        strand, coord[0], 
-                                                                        coord[1], score, ".", 
-                                                                        f"ID={ID},Parent={ID}_{x+1}")))
-                                                        
-                                                        elif n == 2:
-                                                            (self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts[f"{parent}_{x+1}"].temp_UTRs
-                                                            .append(UTR(ID, ch, source, ft,
-                                                                        strand, coord[0], 
-                                                                        coord[1], score, ".", 
-                                                                        f"ID={ID},Parent={ID}_{x+1}")))
-                                                        else:
-                                                            (self.chrs[ch][f"{parent}_{x+1}_gene"].transcripts[f"{parent}_{x+1}"].miRNAs
-                                                            .append(Feature(ID, ch, source,
-                                                                            ft, strand,
-                                                                            coord[0], coord[1],
-                                                                            score,  ".",
-                                                                            f"ID={ID},Parent={ID}_{x+1}")))
-                                    else:
-                                        for g in self.chrs[ch].values():
-                                            if parent in g.transcripts:
-                                                if n == 4:
-                                                    # CDS segments
-                                                    (g.transcripts[parent].temp_CDSs
-                                                    .append(Feature(ID, ch, source,
-                                                                    ft, strand, 
-                                                                    coord[0], coord[1],
-                                                                    score, phase, 
-                                                                    attributes)))
-                                                
-                                                elif n == 3:
-                                                    (g.transcripts[parent].exons
-                                                    .append(Exon(ID, ch, source, ft, 
-                                                                strand, coord[0], 
-                                                                coord[1], score, ".", 
-                                                                attributes)))
-                                                
-                                                elif n == 2:
-                                                    (g.transcripts[parent].temp_UTRs
-                                                    .append(UTR(ID, ch, source, ft,
-                                                                strand, coord[0], 
-                                                                coord[1], score, ".", 
-                                                                attributes)))
-                                                else:
-                                                    (g.transcripts[parent].miRNAs
-                                                    .append(Feature(ID, ch, source,
-                                                                    ft, strand,
-                                                                    coord[0], coord[1],
-                                                                    score,  ".",
-                                                                    attributes)))                                      
-                                else:
-                                    found = 0
-                                    # looking for parent amongst transcripts
-                                    for g in self.chrs[ch].values():
-                                        if parent in g.transcripts:
-                                            found += 1
-                                            if n == 4:
-                                                # CDS segments
-                                                (g.transcripts[parent].temp_CDSs
-                                                .append(Feature(ID, ch, source,
-                                                                ft, strand, 
-                                                                coord[0], coord[1],
-                                                                score, phase, 
-                                                                attributes)))
-                                            
-                                            elif n == 3:
-                                                (g.transcripts[parent].exons
-                                                .append(Exon(ID, ch, source, ft, 
-                                                            strand, coord[0], 
-                                                            coord[1], score, ".", 
-                                                            attributes)))
-                                            
-                                            elif n == 2:
-                                                (g.transcripts[parent].temp_UTRs
-                                                .append(UTR(ID, ch, source, ft,
-                                                            strand, coord[0], 
-                                                            coord[1], score, ".", 
-                                                            attributes)))
-                                            else:
-                                                (g.transcripts[parent].miRNAs
-                                                .append(Feature(ID, ch, source,
-                                                                ft, strand,
-                                                                coord[0], coord[1],
-                                                                score,  ".",
-                                                                attributes)))                                    
-                                    if found > 1:
-                                        if not quiet:
-                                            print(f"{self.id} Error: same {parent} transcript from {ft} {ID} found for different genes.")
-                                        self.errors["repeat_transcript_different_genes"].append(ID)          
-                    else:
-                        self.atypical_features.append((Feature(ID, ch, source, ft, strand, coord[0], coord[1], score, ".", attributes)))
-                    progress_bar.update(1)
-                progress_bar.close()
+        if self.file != gff_file:
+            os.remove(gff_file)
 
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
 
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
+
+        self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+
+        if rework_all_CDSs or work_out_missing_CDSs:
+            self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+
+    def load_data(self, gff_file, encoding, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):
         
-        if self.features == ["nucleotide_to_protein_match"]:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+        staging = {"gene": [], "transcript": [], "exon": [], "CDS": [], "UTR": [], "other_subfeature": []}
+
+        chromosomes_t = set()
+
+        with open(gff_file, encoding=encoding) as f:
+
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                if line[0] == "#":
+                    if line == "###" or line == "#":
+                        continue
+                    self.gff_header.append(line)
+                    continue
+
+                parts = line.split("\t")
+                if len(parts) <= 2:
+                    self.gff_header.append(line)
+                    continue
+
+                if len(parts) < 9:
+                    continue
+
+                entry = parse_gff_line(line)
+
+                ID = entry["id"]
+                ft = entry["feature"]
+                ch = entry["ch"]
+                start = entry["start"]
+                end = entry["end"]
+
+                if chosen_chromosomes is not None:
+                    if ch not in chosen_chromosomes:
+                        continue
+
+                if chosen_coordinates is not None:
+
+                    if start < chosen_coordinates[0]:
+                        continue
+                    if end > chosen_coordinates[1]:
+                        continue
+
+                cat = default_features_r.get(ft, "atypical")
+
+                if not ID:
+                    if not quiet:
+                        print(f"{self.id} Warning: ID not found for {ft}: {line}")
+
+                    if skip_features_without_id and skip_subfeatures_without_id:
+                        continue
+                    elif not skip_features_without_id:
+                        if cat in ["gene", "transcript"]:
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                            continue
+                    else:
+                        if cat in ["exon", "CDS", "UTR", "other_subfeature"]:
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                            continue
+
+                source = entry["source"]
+                strand = entry["strand"]
+                score = entry["score"]
+                attributes = entry["attributes"]
+                decreasing_coordinates = entry["decreasing_coordinates"]
+
+                if decreasing_coordinates:
+                    self.warnings["decreasing_coordinates"].add(ID)
+                    if not quiet:
+                        print(f"{self.id} Warning: Decreasing coordinates for {ft} {ID}")
+
+                if cat == "atypical":
+                    if not skip_atypical_features:
+                        if ft not in self.features:
+                            self.features[ft] = 1
+                        else:
+                            self.features[ft] += 1
+                        chromosomes_t.add(ch)
+                        self.atypical_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                else:
+                    if ft not in self.features:
+                        self.features[ft] = 1
+                    else:
+                        self.features[ft] += 1
+                    chromosomes_t.add(ch)
+                    staging[cat].append(entry)
+
+        chromosomes_t = sorted(list(chromosomes_t))
+        for ch in chromosomes_t:
+            self.chrs[ch] = {}
+
+        return staging
+
+
+    def _add_gene(self, entry, rename_repeated_id:bool=False, quiet:bool=False):
+        ID = entry["id"]
+        transposable = entry["transposable"]
+        pseudogene = entry["pseudogene"]
+        ch = entry["ch"]
+        source = entry["source"]
+        ft = entry["feature"]
+        strand = entry["strand"]
+        start = entry["start"]
+        end = entry["end"]
+        score = entry["score"]
+        attributes = entry["attributes"]
+        # Making sure attributes reflect the correct id
+        attributes["id"] = ID
+        attributes["parent"] = []
+
+        if start == end:
+            self.errors["1bp_gene"].add(ID)
+            if not quiet:
+                print(f"{self.id} Error: 1bp gene {ID} feature")
+
+        if ID not in self.all_gene_ids:
+            self.all_gene_ids[ID] = ch
+            self.chrs[ch][ID] = Gene(pseudogene, transposable, ID, ch, source, ft, strand, start, end, score, ".", attributes)
         else:
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
-        if "CDS" not in self.features and rework_CDSs:
-            self.rework_CDSs(genome, quiet=quiet)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+            self.errors["repeated_gene_IDs"].add(ID)
+            if not rename_repeated_id:
+                if not quiet:
+                    print(f"{self.id} Error: repeated gene ID {ID} will not be added based on the chosen parameter (rename_repeated_id={rename_repeated_id})")
+            else:
+                renamed_id = self._get_unique_gene_id(ID)
+                if not quiet:
+                    print(f"{self.id} Warning: repeated gene id {ID} was renamed to {renamed_id}")
+                self.all_gene_ids[renamed_id] = ch
+                self.chrs[ch][renamed_id] = Gene(pseudogene, transposable, renamed_id, ch, source, ft, strand, start, end, score, ".", attributes)
+                if ID not in self._gene_info:
+                    self._gene_info[ID] = {ID, renamed_id}
+                else:
+                    self._gene_info[ID].add(renamed_id)
+
+
+    def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):
+        ID = entry["id"]
+        ch = entry["ch"]
+        source = entry["source"]
+        ft = entry["feature"]
+        strand = entry["strand"]
+        start = entry["start"]
+        end = entry["end"]
+        score = entry["score"]
+        attributes = entry["attributes"]
+        parents = entry["parents"]
+        # Making sure attributes reflect the correct id
+        attributes["id"] = ID
+
+        if rename_repeated_id:
+            unique_t_id = self._get_unique_transcript_id(ID)
+        else:
+            unique_t_id = ID
+
+        if start == end:
+            if not quiet:
+                print(f"{self.id} Error: 1bp transcript level {ID} feature")
+            self.errors["1bp_transcript"].add(ID)
+
+        if len(parents) > 1:
+            """
+            So far, this does not happen, so no action taken yet.
+            """
+            if not quiet:
+                print(f"{self.id} Error: {ID} transcript refers to more than 1 gene. Parents = {parents}. The transcript will not be added to any of the parental genes")
+            self.errors["transcript_to_more_than_1_gene"].add(ID)
+            if not skip_orphaned_features:
+                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+
+        elif not parents:
+            """
+            The current assumption is that there will not be more than one parentless transcript actually referring to the same gene.
+            """
+            self.warnings["transcript_with_no_parent"].add(ID)
+            if infer_gene_from_transcript:
+
+                created_gene_id = f"{unique_t_id}_gene"
+
+                if rename_repeated_id:
+                    count = 0
+                    while created_gene_id in self.all_gene_ids:
+                        count += 1
+                        unique_t_id = f"{unique_t_id}_{count}"
+                        while unique_t_id in self.all_transcript_ids:
+                            count += 1
+                            unique_t_id = f"{unique_t_id}_{count}"
+                        created_gene_id = f"{unique_t_id}_gene"
+
+                if created_gene_id not in self.all_gene_ids and unique_t_id not in self.all_transcript_ids:
+                    entry["id"] = created_gene_id
+                    entry["feature"] = "gene"
+                    self._add_gene(entry, quiet=quiet)
+                    attributes["parent"] = [created_gene_id]
+                    attributes["id"] = unique_t_id
+
+                    self.all_transcript_ids[unique_t_id] = (ch, created_gene_id)
+                    self.chrs[ch][created_gene_id].transcripts[unique_t_id] = Transcript(unique_t_id, ch, source, ft, strand, start, end, score, ".", attributes)
+                    if unique_t_id != ID:
+                        if ID in self._transcript_info:
+                            self._transcript_info[ID].add(unique_t_id)
+                        else:
+                            self._transcript_info[ID] = {ID, unique_t_id}
+                        if quiet:
+                            print(f"{self.id} Warning: No parent provided so the following {created_gene_id} gene was created for {ID} transcript which was renamed to {unique_t_id} to avoid repeat ids")
+                    elif not quiet:
+                        print(f"{self.id} Warning: No parent provided so the following {created_gene_id} gene was created for {ID} transcript")
+                            
+                elif not quiet:
+                    print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as no parent was provided and transcript id was not unique")
+            elif not quiet:
+                print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (infer_genes_from_transcripts={infer_gene_from_transcript}) as no parent was provided")
+
+        else:
+            parent = parents[0]
+            if parent == ID:
+                if not quiet:
+                    print(f"{self.id} Warning: Transcript {ID} has its own id as a parent so this transcript feature was ignored")
+                if not skip_orphaned_features:
+                    self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+
+            elif parent not in self.all_gene_ids:
+
+                self.warnings["transcript_to_inexistent_gene"].add(ID)
+
+                if infer_gene_from_transcript:
+
+                    if unique_t_id not in self.all_transcript_ids:
+                        entry["id"] = parent
+                        entry["feature"] = "gene"
+                        self._add_gene(entry, quiet=quiet)
+                        attributes["id"] = unique_t_id
+
+                        self.all_transcript_ids[unique_t_id] = (ch, parent)
+                        self.chrs[ch][parent].transcripts[unique_t_id] = Transcript(unique_t_id, ch, source, ft, strand, start, end, score, ".", attributes)
+                        if unique_t_id != ID:
+                            if ID in self._transcript_info:
+                                self._transcript_info[ID].add(unique_t_id)
+                            else:
+                                self._transcript_info[ID] = {ID, unique_t_id}
+                                print(f"{self.id} Warning: Transcript referred to an inexistent gene so the following {parent} gene was created for {ID} transcript")
+                        elif not quiet:
+                            print(f"{self.id} Warning: Transcript referred to an inexistent gene so the following {parent} gene was created for {ID} transcript which was renamed to {unique_t_id} to avoid repeat ids")
+                    elif not quiet:
+                        print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as transcript referred to an inexistent gene parent and the provided transcript id was not unique")
+                elif not quiet:
+                    print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (infer_genes_from_transcripts={infer_gene_from_transcript}) as transcript referred to an inexistent gene parent")
+
+            elif self.all_gene_ids[parent] != ch:
+                self.errors["transcript_to_gene_other_chr"].add(ID)
+                if not quiet:
+                    print(f"{self.id} Error: {ID} transcript refers to a gene in a different chromosome, it could not be assigned to a gene")
+                if not skip_orphaned_features:
+                    self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+
+            else:
+            
+                if parent not in self._gene_info:
+
+                    if unique_t_id not in self.all_transcript_ids:
+                        self.all_transcript_ids[unique_t_id] = (ch, parent)
+                        self.chrs[ch][parent].transcripts[unique_t_id] = Transcript(unique_t_id, ch, source, ft, strand, start, end, score, ".", attributes)
+                        if unique_t_id != ID:
+                            if ID in self._transcript_info:
+                                self._transcript_info[ID].add(unique_t_id)
+                            else:
+                                self._transcript_info[ID] = {ID, unique_t_id}
+
+                            if parent == self.all_transcript_ids[ID][1]:
+                                self.warnings["repeat_transcript_same_gene"].add(ID)
+                                if not quiet:
+                                    print(f"{self.id} Warning: {ID} transcript was renamed to {unique_t_id} to avoid repeat ids for the same {parent} gene")
+                            else:
+                                self.warnings["repeat_transcript_different_genes"].add(ID)
+                                if not quiet:
+                                    print(f"{self.id} Warning: {ID} transcript was renamed to {unique_t_id} to avoid repeat transcript ids across genes ({parent} and {self.all_transcript_ids[ID][1]})")
+                    elif not quiet:
+                        print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as the provided transcript id was not unique")
+
+                else:
+
+                    possible_parents = self._gene_info[parent]
+
+                    found = False
+
+                    for parent in possible_parents:
+
+                        if parent not in self.chrs[ch]:
+                            continue
+                        if self.chrs[ch][parent].start <= start:
+                            continue
+                        if self.chrs[ch][parent].end >= end:
+                            continue
+
+                        found = True
+                        if unique_t_id not in self.all_transcript_ids:
+                            self.all_transcript_ids[unique_t_id] = (ch, parent)
+                            self.chrs[ch][parent].transcripts[unique_t_id] = Transcript(unique_t_id, ch, source, ft, strand, start, end, score, ".", f"ID={unique_t_id};Parent={parent}")
+                            if unique_t_id != ID:
+                                if ID in self._transcript_info:
+                                    self._transcript_info[ID].add(unique_t_id)
+                                else:
+                                    self._transcript_info[ID] = {ID, unique_t_id}
+
+                                if parent == self.all_transcript_ids[ID][1]:
+                                    self.warnings["repeat_transcript_same_gene"].add(ID)
+                                    if not quiet:
+                                        print(f"{self.id} Warning: {ID} transcript was renamed to {unique_t_id} to avoid repeat ids for the same {parent} gene")
+                                else:
+                                    self.warnings["repeat_transcript_different_genes"].add(ID)
+                                    if not quiet:
+                                        print(f"{self.id} Warning: {ID} transcript was renamed to {unique_t_id} to avoid repeat transcript ids across genes ({parent} and {self.all_transcript_ids[ID][1]})")
+
+                        elif not quiet:
+                            print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as the provided transcript id was not unique")
+                        break
+
+                    if not found and not quiet:
+                        if unique_t_id != ID:
+                            print(f"{self.id} Error: {ID} transcript, renamed to {unique_t_id}, could not be assigned to any gene. Possibly due to unforseen id clash issue")
+                        else:
+                            print(f"{self.id} Error: {ID} transcript could not be assigned to any gene. Possibly due to unforseen id clash issue")
+                        if not skip_orphaned_features:
+                            self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+
+    def _add_subfeature(self, entry, ft_level, infer_gene_and_transcript_from_subfeatures:bool=False, only_infer_if_none_of_the_parents_exist:bool=True, skip_orphaned_features:bool=False, liftover_exception:bool=True, quiet:bool=False):
+        ID = entry["id"]
+        ch = entry["ch"]
+        source = entry["source"]
+        ft = entry["feature"]
+        strand = entry["strand"]
+        start = entry["start"]
+        end = entry["end"]
+        phase = entry["phase"]
+        score = entry["score"]
+        attributes = entry["attributes"]
+        parents = entry["parents"]
+
+        if start == end:
+            self.warnings[f"1bp_{ft_level}"].add(ID)
+
+        if not parents:
+            self.warnings["subfeature_with_no_parent"].add(ID)
+
+            if ft_level != "CDS":
+
+                if not quiet:
+                    print(f"{self.id} Warning: No parent provided so the following {ft} subfeature {ID} could not be assigned to any transcript")
+
+                if not skip_orphaned_features:
+                    self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+            
+            elif infer_gene_and_transcript_from_subfeatures:
+
+                created_gene = f"{ID}_gene"
+                created_transcript = f"{ID}_transcript"
+
+                if created_gene not in self.all_gene_ids:
+                    if not quiet and ft != "nucleotide_to_protein_match":
+                        print(f"{self.id} Warning: {ft} {ID} subfeature was assigned to created transcript {created_transcript} and created gene {created_gene}")
+                    entry["id"] = created_gene
+                    entry["feature"] = "gene"
+                    self._add_gene(entry, quiet=quiet)
+
+                if created_transcript not in self.all_transcript_ids:
+                    entry["id"] = created_transcript
+                    entry["feature"] = "transcript"
+                    entry["parents"] = [created_gene]
+                    entry["attributes"]["parent"] = [created_gene]
+                    self._add_transcript(entry, quiet=quiet, skip_orphaned_features=skip_orphaned_features)
+
+                attributes["parent"] = [created_transcript]
+                attributes["id"] = ID
+
+                self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+
+            else:
+
+                if not quiet:
+                    print(f"{self.id} Warning: No parent provided and infer_gene_and_transcript_from_subfeatures={infer_gene_and_transcript_from_subfeatures} so the following {ft} subfeature {ID} could not be assigned to a created transcript")
+
+                if not skip_orphaned_features:
+                    self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+
+        true_orphans = True
+
+        for parent in parents:
+            if parent in self.all_transcript_ids:
+                true_orphans = False
+            elif parent in self.all_gene_ids:
+                true_orphans = False
+
+        for parent in parents:
+            if parent not in self._transcript_info:
+                if parent in self.all_transcript_ids:
+                    if self.all_transcript_ids[parent][0] != ch:
+                        self.errors["subfeature_to_transcript_other_chr"].add(ID)
+                        if not quiet:
+                            print(f"{self.id} Error: {ID} subfeature refers to a transcript in a different chromosome, it could not be assigned to its parent")
+                        if not skip_orphaned_features:
+                            self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                        continue
+
+                    gene_parent = self.all_transcript_ids[parent][1]
+
+                    if ft_level == "CDS":
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                    elif ft_level == "exon":
+                        self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                    elif ft_level == "UTR":
+                        self.chrs[ch][gene_parent].transcripts[parent].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                    else:
+                        self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+
+                elif parent in self.all_gene_ids:
+                    if self.all_gene_ids[parent] != ch:
+                        self.errors["subfeature_to_gene_other_chr"].add(ID)
+                        if not quiet:
+                            print(f"{self.id} Error: {ID} subfeature refers to a gene in a different chromosome, it could not be assigned to its parent")
+                        if not skip_orphaned_features:
+                            self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                        continue
+
+                    # cases where subfeature directly references a pseudogene creating a pseudotranscript for the pseudogene
+                    if self.chrs[ch][parent].pseudogene:
+                        if parent[0:4] == "gene":
+                            pseudo_t = f"pseudo_t_{parent[5:]}"
+                        else:
+                            pseudo_t = f"pseudo_t_{parent}"
+
+                        if self.chrs[ch][parent].transcripts == {}:
+                            # PSEUDOGENES referred to by transcript subfeatures are given a single pseudotranscript
+                            self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, ".", self.chrs[ch][parent].attributes)
+                            
+                        if pseudo_t in self.chrs[ch][parent].transcripts:
+                            if ft_level == "CDS":
+                                self.chrs[ch][gene_parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                            elif ft_level == "exon":
+                                self.chrs[ch][gene_parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                            elif ft_level == "UTR":
+                                self.chrs[ch][gene_parent].transcripts[pseudo_t].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                            else:
+                                self.chrs[ch][gene_parent].transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                        else:
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                            if not quiet:
+                                print(f"{self.id} Error: {parent} pseudogene already had a transcript which {ft} subfeature {ID} ignores")
+
+                    # cases where subfeature directly points to a gene that is not a pseudogene
+                    else:
+                        # gene without transcripts pointed to
+                        if self.chrs[ch][parent].transcripts == {}:
+                            if not quiet:
+                                print(f"{self.id} Error: {ft} subfeature {ID} references {parent} gene which is not a pseudogene and has no transcripts")
+                            self.errors["subfeature_to_gene"].add(ID)
+                        # correctly linking the subfeature to the single transcript that exists
+                        elif len(self.chrs[ch][parent].transcripts) == 1:
+                            temp_id = list(self.chrs[ch][parent].transcripts.keys())[0]
+                            if ft_level == "CDS":
+                                self.chrs[ch][parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                            elif ft_level == "exon":
+                                self.chrs[ch][parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                            elif ft_level == "UTR":
+                                self.chrs[ch][parent].transcripts[temp_id].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                            else:
+                                self.chrs[ch][parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))  
+                        else:
+                            if not quiet:
+                                print(f"{self.id} Error: {ft} subfeature {ID} references {parent} gene which is not a pseudogene and has multiple transcripts")
+                            self.errors["subfeature_to_gene"].add(ID)
+
+                # parent not found within created genes or transcripts
+                else:
+                    
+                    if liftover_exception and self.liftover:
+                        if not quiet:
+                            print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, possibly not transfered during liftover")
+                        self.warnings["missing_subfeature_parent_liftover"].add(ID)
+                        if not skip_orphaned_features:
+                            self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                        continue
+
+                    else:
+                        if not infer_gene_and_transcript_from_subfeatures:
+                            self.warnings["missing_subfeature_parent"].add(ID)
+                            if not quiet:
+                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation")
+
+                        elif only_infer_if_none_of_the_parents_exist and not true_orphans:
+                            self.warnings["missing_subfeature_parent"].add(ID)
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                            print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, although at least one of the listed parents was found")
+
+                        else:
+                            self.warnings["missing_subfeature_parent"].add(ID)
+                            if not quiet:
+                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the gff and both transcript and gene will be generated")
+
+                            inferred_g_id = f"{parent}_gene"
+                            count = 0
+                            while inferred_g_id in self.all_gene_ids:
+                                count += 1
+                                inferred_g_id = f"{parent}_{count}_gene"
+
+                            entry["id"] = inferred_g_id
+                            entry["feature"] = "gene"
+                            self._add_gene(entry, quiet=quiet)
+
+                            entry["id"] = parent
+                            entry["feature"] = "transcript"
+                            entry["attributes"]["parent"] = [inferred_g_id]
+                            entry["parents"] = [inferred_g_id]
+                            self._add_transcript(entry, quiet=quiet, skip_orphaned_features=skip_orphaned_features)
+
+                            attributes["parent"] = [parent]
+                            attributes["id"] = ID
+
+                            if ft_level == "CDS":
+                                self.chrs[ch][gene_parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                            elif ft_level == "exon":
+                                self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                            elif ft_level == "UTR":
+                                self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                            else:
+                                self.chrs[ch][gene_parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
+
+            # Cases where the transcript parent was repeated by id in the gff
+            else:
+                
+                possible_parents = self._transcript_info[parent]
+
+                found = False
+
+                for parent in possible_parents:
+
+                    gene_parent = self.all_transcript_ids[parent][1]
+
+                    if gene_parent not in self.chrs[ch]:
+                        continue
+                    if self.chrs[ch][parent].start <= start:
+                        continue
+                    if self.chrs[ch][parent].end >= end:
+                        continue
+
+                    found = True
+
+                    attributes["parent"] = [parent]
+
+                    if ft_level == "CDS":
+                        self.chrs[ch][gene_parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                    elif ft_level == "exon":
+                        self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                    elif ft_level == "UTR":
+                        self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                    else:
+                        self.chrs[ch][gene_parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
+
+                    break
+
+                if not found and not quiet:
+                    print(f"{self.id} Error: {ID} {ft} feature could not be assigned to any transcript. Possibly due to unforseen id clash issue")
+                    if not skip_orphaned_features:
+                        self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+
+    def _get_unique_transcript_id(self, t_id):
+        unique_id = t_id
+        count = 0
+        while unique_id in self.all_transcript_ids:
+            count += 1
+            unique_id = f"{t_id}_{count}"
+
+        return unique_id
+
+    def _get_unique_gene_id(self, id):
+        unique_id = id
+        count = 0
+        while unique_id in self.all_gene_ids:
+            count += 1
+            unique_id = f"{id}_{count}"
+
+        return unique_id
 
     def copy(self):
         return copy.deepcopy(self)
     
     def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
-        start = time.time()
+        start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -1072,6 +1056,10 @@ class Annotation():
             disable = True
         else:
             disable = False
+
+        batch_size = 1000
+        count = 0
+
         progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
                                 bar_format=(
                     f'\033[1;62mUpdating {self.id} genes:\033[0m '
@@ -1080,16 +1068,23 @@ class Annotation():
                     '{n}/{total} [{elapsed}<{remaining}]'))
         for genes in self.chrs.values():
             for g in genes.values():
-                progress_bar.update(1)
+                count += 1
+                if count >= batch_size:
+                    progress_bar.update(count)
+                    count = 0
                 for t in g.transcripts.values():
                     t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
                     if t.polycistronic == "no":
                         continue
                     elif t.polycistronic == "maybe":
-                        self.warnings["possible_policistronic_transcript"].append(t.id) 
+                        self.warnings["possible_policistronic_transcript"].add(t.id) 
                     elif t.polycistronic == "yes":
-                        self.warnings["multiple_CDSs_per_transcript"].append(t.id)
+                        self.warnings["multiple_CDSs_per_transcript"].add(t.id)
                 g.update()
+
+        if count > 0:
+            progress_bar.update(count)
+        
         progress_bar.close()
         self.update_features()
         
@@ -1102,7 +1097,7 @@ class Annotation():
             self.sort_genes(processes=sort_processes)
         if define_synteny:
             self.define_synteny(original_annotation=original_annotation, sort_processes=sort_processes)
-        if self.liftoff and original_annotation != None:
+        if self.liftover and original_annotation != None:
             for g_id in original_annotation.all_gene_ids:
                 #improve at some point, slow with massive lists
                 if g_id not in self.all_gene_ids:
@@ -1112,7 +1107,7 @@ class Annotation():
         self.update_suffixes()
 
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"\nWhole update process for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
@@ -1164,18 +1159,45 @@ class Annotation():
                             t.feature = "mRNA"
                         for e in t.exons:
                             e.feature = "exon"
-        new_features = set()
+                        for c in t.CDSs.values():
+                            c.feature = "CDS"
+                            for cs in c.CDS_segments:
+                                cs.feature = "CDS"
+        
+        self.features = {}
         for genes in self.chrs.values():
             for g in genes.values():
-                new_features.add(g.feature)
+                if g.feature not in self.features:
+                    self.features[g.feature] = 1
+                else:
+                    self.features[g.feature] += 1
                 for t in g.transcripts.values():
-                    new_features.add(t.feature)
+                    if t.feature not in self.features:
+                        self.features[t.feature] = 1
+                    else:
+                        self.features[t.feature] += 1
                     for c in t.CDSs.values():
-                        new_features.add(c.feature)
+                        if c.feature not in self.features:
+                            self.features[c.feature] = 1
+                        else:
+                            self.features[c.feature] += 1
                     for e in t.exons:
-                        new_features.add(e.feature)
-        self.features = list(new_features)
-        self.features.sort()
+                        if e.feature not in self.features:
+                            self.features[e.feature] = 1
+                        else:
+                            self.features[e.feature] += 1
+
+        for ft in self.atypical_features:
+            if ft.feature not in self.features:
+                self.features[ft.feature] = 1
+            else:
+                self.features[ft.feature] += 1
+        for ft in self.orphaned_features:
+            if ft.feature not in self.features:
+                self.features[ft.feature] = 1
+            else:
+                self.features[ft.feature] += 1
+
         if not quiet:
             print(f"\nUpdated features for {self.id}")
 
@@ -1319,8 +1341,10 @@ class Annotation():
 
     def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=False):
 
-        start = time.time()
+        start_time = time.time()
         for o in self.atypical_features:
+            o.generate_sequence(genome)
+        for o in self.orphaned_features:
             o.generate_sequence(genome)
         if not just_CDSs:
             for genes in self.chrs.values():
@@ -1344,14 +1368,16 @@ class Annotation():
         self.contains_protein_sequences = True
 
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
 
         if not quiet:
             print(f"\nGenerating sequences for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
     def clear_sequences(self, just_hard=False, keep_proteins:bool=False, quiet:bool=True):
-        start = time.time()
+        start_time = time.time()
         for o in self.atypical_features:
+            o.clear_sequence(just_hard=just_hard)
+        for o in self.orphaned_features:
             o.clear_sequence(just_hard=just_hard)
         for genes in self.chrs.values():
             for g in genes.values():
@@ -1366,7 +1392,7 @@ class Annotation():
         self.contains_all_sequences = False
 
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"Clearing sequences of {self.id} annotation object took {round(lapse, 1)} seconds\n")
 
@@ -1701,7 +1727,7 @@ class Annotation():
         if most_specific_id_level not in most_specific_id_level_choices:
             raise ValueError(f"most_specific_id_level={most_specific_id_level} is not amongst the most_specific_id_level_choices={most_specific_id_level_choices} to export proteins.")
 
-        start = time.time()
+        start_time = time.time()
 
         self.export_genes(verbose, path)
 
@@ -1743,7 +1769,7 @@ class Annotation():
                     self.export_promoters(b, verbose, path, used_id="gene")
 
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"Extracting {self.id} annotation features took {round(lapse, 1)} seconds\n")
             
@@ -1879,7 +1905,7 @@ class Annotation():
             print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
 
     def export_unique_proteins(self, genome:object=None, custom_path:str="", quiet:bool=False):
-        start = time.time()
+        start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -1946,7 +1972,7 @@ class Annotation():
             progress_bar.close()
 
             now = time.time()
-            lapse = now - start
+            lapse = now - start_time
             if not quiet:
                 print(f"\nExporting unique {self.id} proteins took {round(lapse/60, 1)} minutes")
 
@@ -2304,7 +2330,7 @@ class Annotation():
     def define_synteny(self, original_annotation:object, sort_processes:int=1, quiet:bool=True):
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
-        start = time.time()
+        start_time = time.time()
         if not self.sorted:
             self.sort_genes(processes=sort_processes)
         # defining synteny
@@ -2327,10 +2353,10 @@ class Annotation():
                     g.previous_gene = gene_list[n-1].id
                     g.next_gene = False
 
-        if self.liftoff:
+        if self.liftover:
             for genes in self.chrs.values():
                 for g_id, g in genes.items():
-                    # this extra bit is for extra liftoff copies
+                    # this extra bit is for extra liftover copies
                     if g_id not in original_annotation.all_gene_ids:
                         g_id = "_".join(g_id.split("_")[:-1])
                         if g_id not in original_annotation.all_gene_ids:
@@ -2345,7 +2371,7 @@ class Annotation():
                     else: 
                         g.conserved_synteny = False
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes took {round(lapse, 1)} seconds\n")
 
@@ -2397,25 +2423,17 @@ class Annotation():
         for key in to_tally:
             self.stats[key] = []
 
-        for ft in self.features:
-            self.stats[ft] = 0
+        for ft, value in self.features.items():
+            self.stats[ft] = value
 
         self.stats["five_prime_UTRs"] = 0
         self.stats["three_prime_UTRs"] = 0
 
-        for ft in self.atypical_features:
-            self.stats[ft.feature] = 0
-
-        for ft in self.atypical_features:
-            self.stats[ft.feature] += 1
-
         for genes in self.chrs.values():
             for g in genes.values():
-                self.stats[g.feature] += 1
                 self.stats["mean_transcripts"].append(len(g.transcripts))
                 self.stats["mean_gene_size"].append(g.size)
                 for t in g.transcripts.values():
-                    self.stats[t.feature] += 1
                     if t.main:
                         if hasattr(t, "introns"):
                             for i in t.introns:
@@ -2423,7 +2441,6 @@ class Annotation():
 
                         if t.coding:
                             for c in t.CDSs.values():
-                                self.stats[c.feature] += 1
                                 if c.main:
                                     self.stats["mean_CDS_size"].append(c.size)
                                     if hasattr(c, "UTRs"):
@@ -2454,14 +2471,11 @@ class Annotation():
                             self.stats["noncoding_genes"].append(g.id)
 
                         for e in t.exons:
-                            self.stats[e.feature] += 1
                             self.stats["mean_exon_size"].append(e.size)
 
                         self.stats["mean_exons"].append(len(t.exons))
                         
                         self.stats["mean_transcript_size"].append(t.size)
-
-        self.stats["UTRs"] = self.stats["five_prime_UTRs"] + self.stats["three_prime_UTRs"]
 
         # anything with mean will be also plotted as distribution plots:
         if export:
@@ -2530,10 +2544,10 @@ class Annotation():
             else:
                 out_file = f"{self.id}{self.feature_suffix}_basic_stats.csv"
 
-            warnings_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in self.warnings.items()])).fillna('')
-            error_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in self.errors.items()])).fillna('')
+            warning_df = pd.DataFrame({k: pd.Series(sorted(v)) for k, v in self.warnings.items()}).fillna('')
+            error_df = pd.DataFrame({k: pd.Series(sorted(v)) for k, v in self.errors.items()}).fillna('')
 
-            warnings_df.to_csv(f"{export_folder}{self.id}{self.feature_suffix}_warnings.csv", sep="\t", index=False)
+            warning_df.to_csv(f"{export_folder}{self.id}{self.feature_suffix}_warnings.csv", sep="\t", index=False)
             error_df.to_csv(f"{export_folder}{self.id}{self.feature_suffix}_errors.csv", sep="\t", index=False)
 
             f_out = open(f"{export_folder}{out_file}", "w", encoding="utf-8")
@@ -2611,7 +2625,7 @@ class Annotation():
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
         """
-        start = time.time()
+        start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -2648,7 +2662,7 @@ class Annotation():
                            "run 'self.clear_overlaps()' if you want to "
                            "recalculate them")
                 else:
-                    start = time.time()
+                    start_time = time.time()
                     progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
                                 bar_format=(
                     f'\033[1;91mWorking out overlaps between {self.id} and {other.id} annotations:\033[0m '
@@ -2842,7 +2856,7 @@ class Annotation():
                     self.add_aliases()
                     other.add_aliases()
                     now = time.time()
-                    lapse = now - start
+                    lapse = now - start_time
                     progress_bar.close()
                     if not quiet:
                         print(f"\nDetecting overlaps between {other.id} and {self.id} annotations took {round(lapse/60, 1)} minutes")
@@ -2861,7 +2875,7 @@ class Annotation():
                 '{n}/{total} [{elapsed}<{remaining}]'))
 
                 # making sure self overlaps are not added twice
-                start = time.time()
+                start_time = time.time()
                 self.self_overlapping = set(self.self_overlapping)
                 for chr, genes in self.chrs.items():
                     gl = list(genes.keys())[1:]
@@ -3056,7 +3070,7 @@ class Annotation():
                 self.self_overlapping = list(self.self_overlapping)
                 progress_bar.close()
                 now = time.time()
-                lapse = now - start
+                lapse = now - start_time
                 if not quiet:
                     print(f"\nDetecting gene overlaps within the {self.id} annotation took {round(lapse/60, 1)} minutes\n")
                     print(f"\nThere are {len(self.self_overlapping)} genes overlapping with other genes in {self.id} annotation\n")
@@ -3099,7 +3113,7 @@ class Annotation():
                                     g.aliases.append(hit.id)
 
     def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False, copies_info:bool=False):
-        start = time.time()
+        start_time = time.time()
         if export_self:
             export = "self"
             export_tag = "self_"
@@ -3138,7 +3152,7 @@ class Annotation():
                             }
 
                             if synteny:
-                                row["gene_id_A_synteny_conserved"] = g.conserved_synteny if self.liftoff else pd.NA
+                                row["gene_id_A_synteny_conserved"] = g.conserved_synteny if self.liftover else pd.NA
                                 row["gene_id_B_synteny_conserved"] = hit.target_synteny_conserved
 
                             if verbose:
@@ -3316,7 +3330,7 @@ class Annotation():
             eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
 
             now = time.time()
-            lapse = now - start
+            lapse = now - start_time
             if not quiet:
                 if export == "self":
                     print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
@@ -3465,7 +3479,7 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True, quiet:bool=False):
+    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True, quiet:bool=False, skip_orphaned_fts:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -3603,9 +3617,12 @@ class Annotation():
 
         if not skip_atypical_fts:
             if not just_genes:
-                if self.atypical_features != []:
-                    for ft in self.atypical_features:
-                        out += ft.print_gff()
+                for ft in self.atypical_features:
+                    out += ft.print_gff()
+        if not skip_orphaned_fts:
+            if not just_genes:
+                for ft in self.orphaned_features:
+                    out += ft.print_gff()
 
         output_suffix = ""
 
@@ -3613,7 +3630,6 @@ class Annotation():
             output_suffix += "_just_genes"
         if no_1bp_features:
             output_suffix += "_for_lifton"
-
 
         if tag == ".gff3":
             tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
@@ -3685,7 +3701,7 @@ class Annotation():
                     if main_only:
                         if not t.main:
                             continue
-                    original_feature = t.ft
+                    original_feature = t.feature
                     t.feature = "transcript"
                     out += t.print_gtf()
                     t.feature = original_feature
@@ -3729,7 +3745,7 @@ class Annotation():
         """
         Priority is given to self annotation
         """
-        start = time.time()
+        start_time = time.time()
         self.update(quiet=quiet)
         other.update(quiet=quiet)
 
@@ -3837,7 +3853,7 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=features_to_rename, quiet=quiet)
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
 
@@ -3864,7 +3880,7 @@ class Annotation():
         for chrom, g_id, t_id in transcripts_to_remove:
             del self.chrs[chrom][g_id].transcripts[t_id]
             print(f"{t_id} Warning: transcript with no exons which could have been removed because of strand inconsistencies")
-            self.warnings["transcript_with_no_exons"].append(t_id)
+            self.warnings["transcript_with_no_exons"].add(t_id)
 
     def remove_transcripts(self, to_remove:set, quiet:bool=False):
         for t in to_remove:
@@ -3886,7 +3902,7 @@ class Annotation():
         for chrom, g_id in genes_to_remove:
             del self.chrs[chrom][g_id]
             print(f"{g_id} Warning: gene with no transcripts which could have been removed because of strand inconsistencies of its exons")
-            self.warnings["gene_with_no_transcripts"].append(g_id)
+            self.warnings["gene_with_no_transcripts"].add(g_id)
 
         self.update_gene_and_transcript_list(quiet=quiet)
 
@@ -3925,8 +3941,8 @@ class Annotation():
         if not quiet:
             print(f"Removed missing transcript parent references for {self.id} annotation.")
 
-    def rework_CDSs(self, genome:object=None, low_memory:bool=True, quiet:bool=False):
-        start = time.time()
+    def rework_CDSs(self, genome:object=None, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+        start_time = time.time()
         if low_memory:
             self.clear_sequences()
         # Check if stdout or stderr are redirected to files
@@ -3949,13 +3965,15 @@ class Annotation():
             for g in genes.values():
                 progress_bar.update(1)
                 for t in g.transcripts.values():
+                    if t.coding and not override:
+                        continue
                     t.generate_sequence(genome, low_memory)
                     t.generate_best_protein(genome)
                     t.generate_CDSs_based_on_ORF(low_memory)
                     for c in t.CDSs.values():
                         c.generate_sequence(genome, low_memory)
                     t.exon_update()
-                    if t.coding_ratio < 0.80:
+                    if t.coding_ratio < coding_ratio_threshold:
                         t.generate_sequence(genome, low_memory)
                         t.generate_best_protein(genome, must_have_stop=False)
                         t.generate_CDSs_based_on_ORF(low_memory)
@@ -3966,7 +3984,7 @@ class Annotation():
         progress_bar.close()
         self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
 
@@ -4082,7 +4100,7 @@ class Annotation():
                     t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
                 g.update()
 
-        start = time.time()
+        start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -4389,7 +4407,7 @@ class Annotation():
                 warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.", category=UserWarning)
 
         now = time.time()
-        lapse = now - start
+        lapse = now - start_time
         if not quiet:
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
@@ -4446,7 +4464,7 @@ class Annotation():
 
         progress_bar.close()
 
-    def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, quiet:bool=False):
+    def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, process_atypical:bool=True, quiet:bool=False, process_orphaned:bool=True):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -4461,6 +4479,12 @@ class Annotation():
 
         if extra_attributes:
             total *= 2
+
+        if process_atypical:
+            total += len(self.atypical_features)
+
+        if process_orphaned:
+            total += len(self.orphaned_features)
 
         if featurecountsID:
             self.featurecounts = True
@@ -4590,6 +4614,42 @@ class Annotation():
                     g.attributes.append(f"intron_nested_fully_contained={g.intron_nested_fully_contained}")
                     g.attributes.append(f"intron_nested_single={g.intron_nested_single}")
                     g.attributes.append(f"intron_UTR_nested={g.UTR_intron_nested}")
+
+        for o in self.atypical_features:
+            progress_bar.update(1)
+            o.attributes = [f"ID={o.id}"]
+            if o.id:
+                o.attributes.append(f"Name={o.id}")
+            new_symbols = ",".join(o.symbols)
+            if new_symbols:
+                if symbols:
+                    o.attributes.append(f"Symbol={new_symbols}")
+                if symbols_as_descriptors:
+                    o.attributes.append(f"Description={new_symbols}")
+            if not clean:
+                o.attributes += o.misc_attributes
+
+            if aliases and o.aliases != []:
+                new_aliases = ",".join(o.aliases)
+                o.attributes.append(f"Alias={new_aliases}")
+
+        for o in self.orphaned_features:
+            progress_bar.update(1)
+            o.attributes = [f"ID={o.id}"]
+            if o.id:
+                o.attributes.append(f"Name={o.id}")
+            new_symbols = ",".join(o.symbols)
+            if new_symbols:
+                if symbols:
+                    o.attributes.append(f"Symbol={new_symbols}")
+                if symbols_as_descriptors:
+                    o.attributes.append(f"Description={new_symbols}")
+            if not clean:
+                o.attributes += o.misc_attributes
+
+            if aliases and o.aliases != []:
+                new_aliases = ",".join(o.aliases)
+                o.attributes.append(f"Alias={new_aliases}")
 
         progress_bar.close()
 
@@ -6072,6 +6132,10 @@ class Annotation():
             if o.ch in equivalences:
                 o.ch = equivalences[o.ch]
 
+        for o in self.orphaned_features:
+            if o.ch in equivalences:
+                o.ch = equivalences[o.ch]
+
         if dap:
             self.dapfit = True
             if renamed_scaffolds:
@@ -6179,6 +6243,7 @@ class Annotation():
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
         self.update(extra_attributes=extra_attributes, quiet=quiet)
         self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
+
 
     def __str__(self):
         return str(self.id)

@@ -3,6 +3,19 @@ from .subfeatures import Exon
 from .transcript import Transcript
 
 class Gene(Feature):
+
+    __slots__ = (
+        'pseudogene', 'transposable', 'transcripts', 'previous_gene',
+        'next_gene', 'synteny_order', 'old_previous_gene', 'old_next_gene',
+        'old_synteny_order', 'conserved_synteny', 'coding', 'noncoding',
+        'overlaps', 'remove', 'rescue', 'reliable', 'reliable_score',
+        'overlap_reliable', 'unrescuable', 'overlap_with_selected_CDS',
+        'overlap_with_selected_exon', 'alternative_transcript_rescue',
+        'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single',
+        'UTR_intron_nested', 'transcriptomic_evidence', 'abinitio_evidence',
+        'base_id', 'original_base_id'
+    )
+
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str,
                  start:int, end:int, score:str, phase:str, attributes:str):
@@ -23,7 +36,6 @@ class Gene(Feature):
         # A gene can have both coding and noncoding transcripts
         self.coding = False
         self.noncoding = False
-        self.aliases = []
 
         self.overlaps = {"self" : [], "other" : []}
 

@@ -8,6 +8,16 @@ class Feature():
     inherited by Gene, Transcript etc. -> this facilitates code reading and
     editing. Or used on its own for CDS segments.
     """
+
+    __slots__ = (
+        'id', 'original_id', 'ch', 'source', 'feature', 'start', 'end',
+        'score', 'strand', 'phase', 'frame', 'attributes', 'gtf_attributes',
+        'size', 'seq', 'hard_seq', 'seqs', 'hard_seqs', 'parents', 'names',
+        'symbols', 'descriptors', 'processes', 'synonyms', 'gc_content',
+        'aliases', 'blast_hits', 'renamed', 'id_number', 'original_id_number',
+        'misc_attributes', 'extra_copy', 'masked_fraction', 'coding'
+    )
+
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff = ["id", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "featurecounts_id"]
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str):
@@ -23,10 +33,23 @@ class Feature():
         self.strand = strand
         self.phase = phase
         self.frame = "."
-        if isinstance(attributes, list):
+        self.coding = False
+
+        if isinstance(attributes, dict):
+            self.attributes = []
+            for key, value in attributes.items():
+                if isinstance(value, list):
+                    # Join list items with a comma
+                    combined_value = ",".join(value)
+                    self.attributes.append(f"{key}={combined_value}")
+                else:
+                    self.attributes.append(f"{key}={value}")
+
+        elif isinstance(attributes, list):
             self.attributes = attributes
         else:
             self.attributes = [x.strip() for x in attributes.split(";") if x.strip()]
+        
         self.gtf_attributes = ""
         self.size = (self.end - self.start) + 1
         self.seq = ""
@@ -90,6 +113,7 @@ class Feature():
         self.update_numbering(original=True)
 
         self.masked_fraction = 0
+
 
     def update_numbering(self, original:bool=False):
 
@@ -234,4 +258,4 @@ class Feature():
                         query_best = False
                     compared = True
 
-        return query_best 
+        return query_best

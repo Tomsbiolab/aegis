@@ -188,8 +188,7 @@ def main(
     output_folder = Path(output_folder).resolve() / "orthologues"
 
     if output_folder.exists():
-        raise FileExistsError(
-            f"The folder '{output_folder}' already exists. Please choose a directory without an existing 'orthologues' folder, or delete it first.")
+        warnings.warn(f"The folder '{output_folder}' already exists. Please be aware that conflict may arise with existing output and/or temp folder files.")
 
     output_folder.mkdir(parents=True, exist_ok=True)
     output_folder = str(output_folder) + "/"
