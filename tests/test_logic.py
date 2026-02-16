@@ -12,11 +12,11 @@ def test_with_local_file():
     input_path = DATA_FOLDER / "arabidopsis_araport11.gff3"
     input_path_gold = DATA_FOLDER / "arabidopsis_araport11.pkl"
 
-    ara = Annotation(input_path, "ara")
+    ara = Annotation(str(input_path), "ara")
 
     state = vars(ara)
 
-    ara_gold = pickle_load(input_path_gold)
+    ara_gold = pickle_load(str(input_path_gold))
 
     state_gold = vars(ara_gold)
 
