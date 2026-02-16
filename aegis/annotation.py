@@ -3874,7 +3874,7 @@ class Annotation():
         self.remove_transcripts_with_no_exons(quiet=quiet)
         self.remove_genes_with_no_transcripts(quiet=quiet)
 
-    def remove_transcripts_with_no_exons(self):
+    def remove_transcripts_with_no_exons(self, quiet:bool=False):
         transcripts_to_remove = []
         for chrom, genes in self.chrs.items():
             for g in genes.values():
@@ -3883,7 +3883,8 @@ class Annotation():
                         transcripts_to_remove.append((chrom, g.id, t.id))
         for chrom, g_id, t_id in transcripts_to_remove:
             del self.chrs[chrom][g_id].transcripts[t_id]
-            print(f"{t_id} Warning: transcript with no exons which could have been removed because of strand inconsistencies")
+            if not quiet:
+                print(f"{t_id} Warning: transcript with no exons which could have been removed because of strand inconsistencies")
             self.warnings["transcript_with_no_exons"].add(t_id)
 
     def remove_transcripts(self, to_remove:set, quiet:bool=False):
@@ -3905,7 +3906,8 @@ class Annotation():
                     genes_to_remove.append((chrom, g.id))
         for chrom, g_id in genes_to_remove:
             del self.chrs[chrom][g_id]
-            print(f"{g_id} Warning: gene with no transcripts which could have been removed because of strand inconsistencies of its exons")
+            if not quiet:
+                print(f"{g_id} Warning: gene with no transcripts which could have been removed because of strand inconsistencies of its exons")
             self.warnings["gene_with_no_transcripts"].add(g_id)
 
         self.update_gene_and_transcript_list(quiet=quiet)
