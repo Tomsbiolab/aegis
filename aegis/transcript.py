@@ -405,20 +405,23 @@ class Transcript(Feature):
                     self.temp_CDSs.sort()
                     # more than 1 CDS is determined by overlaps
                     if len(self.temp_CDSs) > 1:
-                        for sn1, segment1 in enumerate(self.temp_CDSs):
-                            for sn2, segment2 in enumerate(self.temp_CDSs):
-                                if sn1 == sn2:
-                                    continue
-                                # not interested in overlap_bp
-                                overlapping, _ = overlap(segment1, segment2)
-                                if overlapping:
-                                    more_than_1_CDS = True
-                                if segment1.id == segment2.id:
-                                    more_than_1_segment_with_same_ID = True
-                                else:
-                                    more_than_1_segment_with_different_ID = True
+                        seen_ids = {self.temp_CDSs[0].id}
+                        for sn in range(1, len(self.temp_CDSs)):
+                            prev = self.temp_CDSs[sn - 1]
+                            curr = self.temp_CDSs[sn]
+                            if curr.start < prev.end:
+                                more_than_1_CDS = True
+                            seg_id = curr.id
+                            if seg_id in seen_ids:
+                                more_than_1_segment_with_same_ID = True
+                            else:
+                                more_than_1_segment_with_different_ID = True
+                                seen_ids.add(seg_id)
+                        if len(seen_ids) > 1:
+                            more_than_1_segment_with_different_ID = True
+                        if len(seen_ids) < len(self.temp_CDSs):
+                            more_than_1_segment_with_same_ID = True
                     if not more_than_1_CDS and self.temp_CDSs != []:
-                        # CDS object with segments as a property
                         if self.strand == "+":
                             temp_id = self.temp_CDSs[0].id
                         else:
@@ -599,7 +602,6 @@ class Transcript(Feature):
         """
         Creates exon features from CDSs and UTRs or directly from the transcript
         """
-        # WARNING! double check function
         temp_fts = []
         for c in self.CDSs.values():
             if c.main:
@@ -609,47 +611,25 @@ class Transcript(Feature):
                     temp_fts.append(u.copy())
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
-            still_overlapping_fts = True
-            while still_overlapping_fts:
-                features_to_remove = []
-                features_to_add = []
-                for i, tempft1 in enumerate(temp_fts):
-                    for j, tempft2 in enumerate(temp_fts):
-                        if i != j:
-                            interval1 = tempft1.size
-                            interval2 = tempft2.size
-                            small = min(tempft1.start, tempft1.end, tempft2.start, tempft2.end)
-                            large = max(tempft1.start, tempft1.end, tempft2.start, tempft2.end)
-                            overlap_bp = ((interval1 + interval2) - ((large - small) + 1))
-                            # >= is crucial to combine contiguous features
-                            if overlap_bp >= 0:
-                                temp = Exon("combined", self.ch, self.source, 
-                                            "exon", self.strand, small, large, 
-                                            self.score, ".", "")
-                                add = True
-                                # this is to avoid adding a same overlap twice
-                                for f in features_to_add:
-                                    if temp == f:
-                                        add = False
-                                        break
-                                if add:
-                                    features_to_add.append(temp)
-                                if tempft1 not in features_to_remove:
-                                    features_to_remove.append(tempft1)
-                                if tempft2 not in features_to_remove:
-                                    features_to_remove.append(tempft2)
-                for sub_to_add in features_to_add:
-                    temp_fts.append(sub_to_add)
-                for sub_to_rem in features_to_remove:
-                    if sub_to_rem in temp_fts:
-                        if sub_to_rem in temp_fts:
-                            temp_fts.remove(sub_to_rem)
-                if (features_to_remove == []
-                    and features_to_add == []):
-                    still_overlapping_fts = False
-            
-            self.exons = temp_fts.copy()
-            self.exons.sort()
+            temp_fts.sort(key=lambda f: (f.start, f.end))
+            merged = []
+            cur_start = temp_fts[0].start
+            cur_end = temp_fts[0].end
+            for ft in temp_fts[1:]:
+                if ft.start <= cur_end + 1:
+                    if ft.end > cur_end:
+                        cur_end = ft.end
+                else:
+                    merged.append(Exon("combined", self.ch, self.source,
+                                       "exon", self.strand, cur_start, cur_end,
+                                       self.score, ".", ""))
+                    cur_start = ft.start
+                    cur_end = ft.end
+            merged.append(Exon("combined", self.ch, self.source,
+                               "exon", self.strand, cur_start, cur_end,
+                               self.score, ".", ""))
+
+            self.exons = merged
 
             if self.strand == "+":
                 for n, e in enumerate(self.exons):

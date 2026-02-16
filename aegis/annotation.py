@@ -1150,42 +1150,40 @@ class Annotation():
     def update_features(self, standardise=True, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating features for {self.id}")
-        if standardise:
-            for genes in self.chrs.values():
-                for g in genes.values():
-                    g.feature = default_features_r[g.feature]
-                    for t in g.transcripts.values():
-                        if t.feature not in default_noncoding_transcripts:
-                            t.feature = "mRNA"
-                        for e in t.exons:
-                            e.feature = "exon"
-                        for c in t.CDSs.values():
-                            c.feature = "CDS"
-                            for cs in c.CDS_segments:
-                                cs.feature = "CDS"
-        
+
         self.features = {}
         for genes in self.chrs.values():
             for g in genes.values():
+                if standardise:
+                    g.feature = default_features_r[g.feature]
                 if g.feature not in self.features:
                     self.features[g.feature] = 1
                 else:
                     self.features[g.feature] += 1
                 for t in g.transcripts.values():
+                    if standardise:
+                        if t.feature not in default_noncoding_transcripts:
+                            t.feature = "mRNA"
                     if t.feature not in self.features:
                         self.features[t.feature] = 1
                     else:
                         self.features[t.feature] += 1
-                    for c in t.CDSs.values():
-                        if c.feature not in self.features:
-                            self.features[c.feature] = 1
-                        else:
-                            self.features[c.feature] += 1
                     for e in t.exons:
+                        if standardise:
+                            e.feature = "exon"
                         if e.feature not in self.features:
                             self.features[e.feature] = 1
                         else:
                             self.features[e.feature] += 1
+                    for c in t.CDSs.values():
+                        if standardise:
+                            c.feature = "CDS"
+                            for cs in c.CDS_segments:
+                                cs.feature = "CDS"
+                        if c.feature not in self.features:
+                            self.features[c.feature] = 1
+                        else:
+                            self.features[c.feature] += 1
 
         for ft in self.atypical_features:
             if ft.feature not in self.features:
@@ -1263,29 +1261,26 @@ class Annotation():
         if not quiet:
             print(f"Correcting feature coordinates for {self.id}")
 
-        # fixing exon/CDS sizes
         for genes in self.chrs.values():
             for g in genes.values():
+                earliest_start = None
+                latest_end = None
                 for t in g.transcripts.values():
-                    for c in t.CDSs.values():
-                        if c.start < t.exons[0].start:
-                            if not quiet:
-                                print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
-                            t.exons[0].start = c.start
-                            t.exons[0].update_size()
-                            self.sorted = False
-                        if c.end > t.exons[-1].end:
-                            if not quiet:
-                                print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
-                            t.exons[-1].end = c.end
-                            t.exons[-1].update_size()
-                            self.sorted = False
+                    if t.exons:
+                        for c in t.CDSs.values():
+                            if c.start < t.exons[0].start:
+                                if not quiet:
+                                    print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                t.exons[0].start = c.start
+                                t.exons[0].update_size()
+                                self.sorted = False
+                            if c.end > t.exons[-1].end:
+                                if not quiet:
+                                    print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                t.exons[-1].end = c.end
+                                t.exons[-1].update_size()
+                                self.sorted = False
 
-        # fixing transcript/exon sizes
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    if t.exons != []:
                         if t.exons[0].start < t.start:
                             if not quiet:
                                 print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}")
@@ -1302,14 +1297,8 @@ class Annotation():
                             t.start = t.exons[0].start
                             t.end = t.exons[-1].end
                             t.update_size()
-                            self.sorted = False 
+                            self.sorted = False
 
-        # fixing gene/transcript sizes
-        for genes in self.chrs.values():
-            for g in genes.values():
-                earliest_start = None
-                latest_end = None
-                for n, t in enumerate(g.transcripts.values()):
                     if t.start < g.start:
                         if not quiet:
                             print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
@@ -1320,7 +1309,7 @@ class Annotation():
                             print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                         g.end = t.end
                         self.sorted = False
-                    if n == 0:
+                    if earliest_start is None:
                         earliest_start = t.start
                         latest_end = t.end
                     else:
@@ -1328,7 +1317,8 @@ class Annotation():
                             earliest_start = t.start
                         if t.end > latest_end:
                             latest_end = t.end
-                if earliest_start != None:
+
+                if earliest_start is not None:
                     if g.start != earliest_start or g.end != latest_end:
                         if not quiet:
                             print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
@@ -2575,32 +2565,46 @@ class Annotation():
 
         for genes in self.chrs.values():
             for g in genes.values():
-                for tid1, t1 in g.transcripts.items():
-                    for e1 in t1.exons:
-                        for tid2, t2 in g.transcripts.items():
-                            if tid1 == tid2:
-                                continue
-                            for e2 in t2.exons:
-                                if e1.equal_sequence(e2):
-                                    for p in e2.parents:
-                                        if p not in e1.parents:
-                                            e1.parents.append(p)
-                        e1.parents.sort()
+                exon_groups = {}
+                for t in g.transcripts.values():
+                    for e in t.exons:
+                        key = (e.start, e.end, e.ch, e.strand)
+                        if key not in exon_groups:
+                            exon_groups[key] = [e]
+                        else:
+                            exon_groups[key].append(e)
 
-                for tid1, t1 in g.transcripts.items():
-                    for cid1, c1 in t1.CDSs.items():
-                        for u1 in c1.UTRs:
-                            for tid2, t2 in g.transcripts.items():
-                                for cid2, c2 in t2.CDSs.items():
-                                    if cid1 == cid2 and tid1 == tid2:
-                                        continue
-                                    for u2 in c2.UTRs:
-                                        if u1.equal_sequence(u2):
-                                            for p in u2.parents:
-                                                if p not in u1.parents:
-                                                    u1.parents.append(p)
+                for group in exon_groups.values():
+                    if len(group) > 1:
+                        all_parents = set()
+                        for e in group:
+                            all_parents.update(e.parents)
+                        merged_parents = sorted(all_parents)
+                        for e in group:
+                            e.parents = merged_parents[:]
+                    else:
+                        group[0].parents.sort()
 
-                            u1.parents.sort()
+                utr_groups = {}
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        for u in c.UTRs:
+                            key = (u.start, u.end, u.ch, u.strand)
+                            if key not in utr_groups:
+                                utr_groups[key] = [u]
+                            else:
+                                utr_groups[key].append(u)
+
+                for group in utr_groups.values():
+                    if len(group) > 1:
+                        all_parents = set()
+                        for u in group:
+                            all_parents.update(u.parents)
+                        merged_parents = sorted(all_parents)
+                        for u in group:
+                            u.parents = merged_parents[:]
+                    else:
+                        group[0].parents.sort()
 
         self.shared_exons = True
         self.shared_UTRs = True
@@ -3857,7 +3861,7 @@ class Annotation():
         if not quiet:
             print(f"\nMerging {self.id} and {other.id} annotations took {round(lapse/60, 1)} minutes")
 
-    def remove_wrongly_assigned_exons(self, quiet:bool=False):
+    def remove_exons_with_unmatched_strand(self, quiet:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -3865,9 +3869,9 @@ class Annotation():
                     for e in t.exons:
                         if e.strand == t.strand:
                             new_e.append(e)
-                    t.exons = new_e.copy()
+                    t.exons = new_e
 
-        self.remove_transcripts_with_no_exons()
+        self.remove_transcripts_with_no_exons(quiet=quiet)
         self.remove_genes_with_no_transcripts(quiet=quiet)
 
     def remove_transcripts_with_no_exons(self):
@@ -3888,7 +3892,7 @@ class Annotation():
                 chrom = self.all_transcript_ids[t][0]
                 g_id = self.all_transcript_ids[t][1]
                 del self.chrs[chrom][g_id].transcripts[t]
-            else:
+            elif not quiet:
                 warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}", category=UserWarning)
 
         self.remove_genes_with_no_transcripts(quiet=quiet)
@@ -3909,7 +3913,8 @@ class Annotation():
     def remove_missing_transcript_parent_references(self, extra_attributes=False, quiet:bool=True):
         if not quiet:
             print(f"Removing missing transcript parent references for {self.id} annotation.")
-        self.remove_wrongly_assigned_exons(quiet=quiet)
+        self.remove_transcripts_with_no_exons(quiet=quiet)
+        self.remove_genes_with_no_transcripts(quiet=quiet)
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -6243,7 +6248,6 @@ class Annotation():
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
         self.update(extra_attributes=extra_attributes, quiet=quiet)
         self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
-
 
     def __str__(self):
         return str(self.id)

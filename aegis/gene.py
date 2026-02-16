@@ -77,43 +77,36 @@ class Gene(Feature):
                     self.strand = t.strand
 
         if self.coding:
-            transcripts_temp_names = []
-            transcripts_CDS_temp_sizes = []
-            transcripts_exon_temp_sizes = []
+            best_id = None
+            best_cds_size = -1
+            best_exon_size = -1
             for t in self.transcripts.values():
                 t.main = False
-                transcripts_temp_names.append(t.id)
+                cds_size = 0
                 if t.CDSs != {}:
                     t.determine_main_CDS()
                     for c in t.CDSs.values():
                         if c.main:
-                            transcripts_CDS_temp_sizes.append(c.size)
-                else:
-                    transcripts_CDS_temp_sizes.append(0)
-                transcripts_exon_temp_sizes.append(t.size)
-                
-            indices = [i for i, x in enumerate(transcripts_CDS_temp_sizes) if x == max(transcripts_CDS_temp_sizes)]
-            
-            # this allows to select for the max CDS transcript
-            # in case of a draw transcripts are compared based on exon size
-            for i, _ in enumerate(transcripts_exon_temp_sizes):
-                if i not in indices:
-                    transcripts_exon_temp_sizes[i] = 0
-            indices2 = [i for i, x in enumerate(transcripts_exon_temp_sizes) if x == max(transcripts_exon_temp_sizes)]
-            if len(indices) == 1:
-                self.transcripts[transcripts_temp_names[indices[0]]].main = True
-            else:
-                self.transcripts[transcripts_temp_names[indices2[0]]].main = True
-                
+                            cds_size = c.size
+                exon_size = t.size
+                # Select by largest CDS, break ties by largest exon span
+                if (cds_size > best_cds_size or (cds_size == best_cds_size and exon_size > best_exon_size)):
+                    best_cds_size = cds_size
+                    best_exon_size = exon_size
+                    best_id = t.id
+            if best_id:
+                self.transcripts[best_id].main = True
+
         elif self.noncoding:
-            transcripts_temp_names = []
-            transcripts_exon_temp_sizes = []                
+            best_id = None
+            best_exon_size = -1
             for t in self.transcripts.values():
                 t.main = False
-                transcripts_temp_names.append(t.id)
-                transcripts_exon_temp_sizes.append(t.size)
-            indices = [i for i, x in enumerate(transcripts_exon_temp_sizes) if x == max(transcripts_exon_temp_sizes)]
-            self.transcripts[transcripts_temp_names[indices[0]]].main = True
+                if t.size > best_exon_size:
+                    best_exon_size = t.size
+                    best_id = t.id
+            if best_id:
+                self.transcripts[best_id].main = True
         else:
             print(f"Error: gene {self.id} has no transcripts annotated")
 
@@ -168,13 +161,13 @@ class Gene(Feature):
 
     def sort_transcripts(self):
         sorted_transcripts = sorted(self.transcripts.values())
-        self.transcripts = {t.id: t.copy() for t in sorted_transcripts}
+        self.transcripts = {t.id: t for t in sorted_transcripts}
 
     def homogenise_exon_scores(self):
         all_exons = {}
         for t in self.transcripts.values():
             for e in t.exons:
-                tag = f"{e.start}_{e.end}_{e.strand}"
+                tag = (e.start, e.end, e.strand)
                 if tag not in all_exons:
                     all_exons[tag] = e.score
                 elif e.score != ".":
@@ -185,7 +178,7 @@ class Gene(Feature):
 
         for t in self.transcripts.values():
             for e in t.exons:
-                e.score = all_exons[f"{e.start}_{e.end}_{e.strand}"]
+                e.score = all_exons[(e.start, e.end, e.strand)]
 
     def clear_UTRs(self):
         for t in self.transcripts.values():
