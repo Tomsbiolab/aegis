@@ -2,3 +2,4 @@ __pycache__
 *.code-workspace
 *.egg-info/
 dist/
+.pytest_cache/
