@@ -346,7 +346,7 @@ class Genome():
 
         return final_equivalences
 
-    def remove_scaffolds(self, output_folder:str="", export:bool=False, chromosome_dict:dict={}, remove_00:bool=True, remove_organelles:bool=False):
+    def remove_scaffolds(self, output_folder:str="", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):
         
         if self.non_chromosomal_scaffolds:
             new_scaffolds = {}

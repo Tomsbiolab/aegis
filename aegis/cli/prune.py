@@ -20,12 +20,15 @@ def main(
     feature_type: Annotated[str, typer.Option(
         "-f", "--feature-type", help=f"Identify feature level to be removed, based on input ids. Choose from {features}."
     )] = "gene",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory."
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
-    )] = "{annotation-name}_pruned"
+    )] = "{annotation-name}_pruned",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
 ):
     """
     Remove a list of ids, from a file, from the current annotation.
@@ -34,9 +37,9 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     if output_file == "{annotation-name}.{ext}":
         output_file = f"{annotation_name}"
@@ -66,7 +69,7 @@ def main(
         annotation.remove_transcripts(input_ids)
 
     output_file += ".gff3"
-    annotation.export_gff(custom_path=output_folder, tag=output_file)
+    annotation.export_gff(custom_path=output_dir, tag=output_file)
 
 
 if __name__ == "__main__":

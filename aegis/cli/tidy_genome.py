@@ -17,22 +17,22 @@ def main(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "--genome-name", help="Genome assembly version, name or tag."
     )] = "{genome-fasta}",
     remove_scaffolds: Annotated[bool, typer.Option(
-        "-rs", "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome."
+        "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome."
     )] = False,
     remove_organelles: Annotated[bool, typer.Option(
-        "-ro", "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only effective if --remove-scaffolds is also enabled."
+        "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only effective if --remove-scaffolds is also enabled."
     )] = False,
     remove_chr00: Annotated[bool, typer.Option(
-        "-r0", "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled."
+        "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled."
     )] = False,
-    rename_map_path: Annotated[str, typer.Option(
-        "-rc", "--rename-map-path", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, without a header."
+    rename_map: Annotated[str, typer.Option(
+        "--rename-map", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, without a header."
     )] = None,
-    output_folder: Annotated[str, typer.Option(
-        "-o", "--output-folder", help="Path to the directory where output files will be saved."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output files will be saved."
     )] = "./aegis_output/"
 ):
     """
@@ -57,10 +57,10 @@ def main(
         
         annotation = Annotation(annotation_file, annotation_name, genome=genome)
     
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    if rename_map_path is not None:
-        with open(rename_map_path, encoding='utf-8') as f:
+    if rename_map is not None:
+        with open(rename_map, encoding='utf-8') as f:
             chromosome_rename_map = {linea.split('\t')[0]: linea.split('\t')[1].strip() for linea in f}
 
         chromosome_equivalences = genome.rename_features_from_dic(rename_map=chromosome_rename_map)
@@ -68,13 +68,11 @@ def main(
     if remove_scaffolds:
         genome.remove_scaffolds(remove_00=remove_chr00, remove_organelles=remove_organelles)
 
-    genome.export(output_folder = output_folder)
+    genome.export(output_folder = output_dir)
 
-    if annotation_file:
-
+    if annotation_file and rename_map is not None:
         annotation.rename_chromosomes(equivalences=chromosome_equivalences)
-        annotation.export_gff(custom_path=output_folder)
-
+        annotation.export_gff(custom_path=output_dir)
 
 
 if __name__ == "__main__":

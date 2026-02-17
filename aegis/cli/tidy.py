@@ -24,8 +24,8 @@ def main(
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
@@ -34,50 +34,59 @@ def main(
         "-m", "--main", help="Whether to include only a main transcript and main CDS per gene."
     )] = False,
     include_UTRs: Annotated[bool, typer.Option(
-        "-ut", "--include-UTRs", help="Include UTRs in output gff, normally these are not required by external tools as they can be deduced from exons and CDS features."
+        "-u", "--include-UTRs", help="Include UTRs in output gff, normally these are not required by external tools as they can be deduced from exons and CDS features."
     )] = False,
     just_genes: Annotated[bool, typer.Option(
         "-g", "--just-genes", help="Whether to only include gene level features."
     )] = False,
-    remove_symbols: Annotated[bool, typer.Option(
-        "-s", "--remove-symbols", help="Removes symbol attributes from gff output."
-    )] = False,
-    remove_aliases: Annotated[bool, typer.Option(
-        "-al", "--remove-aliases", help="Removes alias attributes from gff output."
-    )] = False,
-    clean_attributes: Annotated[bool, typer.Option(
-        "-c", "--clean-attributes", help="Removes non-standard attributes from a gff, may help with external tool compatibility issues."
-    )] = False,
-    for_featurecounts: Annotated[bool, typer.Option(
-        "-f", "--for-featurecounts", help="Creates a special attribute 'featurecounts_id' which has the gene-id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the gene-id level."
-    )] = False,
-    symbols_as_descriptors: Annotated[bool, typer.Option(
-        "-sd", "--symbols-as-descriptors", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display."
-    )] = False,
-    repeat_exons_utrs: Annotated[bool, typer.Option(
-        "-r", "--repeat-exons-utrs", help="Creates individual exon/UTR entries with individual parental references for cases where a feature has more than one transcript level parent."
-    )] = False,
-    cds_segment_ids: Annotated[bool, typer.Option(
-        "-u", "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
-    )] = False, 
-    for_lifton: Annotated[bool, typer.Option(
-        "-l", "--for-lifton", help="Ensures output has individual CDS entry ids (-u) as it is required for LifOn compatibility in its current version."
-    )] = False,
-    clean_features: Annotated[bool, typer.Option(
-        "-cf", "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
-    )] = False,
-    infer_CDSs: Annotated[bool, typer.Option(
-        "-ic", "--infer-CDSs", help="Detects and creates CDSs or reworks them if they already exist."
-    )] = False,
-    rna_classes: Annotated[str, typer.Option(
-        "-rc", "--rna-classes", help=f"Filters out transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
+    features: Annotated[str, typer.Option(
+        "-f", "--features", help=f"Selects only certain transcripts (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
         callback=split_callback
     )] = "",
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
-    skip_features_without_id: Annotated[bool, typer.Option(
-        "-si", "--no-features-without-id", help="Skips features without a specific id."
+    remove_symbols: Annotated[bool, typer.Option(
+        "--remove-symbols", help="Removes symbol attributes from gff output."
+    )] = False,
+    remove_aliases: Annotated[bool, typer.Option(
+        "--remove-aliases", help="Removes alias attributes from gff output."
+    )] = False,
+    clean_attributes: Annotated[bool, typer.Option(
+        "--clean-attributes", help="Removes non-standard attributes from a gff, may help with external tool compatibility issues."
+    )] = False,
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
+    )] = False,
+    for_featurecounts: Annotated[bool, typer.Option(
+        "--for-featurecounts", help="Creates a special attribute 'featurecounts_id' which has the gene-id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the gene-id level."
+    )] = False,
+    symbols_as_descriptors: Annotated[bool, typer.Option(
+        "--symbols-as-descriptors", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display."
+    )] = False,
+    repeat_exons_utrs: Annotated[bool, typer.Option(
+        "--repeat-exons-utrs", help="Creates individual exon/UTR entries with individual parental references for cases where a feature has more than one transcript level parent."
+    )] = False,
+    unique_cds_entry_ids: Annotated[bool, typer.Option(
+        "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
+    )] = False, 
+    for_lifton: Annotated[bool, typer.Option(
+        "--for-lifton", help="Ensures output has individual CDS entry ids (-u) as it is required for LifOn compatibility in its current version."
+    )] = False,
+    infer_missing_CDSs: Annotated[bool, typer.Option(
+        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations."
+    )] = False,
+    rework_all_CDSs: Annotated[bool, typer.Option(
+        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs."
+    )] = False,
+    no_collapse_exons: Annotated[bool, typer.Option(
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
+    )] = False,
+    consider_read_utrs: Annotated[bool, typer.Option(
+        "--consider-read-utrs", help="Consider UTRs as read from the GFF rather than inferred."
+    )] = False,
+    include_features_without_id: Annotated[bool, typer.Option(
+        "--include-features-without-id", help="Includes features without a specific id."
     )] = False
 
 ):
@@ -87,21 +96,24 @@ def main(
     This script parses an annotation file, allows for extensive filtering and reformatting, and exports a standardized GFF3 file.
     """
 
+    collapse_exons = not(no_collapse_exons)
+    skip_features_without_id = not(include_features_without_id)
+
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    for rna_class in rna_classes:
-        if rna_class not in RNA_CLASSES:
-            raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
+    for feature in features:
+        if feature not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid feature: {feature}. Choose from: {RNA_CLASSES}")
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_CDSs=infer_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, consider_read_utrs=consider_read_utrs)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
 
-    if cds_segment_ids or for_lifton:
+    if unique_cds_entry_ids or for_lifton:
         annotation.CDS_to_CDS_segment_ids()
     else:
         annotation.CDS_segment_to_CDS_ids()
@@ -109,13 +121,13 @@ def main(
     if symbols_as_descriptors:
         remove_symbols = True
 
-    if rna_classes:
-        annotation.filter_by_rna_class(rna_classes=rna_classes)
+    if features:
+        annotation.filter_by_rna_class(rna_classes=features)
         clean_features = True
 
     annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases), quiet=quiet)
 
-    annotation.export_gff(custom_path=output_folder, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
+    annotation.export_gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
 
 if __name__ == "__main__":
     app()

@@ -11,7 +11,7 @@ def main(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    genome_fasta: Annotated[str, typer.Argument(
+    genome_file: Annotated[str, typer.Argument(
         help="Path to the input genome FASTA file."
     )],
     annotation_name: Annotated[str, typer.Option(
@@ -19,10 +19,13 @@ def main(
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
         "-g", "--genome-name", help="Genome assembly version, name or tag."
-    )] = "{genome-fasta}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
-    )] = "./aegis_output/"
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
+    )] = "./aegis_output/",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
 ):
     """
     Outputs a summary with descriptive stats.
@@ -31,12 +34,12 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
-    genome = Genome(name=genome_name, genome_file_path=genome_fasta)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
+    genome = Genome(name=genome_name, genome_file_path=genome_file)
 
-    annotation.update_stats(custom_path=output_folder, export=True, genome=genome)
+    annotation.update_stats(custom_path=output_dir, export=True, genome=genome)
 
 
 if __name__ == "__main__":

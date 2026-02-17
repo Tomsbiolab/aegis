@@ -41,10 +41,10 @@ def main(
         "-a", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]"
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
-        "-o", "--output-dir", help="Path to the directory where output FASTA files will be saved."
+        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved."
     )] = "./aegis_output/features/",
-    feature_type: Annotated[str, typer.Option(
-        "-f", "--feature-type", help=f"Feature type(s) to extract, as a comma-separated list. Available options: {', '.join(FEATURES)}.",
+    features: Annotated[str, typer.Option(
+        "-f", "--features", help=f"Feature type(s) to extract, as a comma-separated list. Available options: {', '.join(FEATURES)}.",
         callback=split_callback
     )] = "gene",
 
@@ -76,11 +76,17 @@ def main(
                 """
     )] = "standard",
 
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable."
+    detailed_headers: Annotated[bool, typer.Option(
+        "-dh", "--detailed-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable."
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
+    no_collapse_exons: Annotated[bool, typer.Option(
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
     )] = False,
     feature_id: Annotated[str, typer.Option(
-        "-i", "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}."
+        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}."
     )] = "feature"
 ):
     """
@@ -94,7 +100,9 @@ def main(
     including upstream of TSS or ATG.
     """
 
-    for f_type in feature_type:
+    collapse_exons = not no_collapse_exons
+
+    for f_type in features:
         if f_type not in FEATURES:
             raise typer.BadParameter(f"Invalid feature type: {f_type}. Choose from: {FEATURES}")
 
@@ -119,18 +127,18 @@ def main(
             raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
     genome = Genome(name=genome_name, genome_file_path=genome_file)
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons)
 
-    if "promoter" in feature_type:
+    if "promoter" in features:
         annotation.generate_promoters(genome, promoter_size=promoter_size, promoter_type=promoter_type)
 
     annotation.generate_sequences(genome)
 
-    if "gene" in feature_type:
+    if "gene" in features:
 
-        annotation.export_genes(custom_path=output_dir, verbose=verbose)
+        annotation.export_genes(custom_path=output_dir, verbose=detailed_headers)
 
-    if "transcript" in feature_type:
+    if "transcript" in features:
 
         if "gene" in feature_id:
             used_id = "gene"
@@ -138,11 +146,11 @@ def main(
             used_id = "transcript"
 
         if "all" in mode:
-            annotation.export_transcripts(only_main=False, verbose=verbose, custom_path=output_dir, used_id=used_id, rna_classes=rna_classes)
+            annotation.export_transcripts(only_main=False, verbose=detailed_headers, custom_path=output_dir, used_id=used_id, rna_classes=rna_classes)
         if "main" in mode or "unique" in mode or "unique_per_gene" in mode:
-            annotation.export_transcripts(custom_path=output_dir, verbose=verbose, used_id=used_id, rna_classes=rna_classes)
+            annotation.export_transcripts(custom_path=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes)
 
-    if "protein" in feature_type:
+    if "protein" in features:
 
         if "gene" in feature_id:
             used_id = "gene"
@@ -154,16 +162,16 @@ def main(
             used_id = "protein"
 
         if "unique_per_gene" in mode:
-            annotation.export_proteins(only_main=False, custom_path=output_dir, verbose=verbose, unique_proteins_per_gene=True, used_id=used_id)
+            annotation.export_proteins(only_main=False, custom_path=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id)
         elif "unique" in mode:
-            annotation.export_unique_proteins(custom_path=output_dir, verbose=verbose)
+            annotation.export_unique_proteins(custom_path=output_dir, verbose=detailed_headers)
         else:
             if "all" in mode:
-                annotation.export_proteins(only_main=False, custom_path=output_dir, verbose=verbose, used_id=used_id)
+                annotation.export_proteins(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
             if "main" in mode or "unique" in mode or "unique_per_gene" in mode:
-                annotation.export_proteins(custom_path=output_dir, verbose=verbose, used_id=used_id)
+                annotation.export_proteins(custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
 
-    if "CDS" in feature_type:
+    if "CDS" in features:
 
         if "gene" in feature_id:
             used_id = "gene"
@@ -173,11 +181,11 @@ def main(
             used_id = "CDS"
 
         if "all" in mode:
-            annotation.export_CDSs(only_main=False, custom_path=output_dir, verbose=verbose, used_id=used_id)
+            annotation.export_CDSs(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
         if "main" in mode or "unique" in mode or "unique_per_gene" in mode:
-            annotation.export_CDSs(custom_path=output_dir, verbose=verbose, used_id=used_id)
+            annotation.export_CDSs(custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
 
-    if "promoter" in feature_type:
+    if "promoter" in features:
 
         if "gene" in feature_id:
             used_id = "gene"
@@ -187,9 +195,9 @@ def main(
             used_id = "promoter"
 
         if "all" in mode:
-            annotation.export_promoters(only_main=False, custom_path=output_dir, verbose=verbose, used_id=used_id)
+            annotation.export_promoters(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
         if "main" in mode or "unique" in mode or "unique_per_gene" in mode:
-            annotation.export_promoters(custom_path=output_dir, verbose=verbose, used_id=used_id)
+            annotation.export_promoters(custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
 
 if __name__ == "__main__":
     app()
