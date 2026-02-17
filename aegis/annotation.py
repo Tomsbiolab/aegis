@@ -3561,131 +3561,12 @@ class Annotation():
                     f'\033[38;2;46;204;113m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-        out = ""
         if subfolder:
             export_folder = Path(custom_path or self.path) / "out_gffs"
         else:
             export_folder = Path(custom_path or self.path)
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
-
-        if self.clean or self.dapmod:
-            out += "##gff-version 3\n"
-        else:
-            out += "\n".join(self.gff_header) + "\n"
-
-        if repeat_exons_utrs:
-            self.single_parent_for_exons_utrs(quiet=quiet)
-
-        for genes in self.chrs.values():
-            progress_bar.update(len(genes))
-            for x, g in enumerate(genes.values()):
-                
-                if no_1bp_features:
-                    gene_1bp_feature = False
-                    for t in g.transcripts.values():
-                        for e in t.exons:
-                            if e.size == 1:
-                                gene_1bp_feature = True
-                        for c in t.CDSs.values():
-                            for cs in c.CDS_segments:
-                                if cs.size == 1:
-                                    gene_1bp_feature = True
-                            for u in c.UTRs:
-                                if u.size == 1:
-                                    gene_1bp_feature = True
-
-                    if gene_1bp_feature:
-                        continue
-
-                out += g.print_gff()
-
-                if just_genes:
-                    continue
-
-                if repeat_exons_utrs:
-                    for t in g.transcripts.values():
-                        if main_only:
-                            if not t.main:
-                                continue
-                        out += t.print_gff()
-                        for e in t.exons:
-                            out += e.print_gff()
-
-                        for c in t.CDSs.values():
-                            if main_only:
-                                if not c.main:
-                                    continue
-                            for c_seg in c.CDS_segments:
-                                out += c_seg.print_gff()
-
-                            if UTRs:
-                                if hasattr(c, "UTRs"):
-                                    for u in c.UTRs:
-                                        out += u.print_gff()
-
-                else:
-                            
-                    for t in g.transcripts.values():
-                        if main_only:
-                            if not t.main:
-                                continue
-                        out += t.print_gff()
-
-                    exons = []
-                    for t in g.transcripts.values():
-                        for e in t.exons:
-                            add = True
-                            for ts in exons:
-                                if e.equal_sequence(ts):
-                                    add = False
-                            if add:
-                                exons.append(e)
-
-                    exons.sort()
-
-                    for e in exons:
-                        out += e.print_gff()
-
-                    for t in g.transcripts.values():
-                        for c in t.CDSs.values():
-                            if main_only:
-                                if not c.main:
-                                    continue
-                            for c_seg in c.CDS_segments:
-                                out += c_seg.print_gff()
-
-                    utrs = []
-                    for t in g.transcripts.values():
-                        for c in t.CDSs.values():
-                            if main_only:
-                                continue
-                            if UTRs:
-                                if hasattr(c, "UTRs"):
-                                    for u in c.UTRs:
-                                        add = True
-                                        for ts in utrs:
-                                            if u == ts:
-                                                add = False
-                                        if add:
-                                            utrs.append(u)
-                    utrs.sort()
-                    for u in utrs:
-                        out += u.print_gff()
-
-                if x < (len(genes) - 1):
-                    out += "###\n"
-
-        progress_bar.close()
-
-        if not skip_atypical_fts:
-            if not just_genes:
-                for ft in self.atypical_features:
-                    out += ft.print_gff()
-        if not skip_orphaned_fts:
-            if not just_genes:
-                for ft in self.orphaned_features:
-                    out += ft.print_gff()
 
         output_suffix = ""
 
@@ -3701,9 +3582,135 @@ class Annotation():
         elif not quiet:
             print(f"Exporting {self.id} gff to {export_folder}{tag}.")
 
-        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
-        f_out.write(out)
-        f_out.close()
+        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
+            if self.clean or self.dapmod:
+                f_out.write("##gff-version 3\n")
+            else:
+                f_out.write("\n".join(self.gff_header) + "\n")
+
+            if repeat_exons_utrs:
+                self.single_parent_for_exons_utrs(quiet=quiet)
+
+            for x1, genes in enumerate(self.chrs.values()):
+                progress_bar.update(len(genes))
+                for x2, g in enumerate(genes.values()):
+                    
+                    if no_1bp_features:
+                        gene_1bp_feature = False
+                        for t in g.transcripts.values():
+                            for e in t.exons:
+                                if e.size == 1:
+                                    gene_1bp_feature = True
+                            for c in t.CDSs.values():
+                                for cs in c.CDS_segments:
+                                    if cs.size == 1:
+                                        gene_1bp_feature = True
+                                for u in c.UTRs:
+                                    if u.size == 1:
+                                        gene_1bp_feature = True
+
+                        if gene_1bp_feature:
+                            continue
+
+                    f_out.write(g.print_gff())
+
+                    if just_genes:
+                        continue
+
+                    if repeat_exons_utrs:
+                        for t in g.transcripts.values():
+                            if main_only:
+                                if not t.main:
+                                    continue
+                            f_out.write(t.print_gff())
+                            for e in t.exons:
+                                f_out.write(e.print_gff())
+
+                            for c in t.CDSs.values():
+                                if main_only:
+                                    if not c.main:
+                                        continue
+                                for c_seg in c.CDS_segments:
+                                    f_out.write(c_seg.print_gff())
+
+                                if UTRs:
+                                    if hasattr(c, "UTRs"):
+                                        for u in c.UTRs:
+                                            f_out.write(u.print_gff())
+
+                    else:
+                                
+                        for t in g.transcripts.values():
+                            if main_only:
+                                if not t.main:
+                                    continue
+                            f_out.write(t.print_gff())
+
+                        exons = []
+                        for t in g.transcripts.values():
+                            for e in t.exons:
+                                add = True
+                                for ts in exons:
+                                    if e.equal_sequence(ts):
+                                        add = False
+                                if add:
+                                    exons.append(e)
+
+                        exons.sort()
+
+                        for e in exons:
+                            f_out.write(e.print_gff())
+
+                        for t in g.transcripts.values():
+                            for c in t.CDSs.values():
+                                if main_only:
+                                    if not c.main:
+                                        continue
+                                for c_seg in c.CDS_segments:
+                                    f_out.write(c_seg.print_gff())
+
+                        utrs = []
+                        for t in g.transcripts.values():
+                            for c in t.CDSs.values():
+                                if main_only:
+                                    continue
+                                if UTRs:
+                                    if hasattr(c, "UTRs"):
+                                        for u in c.UTRs:
+                                            add = True
+                                            for ts in utrs:
+                                                if u == ts:
+                                                    add = False
+                                            if add:
+                                                utrs.append(u)
+                        utrs.sort()
+                        for u in utrs:
+                            f_out.write(u.print_gff())
+
+                    if x1 == (len(self.chrs) - 1) and x2 == (len(genes) - 1):
+                        continue
+                    f_out.write("###\n")
+
+            progress_bar.close()
+
+            if not skip_atypical_fts:
+                if not just_genes:
+                    for x, ft in enumerate(self.atypical_features):
+                        if x == 0:
+                            f_out.write("###\n")
+                        f_out.write(ft.print_gff())
+                        if x == (len(self.atypical_features) - 1):
+                            continue
+                        f_out.write("###\n")
+            if not skip_orphaned_fts:
+                if not just_genes:
+                    for x, ft in enumerate(self.orphaned_features):
+                        if x == 0:
+                            f_out.write("###\n")
+                        f_out.write(ft.print_gff())
+                        if x == (len(self.orphaned_features) - 1):
+                            continue
+                        f_out.write("###\n")
 
     def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, quiet:bool=False):
 
@@ -3726,65 +3733,9 @@ class Annotation():
                     f'\033[38;2;46;204;113m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-        out = ""
-
         export_folder = Path(custom_path or self.path) / "out_gtfs"
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
-
-        out += "#gtf-version 2.2\n"
-
-        for genes in self.chrs.values():
-            progress_bar.update(len(genes))
-            for x, g in enumerate(genes.values()):
-
-                if no_1bp_features:
-                    gene_1bp_feature = False
-                    for t in g.transcripts.values():
-                        for e in t.exons:
-                            if e.size == 1:
-                                gene_1bp_feature = True
-                        for c in t.CDSs.values():
-                            for cs in c.CDS_segments:
-                                if cs.size == 1:
-                                    gene_1bp_feature = True
-                            for u in c.UTRs:
-                                if u.size == 1:
-                                    gene_1bp_feature = True
-
-                    if gene_1bp_feature:
-                        continue
-
-                out += g.print_gtf()
-
-                if just_genes:
-                    continue
-
-                for t in g.transcripts.values():
-                    if main_only:
-                        if not t.main:
-                            continue
-                    original_feature = t.feature
-                    t.feature = "transcript"
-                    out += t.print_gtf()
-                    t.feature = original_feature
-                    for e in t.exons:
-                        e.print_gtf()
-                    for c in t.CDSs.values():
-                        if main_only:
-                            if not c.main:
-                                continue
-                        for c_seg in c.CDS_segments:
-                            c_seg.print_gtf()
-                        if UTRs:
-                            if hasattr(c, "UTRs"):
-                                for u in c.UTRs:
-                                    u.print_gtf()
-
-                if x < (len(genes) - 1):
-                    out += "###\n"
-
-        progress_bar.close()
 
         output_suffix = ""
 
@@ -3798,11 +3749,63 @@ class Annotation():
             if not quiet:
                 print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
         elif not quiet:
-            print(f"Exporting {self.id} gtf to {export_folder}{tag}.")         
+            print(f"Exporting {self.id} gtf to {export_folder}{tag}.")
 
-        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
-        f_out.write(out)
-        f_out.close()
+        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
+            f_out.write("#gtf-version 2.2\n")
+
+            for x1, genes in enumerate(self.chrs.values()):
+                progress_bar.update(len(genes))
+                for x2, g in enumerate(genes.values()):
+
+                    if no_1bp_features:
+                        gene_1bp_feature = False
+                        for t in g.transcripts.values():
+                            for e in t.exons:
+                                if e.size == 1:
+                                    gene_1bp_feature = True
+                            for c in t.CDSs.values():
+                                for cs in c.CDS_segments:
+                                    if cs.size == 1:
+                                        gene_1bp_feature = True
+                                for u in c.UTRs:
+                                    if u.size == 1:
+                                        gene_1bp_feature = True
+
+                        if gene_1bp_feature:
+                            continue
+
+                    f_out.write(g.print_gtf())
+
+                    if just_genes:
+                        continue
+
+                    for t in g.transcripts.values():
+                        if main_only:
+                            if not t.main:
+                                continue
+                        original_feature = t.feature
+                        t.feature = "transcript"
+                        f_out.write(t.print_gtf())
+                        t.feature = original_feature
+                        for e in t.exons:
+                            f_out.write(e.print_gtf())
+                        for c in t.CDSs.values():
+                            if main_only:
+                                if not c.main:
+                                    continue
+                            for c_seg in c.CDS_segments:
+                                f_out.write(c_seg.print_gtf())
+                            if UTRs:
+                                if hasattr(c, "UTRs"):
+                                    for u in c.UTRs:
+                                        f_out.write(u.print_gtf())
+
+                    if x1 == (len(self.chrs) - 1) and x2 == (len(genes) - 1):
+                        continue
+                    f_out.write("###\n")
+
+            progress_bar.close()
 
     def merge(self, other:object, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
         """
