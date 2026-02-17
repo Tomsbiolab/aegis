@@ -12,7 +12,7 @@ def main(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    genome_fasta: Annotated[str, typer.Argument(
+    genome_file: Annotated[str, typer.Argument(
         help="Path to the input genome FASTA file."
     )],
     genelist: Annotated[str, typer.Argument(
@@ -25,9 +25,8 @@ def main(
         help="Actual length of motif."
     )],
     header: Annotated[bool, typer.Option(
-        "-h", "--header", help="Use this flag to indicate the presence of a header in input symbols_file."
+        "-H", "--header", help="Use this flag to indicate the presence of a header in input genelist file."
     )] = False,
-
     promoter_size: Annotated[int, typer.Option(
         "-ps", "--promoter-size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'."
     )] = 2000,
@@ -39,18 +38,18 @@ def main(
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
         "-g", "--genome-name", help="Genome assembly version, name or tag."
-    )] = "{genome-fasta}",
+    )] = "{genome-file}",
     query_tag: Annotated[str, typer.Option(
-        "-q", "--genelist-tag", help="Query gene list tag/name to improve output description."
+        "--genelist-tag", help="Query gene list tag/name to improve output description."
     )] = "query_genes",
     motif_tag: Annotated[str, typer.Option(
-        "-m", "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'."
+        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'."
     )] = "query_motif",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory."
     )] = "./aegis_output/",
     quiet: Annotated[bool, typer.Option(
-        "-qt", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
 
 ):
@@ -61,7 +60,7 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     if header:
         if genelist.endswith(".xlsx"):
@@ -79,11 +78,11 @@ def main(
     genes = [gene for gene in genes if gene != ""]
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
-    genome = Genome(name=genome_name, genome_file_path=genome_fasta)
+    genome = Genome(name=genome_name, genome_file_path=genome_file)
 
     annotation.generate_promoters(genome=genome, promoter_size=promoter_size, promoter_type=promoter_type, generate_sequence=True)
 
-    annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_folder)
+    annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_dir)
     
 if __name__ == "__main__":
     app()

@@ -3361,70 +3361,102 @@ class Annotation():
             for g in genes.values():
                 g.aliases = []
 
-    def export_lengths(self, just_genes:bool=True, custom_path:str=""):
-        """
-        Exports gene lengths as total exon length of main transcript.
-        """
-        out = []
+    def list_genes(self, custom_path:str="", output_file:str="",lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=True, skip_transposables:bool=True):
 
-        export_folder = Path(custom_path or self.path) / "gene_lengths"
+        if not custom_path:
+            export_folder = Path(self.path) / "lists"
+        else:
+            export_folder = Path(custom_path)
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
-        if not just_genes:
-            for genes in self.chrs.values():
-                for g in genes.values():
-                    for t in g.transcripts.values():
-                        if t.main:
-                            out.append(f"{g.id}\t{t.size}")
-            tag = f"{self.id}{self.feature_suffix}_gene_lengths_all.tsv"
+        if not output_file:
+            output_file = f"{export_folder}{self.name}_genes.txt"
         else:
-            for genes in self.chrs.values():
+            output_file = f"{export_folder}{output_file}"
+
+        with open(output_file, "w", encoding="utf-8") as f_out:
+
+            header = ["gene_id"]
+            if chromosomes or coordinates:
+                header.append("chromosome")
+            if coordinates:
+                header.append("gene_start")
+                header.append("gene_end")
+            if lengths:
+                header.append("gene_length")
+            f_out.write(sep.join(header) + "\n")
+
+            for chrom, genes in self.chrs.items():
                 for g in genes.values():
-                    if not g.pseudogene and not g.transposable:
-                        for t in g.transcripts.values():
-                            if t.main:
-                                out.append(f"{g.id}\t{t.size}")
-            tag = f"{self.id}{self.feature_suffix}_gene_lengths.tsv"
-        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
-        out = "\n".join(out)
-        f_out.write(out)
-        f_out.close()
+                    if skip_pseudogenes and g.pseudogene:
+                        continue
+                    if skip_transposables and g.transposable:
+                        continue
+                    if coding and not g.coding:
+                        continue
+                    if non_coding and g.coding:
+                        continue
 
-    def export_coordinates(self, custom_path:str="", lengths:bool=False):
-        """
-        Exports gene coordinates.
-        """
-        if lengths:
-            out = ["gene_id\tchromosome\tgene_start\tgene_end\tgene_length"]
+                    out = [g.id]
+                    if chromosomes or coordinates:
+                        out.append(chrom)
+                    if coordinates:
+                        out.append(g.start)
+                        out.append(g.end)
+                    if lengths:
+                        out.append(g.size)
+
+                    f_out.write(sep.join(out) + "\n")
+
+    def list_transcripts(self, custom_path:str="", output_file:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=True, skip_transposables:bool=True):
+        if not custom_path:
+            export_folder = Path(self.path) / "lists"
         else:
-            out = ["gene_id\tchromosome\tgene_start\tgene_end"]
-
-        export_folder = Path(custom_path or self.path) / "gene_coordinates"
+            export_folder = Path(custom_path)
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
-        if lengths:
-            for chrom, genes in self.chrs.items():
-                for g in genes.values():
-                    out.append(f"{g.id}\t{chrom}\t{g.start}\t{g.end}\t{g.size}") 
+        if not output_file:
+            output_file = f"{export_folder}{self.name}_transcripts.txt"
         else:
-            for chrom, genes in self.chrs.items():
-                for g in genes.values():
-                    out.append(f"{g.id}\t{chrom}\t{g.start}\t{g.end}")
-        if self.dapmod:
-            tag = f"{self.id}{self.feature_suffix}_gene_coordinates_dapmod.tsv"
-        else:
-            tag = f"{self.id}{self.feature_suffix}_gene_coordinates.tsv"
-        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
-        out = "\n".join(out)
-        f_out.write(out)
-        f_out.close()
+            output_file = f"{export_folder}{output_file}"
 
-    def list_genes(self, custom_path:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False):
-        pass
-    def list_transcripts(self, custom_path:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False):
-        pass
+        with open(output_file, "w", encoding="utf-8") as f_out:
+
+            header = ["transcript_id"]
+            if chromosomes or coordinates:
+                header.append("chromosome")
+            if coordinates:
+                header.append("transcript_start")
+                header.append("transcript_end")
+            if lengths:
+                header.append("transcript_length")
+            f_out.write(sep.join(header) + "\n")
+
+            for chrom, genes in self.chrs.items():
+                for g in genes.values():
+                    if skip_pseudogenes and g.pseudogene:
+                        continue
+                    if skip_transposables and g.transposable:
+                        continue
+
+                    for t in genes.transcripts.values():
+                        if coding and not t.coding:
+                            continue
+                        if non_coding and t.coding:
+                            continue
+
+                        out = [t.id]
+                        if chromosomes or coordinates:
+                            out.append(chrom)
+                        if coordinates:
+                            out.append(t.start)
+                            out.append(t.end)
+                        if lengths:
+                            out.append(t.size)
+
+                        f_out.write(sep.join(out) + "\n")
 
     def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):
         repeat_CDS_segment_id = False

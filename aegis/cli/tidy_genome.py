@@ -31,8 +31,8 @@ def main(
     rename_map: Annotated[str, typer.Option(
         "--rename-map", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, without a header."
     )] = None,
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the directory where output files will be saved."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output files will be saved."
     )] = "./aegis_output/"
 ):
     """
@@ -57,7 +57,7 @@ def main(
         
         annotation = Annotation(annotation_file, annotation_name, genome=genome)
     
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     if rename_map is not None:
         with open(rename_map, encoding='utf-8') as f:
@@ -68,11 +68,11 @@ def main(
     if remove_scaffolds:
         genome.remove_scaffolds(remove_00=remove_chr00, remove_organelles=remove_organelles)
 
-    genome.export(output_folder = output_folder)
+    genome.export(output_folder = output_dir)
 
     if annotation_file and rename_map is not None:
         annotation.rename_chromosomes(equivalences=chromosome_equivalences)
-        annotation.export_gff(custom_path=output_folder)
+        annotation.export_gff(custom_path=output_dir)
 
 
 if __name__ == "__main__":

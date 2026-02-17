@@ -17,8 +17,8 @@ def main(
     annotation_files: Annotated[List[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. If gene and exon overlaps are chosen, priority will be given to the gene models of the first annotations and the subsequent ones."
     )],
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     gene_threshold: Annotated[float, typer.Option(
         "-g", "--gene-threshold",
@@ -66,8 +66,8 @@ def main(
             features_to_rename=features
         )
 
-    print(f"Writing merged annotation to {output_folder}...")
-    base_annotation.export_gff(output_folder)
+    print(f"Writing merged annotation to {output_dir}...")
+    base_annotation.export_gff(output_dir)
 
     print("Done.")
 

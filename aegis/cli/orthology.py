@@ -32,8 +32,8 @@ def main(
         callback=split_callback
     )] = "{annotation-filename(s)}",
 
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_filename: Annotated[str, typer.Option(
         "-o", "--output-file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
@@ -43,10 +43,10 @@ def main(
         callback=split_callback
     )] = "",
     skip_synteny: Annotated[bool, typer.Option(
-        "-s", "--skip-synteny", help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome."
+        "--skip-synteny", help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome."
     )] = False,
     reference_annotation: Annotated[str, typer.Option(
-        "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
+        "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
     )] = "None",
     include_single_blasts: Annotated[bool, typer.Option(
         "-b", "--include-single-blasts", help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary."
@@ -55,25 +55,25 @@ def main(
         "-t", "--threads", help="Number of threads."
     )] = 1,
     skip_rbhs: Annotated[bool, typer.Option(
-        "-rb", "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
+        "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
     lift_feature_types: Annotated[str, typer.Option(
-        "-lt", "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
+        "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
     )] = "ALL",
     skip_lifton: Annotated[bool, typer.Option(
-        "-sl", "--skip-lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
+        "--skip-lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
     )] = False,
     skip_copies: Annotated[bool, typer.Option(
-        "-cl", "--skip-copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
+        "--skip-copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
     )] = False,
     skip_mcscan: Annotated[bool, typer.Option(
-        "-sm", "--skip-mcscan", help="Skip the JCVI toolkit synteny and collinearity analysis (MCScan). Useful when JCVI is causing compatibility issues."
+        "--skip-mcscan", help="Skip the JCVI toolkit synteny and collinearity analysis (MCScan). Useful when JCVI is causing compatibility issues."
     )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep-intermediate", help="Keep intermediate files, useful for identifying errors."
     )] = False,
     include_duplicates: Annotated[bool, typer.Option(
-        "-du", "--include-duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
+        "--include-duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
     )] = False,
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error."
@@ -185,15 +185,15 @@ def main(
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-    output_folder = Path(output_folder).resolve() / "orthologues"
+    output_dir = Path(output_dir).resolve() / "orthologues"
 
-    if output_folder.exists():
-        warnings.warn(f"The folder '{output_folder}' already exists. Please be aware that conflict may arise with existing output and/or temp folder files.")
+    if output_dir.exists():
+        warnings.warn(f"The folder '{output_dir}' already exists. Please be aware that conflict may arise with existing output and/or temp folder files.")
 
-    output_folder.mkdir(parents=True, exist_ok=True)
-    output_folder = str(output_folder) + "/"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = str(output_dir) + "/"
 
-    results_directory = Path(f"{output_folder}temp/")
+    results_directory = Path(f"{output_dir}temp/")
     protein_path = results_directory / "proteins"
     protein_path.mkdir(parents=True, exist_ok=True)
 
@@ -425,9 +425,9 @@ def main(
 
             a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
 
-        output_file = f"{output_folder}{a1.name}_equivalences{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs_and_rbhs = f"{output_folder}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs = f"{output_folder}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
+        output_file = f"{output_dir}{a1.name}_equivalences{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs_and_rbhs = f"{output_dir}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs = f"{output_dir}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
 
         if skip_rbhs and skip_unidirectional_blasts:
             df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=quiet, return_df=True, export_csv=False)
@@ -444,13 +444,13 @@ def main(
             final_df = pd.concat([final_df, df], ignore_index=True)
 
     if output_filename != "equivalences{other_tags}.tsv":
-        final_output_file = f"{output_folder}{output_filename}.tsv"
+        final_output_file = f"{output_dir}{output_filename}.tsv"
     elif skip_rbhs and skip_unidirectional_blasts:
-        final_output_file = f"{output_folder}equivalences_just_rbbhs{extra_tag}.tsv"
+        final_output_file = f"{output_dir}equivalences_just_rbbhs{extra_tag}.tsv"
     elif skip_unidirectional_blasts:
-        final_output_file = f"{output_folder}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        final_output_file = f"{output_dir}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
     else:
-        final_output_file = f"{output_folder}equivalences{extra_tag}.tsv"
+        final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
 
     if not include_duplicates:
 

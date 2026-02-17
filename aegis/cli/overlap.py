@@ -22,11 +22,11 @@ def main(
         "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2",
         callback=split_callback
     )] = "{annotation-filename(s)}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory."
     )] = "./aegis_output/",
     output_filetag: Annotated[str, typer.Option(
-        "-f", "--output-filetag", help="Optional output filetag prefix to prevent auto-naming based on annotation names, specially useful when comparing several annotations."
+        "-t", "--output-filetag", help="Optional output filetag prefix to prevent auto-naming based on annotation names, specially useful when comparing several annotations."
     )] = "{annotation-name(s)}",
     overlap_threshold: Annotated[int, typer.Option(
         "-o", "--overlap-threshold", help="Select the required overlap threshold to report a gene-id pair match. The default value of 6 is expected to result in a valid set of id equivalences between annotation files. Increase it for more stringent comparisons, or decrease it for more extensive reporting of overlaps."
@@ -120,14 +120,14 @@ def main(
 
         annotations[0].detect_gene_overlaps()
 
-        annotations[0].export_equivalences(custom_path=output_folder, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs)
+        annotations[0].export_equivalences(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs)
 
     elif len(annotation_files) > 1:
 
         if output_filetag == "{annotation-name(s)}":
             output_filetag = ""
             
-        export_group_equivalences(annotations, output_folder=output_folder, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False)
+        export_group_equivalences(annotations, output_folder=output_dir, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False)
 
     else:
         raise typer.BadParameter(f"No annotation-files provided.")

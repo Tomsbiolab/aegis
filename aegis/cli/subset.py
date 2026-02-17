@@ -17,7 +17,7 @@ def main(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    genome_fasta: Annotated[str, typer.Argument(
+    genome_file: Annotated[str, typer.Argument(
         help="Path to the input genome FASTA file."
     )] = "",
     chr_cap: Annotated[int, typer.Option(
@@ -38,9 +38,9 @@ def main(
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
         "-g", "--genome-name", help="Genome assembly version, name or tag."
-    )] = "{genome-fasta}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/subsets/",
     output_annot_file: Annotated[str, typer.Option(
         "-oa", "--output-annot-file", help="Path to the output annotation filename, including extension."
@@ -59,12 +59,12 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    if genome_name == "{genome-fasta}" and genome_fasta != "":
-        genome_name = os.path.splitext(os.path.basename(genome_fasta))[0]
-    elif genome_fasta == "":
+    if genome_name == "{genome-file}" and genome_file != "":
+        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+    elif genome_file == "":
         genome_name = "genome"
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     if output_annot_file == "{annotation-name}_subset.gff3":
         output_annot_file = f"{annotation_name}_subset.gff3"
@@ -72,8 +72,8 @@ def main(
     if output_genome_file == "{genome-name}_subset.fasta":
         output_genome_file = f"{genome_name}_subset.fasta"
 
-    if genome_fasta:
-        g = Genome(genome_name, genome_fasta)
+    if genome_file:
+        g = Genome(genome_name, genome_file)
         a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
         common_actual_chromosomes = common_chromosomes - g.scaffold_names
@@ -88,7 +88,7 @@ def main(
     if not chosen_chromosomes:
         if chr_cap > len(common_chromosomes):
             chosen_chromosomes = common_chromosomes.copy()
-            if genome_fasta:
+            if genome_file:
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) common to both genome and annotation files. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
             else:
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
@@ -105,11 +105,11 @@ def main(
         # if chosen_chromosomes is selected min_genes parameter is ignored
         chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0)
 
-    a.export_gff(custom_path=output_folder, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
+    a.export_gff(custom_path=output_dir, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
-    if genome_fasta:
+    if genome_file:
         g.subset(chosen_features=chosen_chromosomes)
-        g.export(output_folder=output_folder, file=output_genome_file)
+        g.export(output_folder=output_dir, file=output_genome_file)
 
 if __name__ == "__main__":
     app()

@@ -24,8 +24,8 @@ def main(
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
@@ -106,7 +106,7 @@ def main(
         if feature not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid feature: {feature}. Choose from: {RNA_CLASSES}")
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, consider_read_utrs=consider_read_utrs)
 
@@ -127,7 +127,7 @@ def main(
 
     annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases), quiet=quiet)
 
-    annotation.export_gff(custom_path=output_folder, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
+    annotation.export_gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
 
 if __name__ == "__main__":
     app()

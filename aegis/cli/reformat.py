@@ -14,10 +14,10 @@ def main(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     input_format: Annotated[str, typer.Option(
-        "-m", "--input-format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override."
+        "-f", "--input-format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override."
     )] = "Auto Detect",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
@@ -33,7 +33,7 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     encoding = read_file_with_fallback(annotation_file)
 
@@ -51,11 +51,11 @@ def main(
 
     if input_format == "gff3":
         output_file += ".gtf"
-        annotation.export_gtf(custom_path=output_folder, tag=output_file, UTRs=True)
+        annotation.export_gtf(custom_path=output_dir, tag=output_file, UTRs=True)
 
     elif input_format == "gtf":
         output_file += ".gff3"
-        annotation.export_gff(custom_path=output_folder, tag=output_file, UTRs=True)
+        annotation.export_gff(custom_path=output_dir, tag=output_file, UTRs=True)
 
 if __name__ == "__main__":
     app()

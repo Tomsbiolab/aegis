@@ -14,8 +14,8 @@ def main(
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/"
 ):
 
@@ -23,10 +23,11 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
-    annotation.export_coordinates(custom_path=output_folder)
+
+    annotation.list_genes()
 
 
 if __name__ == "__main__":

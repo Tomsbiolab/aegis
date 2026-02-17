@@ -17,7 +17,7 @@ def main(
         "-s", "--separator", help="Indicate separator if input text file is separated by anything other than tabs."
     )] = "{annotation-file}",
     header: Annotated[bool, typer.Option(
-        "-h", "--header", help="Use this flag to indicate the presence of a header in input symbols_file."
+        "-H", "--header", help="Use this flag to indicate the presence of a header in input symbols_file."
     )] = False,
     clear_existing: Annotated[bool, typer.Option(
         "-c", "--clear-existing-symbols", help="Clears existing names and symbols from annotation file. Otherwise additional symbols are added to the existing ones."
@@ -25,8 +25,8 @@ def main(
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
-    output_folder: Annotated[str, typer.Option(
-        "-d", "--output-folder", help="Path to the output folder."
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory."
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
@@ -43,7 +43,7 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
@@ -52,7 +52,7 @@ def main(
 
     annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file)
 
-    annotation.export_gff(custom_path=output_folder, tag=output_file)
+    annotation.export_gff(custom_path=output_dir, tag=output_file)
     
 if __name__ == "__main__":
     app()
