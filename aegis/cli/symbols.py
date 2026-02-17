@@ -15,7 +15,7 @@ def main(
     )],
     sep: Annotated[str, typer.Option(
         "-s", "--separator", help="Indicate separator if input text file is separated by anything other than tabs."
-    )] = "{annotation-file}",
+    )] = "\t",
     header: Annotated[bool, typer.Option(
         "-H", "--header", help="Use this flag to indicate the presence of a header in input symbols_file."
     )] = False,

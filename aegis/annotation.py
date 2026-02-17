@@ -3361,7 +3361,7 @@ class Annotation():
             for g in genes.values():
                 g.aliases = []
 
-    def list_genes(self, custom_path:str="", output_file:str="",lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=True, skip_transposables:bool=True):
+    def list_genes(self, custom_path:str="", output_file:str="",lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding_info:bool=False, skip_coding:bool=False, skip_non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=False, skip_transposables:bool=False, gene_symbols:bool=False):
 
         if not custom_path:
             export_folder = Path(self.path) / "lists"
@@ -3375,16 +3375,24 @@ class Annotation():
         else:
             output_file = f"{export_folder}{output_file}"
 
+        if skip_coding and skip_non_coding:
+            print("Warning: Both skip_coding and skip_non_coding are set to True. No genes will be listed.")
+            return
+
         with open(output_file, "w", encoding="utf-8") as f_out:
 
             header = ["gene_id"]
             if chromosomes or coordinates:
-                header.append("chromosome")
+                header.append("scaffold")
             if coordinates:
                 header.append("gene_start")
                 header.append("gene_end")
             if lengths:
                 header.append("gene_length")
+            if coding_info:
+                header.append("coding")
+            if gene_symbols:
+                header.append("gene_symbol")
             f_out.write(sep.join(header) + "\n")
 
             for chrom, genes in self.chrs.items():
@@ -3393,23 +3401,26 @@ class Annotation():
                         continue
                     if skip_transposables and g.transposable:
                         continue
-                    if coding and not g.coding:
+                    if skip_coding and g.coding:
                         continue
-                    if non_coding and g.coding:
+                    if skip_non_coding and not g.coding:
                         continue
 
                     out = [g.id]
                     if chromosomes or coordinates:
                         out.append(chrom)
                     if coordinates:
-                        out.append(g.start)
-                        out.append(g.end)
+                        out.append(str(g.start))
+                        out.append(str(g.end))
                     if lengths:
-                        out.append(g.size)
-
+                        out.append(str(g.size))
+                    if coding_info:
+                        out.append(str(g.coding))
+                    if gene_symbols:
+                        out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def list_transcripts(self, custom_path:str="", output_file:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=True, skip_transposables:bool=True):
+    def list_transcripts(self, custom_path:str="", output_file:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding_info:bool=False, skip_coding:bool=False, skip_non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=False, skip_transposables:bool=False, gene_symbols:bool=False):
         if not custom_path:
             export_folder = Path(self.path) / "lists"
         else:
@@ -3422,16 +3433,24 @@ class Annotation():
         else:
             output_file = f"{export_folder}{output_file}"
 
+        if skip_coding and skip_non_coding:
+            print("Warning: Both skip_coding and skip_non_coding are set to True. No transcripts will be listed.")
+            return
+
         with open(output_file, "w", encoding="utf-8") as f_out:
 
             header = ["transcript_id"]
             if chromosomes or coordinates:
-                header.append("chromosome")
+                header.append("scaffold")
             if coordinates:
                 header.append("transcript_start")
                 header.append("transcript_end")
             if lengths:
                 header.append("transcript_length")
+            if coding_info:
+                header.append("coding")
+            if gene_symbols:
+                header.append("gene_symbol")
             f_out.write(sep.join(header) + "\n")
 
             for chrom, genes in self.chrs.items():
@@ -3441,21 +3460,24 @@ class Annotation():
                     if skip_transposables and g.transposable:
                         continue
 
-                    for t in genes.transcripts.values():
-                        if coding and not t.coding:
+                    for t in g.transcripts.values():
+                        if skip_coding and t.coding:
                             continue
-                        if non_coding and t.coding:
+                        if skip_non_coding and not t.coding:
                             continue
 
                         out = [t.id]
                         if chromosomes or coordinates:
                             out.append(chrom)
                         if coordinates:
-                            out.append(t.start)
-                            out.append(t.end)
+                            out.append(str(t.start))
+                            out.append(str(t.end))
                         if lengths:
-                            out.append(t.size)
-
+                            out.append(str(t.size))
+                        if coding_info:
+                            out.append(str(t.coding))
+                        if gene_symbols:
+                            out.append("|".join(g.symbols))
                         f_out.write(sep.join(out) + "\n")
 
     def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):
