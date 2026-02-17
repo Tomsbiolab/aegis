@@ -3617,7 +3617,7 @@ class Annotation():
                     if just_genes:
                         continue
 
-                    if repeat_exons_utrs:
+                    if repeat_exons_utrs or main_only or len(g.transcripts) == 1:
                         for t in g.transcripts.values():
                             if main_only:
                                 if not t.main:
@@ -3640,52 +3640,48 @@ class Annotation():
 
                     else:
                                 
-                        for t in g.transcripts.values():
-                            if main_only:
-                                if not t.main:
-                                    continue
+                        for t in g.transcripts.values():                                
                             f_out.write(t.print_gff())
 
                         exons = []
                         for t in g.transcripts.values():
-                            for e in t.exons:
-                                add = True
-                                for ts in exons:
-                                    if e.equal_sequence(ts):
-                                        add = False
-                                if add:
-                                    exons.append(e)
+                            exons.extend(t.exons)
 
                         exons.sort()
+                        
+                        unique_exons = []
+                        if exons:
+                            unique_exons.append(exons[0])
+                            for i in range(1, len(exons)):
+                                if not exons[i].equal_sequence(exons[i-1]):
+                                    unique_exons.append(exons[i])
 
-                        for e in exons:
+                        for e in unique_exons:
                             f_out.write(e.print_gff())
 
                         for t in g.transcripts.values():
                             for c in t.CDSs.values():
-                                if main_only:
-                                    if not c.main:
-                                        continue
                                 for c_seg in c.CDS_segments:
                                     f_out.write(c_seg.print_gff())
 
-                        utrs = []
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                if main_only:
-                                    continue
-                                if UTRs:
+
+                        if UTRs:
+                            utrs = []
+                            for t in g.transcripts.values():
+                                for c in t.CDSs.values():
                                     if hasattr(c, "UTRs"):
-                                        for u in c.UTRs:
-                                            add = True
-                                            for ts in utrs:
-                                                if u == ts:
-                                                    add = False
-                                            if add:
-                                                utrs.append(u)
-                        utrs.sort()
-                        for u in utrs:
-                            f_out.write(u.print_gff())
+                                        utrs.extend(c.UTRs)
+                            utrs.sort()
+
+                            unique_utrs = []
+                            if utrs:
+                                unique_utrs.append(utrs[0])
+                                for i in range(1, len(utrs)):
+                                    if not utrs[i].equal_sequence(utrs[i-1]):
+                                        unique_utrs.append(utrs[i])
+
+                            for u in unique_utrs:
+                                f_out.write(u.print_gff())
 
                     if x1 == (len(self.chrs) - 1) and x2 == (len(genes) - 1):
                         continue
