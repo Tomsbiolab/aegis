@@ -21,7 +21,10 @@ def main(
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
-    )] = "{annotation-name}.{ext}"
+    )] = "{annotation-name}.{ext}",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
 ):
     """
     Convert between GFF and GTF formats.
@@ -34,7 +37,7 @@ def main(
 
     encoding = read_file_with_fallback(annotation_file)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     input_format = input_format.lower()
 

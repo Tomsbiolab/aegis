@@ -21,33 +21,36 @@ def main(
         help="Path to the input genome FASTA file."
     )] = "",
     chr_cap: Annotated[int, typer.Option(
-        "-cc", "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s)."
+        "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s)."
     )] = 2,
     chosen_chromosomes: Annotated[str, typer.Option(
-        "-c", "--chosen-chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
+        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
     callback=split_callback
     )] = None,
     gene_cap: Annotated[int, typer.Option(
-        "-gc", "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
+        "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,
     min_genes: Annotated[int, typer.Option(
-        "-mg", "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chosen-chromosomes if used."
+        "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chosen-chromosomes if used."
     )] = 1500,
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "--genome-name", help="Genome assembly version, name or tag."
     )] = "{genome-fasta}",
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/subsets/",
     output_annot_file: Annotated[str, typer.Option(
-        "-o", "--output-annot-file", help="Path to the output annotation filename, including extension."
+        "-oa", "--output-annot-file", help="Path to the output annotation filename, including extension."
     )] = "{annotation-name}_subset.gff3",
     output_genome_file: Annotated[str, typer.Option(
         "-og", "--output-genome-file", help="Path to the output genome filename, including extension."
-    )] = "{genome-name}_subset.fasta"
+    )] = "{genome-name}_subset.fasta",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
 ):
     """
     Obtain subsets of an annotation file, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
@@ -71,7 +74,7 @@ def main(
 
     if genome_fasta:
         g = Genome(genome_name, genome_fasta)
-        a = Annotation(annotation_file, annotation_name, genome=g)
+        a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
         common_actual_chromosomes = common_chromosomes - g.scaffold_names
         common_actual_chromosomes_minus_mt_chl = common_actual_chromosomes - g.accessory_chromosome_names
@@ -79,7 +82,7 @@ def main(
         if not common_chromosomes:
             raise ValueError(f"There are no common scaffolds/chromosomes between provided annotation and genome file.")
     else:
-        a = Annotation(annotation_file, annotation_name)
+        a = Annotation(annotation_file, annotation_name, quiet=quiet)
         common_chromosomes = set(a.chrs)
 
     if not chosen_chromosomes:

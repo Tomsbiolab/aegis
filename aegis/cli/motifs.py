@@ -49,6 +49,9 @@ def main(
     output_folder: Annotated[str, typer.Option(
         "-d", "--output-folder", help="Path to the output folder."
     )] = "./aegis_output/",
+    quiet: Annotated[bool, typer.Option(
+        "-qt", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
 
 ):
     """
@@ -75,7 +78,7 @@ def main(
     genes = df.iloc[:, 0].tolist()
     genes = [gene for gene in genes if gene != ""]
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
     genome = Genome(name=genome_name, genome_file_path=genome_fasta)
 
     annotation.generate_promoters(genome=genome, promoter_size=promoter_size, promoter_type=promoter_type, generate_sequence=True)

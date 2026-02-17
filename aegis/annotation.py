@@ -3421,6 +3421,11 @@ class Annotation():
         f_out.write(out)
         f_out.close()
 
+    def list_genes(self, custom_path:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False):
+        pass
+    def list_transcripts(self, custom_path:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding:bool=True, non_coding:bool=False):
+        pass
+
     def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):
         repeat_CDS_segment_id = False
 

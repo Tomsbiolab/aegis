@@ -30,8 +30,10 @@ def main(
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
-    )] = "{annotation-name}_symbols.gff3"
-    
+    )] = "{annotation-name}_symbols.gff3",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,    
 
 ):
     """
@@ -43,7 +45,7 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     if output_file == "{annotation-name}_symbols.gff3":
         output_file = f"{annotation_name}_symbols.gff3"

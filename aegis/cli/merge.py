@@ -28,27 +28,35 @@ def main(
         "-e", "--exon-threshold",
         help="Exon overlap threshold in percentage (0-100). A gene will not be added if the maximum overlap of its exons with those of the prioritized annotations exceeds this value. The default 100 disables this check."
     )] = 100,
-    skip_feature_renaming: Annotated[bool, typer.Option(
-        "-f", "--feature-type",
-        help=f"Skip feature renaming of transcript,CDS,exon,UTR.",
+    skip_renaming: Annotated[bool, typer.Option(
+        "--skip-renaming",
+        help=f"Skip renaming of subgene features: transcript,CDS,exon,UTRs.",
     )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
+    no_collapse_exons: Annotated[bool, typer.Option(
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
+    )] = False
 ):
     """
-    Merge two GFF3 annotation files.
+    Merge two or more GFF3 annotation files.
     """
 
-    if skip_feature_renaming:
+    collapse_exons = not no_collapse_exons
+
+    if skip_renaming:
         features = []
     else:
         features = ["transcript", "CDS", "exon", "UTR"]
 
     print(f"Loading base annotation from {annotation_files[0]}...")
-    base_annotation = Annotation(annot_file_path=annotation_files[0])
+    base_annotation = Annotation(annot_file_path=annotation_files[0], quiet=quiet, collapse_exons=collapse_exons)
 
     for annotation_file in annotation_files[1:]:
 
         print(f"Loading annotation to merge from {annotation_file}...")
-        merge_annotation = Annotation(annot_file_path=annotation_file)
+        merge_annotation = Annotation(annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons)
 
         print("Merging annotations...")
         base_annotation.merge(

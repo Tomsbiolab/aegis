@@ -67,10 +67,18 @@ def main(
     gene_id_correspondences: Annotated[bool, typer.Option(
         "-c", "--gene-id-correspondences", help="Whether to produce a tsv file with correspondences between old and renamed gene ids '{annotation-name}_renamed_correspondences.tsv'."
     )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
+    no_collapse_exons: Annotated[bool, typer.Option(
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
+    )] = False,
 ):
     """
     Rename feature ids of an annotation file.
     """
+    collapse_exons = not no_collapse_exons
+
     for feature_type in feature_types:
         if feature_type not in features:
             raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
@@ -87,12 +95,12 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons)
 
     if output_file == "{annotation-name}_renamed.gff3":
         output_file = f"{annotation_name}_renamed.gff3"
 
-    annotation.rename_ids(custom_path=output_folder, features=feature_types, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=cds_segment_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences)
+    annotation.rename_ids(custom_path=output_folder, features=feature_types, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=cds_segment_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, collapse_exons=collapse_exons)
 
     annotation.export_gff(custom_path=output_folder, tag=output_file)
 

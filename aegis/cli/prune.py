@@ -25,7 +25,10 @@ def main(
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, without extension."
-    )] = "{annotation-name}_pruned"
+    )] = "{annotation-name}_pruned",
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    )] = False,
 ):
     """
     Remove a list of ids, from a file, from the current annotation.
@@ -36,7 +39,7 @@ def main(
 
     os.makedirs(output_folder, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     if output_file == "{annotation-name}.{ext}":
         output_file = f"{annotation_name}"
