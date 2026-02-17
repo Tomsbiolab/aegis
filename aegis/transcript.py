@@ -35,13 +35,15 @@ class Transcript(Feature):
         for exon in self.exons:
             self.size += exon.size
 
-    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
+    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True):
         if self.exons == []:
             self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
             self.exons.sort()
         else:
             self.exons.sort()
+            if collapse_exons:
+                self.collapse_exons()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
 
         self.update_size()
@@ -170,6 +172,43 @@ class Transcript(Feature):
                 for e in self.exons:
                     if e.start < c_end and e.end > c_start:
                         e.coding = True                
+
+    def collapse_exons(self):
+        """
+        Merges overlapping or directly adjacent exons into single exons.
+        """
+        self.exons.sort()
+        if len(self.exons) < 2:
+            return
+        merged = []
+        cur_start = self.exons[0].start
+        cur_end = self.exons[0].end
+        for e in self.exons[1:]:
+            if e.start <= cur_end + 1:
+                if e.end > cur_end:
+                    cur_end = e.end
+            else:
+                merged.append(Exon("combined", self.ch, self.source, "exon", self.strand, cur_start, cur_end, self.score, ".", ""))
+                cur_start = e.start
+                cur_end = e.end
+        merged.append(Exon("combined", self.ch, self.source, "exon", self.strand, cur_start, cur_end, self.score, ".", ""))
+        if len(merged) < len(self.exons):
+            self.exons = merged
+            if self.strand == "+":
+                for n, e in enumerate(self.exons):
+                    e.id = f"{self.id}_e{n+1}"
+                    e.attributes = f"ID={e.id};Parent={self.id}"
+                    e.misc_attributes = ""
+                    e.parents = [self.id]
+                    e.phase = "."
+            elif self.strand == "-":
+                counter = len(self.exons)
+                for n, e in enumerate(self.exons):
+                    e.id = f"{self.id}_e{counter}"
+                    e.attributes = f"ID={e.id};Parent={self.id}"
+                    e.misc_attributes = ""
+                    e.parents = [self.id]
+                    counter -= 1
 
     def clear_UTRs(self):
         for c in self.CDSs.values():
@@ -611,41 +650,12 @@ class Transcript(Feature):
                     temp_fts.append(u.copy())
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
-            temp_fts.sort(key=lambda f: (f.start, f.end))
-            merged = []
-            cur_start = temp_fts[0].start
-            cur_end = temp_fts[0].end
-            for ft in temp_fts[1:]:
-                if ft.start <= cur_end + 1:
-                    if ft.end > cur_end:
-                        cur_end = ft.end
-                else:
-                    merged.append(Exon("combined", self.ch, self.source,
-                                       "exon", self.strand, cur_start, cur_end,
-                                       self.score, ".", ""))
-                    cur_start = ft.start
-                    cur_end = ft.end
-            merged.append(Exon("combined", self.ch, self.source,
-                               "exon", self.strand, cur_start, cur_end,
-                               self.score, ".", ""))
-
-            self.exons = merged
-
-            if self.strand == "+":
-                for n, e in enumerate(self.exons):
-                    e.feature = "exon"
-                    e.id = f"{self.id}_e{n+1}"
-                    e.attributes = f"ID={e.id};Parent={self.id}"
-                    e.misc_attributes = ""
-                    e.parents = [self.id]
-                    e.phase = "."
-            elif self.strand == "-":
-                counter = len(self.exons)
-                for n, e in enumerate(self.exons):
-                    e.id = f"{self.id}_e{counter}"
-                    e.attributes = f"ID={e.id};Parent={self.id}"      
-                    e.parents = [self.id]  
-                    counter -= 1
+            self.exons = [
+                Exon("temp", ft.ch, ft.source, "exon", ft.strand,
+                     ft.start, ft.end, ft.score, ".", "")
+                for ft in temp_fts
+            ]
+            self.collapse_exons()
 
         # Exons rebuilt from the transcript
         else:
