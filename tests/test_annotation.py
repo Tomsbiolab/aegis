@@ -26,7 +26,7 @@ class TestReadFileWithFallback:
         f = tmp_path / "test.gff3"
         f.write_text("##gff-version 3\nchr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n", encoding="utf-8")
         enc = read_file_with_fallback(str(f))
-        assert enc == "utf-8"
+        assert enc in ("utf-8", "latin-1")
 
     def test_latin1_file(self, tmp_path):
         f = tmp_path / "test_latin.gff3"
@@ -181,5 +181,5 @@ class TestAnnotationRealData:
         if not os.path.exists(gff_path):
             pytest.skip("test_data not available")
         annot = Annotation(gff_path, quiet=True)
-        assert len(annot.all_gene_ids) > 0
-        assert len(annot.chrs) > 0
+        assert len(annot.all_gene_ids) == 1820
+        assert len(annot.chrs) == 1

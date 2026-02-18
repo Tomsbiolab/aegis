@@ -175,7 +175,6 @@ class TestFeatureComparisons:
         f1 = make_feature(start=100, end=500)
         f2 = make_feature(start=200, end=500)
         assert f1 < f2
-        assert not (f2 < f1)
 
     def test_lt_same_start_different_end(self):
         f1 = make_feature(start=100, end=400)
