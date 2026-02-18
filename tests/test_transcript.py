@@ -96,7 +96,7 @@ class TestTranscriptUpdateSize:
         t.exons.append(make_exon("e2", 3000, 5000))
         t.update_size()
         # Size = sum of exon sizes: 1001 + 2001 = 3002
-        assert t.size == 1001 + 2001
+        assert t.size == 3002
 
 
 # ============================================================
@@ -106,8 +106,8 @@ class TestTranscriptUpdateSize:
 class TestTranscriptRename:
     def test_rename_basic(self):
         t = make_transcript()
-        t.rename(base_id="gene001", count=1)
-        assert "gene001" in t.id
+        t.rename(base_id="transcript001", count=1)
+        assert "transcript001" in t.id
         assert t.renamed is True
 
     def test_rename_custom_sep_digits(self):

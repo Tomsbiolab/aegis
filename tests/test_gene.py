@@ -169,7 +169,6 @@ class TestGeneClearUTRs:
         g = make_gene()
         t = make_transcript()
         g.transcripts["t1"] = t
-        # Just smoke-test that it doesn't error
         g.clear_UTRs()
 
 

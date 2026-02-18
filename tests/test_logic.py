@@ -1,23 +1,26 @@
 import pytest
 import pathlib
 from aegis.annotation import Annotation
-from aegis.tools import pickle_load
+from aegis.genome import Genome
 
-# This finds the directory where this script is located
-HERE = pathlib.Path(__file__).parent
-DATA_FOLDER = HERE / "test_data"
+TEST_FOLDER = pathlib.Path(__file__).parent
+DATA_FOLDER = TEST_FOLDER / "test_data"
 
-def test_with_local_file():
-    # Point to the small version of your big file
+def test_with_gff_local_file():
     input_path = DATA_FOLDER / "arabidopsis_araport11.gff3"
-    input_path_gold = DATA_FOLDER / "arabidopsis_araport11.pkl"
 
     ara = Annotation(str(input_path), "ara")
 
     num_genes = len(ara.all_gene_ids)
 
-    ara_gold = pickle_load(str(input_path_gold))
+    assert num_genes == 3000
 
-    num_genes_gold = len(ara_gold.all_gene_ids)
+def test_with_fasta_local_file():
+    input_path = DATA_FOLDER / "arabidopsis_tair10.fasta"
 
-    assert num_genes == num_genes_gold
+    g = Genome("ara_genome", str(input_path), quiet=True)
+
+    num_chr = len(g.scaffolds)
+
+    assert num_chr == 1
+    assert g.scaffolds["Chr4"].size == 18585056
