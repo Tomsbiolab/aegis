@@ -5,13 +5,14 @@ Tests for aegis.annotation — parsing helpers and Annotation class.
 import os
 import pytest
 from pathlib import Path
-
+from aegis.transcript import Transcript
 from aegis.annotation import (
     read_file_with_fallback,
     detect_file_format,
     parse_gtf_attributes,
     format_gff3_attributes,
     sort_and_update_genes,
+    convert_gtf_to_gff3,
     Annotation,
     default_features,
 )
@@ -69,9 +70,9 @@ class TestDetectFileFormat:
 
 class TestParseGtfAttributes:
     def test_standard_gtf(self):
-        attrs = parse_gtf_attributes('gene_id "GENE1"; transcript_id "TX1";')
+        attrs = parse_gtf_attributes('gene_id "GENE1"; transcript_id "T1";')
         assert attrs["gene_id"] == "GENE1"
-        assert attrs["transcript_id"] == "TX1"
+        assert attrs["transcript_id"] == "T1"
 
     def test_empty_string(self):
         attrs = parse_gtf_attributes("")
@@ -183,3 +184,93 @@ class TestAnnotationRealData:
         annot = Annotation(gff_path, quiet=True)
         assert len(annot.all_gene_ids) == 1820
         assert len(annot.chrs) == 1
+
+
+# ============================================================
+# convert_gtf_to_gff3
+# ============================================================
+
+class TestConvertGtfToGff3:
+    def test_convert_gtf_basic(self, tmp_path):
+        gtf_file = tmp_path / "test.gtf"
+        gff_file = tmp_path / "test.gff3"
+        gtf_content = (
+            "##sequence-region chr1 1 1000\n"
+            "chr1\taegis\tgene\t100\t500\t.\t+\t.\tgene_id \"GENE1\"; gene_name \"MyGene\";\n"
+            "chr1\taegis\ttranscript\t100\t500\t.\t+\t.\tgene_id \"GENE1\"; transcript_id \"T1\"; transcript_biotype \"mRNA\";\n"
+            "chr1\taegis\texon\t100\t200\t.\t+\t.\tgene_id \"GENE1\"; transcript_id \"T1\";\n"
+            "chr1\taegis\texon\t300\t500\t.\t+\t.\tgene_id \"GENE1\"; transcript_id \"T1\";\n"
+        )
+        gtf_file.write_text(gtf_content)
+
+        convert_gtf_to_gff3(str(gtf_file), str(gff_file), "utf-8", quiet=True)
+
+        gff_content = gff_file.read_text()
+        # Verify headers and format
+        assert "##gff-version 3" in gff_content
+        # GTF parser drops ## lines so sequence-region won't be in output, except for ##gff-version 3
+        assert "ID=GENE1" in gff_content 
+        assert "Parent=GENE1" in gff_content
+        assert "ID=T1" in gff_content
+
+
+# ============================================================
+# Annotation unique IDs
+# ============================================================
+
+class TestAnnotationUniqueIDs:
+    def test_get_unique_gene_id(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        # Assuming sample has "gene1"
+        annot.all_gene_ids = {"gene1", "gene1_1"}
+        new_id = annot._get_unique_gene_id("gene1")
+        assert new_id == "gene1_2"
+
+        new_id2 = annot._get_unique_gene_id("gene2")
+        assert new_id2 == "gene2"
+
+    def test_get_unique_transcript_id(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        annot.all_transcript_ids = {"t1", "t1_1"}
+        new_id = annot._get_unique_transcript_id("t1")
+        assert new_id == "t1_2"
+
+
+# ============================================================
+# Annotation marking functions
+# ============================================================
+
+class TestAnnotationMarkingFunctions:
+    def test_mark_transposable_element_genes(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        te_file = tmp_path / "te_genes.txt"
+        te_file.write_text("geneA\n")
+        
+        annot.mark_transposable_element_genes(str(te_file))
+        assert annot.chrs["chr1"]["geneA"].transposable is True
+        assert annot.chrs["chr2"]["geneB"].transposable is False
+
+    def test_mark_rRNA_transcripts(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        tx_A = list(annot.chrs["chr1"]["geneA"].transcripts.values())[0]
+        tx_A_id = tx_A.id
+
+        rrna_file = tmp_path / "rrna.txt"
+        rrna_file.write_text(f"{tx_A_id}\n")
+
+        annot.mark_rRNA_transcripts(str(rrna_file), clean=False)
+        assert tx_A.feature == "rRNA"
+        tx_B = list(annot.chrs["chr2"]["geneB"].transcripts.values())[0]
+        assert not tx_B.feature == "rRNA"
+
+    def test_remove_other_mRNA_transcripts_from_rRNA_genes(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene1 = annot.chrs["chr1"]["gene1"]
+        gene1.feature = "rRNA_gene"
+        rrna_t = Transcript("rRNA1", "chr1", "aegis", "rRNA", "+", 10, 50, ".", ".", "ID=rRNA1;Parent=gene1")
+        gene1.transcripts["rRNA1"] = rrna_t
+
+        assert len(gene1.transcripts) == 2
+        annot.remove_other_mRNA_transcripts_from_rRNA_genes()
+        assert "mRNA1" not in gene1.transcripts
+        assert "rRNA1" in gene1.transcripts

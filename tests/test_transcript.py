@@ -4,7 +4,9 @@ Tests for aegis.transcript — the Transcript class.
 
 import pytest
 from aegis.transcript import Transcript
-from aegis.subfeatures import Exon
+from aegis.subfeatures import Exon, CDS, UTR, Intron
+from aegis.misc_features import Promoter
+from aegis.feature import Feature
 
 
 # ============================================================
@@ -211,3 +213,209 @@ class TestTranscriptExonUpdate:
         t.exon_update()
         # After exon_update, coding_ratio should be set
         assert hasattr(t, 'coding_ratio')
+
+
+# ============================================================
+# rename_exons
+# ============================================================
+
+class TestTranscriptRenameExons:
+    def test_rename_exons_basic(self):
+        t = make_transcript()
+        t.exons.append(make_exon("exon_a", 1000, 2000))
+        t.exons.append(make_exon("exon_b", 3000, 5000))
+        t.rename_exons(count=0, base_id="geneA", sep=".", digits=2)
+
+        assert t.exons[0].id == "geneA.e01"
+        assert t.exons[1].id == "geneA.e02"
+
+    def test_rename_exons_rev(self):
+        t = make_transcript()
+        t.exons.append(make_exon("exon_a", 1000, 2000))
+        t.exons.append(make_exon("exon_b", 3000, 5000))
+        t.rename_exons(count=3, base_id="geneA", sep="_", digits=3, rev=True)
+
+        assert t.exons[0].id == "geneA_e004"
+        assert t.exons[1].id == "geneA_e003"
+
+
+# ============================================================
+# rename_utrs
+# ============================================================
+
+class TestTranscriptRenameUTRs:
+    def test_rename_utrs_basic(self):
+        t = make_transcript()
+        c = CDS([], "cds1", "chr1", "aegis", "CDS", "+", 1000, 2000, ".", ".", "")
+        u1 = UTR("utr1", "chr1", "aegis", "UTR", "+", 1000, 1500, ".", ".", "")
+        u2 = UTR("utr2", "chr1", "aegis", "UTR", "+", 1800, 2000, ".", ".", "")
+        c.UTRs = [u1, u2]
+        t.CDSs = {"cds1": c}
+        
+        t.rename_utrs(count=0, base_id="geneA", sep="-", digits=1)
+        assert t.CDSs["cds1"].UTRs[0].id == "geneA-u1"
+        assert t.CDSs["cds1"].UTRs[1].id == "geneA-u2"
+
+
+# ============================================================
+# generate_sequence, generate_hard_sequence, clear_sequence
+# ============================================================
+
+class MockGenome:
+    def __init__(self, ch="chr1", seq="A"*10000):
+        self.ch = ch
+        self.seq = seq
+
+class TestTranscriptSequences:
+    def test_sequence_generation(self):
+        t = make_transcript(strand="+")
+        e = make_exon("e1", 10, 20)
+        e.seq = "A" * 11
+        e.hard_seq = "A" * 11
+        e.seqs = ["A"*11, "T"*11]
+        e.hard_seqs = ["A"*11, "T"*11]
+        t.exons.append(e)
+
+        # We must mock generate_sequence on feature to just use its own seq
+        # since actual generate_sequence expects Biopython/fasta behavior.
+        # But we can pass a dummy genome and if it doesn't crash that's good.
+        # However, calling e.generate_sequence(genome) will overwrite e.seq.
+        # Real Feature.generate_sequence fetches from genome. 
+        # For our test, let's just create a Mock object with dummy generate_sequence.
+        class MockExon:
+            def __init__(self, seq="AAA"):
+                self.seq = seq
+                self.hard_seq = seq
+                self.seqs = [seq, seq]
+                self.hard_seqs = [seq, seq]
+                self.size = len(seq)
+                self.ch = "chr1"
+                self.source = "aegis"
+                self.strand = "+"
+                self.start = 1
+                self.end = len(seq)
+                self.score = "."
+                self.phase = "."
+                self.id = "mock"
+            def generate_sequence(self, g): pass
+            def generate_hard_sequence(self, g): pass
+            def clear_sequence(self, just_hard=False): 
+                self.hard_seq = ""
+                if not just_hard:
+                    self.seq = ""
+
+        mock_e1 = MockExon("AAA")
+        mock_e2 = MockExon("CCC")
+        t.exons = [mock_e1, mock_e2]
+        t.introns = []
+
+        # test generate_sequence
+        t.generate_sequence(MockGenome(), low_memory=True)
+        assert t.seq == "AAACCC"
+
+        # test generate_hard_sequence
+        t.generate_hard_sequence(MockGenome(), low_memory=True)
+        assert t.hard_seq == "AAACCC"
+
+        # test clear_sequence
+        t.clear_sequence(just_hard=False)
+        assert t.hard_seq == ""
+        assert t.seq == ""
+        assert mock_e1.seq == ""
+
+    def test_sequence_generation_minus_strand(self):
+        t = make_transcript(strand="-")
+        class MockExon:
+            def __init__(self, seq="AAA"):
+                self.seq = seq
+                self.hard_seq = seq
+            def generate_sequence(self, g): pass
+        t.exons = [MockExon("AAA"), MockExon("CCC")]
+        t.introns = []
+        t.generate_sequence(MockGenome(), low_memory=True)
+
+        assert t.seq == "CCCAAA"
+
+
+# ============================================================
+# Proteins & CDSs
+# ============================================================
+
+class TestTranscriptProteinAndCDS:
+    def test_generate_best_protein_plus(self):
+        t = make_transcript(strand="+")
+
+        t.seq = "ATGGCC"
+        t.generate_best_protein(None, must_have_stop=False)
+        assert t.protein_seq == "MA"
+        
+    def test_generate_CDSs_based_on_ORF_plus_single(self):
+        # Create a transcript with a single exon
+        t = make_transcript(strand="+", start=1000, end=2000)
+        t.protein_seq = "M"
+        t.coding_start = 100
+        t.coding_end = 200
+        e = make_exon("e1", 1000, 2000)
+        e.size = 1001
+        t.exons.append(e)
+        t.generate_CDSs_based_on_ORF(low_memory=False)
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 1
+        assert cds.CDS_segments[0].start == 1100
+        assert cds.CDS_segments[0].end == 1200
+
+    def test_generate_CDSs_based_on_ORF_minus_single(self):
+        # Create a transcript with a single exon
+        t = make_transcript(strand="-", start=1000, end=2000)
+        t.protein_seq = "M"
+        t.coding_start = 100
+        t.coding_end = 200
+        e = make_exon("e1", 1000, 2000)
+        e.size = 1001
+        t.exons.append(e)
+        t.generate_CDSs_based_on_ORF(low_memory=False)
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 1
+        assert cds.CDS_segments[0].start == 1800
+        assert cds.CDS_segments[0].end == 1900
+
+    def test_generate_CDSs_based_on_ORF_plus_multiple(self):
+        # Create a transcript with multiple exons
+        t = make_transcript(strand="+", start=1000, end=4000)
+        t.protein_seq = "M"
+        e1 = make_exon("e1", 1000, 2000)
+        e1.size = 1001
+        e2 = make_exon("e2", 3000, 4000)
+        e2.size = 1001
+        t.exons.extend([e1, e2])
+        t.coding_start = 500
+        t.coding_end = 1500
+        t.generate_CDSs_based_on_ORF(low_memory=False)
+        
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 2
+        segs = sorted([(s.start, s.end) for s in cds.CDS_segments])
+        assert segs == [(1500, 2000), (3000, 3499)]
+
+    def test_generate_CDSs_based_on_ORF_minus_multiple(self):
+        # Create a transcript with multiple exons
+        t = make_transcript(strand="-", start=1000, end=4000)
+        t.protein_seq = "M"
+        e1 = make_exon("e1", 1000, 2000)
+        e1.size = 1001
+        e2 = make_exon("e2", 3000, 4000)
+        e2.size = 1001
+        t.exons.extend([e1, e2])
+        t.coding_start = 500
+        t.coding_end = 1500
+        t.generate_CDSs_based_on_ORF(low_memory=False)
+        
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 2
+        segs = sorted([(s.start, s.end) for s in cds.CDS_segments])
+        assert segs == [(1501, 2000), (3000, 3500)]
+
