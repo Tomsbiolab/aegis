@@ -52,6 +52,31 @@ chr2\taegis\texon\t2000\t3000\t.\t-\t.\tID=exonB2;Parent=mRNA_B
 chr2\taegis\tCDS\t600\t1500\t.\t-\t0\tID=CDS_B;Parent=mRNA_B
 """
 
+# Rich GFF3: 3 genes across 2 chromosomes — alt transcripts, TE, noncoding
+RICH_GFF3 = """\
+##gff-version 3
+chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=geneR1;Name=RichGene1
+chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA_R1a;Parent=geneR1
+chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=exonR1a1;Parent=mRNA_R1a
+chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=exonR1a2;Parent=mRNA_R1a
+chr1\taegis\tCDS\t1200\t2000\t.\t+\t0\tID=CDS_R1a;Parent=mRNA_R1a
+chr1\taegis\tCDS\t3000\t4500\t.\t+\t0\tID=CDS_R1a;Parent=mRNA_R1a
+chr1\taegis\tfive_prime_UTR\t1000\t1199\t.\t+\t.\tID=utr5_R1;Parent=mRNA_R1a
+chr1\taegis\tthree_prime_UTR\t4501\t5000\t.\t+\t.\tID=utr3_R1;Parent=mRNA_R1a
+chr1\taegis\tlnc_RNA\t1000\t4000\t.\t+\t.\tID=lncRNA_R1b;Parent=geneR1
+chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=exonR1b1;Parent=lncRNA_R1b
+chr1\taegis\texon\t3000\t4000\t.\t+\t.\tID=exonR1b2;Parent=lncRNA_R1b
+chr1\taegis\tgene\t6000\t8000\t.\t+\t.\tID=geneR2;Name=RichGene2_TE
+chr1\taegis\tmRNA\t6000\t8000\t.\t+\t.\tID=mRNA_R2;Parent=geneR2
+chr1\taegis\texon\t6000\t7000\t.\t+\t.\tID=exonR2_1;Parent=mRNA_R2
+chr1\taegis\texon\t7500\t8000\t.\t+\t.\tID=exonR2_2;Parent=mRNA_R2
+chr1\taegis\tCDS\t6100\t7000\t.\t+\t0\tID=CDS_R2;Parent=mRNA_R2
+chr2\taegis\tgene\t500\t3000\t.\t-\t.\tID=geneR3;Name=RichGene3_NC
+chr2\taegis\tlnc_RNA\t500\t3000\t.\t-\t.\tID=lncRNA_R3;Parent=geneR3
+chr2\taegis\texon\t500\t1500\t.\t-\t.\tID=exonR3_1;Parent=lncRNA_R3
+chr2\taegis\texon\t2000\t3000\t.\t-\t.\tID=exonR3_2;Parent=lncRNA_R3
+"""
+
 
 @pytest.fixture
 def sample_gff3_file(tmp_path):
@@ -66,6 +91,14 @@ def multi_gene_gff3_file(tmp_path):
     """Write multi-gene GFF3 to a temp file and return its path."""
     gff = tmp_path / "multi.gff3"
     gff.write_text(MULTI_GENE_GFF3)
+    return str(gff)
+
+
+@pytest.fixture
+def rich_gff3_file(tmp_path):
+    """Write rich GFF3 (3 genes, 2 chromosomes, alt transcripts) to temp file."""
+    gff = tmp_path / "rich.gff3"
+    gff.write_text(RICH_GFF3)
     return str(gff)
 
 
