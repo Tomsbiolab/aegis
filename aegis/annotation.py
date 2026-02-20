@@ -220,7 +220,7 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
             gff3_attr_string = format_gff3_attributes(attributes, feature)
 
             gff3_line = "\t".join([seqname, source, feature, start, end, score, strand, frame, gff3_attr_string])
-            outfile.append(gff3_line + '\n')
+            outfile.write(gff3_line + '\n')
 
     if not quiet:
         print(f"Successfully converted {gtf_file} to a gff format")
