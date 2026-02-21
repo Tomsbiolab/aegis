@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .feature import Feature
 from .misc_features import Protein
 from .utils.genefunctions import reverse_complement
@@ -127,7 +129,7 @@ class CDS(Feature):
         self.full_UTR_exons = 0
         del self.UTRs
 
-    def generate_sequence(self, genome:object, low_memory:bool=False):
+    def generate_sequence(self, genome:Genome, low_memory:bool=False):
         self.seq = ""
         for segment in self.CDS_segments:
             segment.generate_sequence(genome)
@@ -165,7 +167,7 @@ class CDS(Feature):
                             self.three_prime_UTR_seq += u.seq
         self.generate_protein(low_memory=low_memory)
 
-    def generate_hard_sequence(self, hard_masked_genome:object, low_memory:bool=False):
+    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
         self.hard_seq = ""
         for segment in self.CDS_segments:
             segment.generate_hard_sequence(hard_masked_genome)

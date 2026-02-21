@@ -2,6 +2,7 @@ import pandas as pd
 
 from pathlib import Path
 from statistics import mean
+from __future__ import annotations
 
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron
@@ -11,7 +12,7 @@ class AnnotationStats:
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
-    def __init__(self, annotation):
+    def __init__(self, annotation:Annotation):
         self._annot = annotation
         self.data = {}
 

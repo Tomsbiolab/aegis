@@ -1,6 +1,8 @@
 import copy
 import re
 
+from __future__ import annotations
+
 from .utils.genefunctions import reverse_complement
 from .utils.misc import count_occurrences
 
@@ -131,7 +133,7 @@ class Feature():
     def calculate_masking(self):
         self.masked_fraction = round(((count_occurrences(self.hard_seq, "X") + (count_occurrences(self.hard_seq, "N"))) / self.size), 2)
 
-    def generate_sequence(self, genome:object):
+    def generate_sequence(self, genome:Genome):
         if self.start != "NA" and self.end != "NA":
             if self.strand == "+":
                 self.seq = genome.scaffolds[self.ch].seq[self.start-1:self.end]
@@ -149,7 +151,7 @@ class Feature():
             if hasattr(self, "seqs"):
                 del self.seqs
 
-    def generate_hard_sequence(self, hard_masked_genome:object):
+    def generate_hard_sequence(self, hard_masked_genome:Genome):
         if self.start != "NA" and self.end != "NA":
             if self.strand == "+":
                 self.hard_seq = hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end]
@@ -205,7 +207,7 @@ class Feature():
                 and self.phase == other.phase and
                 self.attributes == other.attributes)
 
-    def longer(self, other:object):
+    def longer(self, other:Feature):
         if self.seq != "" and other.seq != "":
             if len(self.seq) >= len(other.seq):
                 return True
@@ -214,7 +216,7 @@ class Feature():
         else:
             print(f"Error: Either {self.id} or {other.id} sequences are empty!")
 
-    def overlap(self, other:object):
+    def overlap(self, other:Feature):
         overlapping = False
 
         interval1 = self.size
@@ -230,7 +232,7 @@ class Feature():
 
         return overlapping, overlap_bp
 
-    def compare_blast_hits(self, other:object, source_priority:list):
+    def compare_blast_hits(self, other:Feature, source_priority:list):
         compared = False
         query_best = True
         while not compared:

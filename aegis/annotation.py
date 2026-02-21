@@ -24,6 +24,7 @@ from scipy.stats import fisher_exact
 from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
+from __future__ import annotations
 
 from .feature import Feature
 from .gene import Gene
@@ -38,9 +39,11 @@ from .conf import default_noncoding_transcripts, default_features_r
 
 
 class Annotation():
+
+    stats: AnnotationStats
     
     bar_colors = ["31", "32", "33", "33", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True):
+    def __init__(self, annot_file_path:str, name:str=None, genome:Genome=None, original_annotation:Annotation=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True):
         
         start_time = time.time()
 
@@ -853,7 +856,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):
+    def update(self, original_annotation:Annotation=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1137,7 +1140,7 @@ class Annotation():
         if not quiet:
             print(f"Corrected feature coordinates for {self.id}")
 
-    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=False):
+    def generate_sequences(self, genome:Genome, just_CDSs:bool=False, quiet:bool=False):
 
         start_time = time.time()
         for o in self.atypical_features:
@@ -1194,7 +1197,7 @@ class Annotation():
         if not quiet:
             print(f"Clearing sequences of {self.id} annotation object took {round(lapse, 1)} seconds\n")
 
-    def generate_promoters(self, genome:object, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):
+    def generate_promoters(self, genome:Genome, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):
         """
         promoter_type (str): Defines the reference point for the promoters.
             - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
@@ -1702,7 +1705,7 @@ class Annotation():
         else:
             print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
 
-    def export_unique_proteins(self, genome:object=None, custom_path:str="", quiet:bool=False):
+    def export_unique_proteins(self, genome:Genome=None, custom_path:str="", quiet:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -2071,7 +2074,7 @@ class Annotation():
             print(f"Warning: Run self.generate_promoters(genome) and self.generate_sequences(genome) on {self.id}")
 
 
-    def combine_transcripts(self, genome:object, respect_non_coding:bool=False):
+    def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 g.combine_transcripts(genome, respect_non_coding=respect_non_coding)
@@ -2125,7 +2128,7 @@ class Annotation():
         if not quiet:
             print(f"Sorted genes for {self.id}")
 
-    def define_synteny(self, original_annotation:object, sort_processes:int=1, quiet:bool=True):
+    def define_synteny(self, original_annotation:Annotation, sort_processes:int=1, quiet:bool=True):
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
         start_time = time.time()
@@ -2236,7 +2239,7 @@ class Annotation():
         self.shared_UTRs = False
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def detect_gene_overlaps(self, other:object=None, sort_processes:int=1, clear=True, quiet:bool=True):
+    def detect_gene_overlaps(self, other:Annotation=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
@@ -3420,7 +3423,7 @@ class Annotation():
 
             progress_bar.close()
 
-    def merge(self, other:object, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
+    def merge(self, other:Annotation, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
         """
         Priority is given to self annotation
         """
@@ -3623,7 +3626,7 @@ class Annotation():
         if not quiet:
             print(f"Removed missing transcript parent references for {self.id} annotation.")
 
-    def rework_CDSs(self, genome:object=None, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+    def rework_CDSs(self, genome:Genome=None, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
         start_time = time.time()
         if low_memory:
             self.clear_sequences()
@@ -5565,7 +5568,7 @@ class Annotation():
                     unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in overlaps.")
 
-    def remove_redundancy(self, source_priority:list, hard_masked_genome:object, quiet:bool=False):
+    def remove_redundancy(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):
         self.remove_duplicate_transcripts(quiet=quiet)
         self.make_alternative_transcripts_into_genes(quiet=quiet)
         self.detect_gene_overlaps(quiet=quiet)

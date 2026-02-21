@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
@@ -287,7 +289,7 @@ class Transcript(Feature):
                                     temp_end, self.score, ".",
                                     self.attributes)
 
-    def generate_best_protein(self, genome:object, must_have_stop:bool=True):
+    def generate_best_protein(self, genome:Genome, must_have_stop:bool=True):
         if (self.strand == "+") or (self.strand == "-"):
             self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop)
         elif self.strand == ".":
@@ -687,7 +689,7 @@ class Transcript(Feature):
                         if i.end < c.end and i.start > c.start:
                             i.intra_coding = True
 
-    def generate_sequence(self, genome:object, low_memory:bool=False):
+    def generate_sequence(self, genome:Genome, low_memory:bool=False):
         for exon in self.exons:
             exon.generate_sequence(genome)
         if not low_memory:
@@ -709,7 +711,7 @@ class Transcript(Feature):
             for segment in reversed(self.exons):
                 self.seqs[1] += segment.seqs[1]
             
-    def generate_hard_sequence(self, hard_masked_genome:object, low_memory:bool=False):
+    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
         for exon in self.exons:
             exon.generate_hard_sequence(hard_masked_genome)
         if not low_memory:

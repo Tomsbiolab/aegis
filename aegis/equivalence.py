@@ -5,6 +5,7 @@ import os
 import shutil
 
 from pathlib import Path
+from __future__ import annotations
 
 from .annotation import Annotation
 from .utils.misc import run_command
@@ -488,7 +489,7 @@ class Simple_gene():
 
 
 class Simple_annotation():
-    def __init__(self, name, annotation_object:object, species:str):
+    def __init__(self, name, annotation_object:Annotation, species:str):
         self.name = name
         self.genes = {}
         self.species = species

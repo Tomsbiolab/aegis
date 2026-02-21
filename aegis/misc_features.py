@@ -1,5 +1,7 @@
 import copy
 
+from __future__ import annotations
+
 from .utils.genefunctions import translate
 from .feature import Feature
 
@@ -33,7 +35,7 @@ class Protein():
     def copy(self):
         return copy.deepcopy(self)
 
-    def compare_blast_hits(self, other:object, source_priority:list):
+    def compare_blast_hits(self, other:Protein, source_priority:list):
         compared = False
         query_best = True
         while not compared:
