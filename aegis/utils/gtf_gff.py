@@ -1,6 +1,8 @@
 import sys
 import re
 
+from ..conf import default_features, default_subfeatures
+
 def parse_gff_line(line):
     parts = line.strip().split("\t")
 
