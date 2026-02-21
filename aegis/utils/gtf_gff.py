@@ -1,4 +1,5 @@
 import sys
+import re
 
 def parse_gff_line(line):
     parts = line.strip().split("\t")
