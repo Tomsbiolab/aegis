@@ -4,30 +4,12 @@ import time
 import os
 import shutil
 import subprocess
-from .annotation import Annotation
 
 from pathlib import Path
 
-
-def run_command(working_directory: Path, command: list):
-    """
-    Executes a generic command inside a Docker container.
-
-    Args:
-        working_directory (Path): The working directory for the command.
-        command (list): The command and its arguments as a list of strings.
-
-    Raises:
-        subprocess.CalledProcessError: If the command fails.
-    """
-    try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True, cwd=working_directory)
-        return result
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing command: {' '.join(command)}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
-        raise
+from .annotation import Annotation
+from .utils.misc import run_command
+from .utils.evalue import parse_evalue, round_evalue
 
 def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet=True):
 
@@ -146,25 +128,6 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         ]
         run_command(mcscan_dir, jcvi_ortho_cmd)
 
-def parse_evalue(e):
-    e = e.strip()
-    try:
-        if e.startswith('>'):
-            return float(round_evalue(e[1:]))  # handle cases like '>10'
-        elif e.lower() in ('na', 'nan', ''):
-            return float('nan')  # handle missing values
-        else:
-            return float(round_evalue(e))
-            
-    except ValueError:
-        print(f"Error: Could not parse E-value: {e}")
-        return float('nan')  # or raise error, depending on use case
-
-def round_evalue(e):
-    e = float(e)
-    e = f"{e:.2e}"
-
-    return e
 
 class Equivalence():
 

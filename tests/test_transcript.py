@@ -3,10 +3,11 @@ Tests for aegis.transcript — the Transcript class.
 """
 
 import pytest
-from aegis.transcript import Transcript
-from aegis.subfeatures import Exon, CDS, UTR, Intron
-from aegis.misc_features import Promoter
-from aegis.feature import Feature
+
+from ..transcript import Transcript
+from ..subfeatures import Exon, CDS, UTR, Intron
+from ..misc_features import Promoter
+from ..feature import Feature
 
 
 # ============================================================

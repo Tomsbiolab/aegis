@@ -1,5 +1,6 @@
 import copy
-from .genefunctions import translate
+
+from .utils.genefunctions import translate
 from .feature import Feature
 
 class Protein():

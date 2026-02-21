@@ -3,18 +3,18 @@ Tests for aegis.genefunctions — pure utility functions.
 """
 
 import pytest
-from aegis.genefunctions import (
-    parse_gff_line,
-    parse_gff_attributes,
-    count_occurrences,
-    find_all_occurrences,
+
+from ..feature import Feature
+from ..utils.genefunctions import (
     reverse_complement,
     find_ORFs,
     longest_ORF,
     trim_surplus,
-    translate,
-    overlap,
+    translate
 )
+
+from ..utils.gtf_gff import parse_gff_line, parse_gff_attributes
+from ..utils.misc import count_occurrences, find_all_occurrences
 
 
 # ============================================================
@@ -258,40 +258,39 @@ class TestTranslate:
 class TestOverlap:
     """Test the overlap function using simple mock objects."""
 
-    class MockFeature:
+    class MockFeature(Feature):
         def __init__(self, start, end):
-            self.start = start
-            self.end = end
-            self.size = (end - start) + 1
+            super().__init__(feature_id="mock", ch="mock", source="mock", feature="mock", strand="mock", start=start, end=end,
+                             score=0, phase=0, attributes={})
 
     def test_overlapping_features(self):
         f1 = self.MockFeature(100, 300)
         f2 = self.MockFeature(200, 400)
-        is_overlapping, bp = overlap(f1, f2)
+        is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 101  # 200..300 inclusive
 
     def test_non_overlapping_features(self):
         f1 = self.MockFeature(100, 200)
         f2 = self.MockFeature(300, 400)
-        is_overlapping, bp = overlap(f1, f2)
+        is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is False
 
     def test_adjacent_features(self):
         f1 = self.MockFeature(100, 200)
         f2 = self.MockFeature(201, 300)
-        is_overlapping, bp = overlap(f1, f2)
+        is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is False
 
     def test_contained_feature(self):
         f1 = self.MockFeature(100, 500)
         f2 = self.MockFeature(200, 300)
-        is_overlapping, bp = overlap(f1, f2)
+        is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
 
     def test_identical_features(self):
         f1 = self.MockFeature(100, 200)
         f2 = self.MockFeature(100, 200)
-        is_overlapping, bp = overlap(f1, f2)
+        is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 101

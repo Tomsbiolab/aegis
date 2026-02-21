@@ -1,8 +1,10 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
-from aegis.genome import Genome
+
+from ..annotation import Annotation
+from ..genome import Genome
 
 app = typer.Typer(add_completion=False)
 @app.command()

@@ -5,10 +5,10 @@ import copy
 import re
 import random
 import warnings
+
 from os import system
 from Bio import SeqIO
 from pathlib import Path
-
 
 class Scaffold():
     mitochondria_suffixes = ["m", "M"]

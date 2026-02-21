@@ -1,10 +1,12 @@
 import typer
 import os
 import warnings
+
 from typing import List
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
-from aegis.genefunctions import export_group_equivalences
+
+from ..annotation import Annotation
+from ..utils.genefunctions import export_group_equivalences
 
 app = typer.Typer(add_completion=False)
 

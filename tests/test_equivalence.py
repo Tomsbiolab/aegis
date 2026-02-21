@@ -4,7 +4,9 @@ Tests for aegis.equivalence — utility functions.
 
 import math
 import pytest
-from aegis.equivalence import parse_evalue, round_evalue, clean_annotation_tag
+
+from ..utils.evalue import parse_evalue, round_evalue
+from ..equivalence import clean_annotation_tag
 
 
 # ============================================================

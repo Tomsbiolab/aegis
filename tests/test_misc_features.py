@@ -3,8 +3,9 @@ Tests for aegis.misc_features — Protein and Promoter classes.
 """
 
 import pytest
-from aegis.misc_features import Protein, Promoter
-from aegis.feature import Feature
+
+from ..misc_features import Protein, Promoter
+from ..feature import Feature
 
 
 # ============================================================

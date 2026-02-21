@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, read_file_with_fallback
+
+from ..annotation import Annotation, read_file_with_fallback
 
 features = ["gene", "transcript"]
 

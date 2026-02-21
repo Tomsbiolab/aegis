@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Tue Dec 27 15:20:59 2022
 
@@ -8,116 +6,13 @@ Module with an array of genomic functions.
 @authors: David Navarro, Antonio Santiago
 """
 
-from pathlib import Path
-from collections import Counter
 import pandas as pd
+import time
+import warnings
+
+from pathlib import Path
 from Bio.Data import CodonTable
 from Bio.Seq import Seq
-import time
-import re
-import warnings
-import sys
-
-def parse_gff_line(line):
-    parts = line.strip().split("\t")
-
-    # Interning high-frequency strings
-
-    source = sys.intern(parts[1])
-    feature = sys.intern(parts[2])
-    strand = sys.intern(parts[6])
-    phase = sys.intern(parts[7])
-
-    if feature == "nucleotide_to_protein_match":
-        ch = sys.intern(parts[0].split(":")[0])
-    
-    else:
-        ch = sys.intern(parts[0])
-
-    if "pseudo" in feature:
-        pseudogene = True
-    else:
-        pseudogene = False
-
-    start = int(parts[3])
-    end = int(parts[4])
-
-    if start > end:
-        decreasing_coordinates = True
-        actual_start, actual_end = (int(parts[4]), int(parts[3]))
-    else:
-        decreasing_coordinates = False
-        actual_start, actual_end = (start, end)
-
-    if "transposable" in feature or "transposon" in feature:
-        transposable = True
-    else:
-        transposable = False
-
-    attr_dict = parse_gff_attributes(parts[8])
-    
-    if not transposable:
-        if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
-            transposable = True
-
-    entry = {
-        "ch": ch,
-        "source": source,
-        "feature": feature,
-        "start": actual_start,
-        "end": actual_end,
-        "score": parts[5],
-        "strand": strand,
-        "phase": phase,
-        "attributes": attr_dict,
-        "id": attr_dict.get("id", ""),
-        "parents": attr_dict.get("parent", []),
-        "pseudogene": pseudogene,
-        "transposable": transposable,
-        "decreasing_coordinates": decreasing_coordinates
-    }
-
-
-    return entry
-
-def parse_gff_attributes(attributes):
-
-    if not attributes or attributes == ".":
-        return {}
-
-    parsed = {}
-    
-    for p in attributes.split(";"):
-        p = p.strip()
-        if not p: 
-            continue
-
-        if "=" in p:
-            key, val = p.split("=", 1)
-
-            key = key.strip().lower()
-            val = val.strip()
-
-            if key in ["parent", "parents", "derives_from"]:
-                parent_key = sys.intern("parent")
-                parsed[parent_key] = [x.strip() for x in val.split(",") if x.strip()]
-            else:
-                key = sys.intern(key)
-                parsed[key] = val
-
-    return parsed
-
-
-def count_occurrences(string, char):
-    return Counter(string)[char]
-
-
-def find_all_occurrences(pattern, text):
-    matches = []
-    for match in re.finditer(pattern, text):
-        matches.append((match.start(), match.end(), match.group()))
-
-    return matches
 
 
 def reverse_complement(in_seq:str):
@@ -303,23 +198,10 @@ def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,
 
     return start, end_stop, early_stop, nucleotide_surplus, gaps, out_seq, coding_start, coding_end
 
-def overlap(feat1, feat2):
-    overlapping = False
-    interval1 = feat1.size
-    interval2 = feat2.size
-    small = min(feat1.start, feat1.end, feat2.start, feat2.end)
-    large = max(feat1.start, feat1.end, feat2.start, feat2.end)
-    overlap_bp = (interval1 + interval2) - ((large - small) + 1)
-    # checking only overlapping features
-    if overlap_bp > 0:
-        overlapping = True
-
-    return overlapping, overlap_bp
-
-def export_for_dapseq(annotation, genome, chromosome_dictionary:dict={}, genome_out_folder:str="", gff_out_folder:str="", tag:str="_for_dap.gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, exclude_non_coding:bool=False):
-    equivalences = genome.rename_features_dap(custom_path=genome_out_folder, return_equivalences=True, export=True, chromosome_dictionary=chromosome_dictionary)
-    annotation.rename_chromosomes(equivalences)
-    annotation.export_gff(output_folder=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, exclude_non_coding=exclude_non_coding)
+def sort_and_update_genes(chrom, genes_dict):
+    genes = sorted(genes_dict.values())
+    sorted_genes = {g.id: g for g in genes} 
+    return chrom, sorted_genes
 
 def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False, quiet:bool=False):
     """
