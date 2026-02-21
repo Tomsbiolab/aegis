@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..annotation import Annotation
+    from ..genome import Genome
 
 import pandas as pd
 
@@ -45,7 +46,7 @@ class AnnotationStats:
     def values(self):
         return self.data.values()
 
-    def calculate_transcript_masking(self, hard_masked_genome:object):
+    def calculate_transcript_masking(self, hard_masked_genome:Genome):
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 g.generate_hard_sequence(hard_masked_genome)
@@ -68,7 +69,7 @@ class AnnotationStats:
                     for c in t.CDSs.values():
                         c.calculate_gc_content()
 
-    def update(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):
+    def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
         if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:

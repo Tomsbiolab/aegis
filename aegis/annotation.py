@@ -858,7 +858,7 @@ class Annotation():
         return copy.deepcopy(self)
 
     @property
-    def summary(self):
+    def summary(self) -> dict:
         return self.stats.data
     
     def update(self, original_annotation:Annotation=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):

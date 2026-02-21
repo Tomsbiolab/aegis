@@ -24,7 +24,7 @@
       - `def _get_unique_transcript_id(self, t_id):`
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
-      - `def summary(self):`
+      - `def summary(self) -> dict:`
       - `def update(self, original_annotation:Annotation=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):`
       - `def update_suffixes(self, quiet:bool=True):`
       - `def update_features(self, standardise=True, quiet:bool=True):`
@@ -271,9 +271,9 @@
         - `def keys(self):`
         - `def items(self):`
         - `def values(self):`
-        - `def calculate_transcript_masking(self, hard_masked_genome:object):`
+        - `def calculate_transcript_masking(self, hard_masked_genome:Genome):`
         - `def calculate_gc_content(self):`
-        - `def update(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):`
+        - `def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):`
       - __init__.py
     - **cli/**
       - extract.py
