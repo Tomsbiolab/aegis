@@ -2,9 +2,11 @@ import typer
 import os
 import random
 import warnings
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
-from aegis.genome import Genome
+
+from ..annotation import Annotation
+from ..genome import Genome
 
 def split_callback(value:str):
     if value:

@@ -7,9 +7,10 @@ import shutil
 from pathlib import Path
 from typing import List
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
-from aegis.genome import Genome
-from aegis.equivalence import Simple_annotation, pairwise_orthology, run_command
+
+from ..annotation import Annotation
+from ..genome import Genome
+from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 
 app = typer.Typer(add_completion=False)
 

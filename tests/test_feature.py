@@ -3,6 +3,7 @@ Tests for aegis.feature — the Feature base class.
 """
 
 import pytest
+
 from aegis.feature import Feature
 
 

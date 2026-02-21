@@ -26,7 +26,7 @@ def generate_map():
             f.write(f"{indent}- **{os.path.basename(root)}/**\n")
             
             for file in files:
-                if file.endswith(('.py', '.js', '.ts', '.go', '.java', '.rb')):
+                if file.endswith(('.py', '.js', '.ts', '.go', '.java', '.rb', '.md', ".toml")):
                     f.write(f"{indent}  - {file}\n")
                     # Try to extract signatures
                     try:

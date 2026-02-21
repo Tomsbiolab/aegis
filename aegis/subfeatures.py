@@ -1,6 +1,6 @@
 from .feature import Feature
 from .misc_features import Protein
-from .genefunctions import reverse_complement
+from .utils.genefunctions import reverse_complement
 
 class CDS(Feature):
 

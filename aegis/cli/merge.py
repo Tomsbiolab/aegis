@@ -1,7 +1,9 @@
 import typer
+
 from typing import List
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
+
+from ..annotation import Annotation
 
 app = typer.Typer(add_completion=False)
 

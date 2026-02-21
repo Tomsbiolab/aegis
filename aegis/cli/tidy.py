@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
+
+from ..annotation import Annotation
 
 RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
                 "miRNA_primary_transcript", "ncRNA", "lncRNA",

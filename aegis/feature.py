@@ -1,6 +1,8 @@
-from .genefunctions import count_occurrences, reverse_complement
 import copy
 import re
+
+from .utils.genefunctions import reverse_complement
+from .utils.misc import count_occurrences
 
 class Feature():
     """
@@ -211,6 +213,22 @@ class Feature():
                 return False
         else:
             print(f"Error: Either {self.id} or {other.id} sequences are empty!")
+
+    def overlap(self, other:object):
+        overlapping = False
+
+        interval1 = self.size
+        interval2 = other.size
+        small = min(self.start, self.end, other.start, other.end)
+        large = max(self.start, self.end, other.start, other.end)
+
+        overlap_bp = (interval1 + interval2) - ((large - small) + 1)
+
+        # checking only overlapping features
+        if overlap_bp > 0:
+            overlapping = True
+
+        return overlapping, overlap_bp
 
     def compare_blast_hits(self, other:object, source_priority:list):
         compared = False

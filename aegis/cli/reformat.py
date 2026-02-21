@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, detect_file_format, read_file_with_fallback
+
+from ..annotation import Annotation, detect_file_format, read_file_with_fallback
 
 app = typer.Typer(add_completion=False)
 

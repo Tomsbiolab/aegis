@@ -3,6 +3,7 @@ Tests for aegis.hits — OverlapHit and BlastHit classes.
 """
 
 import pytest
+
 from aegis.hits import OverlapHit, BlastHit
 
 

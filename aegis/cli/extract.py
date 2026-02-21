@@ -1,9 +1,11 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.genome import Genome
-from aegis.annotation import Annotation
 from textwrap import dedent
+
+from ..genome import Genome
+from ..annotation import Annotation
 
 FEATURES = ["gene", "transcript", "CDS", "protein", "promoter"]
 

@@ -3,6 +3,7 @@ Tests for aegis.genome — Scaffold and Genome classes.
 """
 
 import pytest
+
 from aegis.genome import Scaffold, Genome
 
 

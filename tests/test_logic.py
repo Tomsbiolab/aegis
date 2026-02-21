@@ -1,5 +1,6 @@
 import pytest
 import pathlib
+
 from aegis.annotation import Annotation
 from aegis.genome import Genome
 

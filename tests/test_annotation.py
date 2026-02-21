@@ -5,17 +5,12 @@ Tests for aegis.annotation — parsing helpers and Annotation class.
 import os
 import pytest
 from pathlib import Path
+
 from aegis.transcript import Transcript
-from aegis.annotation import (
-    read_file_with_fallback,
-    detect_file_format,
-    parse_gtf_attributes,
-    format_gff3_attributes,
-    sort_and_update_genes,
-    convert_gtf_to_gff3,
-    Annotation,
-    default_features,
-)
+from aegis.annotation import Annotation
+from aegis.utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3, detect_file_format
+from aegis.utils.misc import read_file_with_fallback
+from aegis.utils.genefunctions import sort_and_update_genes
 
 
 # ============================================================
