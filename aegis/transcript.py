@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
-from .utils.genefunc import find_ORFs, longest_ORF, translate
+from .utils.genefunctions import find_ORFs, longest_ORF, translate
 
 class Transcript(Feature):
 
