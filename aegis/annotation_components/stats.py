@@ -13,6 +13,35 @@ class AnnotationStats:
     """
     def __init__(self, annotation):
         self._annot = annotation
+        self.data = {}
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        self.data[key] = value
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __contains__(self, key):
+        return key in self.data
+
+    def update(self, *args, **kwargs):
+        """Proxy to self.data.update"""
+        self.data.update(*args, **kwargs)
+
+    def keys(self):
+        return self.data.keys()
+
+    def items(self):
+        return self.data.items()
+
+    def values(self):
+        return self.data.values()
 
     def calculate_transcript_masking(self, hard_masked_genome:object):
         for genes in self._annot.chrs.values():
@@ -54,34 +83,34 @@ class AnnotationStats:
 
         to_tally = ["coding_genes", "noncoding_genes", "CDSs_without_stop", "CDSs_with_stop"]
 
-        self._annot.stats = {"mean_transcripts" : [], "mean_exons" : [], "mean_exon_size" : [], "mean_gene_size" : [], "mean_intron_size" : [], "mean_CDS_size" : [], "mean_UTR_size" : [], "mean_transcript_size" : [], "mean_five_prime_UTR_size" : [], "mean_three_prime_UTR_size" : []}
+        self.data = {"mean_transcripts" : [], "mean_exons" : [], "mean_exon_size" : [], "mean_gene_size" : [], "mean_intron_size" : [], "mean_CDS_size" : [], "mean_UTR_size" : [], "mean_transcript_size" : [], "mean_five_prime_UTR_size" : [], "mean_three_prime_UTR_size" : []}
 
         if genome != None:
-            self._annot.stats["mean_protein_size"] = []
+            self.data["mean_protein_size"] = []
 
         for key in to_tally:
-            self._annot.stats[key] = []
+            self.data[key] = []
 
         for ft, value in self._annot.features.items():
-            self._annot.stats[ft] = value
+            self.data[ft] = value
 
-        self._annot.stats["five_prime_UTRs"] = 0
-        self._annot.stats["three_prime_UTRs"] = 0
+        self.data["five_prime_UTRs"] = 0
+        self.data["three_prime_UTRs"] = 0
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                self._annot.stats["mean_transcripts"].append(len(g.transcripts))
-                self._annot.stats["mean_gene_size"].append(g.size)
+                self.data["mean_transcripts"].append(len(g.transcripts))
+                self.data["mean_gene_size"].append(g.size)
                 for t in g.transcripts.values():
                     if t.main:
                         if hasattr(t, "introns"):
                             for i in t.introns:
-                                self._annot.stats["mean_intron_size"].append(i.size)
+                                self.data["mean_intron_size"].append(i.size)
 
                         if t.coding:
                             for c in t.CDSs.values():
                                 if c.main:
-                                    self._annot.stats["mean_CDS_size"].append(c.size)
+                                    self.data["mean_CDS_size"].append(c.size)
                                     if hasattr(c, "UTRs"):
                                         utr_5 = False
                                         utr_3 = False
@@ -97,38 +126,38 @@ class AnnotationStats:
                                                 u5_size += u.size
                                             u_size += u.size
                                         if utr_5:
-                                            self._annot.stats["five_prime_UTRs"] += 1
+                                            self.data["five_prime_UTRs"] += 1
                                         if utr_3:
-                                            self._annot.stats["three_prime_UTRs"] += 1
-                                        self._annot.stats["mean_UTR_size"].append(u_size)
-                                        self._annot.stats["mean_five_prime_UTR_size"].append(u5_size)
-                                        self._annot.stats["mean_three_prime_UTR_size"].append(u3_size)
+                                            self.data["three_prime_UTRs"] += 1
+                                        self.data["mean_UTR_size"].append(u_size)
+                                        self.data["mean_five_prime_UTR_size"].append(u5_size)
+                                        self.data["mean_three_prime_UTR_size"].append(u3_size)
                                     if genome != None:
-                                        self._annot.stats["mean_protein_size"].append(c.protein.size)
-                            self._annot.stats["coding_genes"].append(g.id)
+                                        self.data["mean_protein_size"].append(c.protein.size)
+                            self.data["coding_genes"].append(g.id)
                         else:
-                            self._annot.stats["noncoding_genes"].append(g.id)
+                            self.data["noncoding_genes"].append(g.id)
 
                         for e in t.exons:
-                            self._annot.stats["mean_exon_size"].append(e.size)
+                            self.data["mean_exon_size"].append(e.size)
 
-                        self._annot.stats["mean_exons"].append(len(t.exons))
+                        self.data["mean_exons"].append(len(t.exons))
                         
-                        self._annot.stats["mean_transcript_size"].append(t.size)
+                        self.data["mean_transcript_size"].append(t.size)
 
         # anything with mean will be also plotted as distribution plots:
         if export:
-            for key in self._annot.stats:
+            for key in self.data:
                 if "mean" in key:
                     tag = key.split("mean_")[1]
                     if tag[-1] != "s":
                         tag += "s"
-                    barplot(self._annot.stats[key], export_folder, f"{self._annot.id}{self._annot.feature_suffix}_{tag}", f"Distribution of {self._annot.id} {tag}", max_x)   
+                    barplot(self.data[key], export_folder, f"{self._annot.id}{self._annot.feature_suffix}_{tag}", f"Distribution of {self._annot.id} {tag}", max_x)   
 
         if genome != None:
-            self._annot.stats["CDSs_without_stop"] = []
-            self._annot.stats["CDSs_with_stop"] = []
-            self._annot.stats["intron_composition"] = set()
+            self.data["CDSs_without_stop"] = []
+            self.data["CDSs_with_stop"] = []
+            self.data["intron_composition"] = set()
             intron_stats = {}
             for b in Intron.canonical_seqs:
                 intron_stats[f"intron-exon boundary: {b}"] = 0
@@ -142,17 +171,17 @@ class AnnotationStats:
                                     if c.main:
                                         if c.protein != None:
                                             if not c.protein.end_stop:
-                                                self._annot.stats["CDSs_without_stop"].append(g.id)
+                                                self.data["CDSs_without_stop"].append(g.id)
                                             else:
-                                                self._annot.stats["CDSs_with_stop"].append(g.id)
+                                                self.data["CDSs_with_stop"].append(g.id)
                                             
                             for i in t.introns:
-                                self._annot.stats["intron_composition"].add(i.boundary)
+                                self.data["intron_composition"].add(i.boundary)
                                 if i.canonical:
                                     intron_stats[f"intron-exon boundary: {i.boundary}"] += 1
                                 else:
                                     intron_stats["other_intron_seqs"] += 1
-            self._annot.stats["intron_composition"] = list(self._annot.stats["intron_composition"])
+            self.data["intron_composition"] = list(self.data["intron_composition"])
 
             if export:
                 labels = list(intron_stats.keys())
@@ -165,17 +194,17 @@ class AnnotationStats:
 
                 values = list(intron_stats.values())
                 pie_chart(mod_labels, values, export_folder, f"{self._annot.id}{self._annot.feature_suffix}_intron_composition", f"Intron composition of {self._annot.id} annotation")
-            self._annot.stats.update(intron_stats)
+            self.data.update(intron_stats)
 
-        for key in self._annot.stats:
+        for key in self.data:
             if "mean" in key:
-                if len(self._annot.stats[key]) > 0:
-                    self._annot.stats[key] = mean(self._annot.stats[key])
+                if len(self.data[key]) > 0:
+                    self.data[key] = mean(self.data[key])
                 else:
-                    self._annot.stats[key] = 0
+                    self.data[key] = 0
             #tallying
             elif key in to_tally:
-                self._annot.stats[key] = len(self._annot.stats[key])
+                self.data[key] = len(self.data[key])
 
         if export:
             if genome != None:
@@ -195,7 +224,7 @@ class AnnotationStats:
 
             f_out = open(f"{export_folder}{out_file}", "a")
             x = -1
-            for key, value in self._annot.stats.items():
+            for key, value in self.data.items():
                 x += 1
                 value_temp = value
                 if isinstance(value, list):

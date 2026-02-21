@@ -262,6 +262,15 @@
       - stats.py
         - `class AnnotationStats:`
         - `def __init__(self, annotation):`
+        - `def __getitem__(self, key):`
+        - `def __setitem__(self, key, value):`
+        - `def __iter__(self):`
+        - `def __len__(self):`
+        - `def __contains__(self, key):`
+        - `def update(self, *args, **kwargs):`
+        - `def keys(self):`
+        - `def items(self):`
+        - `def values(self):`
         - `def calculate_transcript_masking(self, hard_masked_genome:object):`
         - `def calculate_gc_content(self):`
         - `def update_stats(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):`
