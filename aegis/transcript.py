@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
-from .utils.genefunctions import find_ORFs, longest_ORF, translate
+from .utils.genefunc import find_ORFs, longest_ORF, translate
 
 class Transcript(Feature):
 
@@ -72,7 +77,7 @@ class Transcript(Feature):
                     if e.start < c_end and e.end > c_start:
                         e.coding = True
 
-    def rename(self, base_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
 
         rename = False
 
@@ -99,7 +104,7 @@ class Transcript(Feature):
                 self.renamed = True
                 self.update_numbering()
 
-    def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -125,7 +130,7 @@ class Transcript(Feature):
                     self.renamed_exons = True
                     e.update_numbering()
 
-    def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -218,7 +223,7 @@ class Transcript(Feature):
         self.exons = []
         self.update()
 
-    def generate_promoter(self, promoter_size, ch_size, promoter_type:str = "standard"):
+    def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):
         """
         promoter_type (str): Defines the reference point for the promoter.
             - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
@@ -404,7 +409,7 @@ class Transcript(Feature):
         else:
             print(f"CDS segments exist already for {self.id}")
 
-    def almost_equal(self, other):
+    def almost_equal(self, other:Transcript):
         almost_equal = True
         if len(self.exons) != len(other.exons):
             almost_equal = False
@@ -732,7 +737,7 @@ class Transcript(Feature):
             for segment in reversed(self.exons):
                 self.hard_seqs[1] += segment.hard_seqs[1]
 
-    def clear_sequence(self, just_hard=False):
+    def clear_sequence(self, just_hard:bool=False):
         self.hard_seq = ""
         if hasattr(self, "promoter"):
             self.promoter.hard_seq = ""

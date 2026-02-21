@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 from .feature import Feature
 from .misc_features import Protein
 from .utils.genefunctions import reverse_complement
@@ -71,7 +76,7 @@ class CDS(Feature):
                 cs.frame = frame
 
 
-    def rename(self, base_id, base_gene_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
+    def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
 
         rename = False
         rename_cs = False
@@ -192,7 +197,7 @@ class CDS(Feature):
                 for u in self.UTRs:
                     u.generate_hard_sequence(hard_masked_genome)
 
-    def clear_sequence(self, just_hard=False, keep_proteins:bool=False):
+    def clear_sequence(self, just_hard:bool=False, keep_proteins:bool=False):
         self.hard_seq = ""
         for segment in self.CDS_segments:
             segment.clear_sequence(just_hard=just_hard)
@@ -211,7 +216,7 @@ class CDS(Feature):
         if low_memory:
             self.seq = ""
 
-    def equal_segments(self, other):
+    def equal_segments(self, other:CDS):
         self.CDS_segments.sort()
         other.CDS_segments.sort()
         same = True
@@ -259,7 +264,7 @@ class Intron(Feature):
         self.splice_site_donor = ""
         self.splice_site_acceptor = ""
 
-    def generate_sequence(self, genome):
+    def generate_sequence(self, genome:Genome):
         if self.strand == "+":
             self.seq = genome.scaffolds[self.ch].seq[self.start-1:self.end]
         elif self.strand == "-":
@@ -274,7 +279,7 @@ class Intron(Feature):
         else:
             self.canonical = False
 
-    def clear_sequence(self, just_hard=False):
+    def clear_sequence(self, just_hard:bool=False):
         self.hard_seq = ""
         if not just_hard:
             self.seq = ""

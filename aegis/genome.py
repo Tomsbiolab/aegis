@@ -425,7 +425,7 @@ class Genome():
     def copy(self):
         return copy.deepcopy(self)
         
-    def extract_peak_sequences(self, output_file_name, DAPseq_output_file, output_folder: str = "", top=600):
+    def extract_peak_sequences(self, output_file_name:str, DAPseq_output_file:str, output_folder: str = "", top=600):
 
         export_folder = Path(output_folder or Path(self.path) / "out_peak_seqs/")
         export_folder.mkdir(parents=True, exist_ok=True)

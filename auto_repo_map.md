@@ -124,7 +124,7 @@
       - `def __str__(self):`
     - conf.py
     - equivalence.py
-      - `def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet=True):`
+      - `def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):`
       - `class Equivalence():`
       - `def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str=None, reliability:str="NA"):`
       - `def _rank(self):`
@@ -171,14 +171,14 @@
       - `class Gene(Feature):`
       - `def __init__(self, pseudogene:bool, transposable:bool, feature_id:str,`
       - `def update(self):`
-      - `def obtain_base_id(self, original=False):`
-      - `def rename(self, count, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):`
+      - `def obtain_base_id(self, original:bool=False):`
+      - `def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):`
       - `def sort_transcripts(self):`
       - `def homogenise_exon_scores(self):`
       - `def clear_UTRs(self):`
       - `def combine_transcripts(self, genome:Genome, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):`
-      - `def longer_CDS(self, other):`
-      - `def compare_protein_blast_hits(self, other, source_priority:list):`
+      - `def longer_CDS(self, other:Gene) -> bool:`
+      - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
       - `def __str__(self):`
     - genome.py
       - `class Scaffold():`
@@ -195,7 +195,7 @@
       - `def remove_organelles(self, output_folder:str="", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):`
       - `def export(self, output_folder:str="", file:str=".fasta", quiet:bool=False):`
       - `def copy(self):`
-      - `def extract_peak_sequences(self, output_file_name, DAPseq_output_file, output_folder: str = "", top=600):`
+      - `def extract_peak_sequences(self, output_file_name:str, DAPseq_output_file:str, output_folder: str = "", top=600):`
       - `def subset(self, chosen_features:set=None, cap:int=2):`
       - `def remove_features(self, features_to_remove:set):`
     - hits.py
@@ -217,36 +217,36 @@
       - `def update_size(self):`
       - `def update_phase(self):`
       - `def update_frame(self):`
-      - `def rename(self, base_id, base_gene_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):`
+      - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):`
       - `def clear_UTRs(self):`
       - `def generate_sequence(self, genome:Genome, low_memory:bool=False):`
       - `def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):`
-      - `def clear_sequence(self, just_hard=False, keep_proteins:bool=False):`
+      - `def clear_sequence(self, just_hard:bool=False, keep_proteins:bool=False):`
       - `def generate_protein(self, readthrough:str="both", low_memory:bool=False):`
-      - `def equal_segments(self, other):`
+      - `def equal_segments(self, other:CDS):`
       - `class Exon(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str,`
       - `class UTR(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str,`
       - `class Intron(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str,`
-      - `def generate_sequence(self, genome):`
-      - `def clear_sequence(self, just_hard=False):`
+      - `def generate_sequence(self, genome:Genome):`
+      - `def clear_sequence(self, just_hard:bool=False):`
     - transcript.py
       - `class Transcript(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str,`
       - `def update_size(self):`
       - `def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True):`
-      - `def rename(self, base_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
-      - `def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
-      - `def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
+      - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
+      - `def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
+      - `def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
       - `def exon_update(self):`
       - `def collapse_exons(self):`
       - `def clear_UTRs(self):`
-      - `def generate_promoter(self, promoter_size, ch_size, promoter_type:str = "standard"):`
+      - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
       - `def generate_best_protein(self, genome:Genome, must_have_stop:bool=True):`
       - `def generate_CDSs_based_on_ORF(self, low_memory:bool=True):`
-      - `def almost_equal(self, other):`
+      - `def almost_equal(self, other:Transcript):`
       - `def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):`
       - `def determine_main_CDS(self):`
       - `def assign_UTRs(self):`
@@ -256,7 +256,7 @@
       - `def generate_introns(self):`
       - `def generate_sequence(self, genome:Genome, low_memory:bool=False):`
       - `def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):`
-      - `def clear_sequence(self, just_hard=False):`
+      - `def clear_sequence(self, just_hard:bool=False):`
     - __init__.py
     - **annotation_components/**
       - stats.py
@@ -317,13 +317,13 @@
         - `def parse_evalue(e):`
         - `def round_evalue(e):`
       - genefunctions.py
-        - `def reverse_complement(in_seq:str):`
-        - `def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):`
-        - `def longest_ORF(orfs:list):`
-        - `def trim_surplus(in_seq:str):`
+        - `def reverse_complement(in_seq:str) -> str:`
+        - `def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:`
+        - `def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:`
+        - `def trim_surplus(in_seq:str) -> tuple[str, bool]:`
         - `def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,`
-        - `def sort_and_update_genes(chrom, genes_dict):`
-        - `def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False, quiet:bool=False):`
+        - `def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:`
+        - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
         - `def parse_gff_line(line):`
         - `def parse_gff_attributes(attributes):`
