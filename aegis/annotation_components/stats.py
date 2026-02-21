@@ -36,10 +36,6 @@ class AnnotationStats:
     def __contains__(self, key):
         return key in self.data
 
-    def update(self, *args, **kwargs):
-        """Proxy to self.data.update"""
-        self.data.update(*args, **kwargs)
-
     def keys(self):
         return self.data.keys()
 
@@ -72,7 +68,7 @@ class AnnotationStats:
                     for c in t.CDSs.values():
                         c.calculate_gc_content()
 
-    def update_stats(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):
+    def update(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
         if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:

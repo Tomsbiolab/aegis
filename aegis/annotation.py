@@ -856,6 +856,10 @@ class Annotation():
 
     def copy(self):
         return copy.deepcopy(self)
+
+    @property
+    def stats(self):
+        return self.stats.data
     
     def update(self, original_annotation:Annotation=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):
         start_time = time.time()
@@ -914,7 +918,7 @@ class Annotation():
                 #improve at some point, slow with massive lists
                 if g_id not in self.all_gene_ids:
                     self.unmapped.append(g_id)
-        self.stats.update_stats(genome=genome)
+        self.stats.update(genome=genome)
 
         self.update_suffixes()
 
