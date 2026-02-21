@@ -4,7 +4,7 @@ Tests for aegis.feature — the Feature base class.
 
 import pytest
 
-from ..feature import Feature
+from aegis.feature import Feature
 
 
 # ============================================================

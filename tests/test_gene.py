@@ -4,8 +4,8 @@ Tests for aegis.gene — the Gene class.
 
 import pytest
 
-from ..gene import Gene
-from ..transcript import Transcript
+from aegis.gene import Gene
+from aegis.transcript import Transcript
 
 
 # ============================================================

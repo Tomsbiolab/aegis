@@ -4,8 +4,8 @@ Tests for aegis.subfeatures — CDS, Exon, UTR, Intron classes.
 
 import pytest
 
-from ..subfeatures import CDS, Exon, UTR, Intron
-from ..feature import Feature
+from aegis.subfeatures import CDS, Exon, UTR, Intron
+from aegis.feature import Feature
 
 
 # ============================================================

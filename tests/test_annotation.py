@@ -6,15 +6,15 @@ import os
 import pytest
 from pathlib import Path
 
-from ..transcript import Transcript
-from ..annotation import (
+from aegis.transcript import Transcript
+from aegis.annotation import (
     read_file_with_fallback,
     detect_file_format,
     sort_and_update_genes,
     Annotation,
     default_features,
 )
-from ..utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3
+from aegis.utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3
 
 
 # ============================================================

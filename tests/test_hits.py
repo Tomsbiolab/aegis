@@ -4,7 +4,7 @@ Tests for aegis.hits — OverlapHit and BlastHit classes.
 
 import pytest
 
-from ..hits import OverlapHit, BlastHit
+from aegis.hits import OverlapHit, BlastHit
 
 
 # ============================================================

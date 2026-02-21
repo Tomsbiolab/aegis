@@ -4,8 +4,8 @@ Tests for aegis.genefunctions — pure utility functions.
 
 import pytest
 
-from ..feature import Feature
-from ..utils.genefunctions import (
+from aegis.feature import Feature
+from aegis.utils.genefunctions import (
     reverse_complement,
     find_ORFs,
     longest_ORF,
@@ -13,8 +13,8 @@ from ..utils.genefunctions import (
     translate
 )
 
-from ..utils.gtf_gff import parse_gff_line, parse_gff_attributes
-from ..utils.misc import count_occurrences, find_all_occurrences
+from aegis.utils.gtf_gff import parse_gff_line, parse_gff_attributes
+from aegis.utils.misc import count_occurrences, find_all_occurrences
 
 
 # ============================================================

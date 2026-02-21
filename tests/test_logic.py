@@ -1,8 +1,8 @@
 import pytest
 import pathlib
 
-from ..annotation import Annotation
-from ..genome import Genome
+from aegis.annotation import Annotation
+from aegis.genome import Genome
 
 TEST_FOLDER = pathlib.Path(__file__).parent
 DATA_FOLDER = TEST_FOLDER / "test_data"
