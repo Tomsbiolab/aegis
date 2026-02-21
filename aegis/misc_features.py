@@ -1,6 +1,6 @@
-import copy
-
 from __future__ import annotations
+
+import copy
 
 from .utils.genefunctions import translate
 from .feature import Feature

@@ -6,6 +6,8 @@ Module defining several genomic classes.
 @authors: David Navarro, Antonio Santiago
 """
 
+from __future__ import annotations
+
 import re
 import sys
 import copy
@@ -24,7 +26,6 @@ from scipy.stats import fisher_exact
 from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
-from __future__ import annotations
 
 from .feature import Feature
 from .gene import Gene

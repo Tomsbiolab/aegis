@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pandas as pd
 import re
 import time
@@ -5,7 +7,6 @@ import os
 import shutil
 
 from pathlib import Path
-from __future__ import annotations
 
 from .annotation import Annotation
 from .utils.misc import run_command

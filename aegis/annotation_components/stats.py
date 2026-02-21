@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import pandas as pd
 
 from pathlib import Path
 from statistics import mean
-from __future__ import annotations
 
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron

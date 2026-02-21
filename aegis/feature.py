@@ -1,7 +1,7 @@
+from __future__ import annotations
+
 import copy
 import re
-
-from __future__ import annotations
 
 from .utils.genefunctions import reverse_complement
 from .utils.misc import count_occurrences
