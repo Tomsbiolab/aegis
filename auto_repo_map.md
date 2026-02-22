@@ -35,7 +35,6 @@
       - `def generate_sequences(self, genome:Genome, just_CDSs:bool=False, quiet:bool=False):`
       - `def clear_sequences(self, just_hard=False, keep_proteins:bool=False, quiet:bool=True):`
       - `def generate_promoters(self, genome:Genome, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):`
-      - `def find_motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
       - `def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
@@ -94,7 +93,6 @@
       - `def make_alternative_genes_into_transcripts(self, quiet:bool=False):`
       - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
       - `def find_best_gene_model_nested_overlaps(self, source_priority, blast=False):`
-      - `def gene_count(self):`
       - `def remove_redundancy(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):`
       - `def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):`
       - `def remove_TE_genes(self, quiet:bool=False):`
@@ -263,6 +261,10 @@
         - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):`
         - `def list_genes(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
         - `def list_transcripts(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
+      - find.py
+        - `class AnnotationFind:`
+        - `def __init__(self, annotation: Annotation):`
+        - `def motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):`
       - stats.py
         - `class AnnotationStats:`
         - `def __init__(self, annotation:Annotation):`
@@ -276,6 +278,7 @@
         - `def values(self):`
         - `def calculate_transcript_masking(self, hard_masked_genome:Genome):`
         - `def calculate_gc_content(self):`
+        - `def gene_count(self):`
         - `def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):`
       - __init__.py
     - **cli/**

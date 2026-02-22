@@ -68,6 +68,15 @@ class AnnotationStats:
                     t.calculate_gc_content()
                     for c in t.CDSs.values():
                         c.calculate_gc_content()
+    def gene_count(self):
+        gene_objects = 0
+        unique_gene_ids_in_overlaps = set()
+        for genes in self._annot.chrs.values():
+            gene_objects += len(genes)
+            for g in genes.values():
+                for o in g.overlaps["self"]:
+                    unique_gene_ids_in_overlaps.add(o.id)
+        print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
     def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):
         if not quiet:
