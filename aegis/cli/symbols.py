@@ -54,7 +54,7 @@ def main(
 
     annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file)
 
-    annotation.export_gff(custom_path=output_dir, tag=output_file)
+    annotation.export.gff(custom_path=output_dir, tag=output_file)
     
 if __name__ == "__main__":
     app()

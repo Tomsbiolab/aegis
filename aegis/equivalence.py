@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 import pandas as pd
 import re
 import time
@@ -10,7 +16,7 @@ from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue, round_evalue
 
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet=True):
+def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -488,7 +494,7 @@ class Simple_gene():
 
 
 class Simple_annotation():
-    def __init__(self, name, annotation_object:object, species:str):
+    def __init__(self, name, annotation_object:Annotation, species:str):
         self.name = name
         self.genes = {}
         self.species = species

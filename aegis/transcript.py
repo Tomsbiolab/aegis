@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
 from .utils.genefunctions import find_ORFs, longest_ORF, translate
-
 
 class Transcript(Feature):
 
@@ -71,7 +77,7 @@ class Transcript(Feature):
                     if e.start < c_end and e.end > c_start:
                         e.coding = True
 
-    def rename(self, base_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
 
         rename = False
 
@@ -98,7 +104,7 @@ class Transcript(Feature):
                 self.renamed = True
                 self.update_numbering()
 
-    def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -124,7 +130,7 @@ class Transcript(Feature):
                     self.renamed_exons = True
                     e.update_numbering()
 
-    def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -217,7 +223,7 @@ class Transcript(Feature):
         self.exons = []
         self.update()
 
-    def generate_promoter(self, promoter_size, ch_size, promoter_type:str = "standard"):
+    def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):
         """
         promoter_type (str): Defines the reference point for the promoter.
             - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
@@ -287,7 +293,7 @@ class Transcript(Feature):
                                     temp_end, self.score, ".",
                                     self.attributes)
 
-    def generate_best_protein(self, genome:object, must_have_stop:bool=True):
+    def generate_best_protein(self, genome:Genome, must_have_stop:bool=True):
         if (self.strand == "+") or (self.strand == "-"):
             self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop)
         elif self.strand == ".":
@@ -403,7 +409,7 @@ class Transcript(Feature):
         else:
             print(f"CDS segments exist already for {self.id}")
 
-    def almost_equal(self, other):
+    def almost_equal(self, other:Transcript):
         almost_equal = True
         if len(self.exons) != len(other.exons):
             almost_equal = False
@@ -687,7 +693,7 @@ class Transcript(Feature):
                         if i.end < c.end and i.start > c.start:
                             i.intra_coding = True
 
-    def generate_sequence(self, genome:object, low_memory:bool=False):
+    def generate_sequence(self, genome:Genome, low_memory:bool=False):
         for exon in self.exons:
             exon.generate_sequence(genome)
         if not low_memory:
@@ -709,7 +715,7 @@ class Transcript(Feature):
             for segment in reversed(self.exons):
                 self.seqs[1] += segment.seqs[1]
             
-    def generate_hard_sequence(self, hard_masked_genome:object, low_memory:bool=False):
+    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
         for exon in self.exons:
             exon.generate_hard_sequence(hard_masked_genome)
         if not low_memory:
@@ -731,7 +737,7 @@ class Transcript(Feature):
             for segment in reversed(self.exons):
                 self.hard_seqs[1] += segment.hard_seqs[1]
 
-    def clear_sequence(self, just_hard=False):
+    def clear_sequence(self, just_hard:bool=False):
         self.hard_seq = ""
         if hasattr(self, "promoter"):
             self.promoter.hard_seq = ""

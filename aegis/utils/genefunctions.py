@@ -5,6 +5,12 @@ Module with an array of genomic functions.
 
 @authors: David Navarro, Antonio Santiago
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..annotation import Annotation
+    from ..gene import Gene
 
 import pandas as pd
 import time
@@ -15,14 +21,14 @@ from Bio.Data import CodonTable
 from Bio.Seq import Seq
 
 
-def reverse_complement(in_seq:str):
+def reverse_complement(in_seq:str) -> str:
     in_seq = Seq(in_seq)
     out_seq = str(in_seq.reverse_complement())
         
     return out_seq
 
 
-def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
+def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:
     orfs = []
     start_codon = "ATG"
     stop_codons = ["TAA", "TAG", "TGA"]
@@ -45,7 +51,7 @@ def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
                             break
     return orfs
 
-def longest_ORF(orfs:list):
+def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:
     longest = ("", 0, 0)
     for orf in orfs:
         if len(orf[0]) > len(longest[0]):
@@ -53,7 +59,7 @@ def longest_ORF(orfs:list):
 
     return longest
 
-def trim_surplus(in_seq:str):
+def trim_surplus(in_seq:str) -> tuple[str, bool]:
     """
     Function that trims surplus nucleotides in the event of a sequence not
     being a multiple of three. The trimming is orientated by the presence of
@@ -198,12 +204,12 @@ def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,
 
     return start, end_stop, early_stop, nucleotide_surplus, gaps, out_seq, coding_start, coding_end
 
-def sort_and_update_genes(chrom, genes_dict):
+def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:
     genes = sorted(genes_dict.values())
     sorted_genes = {g.id: g for g in genes} 
     return chrom, sorted_genes
 
-def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False, quiet:bool=False):
+def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):
     """
     This generates equivalences between a set of annotation objects, whether only reporting equivalences to a particular target or between all annotations.
     """

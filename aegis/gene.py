@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 from .feature import Feature
 from .subfeatures import Exon
 from .transcript import Transcript
@@ -112,7 +118,7 @@ class Gene(Feature):
 
         self.homogenise_exon_scores()
 
-    def obtain_base_id(self, original=False):
+    def obtain_base_id(self, original:bool=False):
 
         if self.id.endswith("_gene"):
             self.base_id = self.id[:-5]
@@ -130,7 +136,7 @@ class Gene(Feature):
         if original:
             self.original_base_id = self.base_id
 
-    def rename(self, count, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
+    def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
 
         if remove_point_suffix:
             if "." in self.id:
@@ -185,7 +191,7 @@ class Gene(Feature):
             t.clear_UTRs()
         self.update()
 
-    def combine_transcripts(self, genome:object, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
+    def combine_transcripts(self, genome:Genome, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
         """
         Useful for RNA-Seq read counting for transcript variants as "one" gene.
         """
@@ -263,7 +269,7 @@ class Gene(Feature):
                     c.generate_sequence(genome, low_memory)
             t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
 
-    def longer_CDS(self, other):
+    def longer_CDS(self, other:Gene) -> bool:
         for t1 in self.transcripts.values():
             if t1.main:
                 for c1 in t1.CDSs.values():
@@ -277,7 +283,7 @@ class Gene(Feature):
                                         else:
                                             return False
                                         
-    def compare_protein_blast_hits(self, other, source_priority:list):
+    def compare_protein_blast_hits(self, other:Gene, source_priority:list):
         """
         Method required to deal with the fact that a gene may have several blast hits due to several proteins...
         """

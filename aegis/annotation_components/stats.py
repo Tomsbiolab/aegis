@@ -1,3 +1,10 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..annotation import Annotation
+    from ..genome import Genome
+
 import pandas as pd
 
 from pathlib import Path
@@ -11,7 +18,7 @@ class AnnotationStats:
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
-    def __init__(self, annotation):
+    def __init__(self, annotation:Annotation):
         self._annot = annotation
         self.data = {}
 
@@ -30,10 +37,6 @@ class AnnotationStats:
     def __contains__(self, key):
         return key in self.data
 
-    def update(self, *args, **kwargs):
-        """Proxy to self.data.update"""
-        self.data.update(*args, **kwargs)
-
     def keys(self):
         return self.data.keys()
 
@@ -43,7 +46,7 @@ class AnnotationStats:
     def values(self):
         return self.data.values()
 
-    def calculate_transcript_masking(self, hard_masked_genome:object):
+    def calculate_transcript_masking(self, hard_masked_genome:Genome):
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 g.generate_hard_sequence(hard_masked_genome)
@@ -66,7 +69,7 @@ class AnnotationStats:
                     for c in t.CDSs.values():
                         c.calculate_gc_content()
 
-    def update_stats(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):
+    def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
         if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:

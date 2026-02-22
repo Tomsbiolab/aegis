@@ -237,19 +237,19 @@ def main(
     for n, a in enumerate(annotations):
 
         a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=quiet)
-        a.export_gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=quiet)
+        a.export.gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=quiet)
 
         if not skip_lifton:
 
             a_lifton = a.copy()
             a_lifton.CDS_to_CDS_segment_ids(quiet=quiet, clean=True)
-            a_lifton.export_gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=quiet)
+            a_lifton.export.gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=quiet)
 
             del a_lifton
 
         a.generate_sequences(genomes[n], quiet=quiet)
-        a.export_proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
-        a.export_CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
+        a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
+        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
         a.clear_sequences(quiet=quiet)
 
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"

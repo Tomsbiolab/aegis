@@ -22,6 +22,6 @@ a.update()
 
 a.rename_ids(features=["exon", "UTR"])
 
-a.export_gff("file_path_out.gff3", UTRs=True)
+a.export.gff("file_path_out.gff3", UTRs=True)
 
 
