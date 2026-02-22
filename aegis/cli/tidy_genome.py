@@ -74,7 +74,7 @@ def main(
 
     if annotation_file and rename_map is not None:
         annotation.rename_chromosomes(equivalences=chromosome_equivalences)
-        annotation.export_gff(custom_path=output_dir)
+        annotation.export.gff(custom_path=output_dir)
 
 
 if __name__ == "__main__":

@@ -122,7 +122,7 @@ def main(
 
         annotations[0].detect_gene_overlaps()
 
-        annotations[0].export_equivalences(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs)
+        annotations[0].export.equivalences(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs)
 
     elif len(annotation_files) > 1:
 

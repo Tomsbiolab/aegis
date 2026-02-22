@@ -69,7 +69,7 @@ def main(
         )
 
     print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export_gff(output_dir)
+    base_annotation.export.gff(output_dir)
 
     print("Done.")
 

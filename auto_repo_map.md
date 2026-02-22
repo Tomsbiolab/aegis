@@ -37,13 +37,6 @@
       - `def generate_promoters(self, genome:Genome, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):`
       - `def find_motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
-      - `def export_all_features(self, feature_output:str="main", promoters:bool=True, verbose:bool=True, path:str="", most_specific_id_level="promoter", quiet:bool=False):`
-      - `def export_proteins(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="protein", unique_proteins_per_gene:bool=False, only_cds_main:bool=True):`
-      - `def export_unique_proteins(self, genome:Genome=None, custom_path:str="", quiet:bool=False):`
-      - `def export_CDSs(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="CDS", unique_CDSs_per_gene:bool=False, only_cds_main:bool=True):`
-      - `def export_transcripts(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="transcript", rna_classes:list=[]):`
-      - `def export_genes(self, verbose:bool=True, custom_path:str=""):`
-      - `def export_promoters(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="promoter"):`
       - `def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
       - `def define_synteny(self, original_annotation:Annotation, sort_processes:int=1, quiet:bool=True):`
@@ -53,16 +46,10 @@
       - `def overlaps_as_networks(self, self_mode:bool=True):`
       - `def alternative_remove_redundancy(self):`
       - `def add_aliases(self, overlap_threshold:int=6):`
-      - `def export_for_dapseq(self, genome, chromosome_dictionary:dict=`
-      - `def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False, copies_info:bool=False):`
       - `def clear_overlaps(self, keep_self=False, keep_other=False):`
       - `def clear_aliases(self):`
-      - `def list_genes(self, custom_path:str="", output_file:str="",lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding_info:bool=False, skip_coding:bool=False, skip_non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=False, skip_transposables:bool=False, gene_symbols:bool=False):`
-      - `def list_transcripts(self, custom_path:str="", output_file:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding_info:bool=False, skip_coding:bool=False, skip_non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=False, skip_transposables:bool=False, gene_symbols:bool=False):`
       - `def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):`
       - `def CDS_segment_to_CDS_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=True):`
-      - `def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True, quiet:bool=False, skip_orphaned_fts:bool=False):`
-      - `def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, quiet:bool=False):`
       - `def merge(self, other:Annotation, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):`
       - `def remove_exons_with_unmatched_strand(self, quiet:bool=False):`
       - `def remove_transcripts_with_no_exons(self, quiet:bool=False):`
@@ -260,6 +247,22 @@
       - `def clear_sequence(self, just_hard:bool=False):`
     - __init__.py
     - **annotation_components/**
+      - export.py
+        - `class AnnotationExport:`
+        - `def __init__(self, annotation: Annotation):`
+        - `def all_features(self, feature_output: str = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):`
+        - `def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True):`
+        - `def unique_proteins(self, genome: Genome = None, custom_path: str = "", quiet: bool = False):`
+        - `def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):`
+        - `def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = []):`
+        - `def genes(self, verbose: bool = True, custom_path: str = ""):`
+        - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter"):`
+        - `def for_dapseq(self, genome: Genome, chromosome_dictionary: dict =`
+        - `def equivalences(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, return_df: bool = True, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False):`
+        - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False):`
+        - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):`
+        - `def list_genes(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
+        - `def list_transcripts(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
       - stats.py
         - `class AnnotationStats:`
         - `def __init__(self, annotation:Annotation):`
