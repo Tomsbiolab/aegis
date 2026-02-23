@@ -106,6 +106,8 @@ def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codo
 
     if readthrough == "both" or readthrough == "start" or readthrough == "end":
         in_seq, nucleotide_surplus = trim_surplus(in_seq)
+    else:
+        nucleotide_surplus = False
 
     ambiguous_letters = ["B", "D", "H", "K", "M", "N", "R", "S", "V", "W", "Y"]
     # for masked genomes
