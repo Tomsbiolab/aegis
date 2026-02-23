@@ -21,28 +21,28 @@ def split_callback(value:str):
 
 @app.command()
 def main(
-    annotation_files: Annotated[List[str], typer.Argument(
+    annotation_files: Annotated[list[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
-    genome_files: Annotated[str, typer.Option(
+    genome_files: Annotated[list[str], typer.Option(
         "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. genomefile1,genomefile2,genomefile3,genomefile4",
         callback=split_callback
     )],
-    annotation_names: Annotated[str, typer.Option(
+    annotation_names: Annotated[list[str], typer.Option(
         "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2,name3,name4",
         callback=split_callback
-    )] = "{annotation-filename(s)}",
+    )] = ["{annotation-filename(s)}"],
 
-    output_dir: Annotated[str, typer.Option(
+    output_dir: Annotated[str|Path, typer.Option(
         "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_filename: Annotated[str, typer.Option(
         "-o", "--output-file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
     )] = "equivalences{other_tags}.tsv",
-    group_names: Annotated[str, typer.Option(
+    group_names: Annotated[list[str], typer.Option(
         "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
         callback=split_callback
-    )] = "",
+    )] = [],
     skip_synteny: Annotated[bool, typer.Option(
         "--skip-synteny", help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome."
     )] = False,
@@ -58,9 +58,9 @@ def main(
     skip_rbhs: Annotated[bool, typer.Option(
         "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
-    lift_feature_types: Annotated[str, typer.Option(
+    lift_feature_types: Annotated[list[str], typer.Option(
         "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
-    )] = "ALL",
+    )] = ["ALL"],
     skip_lifton: Annotated[bool, typer.Option(
         "--skip-lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
     )] = False,
@@ -133,7 +133,7 @@ def main(
         raise typer.Exit(code=1)
     
 
-    if annotation_names != "{annotation-filename(s)}":
+    if annotation_names != ["{annotation-filename(s)}"]:
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -157,7 +157,7 @@ def main(
     if len(genome_files) != len(set(genome_files)):
         raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
     
-    if group_names:
+    if group_names != []:
         if len(annotation_files) != len(group_names):
             raise typer.BadParameter(f"The provided number of groups do not match the number of annotation file(s).")
         
@@ -262,12 +262,12 @@ def main(
 
         if not skip_mcscan:
             cds_fasta = CDS_path / f"{a.name}_CDSs_g_id_main.fasta"
-            cleaned_cds = mcscan_path / f"{a.name}.cds"
+            cleaned_cds = mcscan_path / Path(f"{a.name}.cds")
 
             jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
             run_command(mcscan_path, jcvi_format_cmd_1)
 
-            bed_file = mcscan_path / f"{a.name}.bed"
+            bed_file = mcscan_path / Path(f"{a.name}.bed")
             gff_to_bed_cmd_1 = [
                 "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
                 "--key=Parent", "--primary_only", f"{gff_path}/{a.name}.gff3", "-o", str(bed_file)

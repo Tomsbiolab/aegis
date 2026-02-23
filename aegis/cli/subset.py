@@ -25,10 +25,10 @@ def main(
     chr_cap: Annotated[int, typer.Option(
         "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s)."
     )] = 2,
-    chosen_chromosomes: Annotated[str, typer.Option(
+    chosen_chromosomes: Annotated[set[str], typer.Option(
         "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
     callback=split_callback
-    )] = None,
+    )] = set(),
     gene_cap: Annotated[int, typer.Option(
         "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,

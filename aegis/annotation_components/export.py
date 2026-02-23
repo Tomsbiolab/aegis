@@ -13,6 +13,7 @@ import sys
 
 from pathlib import Path
 from tqdm import tqdm
+from typing import Literal
 
 class AnnotationExport:
     """
@@ -22,7 +23,7 @@ class AnnotationExport:
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 
-    def all_features(self, feature_output: str = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):
+    def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):
         """
         The "output" parameter can be both, main or all. This parameter only 
         affects promoter, transcript, CDS and protein sequences. If both is selected
@@ -46,7 +47,7 @@ class AnnotationExport:
             modes = [True, False]
         elif feature_output == "main":
             modes = [True]
-        elif feature_output == "all":
+        else:
             modes = [False]
 
         for b in modes:
@@ -215,7 +216,7 @@ class AnnotationExport:
         else:
             print(f"Warning: Run self.generate_sequences(genome) on {self._annot.id}")
 
-    def unique_proteins(self, genome: Genome = None, custom_path: str = "", quiet: bool = False):
+    def unique_proteins(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -249,9 +250,10 @@ class AnnotationExport:
                     if g.coding:
                         for t in g.transcripts.values():
                             for c in t.CDSs.values():
-                                if c.protein.seq != "":
-                                    all_protein_seqs[c.protein.id] = c.protein.seq
-                                    self._annot.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
+                                if c.protein is not None:
+                                    if c.protein.seq != "":
+                                        all_protein_seqs[c.protein.id] = c.protein.seq
+                                        self._annot.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
 
             progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
                             bar_format=(
@@ -583,12 +585,12 @@ class AnnotationExport:
         else:
             print(f"Warning: Run self.generate_promoters(genome) and self.generate_sequences(genome) on {self._annot.id}")
 
-    def for_dapseq(self, genome: Genome, chromosome_dictionary: dict = {}, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):
-        equivalences = genome.rename_features_dap(custom_path=genome_out_folder, return_equivalences=True, export=True, chromosome_dictionary=chromosome_dictionary)
+    def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):
+        equivalences = genome.rename_features_dap(output_folder=genome_out_folder, return_equivalences=True, export=True)
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def equivalences(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, return_df: bool = True, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False):
+    def equivalences(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:
         start_time = time.time()
         if export_self:
             export = "self"
@@ -711,14 +713,9 @@ class AnnotationExport:
                             if g.id not in overlapping_genes:
                                 na_rows.append({
                                     "gene_id_A": g.id,
-                                    "overlap_score": 0
+                                    "overlap_score": 0,
+                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
                                 })
-
-                    if synteny:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "gene_id_A": g_id
-                            })
 
                 else:
 
@@ -728,15 +725,16 @@ class AnnotationExport:
                                 na_rows.append({
                                     "gene_id_A": g.id,
                                     "gene_id_A_origin": self._annot.name,
-                                    "overlap_score": 0
+                                    "overlap_score": 0,
+                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
                                 })
 
-                    if synteny:
-                        for g_id in self._annot.unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": self._annot.name
-                            })
+                if synteny:
+                    for g_id in self._annot.unmapped:
+                        na_rows.append({
+                            "gene_id_A": g_id,
+                            "gene_id_A_origin": self._annot.name
+                        })
 
             else:
 
@@ -748,15 +746,9 @@ class AnnotationExport:
                                 na_rows.append({
                                     "gene_id_A": g.id,
                                     "gene_id_A_copy": g.extra_copy,
-                                    "overlap_score": 0
+                                    "overlap_score": 0,
+                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
                                 })
-
-                    if synteny:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_copy": g.extra_copy
-                            })
 
                 else:
 
@@ -767,16 +759,16 @@ class AnnotationExport:
                                     "gene_id_A": g.id,
                                     "gene_id_A_origin": self._annot.name,
                                     "overlap_score": 0,
-                                    "gene_id_A_copy": g.extra_copy
+                                    "gene_id_A_copy": g.extra_copy,
+                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
                                 })
 
-                    if synteny:
-                        for g_id in self._annot.unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": self._annot.name,
-                                "gene_id_A_copy": g.extra_copy
-                            })          
+                if synteny:
+                    for g_id in self._annot.unmapped:
+                        na_rows.append({
+                            "gene_id_A": g_id,
+                            "gene_id_A_origin": self._annot.name
+                        })          
 
             # Combine with the original df
             if na_rows:
@@ -813,8 +805,7 @@ class AnnotationExport:
                 else:
                     print(f"\nExporting {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
         
-        if return_df:
-            return eq_df
+        return eq_df
 
     def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False):
 

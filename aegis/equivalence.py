@@ -16,7 +16,7 @@ from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue, round_evalue
 
-def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):
+def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -55,7 +55,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
     a_liftoff.detect_gene_overlaps(annot2, quiet=quiet)
 
-    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+    _ = a_liftoff.export.equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
     del a_liftoff
 
@@ -94,7 +94,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
         a_lifton.detect_gene_overlaps(annot2, quiet=quiet)
 
-        a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        _ = a_lifton.export.equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
         del a_lifton
 
@@ -139,7 +139,7 @@ class Equivalence():
     preferred_type_order = ["rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "rev_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
     reliability_order = ["vvvtop_reliable", "vvtop_reliable", "vtop_reliable", "top_reliable", "vvvvv_reliable", "vvvv_reliable", "vvv_reliable", "vv_reliable", "v_reliable", "reliable", "NA"]
 
-    def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str=None, reliability:str="NA"):
+    def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):
         self.id = id_
         self.type = type_
         self.species = species

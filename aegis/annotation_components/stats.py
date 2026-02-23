@@ -18,33 +18,11 @@ class AnnotationStats:
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
+    data: dict
+
     def __init__(self, annotation:Annotation):
         self._annot = annotation
         self.data = {}
-
-    def __getitem__(self, key):
-        return self.data[key]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
-
-    def __iter__(self):
-        return iter(self.data)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __contains__(self, key):
-        return key in self.data
-
-    def keys(self):
-        return self.data.keys()
-
-    def items(self):
-        return self.data.items()
-
-    def values(self):
-        return self.data.values()
 
     def calculate_transcript_masking(self, hard_masked_genome:Genome):
         for genes in self._annot.chrs.values():
@@ -68,8 +46,17 @@ class AnnotationStats:
                     t.calculate_gc_content()
                     for c in t.CDSs.values():
                         c.calculate_gc_content()
+    def gene_count(self):
+        gene_objects = 0
+        unique_gene_ids_in_overlaps = set()
+        for genes in self._annot.chrs.values():
+            gene_objects += len(genes)
+            for g in genes.values():
+                for o in g.overlaps["self"]:
+                    unique_gene_ids_in_overlaps.add(o.id)
+        print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
-    def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):
+    def update(self, custom_path:str="", export:bool=False, genome:Genome|None=None, max_x:int|None=None, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
         if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:
@@ -135,7 +122,7 @@ class AnnotationStats:
                                         self.data["mean_UTR_size"].append(u_size)
                                         self.data["mean_five_prime_UTR_size"].append(u5_size)
                                         self.data["mean_three_prime_UTR_size"].append(u3_size)
-                                    if genome != None:
+                                    if genome is not None and c.protein is not None:
                                         self.data["mean_protein_size"].append(c.protein.size)
                             self.data["coding_genes"].append(g.id)
                         else:

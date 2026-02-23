@@ -261,7 +261,7 @@ class TestOverlap:
     class MockFeature(Feature):
         def __init__(self, start, end):
             super().__init__(feature_id="mock", ch="mock", source="mock", feature="mock", strand="mock", start=start, end=end,
-                             score=0, phase=0, attributes={})
+                             score=".", phase=".", attributes={})
 
     def test_overlapping_features(self):
         f1 = self.MockFeature(100, 300)

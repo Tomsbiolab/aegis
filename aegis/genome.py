@@ -174,7 +174,7 @@ class Genome():
         self.scaffold_names = set()
         self.accessory_chromosome_names = set()
 
-        for scaffold_id, scaffold in self.scaffolds.items():
+        for scaffold in self.scaffolds.values():
 
             if update_scaffolds:
                 scaffold.update()
@@ -183,7 +183,7 @@ class Genome():
                 self.dapfit = False
             else:
                 try:
-                    number = int(scaffold.name.split("r")[1])
+                    _ = int(scaffold.name.split("r")[1])
                 except:
                     self.dapfit = False
 
@@ -254,7 +254,7 @@ class Genome():
         f_out.write(out)
         f_out.close()
     
-    def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False, chromosome_dict:dict={}):
+    def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False):
         """
         Renames scaffolds and chromosomes to become dapfit.
         """
@@ -267,7 +267,7 @@ class Genome():
             use_chromosome_count = False
             chromosome_numbers = []
 
-            for scaffold_id, scaffold in self.scaffolds.items():
+            for scaffold in self.scaffolds.values():
                 if scaffold.chromosome:
                     if not scaffold.mitochondria and not scaffold.chloroplast:
                         if not scaffold.number:
@@ -281,7 +281,7 @@ class Genome():
             scaffold_count = 0
             chromosome_count = 0
 
-            for scaffold_id, scaffold in self.scaffolds.items():
+            for scaffold in self.scaffolds.values():
 
                 if scaffold.mitochondria or scaffold.chloroplast:
                     organelle_count += 1
@@ -304,7 +304,7 @@ class Genome():
 
             new_scaffolds = {}
 
-            for scaffold_id, scaffold in self.scaffolds.items():
+            for scaffold in self.scaffolds.values():
                 previous_name = scaffold.name
                 scaffold.name = self.equivalences[scaffold.original_name]
                 if previous_name != scaffold.name:
@@ -492,7 +492,7 @@ class Genome():
                 f_out.write(f'>{header}\n')
                 f_out.write(f'{textwrap.fill(seq, width=60)}\n')
 
-    def subset(self, chosen_features:set=None, cap:int=2):
+    def subset(self, chosen_features:set|None=None, cap:int=2):
 
         if chosen_features is None:
             chosen_features = set()
@@ -504,14 +504,14 @@ class Genome():
             scaffolds_to_remove = set(self.scaffolds) - chosen_features
         else:
             if cap > len(self.scaffolds):
-                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset genome {self.id}.", category=UserWarning)
+                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset genome {self.name}.", category=UserWarning)
                 return
             scaffolds_to_remove = set(self.scaffolds) - set(random.sample(list(self.scaffolds), cap))
 
         if scaffolds_to_remove:
             self.remove_features(scaffolds_to_remove)
         else:
-            print(f"No scaffolds/chromosomes removed from {self.id} genome.")
+            print(f"No scaffolds/chromosomes removed from {self.name} genome.")
 
     def remove_features(self, features_to_remove:set):
         for ft in features_to_remove:

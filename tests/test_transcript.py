@@ -210,8 +210,8 @@ class TestTranscriptExonUpdate:
         t = make_transcript(start=1000, end=5000)
         t.exons.append(make_exon("e1", 1000, 2000))
         t.exons.append(make_exon("e2", 3000, 5000))
-        t.update_size()  # must update size first
-        t.exon_update()
+        t.update_size()
+        t.update()
         # After exon_update, coding_ratio should be set
         assert hasattr(t, 'coding_ratio')
 

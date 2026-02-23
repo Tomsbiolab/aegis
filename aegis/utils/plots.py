@@ -21,8 +21,8 @@ palettes["pastel"] = ["#A8D6B5", "#FFC9A5", "#C9CCE5", "#EFCEDF", "#DFF2B9"]
 
 common_font = dict(family="Arial", size=18)
 
-def pie_chart(labels, values, export_folder, tag, title, hovertext_labels:list=None, colours:str="purple"):
-    colours = palettes[colours]
+def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):
+    colours = palettes[palette_name]
     fig = go.Figure(data=[go.Pie(labels=labels, sort=False, values=values, hoverinfo="label+value", textfont=common_font, hole=0.4,textinfo="percent")])
     fig.update_layout(title=title, title_font=dict(family="Arial", size=22), hoverlabel=dict(font_size=common_font["size"], font_family=common_font["family"]), title_x=0.5, legend=dict(font=common_font))
     if len(colours) == len(labels):
@@ -46,7 +46,7 @@ def pie_chart(labels, values, export_folder, tag, title, hovertext_labels:list=N
     fig.write_image(f"{export_folder}{tag}.pdf")
     fig.write_html(f"{export_folder}{tag}.html")
 
-def barplot(values, export_folder, tag, title, max_x:int=None):
+def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):
 
     if max_x == None:
         max_x = max(values) + 1

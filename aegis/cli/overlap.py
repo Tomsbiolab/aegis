@@ -20,10 +20,10 @@ def main(
     annotation_files: Annotated[List[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
-    annotation_names: Annotated[str, typer.Option(
+    annotation_names: Annotated[List[str], typer.Option(
         "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2",
         callback=split_callback
-    )] = "{annotation-filename(s)}",
+    )] = ["{annotation-filename(s)}"],
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output directory."
     )] = "./aegis_output/",
@@ -39,10 +39,10 @@ def main(
     simple: Annotated[bool, typer.Option(
         "-s", "--simple", help="Whether to remove percentage overlap details at different feature levels for a more simple output table."
     )] = False,
-    original_annotation_files: Annotated[str, typer.Option(
+    original_annotation_files: Annotated[list[str], typer.Option(
         "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer, separated by commas. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
         callback=split_callback
-    )] = "",
+    )] = [],
     reference_annotation: Annotated[str, typer.Option(
         "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
     )] = "None",
@@ -65,9 +65,9 @@ def main(
         )
         raise typer.Exit(code=1)
 
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    if annotation_names != "{annotation-filename(s)}":
+    if annotation_names != ["{annotation-filename(s)}"]:
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
