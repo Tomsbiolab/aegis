@@ -16,8 +16,8 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str=None, genome:Genome=None, original_annotation:Annotation=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True):`
-      - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True):`
+      - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):`
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_subfeature(self, entry, ft_level, infer_gene_and_transcript_from_subfeatures:bool=False, only_infer_if_none_of_the_parents_exist:bool=True, skip_orphaned_features:bool=False, liftover_exception:bool=True, quiet:bool=False):`
@@ -25,7 +25,7 @@
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
       - `def summary(self) -> dict:`
-      - `def update(self, original_annotation:Annotation=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):`
+      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):`
       - `def update_suffixes(self, quiet:bool=True):`
       - `def update_features(self, standardise=True, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
@@ -38,10 +38,10 @@
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
       - `def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
-      - `def define_synteny(self, original_annotation:Annotation, sort_processes:int=1, quiet:bool=True):`
+      - `def define_synteny(self, original_annotation:Annotation|None=None, sort_processes:int=1, quiet:bool=True):`
       - `def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):`
       - `def single_parent_for_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):`
-      - `def detect_gene_overlaps(self, other:Annotation=None, sort_processes:int=1, clear=True, quiet:bool=True):`
+      - `def detect_gene_overlaps(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):`
       - `def overlaps_as_networks(self, self_mode:bool=True):`
       - `def alternative_remove_redundancy(self):`
       - `def add_aliases(self, overlap_threshold:int=6):`
@@ -55,7 +55,7 @@
       - `def remove_transcripts(self, to_remove:set, quiet:bool=False):`
       - `def remove_genes_with_no_transcripts(self, quiet:bool=False):`
       - `def remove_missing_transcript_parent_references(self, extra_attributes=False, quiet:bool=True):`
-      - `def rework_CDSs(self, genome:Genome=None, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
+      - `def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
       - `def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True):`
@@ -71,10 +71,10 @@
       - `def add_reliable_CDS_evidence_score(self, quiet:bool=False):`
       - `def mark_reliable_CDS_evidences(self, unreliable_sources:list=["GlimmerHMM", "geneid_v1.4"], quiet:bool=False):`
       - `def remove_chromosomes_from_header(self):`
-      - `def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set=None, min_genes:int=1500, quiet:bool=False):`
+      - `def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
       - `def filter_by_rna_class(self, rna_classes=['mRNA'], quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
-      - `def remove_genes(self, to_remove:set=None, quiet:bool=False):`
+      - `def remove_genes(self, to_remove:set|None=None, quiet:bool=False):`
       - `def remove_missing_genes_in_overlaps(self, quiet:bool=True):`
       - `def mark_transcriptomic_supported_genes(self, quiet:bool=False):`
       - `def mark_abinitio_supported_genes(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
@@ -133,7 +133,7 @@
       - `def clean_annotation_tag(annotation_tag):`
     - feature.py
       - `class Feature():`
-      - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str):`
+      - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str|list|dict):`
       - `def update_numbering(self, original:bool=False):`
       - `def update_size(self):`
       - `def calculate_masking(self):`
@@ -261,25 +261,18 @@
         - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):`
         - `def list_genes(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
         - `def list_transcripts(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
-      - find.py
-        - `class AnnotationFind:`
+      - motifs.py
+        - `class AnnotationMotifs:`
         - `def __init__(self, annotation: Annotation):`
-        - `def motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):`
+        - `def find_and_plot(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):`
+      - overlaps.py
       - stats.py
         - `class AnnotationStats:`
         - `def __init__(self, annotation:Annotation):`
-        - `def __getitem__(self, key):`
-        - `def __setitem__(self, key, value):`
-        - `def __iter__(self):`
-        - `def __len__(self):`
-        - `def __contains__(self, key):`
-        - `def keys(self):`
-        - `def items(self):`
-        - `def values(self):`
         - `def calculate_transcript_masking(self, hard_masked_genome:Genome):`
         - `def calculate_gc_content(self):`
         - `def gene_count(self):`
-        - `def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):`
+        - `def update(self, custom_path:str="", export:bool=False, genome:Genome|None=None, max_x:int|None=None, quiet:bool=True):`
       - __init__.py
     - **cli/**
       - extract.py
@@ -291,7 +284,7 @@
       - merge.py
         - `def split_callback(value:str):`
         - `def main(`
-      - motifs.py
+      - motif_search.py
         - `def main(`
       - orthology.py
         - `def split_callback(value:str):`

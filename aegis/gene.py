@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .genome import Genome
+    from .transcript import Transcript
 
 from .feature import Feature
 from .subfeatures import Exon
-from .transcript import Transcript
 
 class Gene(Feature):
 
@@ -22,9 +22,19 @@ class Gene(Feature):
         'base_id', 'original_base_id'
     )
 
+    transcripts:dict[str, Transcript]
+    synteny_order:int|None
+    old_synteny_order:int|None
+    previous_gene:str|None|bool
+    next_gene:str|None|bool
+    old_previous_gene:str|None|bool
+    old_next_gene:str|None|bool
+    conserved_synteny:bool|None
+    alternative_transcript_rescue:set|list
+    
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str,
-                 start:int, end:int, score:str, phase:str, attributes:str):
+                 start:int, end:int, score:str, phase:str, attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.pseudogene = pseudogene

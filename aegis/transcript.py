@@ -20,9 +20,16 @@ class Transcript(Feature):
         'protein_seq', 'coding_start', 'coding_end', 'introns'
     )
 
+    CDSs: dict[str, CDS]
+    exons: list[Exon]
+    introns: list[Intron]
+    UTRs: list[UTR]
+    temp_CDSs: list[CDS|Feature]
+    temp_UTRs: list[UTR]
+
     def __init__(self, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str, 
-                 phase:str, attributes:str):
+                 phase:str, attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.exons = []

@@ -16,9 +16,11 @@ class CDS(Feature):
         'full_UTR_exons', 'protein', 'UTRs'
     )
 
+    protein: Protein|None
+
     def __init__(self, CDS_segments:list, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str, start:int, 
-                 end:int, score:str, phase:str, attributes:str):
+                 end:int, score:str, phase:str, attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)    
         self.main = False
@@ -242,7 +244,7 @@ class UTR(Feature):
     __slots__ = ('prime',)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str):
+                 attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.prime = "3'"
@@ -255,7 +257,7 @@ class Intron(Feature):
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str):
+                 attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.intra_coding = False

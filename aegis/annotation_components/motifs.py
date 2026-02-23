@@ -5,15 +5,25 @@ if TYPE_CHECKING:
     from ..annotation import Annotation
     from ..genome import Genome
 
-class AnnotationFind:
+import matplotlib.pyplot as plt
+from scipy.stats import fisher_exact
+from tqdm import tqdm
+import pandas as pd
+import os
+import sys
+
+from ..utils.genefunctions import reverse_complement
+from ..utils.misc import find_all_occurrences
+
+class AnnotationMotifs:
     """
-    Component for handling find methods for the Annotation class.
-    Accessed via 'annotation_object.find'.
+    Component for handling motif methods for the Annotation class.
+    Accessed via 'annotation_object.motifs'.
     """
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 
-    def motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):
+    def find_and_plot(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -221,7 +231,7 @@ class AnnotationFind:
             genomic_count = len(midpoints)
             plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
             plt.grid(False)
-            plt.title(f"{self._annot.id} {tf_motif_tag} full genome histogram\npromoters with motif: ({genomic_proportion}/{len(self.all_gene_ids.keys())})")
+            plt.title(f"{self._annot.id} {tf_motif_tag} full genome histogram\npromoters with motif: ({genomic_proportion}/{len(self._annot.all_gene_ids.keys())})")
             plt.xlabel("promoter position")
             plt.ylabel(f"motif occurrence count (total: {genomic_count})")
             plt.grid(True)

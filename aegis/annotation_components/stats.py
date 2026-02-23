@@ -18,33 +18,10 @@ class AnnotationStats:
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
+
     def __init__(self, annotation:Annotation):
         self._annot = annotation
         self.data = {}
-
-    def __getitem__(self, key):
-        return self.data[key]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
-
-    def __iter__(self):
-        return iter(self.data)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __contains__(self, key):
-        return key in self.data
-
-    def keys(self):
-        return self.data.keys()
-
-    def items(self):
-        return self.data.items()
-
-    def values(self):
-        return self.data.values()
 
     def calculate_transcript_masking(self, hard_masked_genome:Genome):
         for genes in self._annot.chrs.values():
@@ -78,7 +55,7 @@ class AnnotationStats:
                     unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
-    def update(self, custom_path:str="", export:bool=False, genome:Genome=None, max_x:int=None, quiet:bool=True):
+    def update(self, custom_path:str="", export:bool=False, genome:Genome|None=None, max_x:int|None=None, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
         if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:
