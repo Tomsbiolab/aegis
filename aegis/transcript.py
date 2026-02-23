@@ -288,7 +288,7 @@ class Transcript(Feature):
                                     temp_end, self.score, ".",
                                     self.attributes)
 
-    def generate_best_protein(self, genome:Genome, must_have_stop:bool=True):
+    def generate_best_protein(self, genome:Genome|None=None, must_have_stop:bool=True):
         if (self.strand == "+") or (self.strand == "-"):
             self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop)
         elif self.strand == ".":
@@ -302,17 +302,25 @@ class Transcript(Feature):
                     self.strand = "+"
                     for e in self.exons:
                         e.strand = "+"
-                        e.generate_sequence(genome)
-                    self.generate_sequence(genome)
-                    self.generate_best_protein(genome, must_have_stop)
+                        if genome is not None:
+                            e.generate_sequence(genome)
+                    if genome is not None:
+                        self.generate_sequence(genome)
+                        self.generate_best_protein(genome, must_have_stop)
+                    else:
+                        self.generate_best_protein(must_have_stop=must_have_stop)
 
                 else:
                     self.strand = "-"
                     for e in self.exons:
                         e.strand = "-"
-                        e.generate_sequence(genome)
-                    self.generate_sequence(genome)
-                    self.generate_best_protein(genome, must_have_stop)
+                        if genome is not None:
+                            e.generate_sequence(genome)
+                    if genome is not None:
+                        self.generate_sequence(genome)
+                        self.generate_best_protein(genome, must_have_stop)
+                    else:
+                        self.generate_best_protein(must_have_stop=must_have_stop)
 
     def generate_CDSs_based_on_ORF(self, low_memory:bool=True):
         if not hasattr(self, "temp_CDSs"):

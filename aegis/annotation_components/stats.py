@@ -18,6 +18,7 @@ class AnnotationStats:
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
+    data: dict
 
     def __init__(self, annotation:Annotation):
         self._annot = annotation
@@ -121,7 +122,7 @@ class AnnotationStats:
                                         self.data["mean_UTR_size"].append(u_size)
                                         self.data["mean_five_prime_UTR_size"].append(u5_size)
                                         self.data["mean_three_prime_UTR_size"].append(u3_size)
-                                    if genome != None:
+                                    if genome is not None and c.protein is not None:
                                         self.data["mean_protein_size"].append(c.protein.size)
                             self.data["coding_genes"].append(g.id)
                         else:

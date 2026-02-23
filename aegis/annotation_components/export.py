@@ -13,6 +13,7 @@ import sys
 
 from pathlib import Path
 from tqdm import tqdm
+from typing import Literal
 
 class AnnotationExport:
     """
@@ -22,7 +23,7 @@ class AnnotationExport:
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 
-    def all_features(self, feature_output: str = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):
+    def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):
         """
         The "output" parameter can be both, main or all. This parameter only 
         affects promoter, transcript, CDS and protein sequences. If both is selected
@@ -46,7 +47,7 @@ class AnnotationExport:
             modes = [True, False]
         elif feature_output == "main":
             modes = [True]
-        elif feature_output == "all":
+        else:
             modes = [False]
 
         for b in modes:
@@ -766,8 +767,7 @@ class AnnotationExport:
                     for g_id in self._annot.unmapped:
                         na_rows.append({
                             "gene_id_A": g_id,
-                            "gene_id_A_origin": self._annot.name,
-                            "gene_id_A_copy": g.extra_copy
+                            "gene_id_A_origin": self._annot.name
                         })          
 
             # Combine with the original df

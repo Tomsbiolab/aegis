@@ -110,7 +110,7 @@
       - `def __str__(self):`
     - conf.py
     - equivalence.py
-      - `def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):`
+      - `def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):`
       - `class Equivalence():`
       - `def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):`
       - `def _rank(self):`
@@ -230,7 +230,7 @@
       - `def collapse_exons(self):`
       - `def clear_UTRs(self):`
       - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
-      - `def generate_best_protein(self, genome:Genome, must_have_stop:bool=True):`
+      - `def generate_best_protein(self, genome:Genome|None=None, must_have_stop:bool=True):`
       - `def generate_CDSs_based_on_ORF(self, low_memory:bool=True):`
       - `def almost_equal(self, other:Transcript):`
       - `def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):`
@@ -248,7 +248,7 @@
       - export.py
         - `class AnnotationExport:`
         - `def __init__(self, annotation: Annotation):`
-        - `def all_features(self, feature_output: str = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):`
+        - `def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):`
         - `def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True):`
         - `def unique_proteins(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):`
         - `def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):`

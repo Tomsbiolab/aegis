@@ -59,10 +59,10 @@ def main(
         - 'unique': Keep only one copy of each unique protein/CDS sequence across the entire output.""",
         callback=split_callback
     )] = "all,main",
-    rna_classes: Annotated[str, typer.Option(
+    rna_classes: Annotated[list[str], typer.Option(
         "-r", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback
-    )] = "",
+    )] = [],
     promoter_size: Annotated[int, typer.Option(
         "-ps", "--promoter-size", help=f"Size of the promoter region in base pairs (bp). Used only if 'promoter' is a selected feature."
     )] = 2000,
@@ -166,7 +166,7 @@ def main(
         if "unique_per_gene" in mode:
             annotation.export.proteins(only_main=False, custom_path=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id)
         elif "unique" in mode:
-            annotation.export.unique_proteins(custom_path=output_dir, verbose=detailed_headers)
+            annotation.export.unique_proteins(custom_path=output_dir, quiet=quiet)
         elif "all" in mode:
             annotation.export.proteins(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
         else:

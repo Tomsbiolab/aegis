@@ -49,6 +49,11 @@ class Annotation():
     export: AnnotationExport
     motifs: AnnotationMotifs
     genome: str | None
+    all_gene_ids:dict[str, str]
+    # the tuple values consist of transcript id keys consist of (chromosome, gene_id)
+    all_transcript_ids:dict[str, tuple[str, str]]
+    _gene_info:dict[str, set[str]]
+    _transcript_info:dict[str, set[str]]
 
     chrs:dict[str, dict[str, Gene]]
     
@@ -804,13 +809,13 @@ class Annotation():
                             attributes["id"] = ID
 
                             if ft_level == "CDS":
-                                self.chrs[ch][gene_parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
                             elif ft_level == "exon":
-                                self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             elif ft_level == "UTR":
-                                self.chrs[ch][gene_parent].transcripts[temp_id].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             else:
-                                self.chrs[ch][gene_parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
+                                self.chrs[ch][inferred_g_id].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
 
             # Cases where the transcript parent was repeated by id in the gff
             else:
@@ -835,13 +840,13 @@ class Annotation():
                     attributes["parent"] = [parent]
 
                     if ft_level == "CDS":
-                        self.chrs[ch][gene_parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
                     elif ft_level == "exon":
-                        self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                     elif ft_level == "UTR":
-                        self.chrs[ch][gene_parent].transcripts[temp_id].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                     else:
-                        self.chrs[ch][gene_parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
+                        self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
 
                     break
 
@@ -2556,18 +2561,19 @@ class Annotation():
                                 e_parents[e_unique].add(t.id)
                             else:
                                 e_parents[e_unique] = set([t.id])
+                    
                     e_temp = list(e_temp)
                     e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
 
                     e_ids = {}
                     e_count = 0
 
-                    if t.strand == "+":
+                    if g.strand == "+":
                         for n, e in enumerate(e_temp):
                             e_count_s = f"{(n+1):0{t_id_digits}d}"
                             e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
 
-                    elif t.strand == "-":
+                    elif g.strand == "-":
                         counter = len(e_temp)
                         for n, e in enumerate(e_temp):
                             e_count_s = f"{counter:0{t_id_digits}d}"
@@ -2597,18 +2603,19 @@ class Annotation():
                                     u_parents[u_unique].add(t.id)
                                 else:
                                     u_parents[u_unique] = set([t.id])
+
                     u_temp = list(u_temp)
                     u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
 
                     u_ids = {}
                     u_count = 0
 
-                    if t.strand == "+":
+                    if g.strand == "+":
                         for n, u in enumerate(u_temp):
                             u_count_s = f"{(n+1):0{t_id_digits}d}"
                             u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
 
-                    elif t.strand == "-":
+                    elif g.strand == "-":
                         counter = len(u_temp)
                         for n, u in enumerate(u_temp):
                             u_count_s = f"{counter:0{t_id_digits}d}"
