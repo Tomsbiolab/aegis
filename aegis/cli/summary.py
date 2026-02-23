@@ -41,7 +41,7 @@ def main(
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
     genome = Genome(name=genome_name, genome_file_path=genome_file)
 
-    annotation.stats.update_stats(custom_path=output_dir, export=True, genome=genome)
+    annotation.stats.update(custom_path=output_dir, export=True, genome=genome)
 
 
 if __name__ == "__main__":

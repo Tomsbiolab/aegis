@@ -14,6 +14,7 @@ class Protein():
     __slots__ = ("id", "ch", "summary_tag", "readthrough", "blast_hits", "start", "end_stop", "early_stop", "nucleotide_surplus", "gaps", "seq", "coding_start", "coding_end", "partial", "truncated", "size")
 
     blast_hits: list[BlastHit]
+    size: int
 
     def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):
         self.id = prot_id

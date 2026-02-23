@@ -21,7 +21,7 @@ from Bio.Data import CodonTable
 from Bio.Seq import Seq
 
 
-def reverse_complement(in_seq:str) -> str:
+def reverse_complement(in_seq) -> str:
     in_seq = Seq(in_seq)
     out_seq = str(in_seq.reverse_complement())
         
@@ -84,11 +84,9 @@ def trim_surplus(in_seq:str) -> tuple[str, bool]:
 
     return out_seq, nucleotide_surplus
 
-def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,
-              # standard genetic code
-              codon_table:CodonTable=CodonTable.unambiguous_dna_by_id[1]):
+# standard genetic code
+def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codon_table=CodonTable.unambiguous_dna_by_id[1]):
     # translating a protein
-    nucleotide_surplus = 0
     out_seq = ""
     in_seq = in_seq.upper()
     start = "present"
@@ -229,7 +227,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
         if a.genome == None:
             genome_none = True
         else:
-            genome_name = a.genome.name
+            genome_name = a.genome
 
     if genome_none:
         warnings.warn("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.", category=UserWarning)
@@ -237,7 +235,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
     if genome_name != "":
         for a in annotations:
             if a.genome != None:
-                if a.genome.name != genome_name:
+                if a.genome != genome_name:
                     raise ValueError("The provided annotations are not based on the same genome version/assembly. Please review input.")
                 
     if len(annotations) < 2:
@@ -316,7 +314,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
             if x != 0:
                 continue
 
-        single_df = a.export_equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
+        single_df = a.export.equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
 
         if len(annotations) > 2:
 

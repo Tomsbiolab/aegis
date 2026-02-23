@@ -89,7 +89,7 @@
       - `def remove_UTRs_from_exon_overlaps(self):`
       - `def remove_CDS_overlaps(self, source_priority, blast:bool=False, anti:bool=True):`
       - `def remove_fully_intron_nested_genes(self):`
-      - `def rescue_longer_same_frame_CDS(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
+      - `def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
       - `def make_alternative_genes_into_transcripts(self, quiet:bool=False):`
       - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
       - `def find_best_gene_model_nested_overlaps(self, source_priority, blast=False):`
@@ -112,7 +112,7 @@
     - equivalence.py
       - `def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):`
       - `class Equivalence():`
-      - `def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str=None, reliability:str="NA"):`
+      - `def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):`
       - `def _rank(self):`
       - `def __lt__(self, other):`
       - `def __eq__(self, other):`
@@ -163,8 +163,9 @@
       - `def homogenise_exon_scores(self):`
       - `def clear_UTRs(self):`
       - `def combine_transcripts(self, genome:Genome, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):`
-      - `def longer_CDS(self, other:Gene) -> bool:`
+      - `def longer_CDS(self, other:Gene):`
       - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
+      - `def get_main_CDS_range(self):`
       - `def __str__(self):`
     - genome.py
       - `class Scaffold():`
@@ -175,14 +176,14 @@
       - `def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict=`
       - `def update(self, update_scaffolds:bool=False):`
       - `def export_feature_sizes(self, custom_path:str=""):`
-      - `def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False, chromosome_dict:dict=`
+      - `def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False):`
       - `def rename_features_from_dic(self, rename_map: dict) -> dict:`
       - `def remove_scaffolds(self, output_folder:str="", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):`
       - `def remove_organelles(self, output_folder:str="", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):`
       - `def export(self, output_folder:str="", file:str=".fasta", quiet:bool=False):`
       - `def copy(self):`
       - `def extract_peak_sequences(self, output_file_name:str, DAPseq_output_file:str, output_folder: str = "", top=600):`
-      - `def subset(self, chosen_features:set=None, cap:int=2):`
+      - `def subset(self, chosen_features:set|None=None, cap:int=2):`
       - `def remove_features(self, features_to_remove:set):`
     - hits.py
       - `class OverlapHit():`
@@ -226,7 +227,6 @@
       - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
       - `def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
       - `def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
-      - `def exon_update(self):`
       - `def collapse_exons(self):`
       - `def clear_UTRs(self):`
       - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
@@ -250,13 +250,13 @@
         - `def __init__(self, annotation: Annotation):`
         - `def all_features(self, feature_output: str = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):`
         - `def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True):`
-        - `def unique_proteins(self, genome: Genome = None, custom_path: str = "", quiet: bool = False):`
+        - `def unique_proteins(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):`
         - `def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):`
         - `def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = []):`
         - `def genes(self, verbose: bool = True, custom_path: str = ""):`
         - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter"):`
-        - `def for_dapseq(self, genome: Genome, chromosome_dictionary: dict =`
-        - `def equivalences(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, return_df: bool = True, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False):`
+        - `def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):`
+        - `def equivalences(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:`
         - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False):`
         - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):`
         - `def list_genes(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
@@ -316,11 +316,11 @@
         - `def parse_evalue(e):`
         - `def round_evalue(e):`
       - genefunctions.py
-        - `def reverse_complement(in_seq:str) -> str:`
+        - `def reverse_complement(in_seq) -> str:`
         - `def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:`
         - `def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:`
         - `def trim_surplus(in_seq:str) -> tuple[str, bool]:`
-        - `def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,`
+        - `def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codon_table=CodonTable.unambiguous_dna_by_id[1]):`
         - `def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:`
         - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
@@ -339,8 +339,8 @@
         - `def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):`
       - plots.py
         - `def hex_to_rgb(hex_string):`
-        - `def pie_chart(labels, values, export_folder, tag, title, hovertext_labels:list=None, colours:str="purple"):`
-        - `def barplot(values, export_folder, tag, title, max_x:int=None):`
+        - `def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):`
+        - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
   - **aegis_bio.egg-info/**
   - **images/**
   - **notebook/**

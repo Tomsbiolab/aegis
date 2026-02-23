@@ -85,7 +85,7 @@ class OverlapHit():
                     else:
                         self.score = 3
                 # Exons in both
-                else:
+                elif isinstance(self.min_exon_percent, int):
                     if self.min_exon_percent == 0:
                         self.score = 2
                     elif self.min_exon_percent >= 100:
@@ -104,7 +104,7 @@ class OverlapHit():
                         self.score = 4
 
             # coding query vs coding target
-            else:
+            elif isinstance(self.min_CDS_percent, int):
                 if self.min_CDS_percent == 0:
                     self.score = 3
                 elif self.min_CDS_percent >= 100:
@@ -141,7 +141,7 @@ class OverlapHit():
                     else:
                         self.antiscore = 3
                 # Exons in both
-                else:
+                elif isinstance(self.min_exon_percent, int):
                     if self.min_exon_percent == 0:
                         self.antiscore = 2
                     elif self.min_exon_percent >= 100:
@@ -160,7 +160,7 @@ class OverlapHit():
                         self.antiscore = 4
 
             # coding query vs coding target
-            else:
+            elif isinstance(self.min_CDS_percent, int):
                 if self.min_CDS_percent == 0:
                     self.antiscore = 3
                 elif self.min_CDS_percent >= 100:

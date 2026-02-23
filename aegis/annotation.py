@@ -48,6 +48,7 @@ class Annotation():
     stats: AnnotationStats
     export: AnnotationExport
     motifs: AnnotationMotifs
+    genome: str | None
 
     chrs:dict[str, dict[str, Gene]]
     
@@ -1138,7 +1139,7 @@ class Annotation():
                             print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                         g.end = t.end
                         self.sorted = False
-                    if earliest_start is None:
+                    if earliest_start is None or latest_end is None:
                         earliest_start = t.start
                         latest_end = t.end
                     else:
@@ -1147,7 +1148,7 @@ class Annotation():
                         if t.end > latest_end:
                             latest_end = t.end
 
-                if earliest_start is not None:
+                if earliest_start is not None and latest_end is not None:
                     if g.start != earliest_start or g.end != latest_end:
                         if not quiet:
                             print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
@@ -2219,14 +2220,14 @@ class Annotation():
                     t.generate_CDSs_based_on_ORF(low_memory)
                     for c in t.CDSs.values():
                         c.generate_sequence(genome, low_memory)
-                    t.exon_update()
+                    t.update()
                     if t.coding_ratio < coding_ratio_threshold:
                         t.generate_sequence(genome, low_memory)
                         t.generate_best_protein(genome, must_have_stop=False)
                         t.generate_CDSs_based_on_ORF(low_memory)
                         for c in t.CDSs.values():
                             c.generate_sequence(genome, low_memory)
-                    t.exon_update()
+                    t.update()
 
         progress_bar.close()
         self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)
@@ -2824,7 +2825,7 @@ class Annotation():
                     blasts = ",".join(blasts)
                     if blasts:
                         g.attributes.append(f"blasts={blasts}")
-                    alternative_transcript_rescue = ",".join(list(g.alternative_transcript_rescue))
+                    alternative_transcript_rescue = ",".join(g.alternative_transcript_rescue)
                     if alternative_transcript_rescue:
                         g.attributes.append(f"alternative_transcript_rescue={alternative_transcript_rescue}")
                     overlaps = []
@@ -2960,15 +2961,17 @@ class Annotation():
             f_in.close()
             if mode == "protein":
                 for protein_id in self.protein_equivalences:
-                    chr, g, t, c = self.all_protein_ids[protein_id]
+                    chrom, g, t, c = self.all_protein_ids[protein_id]
+                    prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
                     if protein_id in hits:
-                        if self.chrs[chr][g].transcripts[t].CDSs[c].protein != None:
-                            self.chrs[chr][g].transcripts[t].CDSs[c].protein.blast_hits.append(hits[protein_id])
+                        if prot is not None:
+                            prot.blast_hits.append(hits[protein_id])
                     for protein_id_copy in self.protein_equivalences[protein_id]:
-                        chr, g, t, c = self.all_protein_ids[protein_id_copy]
-                        if protein_id_copy in self.chrs[chr] and protein_id in hits:
-                            if self.chrs[chr][g].transcripts[t].CDSs[c].protein != None:
-                                self.chrs[chr][g].transcripts[t].CDSs[c].protein.blast_hits.append(hits[protein_id])
+                        chrom, g, t, c = self.all_protein_ids[protein_id_copy]
+                        prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                        if protein_id_copy in self.chrs[chrom] and protein_id in hits:
+                            if prot is not None:
+                                prot.blast_hits.append(hits[protein_id])
             else:
                 "Adding blast hits is not available for gene, transcripts and CDSs yet."
         else:
@@ -3063,36 +3066,26 @@ class Annotation():
                             g.intron_nested = True
                             if self.chrs[chrom][o.id].start < g.start and self.chrs[chrom][o.id].end > g.end:
                                 g.intron_nested_fully_contained = True
-                            
-                            c_start_target = None
-                            c_end_target = None
-                            c_start_query = None
-                            c_end_query = None
 
-                            for t in self.chrs[chrom][o.id].transcripts.values():
-                                if t.main:
-                                    for c in t.CDSs.values():
-                                        if c.main:
-                                            c_start_target = c.start
-                                            c_end_target = c.end
+                            target_cds = self.chrs[chrom][o.id].get_main_CDS_range()
+                            query_cds = g.get_main_CDS_range()
 
-                            for t in g.transcripts.values():
-                                if t.main:
-                                    for c in t.CDSs.values():
-                                        if c.main:
-                                            c_start_query = c.start
-                                            c_end_query = c.end
 
-                            # UTR intron nested means that a main CDS of a gene finishes and starts outside of the overlaped gene's CDS region
-                            if c_start_target != None and c_start_query != None:
+                            if target_cds and query_cds:
+                                c_start_target, c_end_target = target_cds
+                                c_start_query, c_end_query = query_cds
+                                
                                 if c_start_query > c_end_target or c_end_query < c_start_target:
+                                    # UTR intron nested means that a main CDS of a gene finishes and starts outside of the overlaped gene's CDS region
                                     g.UTR_intron_nested = True
-                                    
+
                             for t in self.chrs[chrom][o.id].transcripts.values():
                                 if t.main:
                                     for i in t.introns:
                                         if i.start < g.start and i.end > g.end:
                                             g.intron_nested_single = True
+                                            break
+                                    break
 
     def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
@@ -3828,19 +3821,19 @@ class Annotation():
                             if self.chrs[g.ch][o.id].remove and not self.chrs[g.ch][o.id].rescue and self.chrs[g.ch][o.id].source in reliable_sources:
                                 query_best = g.compare_protein_blast_hits(self.chrs[g.ch][o.id], source_priority)
                                 if not query_best:
-                                    g.alternative_transcript_rescue.add(o.id)
+                                    g.alternative_transcript_rescue.append(o.id)
         gene_groups = []
 
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                if (not g.remove or g.rescue) and g.alternative_transcript_rescue != set():
+                if (not g.remove or g.rescue) and g.alternative_transcript_rescue != []:
                     for g2 in genes.values():
                         if g.id == g2.id:
                             continue
-                        if (not g2.remove or g2.rescue) and g2.alternative_transcript_rescue != set():
-                            if bool(g.alternative_transcript_rescue.intersection(g2.alternative_transcript_rescue)):
-                                temp_group = g.alternative_transcript_rescue | g2.alternative_transcript_rescue
+                        if (not g2.remove or g2.rescue) and g2.alternative_transcript_rescue != []:
+                            if bool(set(g.alternative_transcript_rescue).intersection(set(g2.alternative_transcript_rescue))):
+                                temp_group = set(g.alternative_transcript_rescue) | set(g2.alternative_transcript_rescue)
                                 temp_group.add(g.id)
                                 temp_group.add(g2.id)
                                 found = False
@@ -3900,7 +3893,6 @@ class Annotation():
 
         for genes in self.chrs.values():
             for g in genes.values():
-                g.alternative_transcript_rescue = list(g.alternative_transcript_rescue)
                 progress_bar.update(1)
                 if g.id not in merge_genes and g.alternative_transcript_rescue != []:
                     best = g.alternative_transcript_rescue[0]
@@ -3994,11 +3986,13 @@ class Annotation():
                                             g.remove = True
                                             g.rescue = False
 
-    def rescue_longer_same_frame_CDS(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
+    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
 
         for genes in self.chrs.values():
             for g in genes.values():
                 if not g.remove or g.rescue:
+
+                    main_CDS_size = 0
 
                     for t in g.transcripts.values():
                         if t.main:
@@ -4010,6 +4004,8 @@ class Annotation():
 
                     for o in g.overlaps["self"]:
                         if o.CDSs_in_both:
+
+                            overlap_main_CDS_size = 0
 
                             for t in self.chrs[g.ch][o.id].transcripts.values():
                                 if t.main:
