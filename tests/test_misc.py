@@ -3,6 +3,7 @@ Tests for aegis.genefunctions — pure utility functions.
 """
 
 import pytest
+
 from pathlib import Path
 from aegis.utils.genefunctions import (
     reverse_complement,
@@ -12,7 +13,7 @@ from aegis.utils.genefunctions import (
     translate
 )
 
-
+from aegis.feature import Feature
 from aegis.utils.gtf_gff import parse_gff_line, parse_gff_attributes
 from aegis.utils.misc import count_occurrences, find_all_occurrences
 
