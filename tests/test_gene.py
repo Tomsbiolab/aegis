@@ -3,6 +3,7 @@ Tests for aegis.gene — the Gene class.
 """
 
 import pytest
+
 from aegis.gene import Gene
 from aegis.transcript import Transcript
 

@@ -1,7 +1,9 @@
 import typer
+
 from typing import List
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
+
+from ..annotation import Annotation
 
 app = typer.Typer(add_completion=False)
 
@@ -67,7 +69,7 @@ def main(
         )
 
     print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export_gff(output_dir)
+    base_annotation.export.gff(output_dir)
 
     print("Done.")
 

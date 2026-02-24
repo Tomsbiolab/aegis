@@ -1,6 +1,14 @@
-from .genefunctions import count_occurrences, reverse_complement
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 import copy
 import re
+
+from .utils.genefunctions import reverse_complement
+from .utils.misc import count_occurrences
 
 class Feature():
     """
@@ -18,9 +26,16 @@ class Feature():
         'misc_attributes', 'extra_copy', 'masked_fraction', 'coding'
     )
 
+    gtf_attributes: list[str]
+    size: int
+    start: int
+    end: int
+    attributes:list
+    misc_attributes:list
+
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff = ["id", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "featurecounts_id"]
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str):
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str|list|dict):
         
         self.id = feature_id
         self.original_id = feature_id
@@ -50,7 +65,7 @@ class Feature():
         else:
             self.attributes = [x.strip() for x in attributes.split(";") if x.strip()]
         
-        self.gtf_attributes = ""
+        self.gtf_attributes = []
         self.size = (self.end - self.start) + 1
         self.seq = ""
         self.hard_seq = ""
@@ -129,7 +144,7 @@ class Feature():
     def calculate_masking(self):
         self.masked_fraction = round(((count_occurrences(self.hard_seq, "X") + (count_occurrences(self.hard_seq, "N"))) / self.size), 2)
 
-    def generate_sequence(self, genome:object):
+    def generate_sequence(self, genome:Genome):
         if self.start != "NA" and self.end != "NA":
             if self.strand == "+":
                 self.seq = genome.scaffolds[self.ch].seq[self.start-1:self.end]
@@ -147,7 +162,7 @@ class Feature():
             if hasattr(self, "seqs"):
                 del self.seqs
 
-    def generate_hard_sequence(self, hard_masked_genome:object):
+    def generate_hard_sequence(self, hard_masked_genome:Genome):
         if self.start != "NA" and self.end != "NA":
             if self.strand == "+":
                 self.hard_seq = hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end]
@@ -203,7 +218,7 @@ class Feature():
                 and self.phase == other.phase and
                 self.attributes == other.attributes)
 
-    def longer(self, other:object):
+    def longer(self, other:Feature):
         if self.seq != "" and other.seq != "":
             if len(self.seq) >= len(other.seq):
                 return True
@@ -212,7 +227,23 @@ class Feature():
         else:
             print(f"Error: Either {self.id} or {other.id} sequences are empty!")
 
-    def compare_blast_hits(self, other:object, source_priority:list):
+    def overlap(self, other:Feature):
+        overlapping = False
+
+        interval1 = self.size
+        interval2 = other.size
+        small = min(self.start, self.end, other.start, other.end)
+        large = max(self.start, self.end, other.start, other.end)
+
+        overlap_bp = (interval1 + interval2) - ((large - small) + 1)
+
+        # checking only overlapping features
+        if overlap_bp > 0:
+            overlapping = True
+
+        return overlapping, overlap_bp
+
+    def compare_blast_hits(self, other:Feature, source_priority:list):
         compared = False
         query_best = True
         while not compared:

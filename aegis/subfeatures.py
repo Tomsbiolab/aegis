@@ -1,6 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 from .feature import Feature
 from .misc_features import Protein
-from .genefunctions import reverse_complement
+from .utils.genefunctions import reverse_complement
 
 class CDS(Feature):
 
@@ -9,9 +16,12 @@ class CDS(Feature):
         'full_UTR_exons', 'protein', 'UTRs'
     )
 
+    protein: Protein|None
+    size: int
+
     def __init__(self, CDS_segments:list, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str, start:int, 
-                 end:int, score:str, phase:str, attributes:str):
+                 end:int, score:str, phase:str, attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)    
         self.main = False
@@ -69,7 +79,7 @@ class CDS(Feature):
                 cs.frame = frame
 
 
-    def rename(self, base_id, base_gene_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
+    def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
 
         rename = False
         rename_cs = False
@@ -127,7 +137,7 @@ class CDS(Feature):
         self.full_UTR_exons = 0
         del self.UTRs
 
-    def generate_sequence(self, genome:object, low_memory:bool=False):
+    def generate_sequence(self, genome:Genome, low_memory:bool=False):
         self.seq = ""
         for segment in self.CDS_segments:
             segment.generate_sequence(genome)
@@ -165,7 +175,7 @@ class CDS(Feature):
                             self.three_prime_UTR_seq += u.seq
         self.generate_protein(low_memory=low_memory)
 
-    def generate_hard_sequence(self, hard_masked_genome:object, low_memory:bool=False):
+    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
         self.hard_seq = ""
         for segment in self.CDS_segments:
             segment.generate_hard_sequence(hard_masked_genome)
@@ -190,7 +200,7 @@ class CDS(Feature):
                 for u in self.UTRs:
                     u.generate_hard_sequence(hard_masked_genome)
 
-    def clear_sequence(self, just_hard=False, keep_proteins:bool=False):
+    def clear_sequence(self, just_hard:bool=False, keep_proteins:bool=False):
         self.hard_seq = ""
         for segment in self.CDS_segments:
             segment.clear_sequence(just_hard=just_hard)
@@ -209,7 +219,7 @@ class CDS(Feature):
         if low_memory:
             self.seq = ""
 
-    def equal_segments(self, other):
+    def equal_segments(self, other:CDS):
         self.CDS_segments.sort()
         other.CDS_segments.sort()
         same = True
@@ -224,9 +234,10 @@ class CDS(Feature):
 
 class Exon(Feature):
 
+
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str):
+                 attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
 
@@ -235,7 +246,7 @@ class UTR(Feature):
     __slots__ = ('prime',)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str):
+                 attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.prime = "3'"
@@ -246,9 +257,10 @@ class Intron(Feature):
         'splice_site_donor', 'splice_site_acceptor'
     )
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
+
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str):
+                 attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.intra_coding = False
@@ -257,7 +269,7 @@ class Intron(Feature):
         self.splice_site_donor = ""
         self.splice_site_acceptor = ""
 
-    def generate_sequence(self, genome):
+    def generate_sequence(self, genome:Genome):
         if self.strand == "+":
             self.seq = genome.scaffolds[self.ch].seq[self.start-1:self.end]
         elif self.strand == "-":
@@ -272,7 +284,7 @@ class Intron(Feature):
         else:
             self.canonical = False
 
-    def clear_sequence(self, just_hard=False):
+    def clear_sequence(self, just_hard:bool=False):
         self.hard_seq = ""
         if not just_hard:
             self.seq = ""

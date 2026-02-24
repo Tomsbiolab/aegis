@@ -7,17 +7,13 @@ import warnings
 import pytest
 from pathlib import Path
 from aegis.gene import Gene
+
 from aegis.transcript import Transcript
-from aegis.annotation import (
-    read_file_with_fallback,
-    detect_file_format,
-    parse_gtf_attributes,
-    format_gff3_attributes,
-    sort_and_update_genes,
-    convert_gtf_to_gff3,
-    Annotation,
-    default_features,
-)
+
+from aegis.annotation import Annotation
+from aegis.utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3, detect_file_format
+from aegis.utils.misc import read_file_with_fallback
+from aegis.utils.genefunctions import sort_and_update_genes
 
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 
@@ -330,7 +326,7 @@ class TestAnnotationUniqueIDs:
     def test_get_unique_gene_id(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         # Assuming sample has "gene1"
-        annot.all_gene_ids = {"gene1", "gene1_1"}
+        annot.all_gene_ids = {"gene1": "chr1", "gene1_1": "chr2"}
         new_id = annot._get_unique_gene_id("gene1")
         assert new_id == "gene1_2"
 
@@ -339,7 +335,7 @@ class TestAnnotationUniqueIDs:
 
     def test_get_unique_transcript_id(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.all_transcript_ids = {"t1", "t1_1"}
+        annot.all_transcript_ids = {"t1": ("chr1", "gene1"), "t1_1": ("chr2", "gene1_1")}
         new_id = annot._get_unique_transcript_id("t1")
         assert new_id == "t1_2"
 

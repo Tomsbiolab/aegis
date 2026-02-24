@@ -2,9 +2,11 @@ import typer
 import os
 import random
 import warnings
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
-from aegis.genome import Genome
+
+from ..annotation import Annotation
+from ..genome import Genome
 
 def split_callback(value:str):
     if value:
@@ -23,10 +25,10 @@ def main(
     chr_cap: Annotated[int, typer.Option(
         "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s)."
     )] = 2,
-    chosen_chromosomes: Annotated[str, typer.Option(
+    chosen_chromosomes: Annotated[set[str], typer.Option(
         "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
     callback=split_callback
-    )] = None,
+    )] = set(),
     gene_cap: Annotated[int, typer.Option(
         "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,
@@ -105,7 +107,7 @@ def main(
         # if chosen_chromosomes is selected min_genes parameter is ignored
         chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0)
 
-    a.export_gff(custom_path=output_dir, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
+    a.export.gff(custom_path=output_dir, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes)

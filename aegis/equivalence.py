@@ -1,35 +1,22 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 import pandas as pd
 import re
 import time
 import os
 import shutil
-import subprocess
-from .annotation import Annotation
 
 from pathlib import Path
 
+from .annotation import Annotation
+from .utils.misc import run_command
+from .utils.evalue import parse_evalue, round_evalue
 
-def run_command(working_directory: Path, command: list):
-    """
-    Executes a generic command inside a Docker container.
-
-    Args:
-        working_directory (Path): The working directory for the command.
-        command (list): The command and its arguments as a list of strings.
-
-    Raises:
-        subprocess.CalledProcessError: If the command fails.
-    """
-    try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True, cwd=working_directory)
-        return result
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing command: {' '.join(command)}")
-        print(f"STDOUT: {e.stdout}")
-        print(f"STDERR: {e.stderr}")
-        raise
-
-def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2: object, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:int=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet=True):
+def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
@@ -68,7 +55,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
     a_liftoff.detect_gene_overlaps(annot2, quiet=quiet)
 
-    a_liftoff.export_equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+    _ = a_liftoff.export.equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
     del a_liftoff
 
@@ -107,7 +94,7 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
 
         a_lifton.detect_gene_overlaps(annot2, quiet=quiet)
 
-        a_lifton.export_equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, return_df=False, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        _ = a_lifton.export.equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
         del a_lifton
 
@@ -146,32 +133,13 @@ def pairwise_orthology(annot1: object, annot2: object, genome1: object, genome2:
         ]
         run_command(mcscan_dir, jcvi_ortho_cmd)
 
-def parse_evalue(e):
-    e = e.strip()
-    try:
-        if e.startswith('>'):
-            return float(round_evalue(e[1:]))  # handle cases like '>10'
-        elif e.lower() in ('na', 'nan', ''):
-            return float('nan')  # handle missing values
-        else:
-            return float(round_evalue(e))
-            
-    except ValueError:
-        print(f"Error: Could not parse E-value: {e}")
-        return float('nan')  # or raise error, depending on use case
-
-def round_evalue(e):
-    e = float(e)
-    e = f"{e:.2e}"
-
-    return e
 
 class Equivalence():
 
     preferred_type_order = ["rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "rev_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
     reliability_order = ["vvvtop_reliable", "vvtop_reliable", "vtop_reliable", "top_reliable", "vvvvv_reliable", "vvvv_reliable", "vvv_reliable", "vv_reliable", "v_reliable", "reliable", "NA"]
 
-    def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str=None, reliability:str="NA"):
+    def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):
         self.id = id_
         self.type = type_
         self.species = species
@@ -526,7 +494,7 @@ class Simple_gene():
 
 
 class Simple_annotation():
-    def __init__(self, name, annotation_object:object, species:str):
+    def __init__(self, name, annotation_object:Annotation, species:str):
         self.name = name
         self.genes = {}
         self.species = species

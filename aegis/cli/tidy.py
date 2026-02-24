@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
+
+from ..annotation import Annotation
 
 RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
                 "miRNA_primary_transcript", "ncRNA", "lncRNA",
@@ -127,7 +129,7 @@ def main(
 
     annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases), quiet=quiet)
 
-    annotation.export_gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
 
 if __name__ == "__main__":
     app()

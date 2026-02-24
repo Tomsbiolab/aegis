@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation
+
+from ..annotation import Annotation
 
 app = typer.Typer(add_completion=False)
 
@@ -27,10 +29,10 @@ def main(
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation file."
     )] = "{annotation-name}_renamed.gff3",
-    rename_features: Annotated[str, typer.Option(
+    rename_features: Annotated[list[str], typer.Option(
         "-f", "--features", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {VALID_FEATURES}.",
         callback=split_callback
-    )] = "transcript,CDS,exon,UTR",
+    )] = ["transcript", "CDS", "exon", "UTR"],
     keep_ids_with_gene_id_contained: Annotated[bool, typer.Option(
         "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id."
     )] = False,
@@ -102,7 +104,7 @@ def main(
 
     annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, collapse_exons=collapse_exons)
 
-    annotation.export_gff(custom_path=output_dir, tag=output_file)
+    annotation.export.gff(custom_path=output_dir, tag=output_file)
 
 if __name__ == "__main__":
     app()

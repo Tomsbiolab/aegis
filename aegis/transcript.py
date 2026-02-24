@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
-from .genefunctions import find_ORFs, longest_ORF, translate, overlap
-
+from .utils.genefunctions import find_ORFs, longest_ORF, translate
 
 class Transcript(Feature):
 
@@ -14,9 +20,17 @@ class Transcript(Feature):
         'protein_seq', 'coding_start', 'coding_end', 'introns'
     )
 
+    CDSs: dict[str, CDS]
+    exons: list[Exon]
+    introns: list[Intron]
+    UTRs: list[UTR]
+    temp_CDSs: list[CDS|Feature]
+    temp_UTRs: list[UTR]
+    size: int
+
     def __init__(self, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str, 
-                 phase:str, attributes:str):
+                 phase:str, attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.exons = []
@@ -48,10 +62,12 @@ class Transcript(Feature):
 
         self.update_size()
         self.generate_introns()
-        self.exon_update()
-        c_start = None
-        c_end = None
+
+        CDS_size = 0
+
         for i, c in enumerate(self.CDSs.values()):
+            if c.main:
+                CDS_size = c.size
             if i == 0:
                 c_start = c.start
                 c_end = c.end
@@ -60,7 +76,13 @@ class Transcript(Feature):
                     c_start = c.start
                 if c.end > c_end:
                     c_end = c.end
-        if c_start != None:
+
+        if CDS_size != 0:
+            self.coding_ratio = round((CDS_size / self.size), 2)
+        else:
+            self.coding_ratio = 0
+        
+        if len(self.CDSs) > 0:
             if self.strand == "+":
                 for e in self.exons:
                     if e.end > c_start and e.start < c_end:
@@ -71,7 +93,7 @@ class Transcript(Feature):
                     if e.start < c_end and e.end > c_start:
                         e.coding = True
 
-    def rename(self, base_id, count, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
 
         rename = False
 
@@ -98,7 +120,7 @@ class Transcript(Feature):
                 self.renamed = True
                 self.update_numbering()
 
-    def rename_exons(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -124,7 +146,7 @@ class Transcript(Feature):
                     self.renamed_exons = True
                     e.update_numbering()
 
-    def rename_utrs(self, count, base_id, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
 
         rename = False
 
@@ -152,27 +174,6 @@ class Transcript(Feature):
                         self.renamed_utrs = True
                         u.update_numbering()
 
-    def exon_update(self):
-        CDS_size = 0
-        c_start = None
-        c_end = None
-        for c in self.CDSs.values():
-            if c.main:
-                CDS_size = c.size
-        if CDS_size != 0:
-            self.coding_ratio = round((CDS_size / self.size), 2)
-        else:
-            self.coding_ratio = 0
-        if c_start != None:
-            if self.strand == "+":
-                for e in self.exons:
-                    if e.end > c_start and e.start < c_end:
-                        e.coding = True
-            elif self.strand == "-":
-                for e in self.exons:
-                    if e.start < c_end and e.end > c_start:
-                        e.coding = True                
-
     def collapse_exons(self):
         """
         Merges overlapping or directly adjacent exons into single exons.
@@ -197,16 +198,16 @@ class Transcript(Feature):
             if self.strand == "+":
                 for n, e in enumerate(self.exons):
                     e.id = f"{self.id}_e{n+1}"
-                    e.attributes = f"ID={e.id};Parent={self.id}"
-                    e.misc_attributes = ""
+                    e.attributes = [f"ID={e.id}", f"Parent={self.id}"]
+                    e.misc_attributes = []
                     e.parents = [self.id]
                     e.phase = "."
             elif self.strand == "-":
                 counter = len(self.exons)
                 for n, e in enumerate(self.exons):
                     e.id = f"{self.id}_e{counter}"
-                    e.attributes = f"ID={e.id};Parent={self.id}"
-                    e.misc_attributes = ""
+                    e.attributes = [f"ID={e.id}", f"Parent={self.id}"]
+                    e.misc_attributes = []
                     e.parents = [self.id]
                     counter -= 1
 
@@ -217,7 +218,7 @@ class Transcript(Feature):
         self.exons = []
         self.update()
 
-    def generate_promoter(self, promoter_size, ch_size, promoter_type:str = "standard"):
+    def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):
         """
         promoter_type (str): Defines the reference point for the promoter.
             - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
@@ -287,7 +288,7 @@ class Transcript(Feature):
                                     temp_end, self.score, ".",
                                     self.attributes)
 
-    def generate_best_protein(self, genome:object, must_have_stop:bool=True):
+    def generate_best_protein(self, genome:Genome|None=None, must_have_stop:bool=True):
         if (self.strand == "+") or (self.strand == "-"):
             self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop)
         elif self.strand == ".":
@@ -301,17 +302,25 @@ class Transcript(Feature):
                     self.strand = "+"
                     for e in self.exons:
                         e.strand = "+"
-                        e.generate_sequence(genome)
-                    self.generate_sequence(genome)
-                    self.generate_best_protein(genome, must_have_stop)
+                        if genome is not None:
+                            e.generate_sequence(genome)
+                    if genome is not None:
+                        self.generate_sequence(genome)
+                        self.generate_best_protein(genome, must_have_stop)
+                    else:
+                        self.generate_best_protein(must_have_stop=must_have_stop)
 
                 else:
                     self.strand = "-"
                     for e in self.exons:
                         e.strand = "-"
-                        e.generate_sequence(genome)
-                    self.generate_sequence(genome)
-                    self.generate_best_protein(genome, must_have_stop)
+                        if genome is not None:
+                            e.generate_sequence(genome)
+                    if genome is not None:
+                        self.generate_sequence(genome)
+                        self.generate_best_protein(genome, must_have_stop)
+                    else:
+                        self.generate_best_protein(must_have_stop=must_have_stop)
 
     def generate_CDSs_based_on_ORF(self, low_memory:bool=True):
         if not hasattr(self, "temp_CDSs"):
@@ -326,73 +335,83 @@ class Transcript(Feature):
                 surplus_end = ""
                 if self.strand == "+":
                     temp_size = 0
-                    for index, e in enumerate(self.exons):
-                        temp_size += e.size
-                        if temp_size > self.coding_start:
-                            surplus_start =  self.coding_start - (temp_size-e.size)
-                            start_exon = index
-                            break
-                    temp_size = 0
-                    for index, e in enumerate(self.exons):
-                        temp_size += e.size
-                        if temp_size > self.coding_end:
-                            surplus_end = self.coding_end - (temp_size-e.size)
-                            end_exon = index
-                            break
-                    
-                    for index, e in enumerate(self.exons):
+                    if type(self.coding_start) == int and type(self.coding_end) == int:
+                        surplus_start = 0
+                        surplus_end = 0
+                        start_exon = 0
+                        end_exon = 0
+                        for index, e in enumerate(self.exons):
+                            temp_size += e.size
+                            if temp_size > self.coding_start:
+                                surplus_start =  self.coding_start - (temp_size-e.size)
+                                start_exon = index
+                                break
+                        temp_size = 0
+                        for index, e in enumerate(self.exons):
+                            temp_size += e.size
+                            if temp_size > self.coding_end:
+                                surplus_end = self.coding_end - (temp_size-e.size)
+                                end_exon = index
+                                break
+                        
+                        for index, e in enumerate(self.exons):
 
-                        if (index == start_exon) and (index == end_exon):
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                        e.start+surplus_start, e.start+surplus_end,
-                                                        e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
-                        elif index == start_exon:
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                        e.start+surplus_start, e.end, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
-                        elif (index > start_exon) and (index < end_exon):
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
-                        elif index == end_exon:
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                        e.start, e.start+surplus_end, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
+                            if (index == start_exon) and (index == end_exon):
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
+                                                            e.start+surplus_start, e.start+surplus_end,
+                                                            e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                            elif index == start_exon:
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
+                                                            e.start+surplus_start, e.end, e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                            elif (index > start_exon) and (index < end_exon):
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                            elif index == end_exon:
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
+                                                            e.start, e.start+surplus_end, e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
 
                 elif self.strand == "-":
                     temp_size = 0
-                    for index, e in enumerate(reversed(self.exons)):
-                        temp_size += e.size
-                        if temp_size > self.coding_start:
-                            surplus_start = self.coding_start - (temp_size-e.size)
-                            start_exon = index
-                            break
-                    temp_size = 0
-                    for index, e in enumerate(reversed(self.exons)):
-                        temp_size += e.size
-                        if temp_size > self.coding_end:
-                            surplus_end = self.coding_end - (temp_size-e.size)
-                            end_exon = index
-                            break
-                    
-                    for index, e in enumerate(reversed(self.exons)):
+                    if type(self.coding_start) == int and type(self.coding_end) == int:
+                        surplus_start = 0
+                        surplus_end = 0
+                        start_exon = 0
+                        end_exon = 0
+                        for index, e in enumerate(reversed(self.exons)):
+                            temp_size += e.size
+                            if temp_size > self.coding_start:
+                                surplus_start = self.coding_start - (temp_size-e.size)
+                                start_exon = index
+                                break
+                        temp_size = 0
+                        for index, e in enumerate(reversed(self.exons)):
+                            temp_size += e.size
+                            if temp_size > self.coding_end:
+                                surplus_end = self.coding_end - (temp_size-e.size)
+                                end_exon = index
+                                break
+                        
+                        for index, e in enumerate(reversed(self.exons)):
 
-                        if (index == start_exon) and (index == end_exon):
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                        e.end-surplus_end, e.end-surplus_start,
-                                                        e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
-                        elif index == start_exon:
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                        e.start, e.end-surplus_start, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
-                        elif (index > start_exon) and (index < end_exon):
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
-                        elif index == end_exon:
-                            self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                        e.end-surplus_end, e.end, e.score, e.phase, 
-                                                        f"ID={self.id}_CDS1;Parent={self.id}"))
+                            if (index == start_exon) and (index == end_exon):
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
+                                                            e.end-surplus_end, e.end-surplus_start,
+                                                            e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                            elif index == start_exon:
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
+                                                            e.start, e.end-surplus_start, e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                            elif (index > start_exon) and (index < end_exon):
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                            elif index == end_exon:
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
+                                                            e.end-surplus_end, e.end, e.score, e.phase, 
+                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
 
                 elif self.strand == ".":
                     pass
@@ -403,7 +422,7 @@ class Transcript(Feature):
         else:
             print(f"CDS segments exist already for {self.id}")
 
-    def almost_equal(self, other):
+    def almost_equal(self, other:Transcript):
         almost_equal = True
         if len(self.exons) != len(other.exons):
             almost_equal = False
@@ -660,7 +679,7 @@ class Transcript(Feature):
         # Exons rebuilt from the transcript
         else:
             self.exons = [Exon(f"{self.id}_e1", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", "")]
-            self.exons[0].attributes = (f"ID={self.exons[0].id};Parent={self.id}")
+            self.exons[0].attributes = [f"ID={self.exons[0].id}", f"Parent={self.id}"]
             self.exons[0].parents = [self.id]
 
     def generate_introns(self):
@@ -687,7 +706,7 @@ class Transcript(Feature):
                         if i.end < c.end and i.start > c.start:
                             i.intra_coding = True
 
-    def generate_sequence(self, genome:object, low_memory:bool=False):
+    def generate_sequence(self, genome:Genome, low_memory:bool=False):
         for exon in self.exons:
             exon.generate_sequence(genome)
         if not low_memory:
@@ -709,7 +728,7 @@ class Transcript(Feature):
             for segment in reversed(self.exons):
                 self.seqs[1] += segment.seqs[1]
             
-    def generate_hard_sequence(self, hard_masked_genome:object, low_memory:bool=False):
+    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
         for exon in self.exons:
             exon.generate_hard_sequence(hard_masked_genome)
         if not low_memory:
@@ -731,7 +750,7 @@ class Transcript(Feature):
             for segment in reversed(self.exons):
                 self.hard_seqs[1] += segment.hard_seqs[1]
 
-    def clear_sequence(self, just_hard=False):
+    def clear_sequence(self, just_hard:bool=False):
         self.hard_seq = ""
         if hasattr(self, "promoter"):
             self.promoter.hard_seq = ""

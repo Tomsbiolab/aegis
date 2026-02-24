@@ -1,6 +1,13 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+    from .transcript import Transcript
+    from .hits import OverlapHit
+
 from .feature import Feature
 from .subfeatures import Exon
-from .transcript import Transcript
 
 class Gene(Feature):
 
@@ -16,9 +23,20 @@ class Gene(Feature):
         'base_id', 'original_base_id'
     )
 
+    transcripts:dict[str, Transcript]
+    synteny_order:int|None
+    old_synteny_order:int|None
+    previous_gene:str|None|bool
+    next_gene:str|None|bool
+    old_previous_gene:str|None|bool
+    old_next_gene:str|None|bool
+    conserved_synteny:bool|None
+    alternative_transcript_rescue:list
+    overlaps:dict[str, list[OverlapHit]]
+    
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str,
-                 start:int, end:int, score:str, phase:str, attributes:str):
+                 start:int, end:int, score:str, phase:str, attributes:str|list|dict):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, attributes)
         self.pseudogene = pseudogene
@@ -48,7 +66,7 @@ class Gene(Feature):
 
         self.overlap_with_selected_CDS = False
         self.overlap_with_selected_exon = False
-        self.alternative_transcript_rescue = set()
+        self.alternative_transcript_rescue = []
 
         self.intron_nested = False
         self.intron_nested_fully_contained = False
@@ -112,7 +130,7 @@ class Gene(Feature):
 
         self.homogenise_exon_scores()
 
-    def obtain_base_id(self, original=False):
+    def obtain_base_id(self, original:bool=False):
 
         if self.id.endswith("_gene"):
             self.base_id = self.id[:-5]
@@ -130,7 +148,7 @@ class Gene(Feature):
         if original:
             self.original_base_id = self.base_id
 
-    def rename(self, count, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
+    def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
 
         if remove_point_suffix:
             if "." in self.id:
@@ -185,7 +203,7 @@ class Gene(Feature):
             t.clear_UTRs()
         self.update()
 
-    def combine_transcripts(self, genome:object, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
+    def combine_transcripts(self, genome:Genome, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
         """
         Useful for RNA-Seq read counting for transcript variants as "one" gene.
         """
@@ -240,10 +258,8 @@ class Gene(Feature):
                 counter += 1
                 e.feature = "exon"
                 e.id = f"{self.id}_generated_exon_{counter}"
-                e.attributes = f"ID={e.id};Parent={self.id}_t001"
+                e.attributes = [f"ID={e.id}", f"Parent={self.id}_t001"]
                 e.parents = [f"{self.id}_t001"]
-
-
 
         for t in self.transcripts.values():
             t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
@@ -263,7 +279,7 @@ class Gene(Feature):
                     c.generate_sequence(genome, low_memory)
             t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
 
-    def longer_CDS(self, other):
+    def longer_CDS(self, other:Gene):
         for t1 in self.transcripts.values():
             if t1.main:
                 for c1 in t1.CDSs.values():
@@ -277,7 +293,7 @@ class Gene(Feature):
                                         else:
                                             return False
                                         
-    def compare_protein_blast_hits(self, other, source_priority:list):
+    def compare_protein_blast_hits(self, other:Gene, source_priority:list):
         """
         Method required to deal with the fact that a gene may have several blast hits due to several proteins...
         """
@@ -334,6 +350,16 @@ class Gene(Feature):
         elif best_self_protein == None:
             
             return False
+
+    def get_main_CDS_range(self):
+        for t in self.transcripts.values():
+            if t.main:
+                for c in t.CDSs.values():
+                    if c.main:
+                        return c.start, c.end
+                break
+
+        return None
 
     def __str__(self):
         if self.symbols != []:

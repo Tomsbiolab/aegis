@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Tue Dec 27 15:20:59 2022
 
@@ -7,127 +5,30 @@ Module with an array of genomic functions.
 
 @authors: David Navarro, Antonio Santiago
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..annotation import Annotation
+    from ..gene import Gene
+
+import pandas as pd
+import time
+import warnings
 
 from pathlib import Path
-from collections import Counter
-import pandas as pd
 from Bio.Data import CodonTable
 from Bio.Seq import Seq
-import time
-import re
-import warnings
-import sys
-
-def parse_gff_line(line):
-    parts = line.strip().split("\t")
-
-    # Interning high-frequency strings
-
-    source = sys.intern(parts[1])
-    feature = sys.intern(parts[2])
-    strand = sys.intern(parts[6])
-    phase = sys.intern(parts[7])
-
-    if feature == "nucleotide_to_protein_match":
-        ch = sys.intern(parts[0].split(":")[0])
-    
-    else:
-        ch = sys.intern(parts[0])
-
-    if "pseudo" in feature:
-        pseudogene = True
-    else:
-        pseudogene = False
-
-    start = int(parts[3])
-    end = int(parts[4])
-
-    if start > end:
-        decreasing_coordinates = True
-        actual_start, actual_end = (int(parts[4]), int(parts[3]))
-    else:
-        decreasing_coordinates = False
-        actual_start, actual_end = (start, end)
-
-    if "transposable" in feature or "transposon" in feature:
-        transposable = True
-    else:
-        transposable = False
-
-    attr_dict = parse_gff_attributes(parts[8])
-    
-    if not transposable:
-        if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
-            transposable = True
-
-    entry = {
-        "ch": ch,
-        "source": source,
-        "feature": feature,
-        "start": actual_start,
-        "end": actual_end,
-        "score": parts[5],
-        "strand": strand,
-        "phase": phase,
-        "attributes": attr_dict,
-        "id": attr_dict.get("id", ""),
-        "parents": attr_dict.get("parent", []),
-        "pseudogene": pseudogene,
-        "transposable": transposable,
-        "decreasing_coordinates": decreasing_coordinates
-    }
 
 
-    return entry
-
-def parse_gff_attributes(attributes):
-
-    if not attributes or attributes == ".":
-        return {}
-
-    parsed = {}
-    
-    for p in attributes.split(";"):
-        p = p.strip()
-        if not p: 
-            continue
-
-        if "=" in p:
-            key, val = p.split("=", 1)
-
-            key = key.strip().lower()
-            val = val.strip()
-
-            if key in ["parent", "parents", "derives_from"]:
-                parent_key = sys.intern("parent")
-                parsed[parent_key] = [x.strip() for x in val.split(",") if x.strip()]
-            else:
-                key = sys.intern(key)
-                parsed[key] = val
-
-    return parsed
-
-
-def count_occurrences(string, char):
-    return Counter(string)[char]
-
-
-def find_all_occurrences(pattern, text):
-    matches = []
-    for match in re.finditer(pattern, text):
-        matches.append((match.start(), match.end(), match.group()))
-
-    return matches
-
-
-def reverse_complement(in_seq:str):
+def reverse_complement(in_seq) -> str:
     in_seq = Seq(in_seq)
     out_seq = str(in_seq.reverse_complement())
         
     return out_seq
 
 
-def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
+def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:
     orfs = []
     start_codon = "ATG"
     stop_codons = ["TAA", "TAG", "TGA"]
@@ -150,7 +51,7 @@ def find_ORFs(in_seq:str, must_have_stop=True, readthrough_stop=False):
                             break
     return orfs
 
-def longest_ORF(orfs:list):
+def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:
     longest = ("", 0, 0)
     for orf in orfs:
         if len(orf[0]) > len(longest[0]):
@@ -158,7 +59,7 @@ def longest_ORF(orfs:list):
 
     return longest
 
-def trim_surplus(in_seq:str):
+def trim_surplus(in_seq:str) -> tuple[str, bool]:
     """
     Function that trims surplus nucleotides in the event of a sequence not
     being a multiple of three. The trimming is orientated by the presence of
@@ -183,11 +84,9 @@ def trim_surplus(in_seq:str):
 
     return out_seq, nucleotide_surplus
 
-def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,
-              # standard genetic code
-              codon_table:CodonTable=CodonTable.unambiguous_dna_by_id[1]):
+# standard genetic code
+def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codon_table=CodonTable.unambiguous_dna_by_id[1]):
     # translating a protein
-    nucleotide_surplus = 0
     out_seq = ""
     in_seq = in_seq.upper()
     start = "present"
@@ -207,6 +106,8 @@ def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,
 
     if readthrough == "both" or readthrough == "start" or readthrough == "end":
         in_seq, nucleotide_surplus = trim_surplus(in_seq)
+    else:
+        nucleotide_surplus = False
 
     ambiguous_letters = ["B", "D", "H", "K", "M", "N", "R", "S", "V", "W", "Y"]
     # for masked genomes
@@ -303,25 +204,12 @@ def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True,
 
     return start, end_stop, early_stop, nucleotide_surplus, gaps, out_seq, coding_start, coding_end
 
-def overlap(feat1, feat2):
-    overlapping = False
-    interval1 = feat1.size
-    interval2 = feat2.size
-    small = min(feat1.start, feat1.end, feat2.start, feat2.end)
-    large = max(feat1.start, feat1.end, feat2.start, feat2.end)
-    overlap_bp = (interval1 + interval2) - ((large - small) + 1)
-    # checking only overlapping features
-    if overlap_bp > 0:
-        overlapping = True
+def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:
+    genes = sorted(genes_dict.values())
+    sorted_genes = {g.id: g for g in genes} 
+    return chrom, sorted_genes
 
-    return overlapping, overlap_bp
-
-def export_for_dapseq(annotation, genome, chromosome_dictionary:dict={}, genome_out_folder:str="", gff_out_folder:str="", tag:str="_for_dap.gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=False, exclude_non_coding:bool=False):
-    equivalences = genome.rename_features_dap(custom_path=genome_out_folder, return_equivalences=True, export=True, chromosome_dictionary=chromosome_dictionary)
-    annotation.rename_chromosomes(equivalences)
-    annotation.export_gff(output_folder=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, exclude_non_coding=exclude_non_coding)
-
-def export_group_equivalences(annotations:list, output_folder, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps=False, include_NAs=False, output_also_single_files=False, quiet:bool=False):
+def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):
     """
     This generates equivalences between a set of annotation objects, whether only reporting equivalences to a particular target or between all annotations.
     """
@@ -341,7 +229,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
         if a.genome == None:
             genome_none = True
         else:
-            genome_name = a.genome.name
+            genome_name = a.genome
 
     if genome_none:
         warnings.warn("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.", category=UserWarning)
@@ -349,7 +237,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
     if genome_name != "":
         for a in annotations:
             if a.genome != None:
-                if a.genome.name != genome_name:
+                if a.genome != genome_name:
                     raise ValueError("The provided annotations are not based on the same genome version/assembly. Please review input.")
                 
     if len(annotations) < 2:
@@ -428,7 +316,7 @@ def export_group_equivalences(annotations:list, output_folder, group_tag:str="",
             if x != 0:
                 continue
 
-        single_df = a.export_equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
+        single_df = a.export.equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
 
         if len(annotations) > 2:
 

@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, detect_file_format, read_file_with_fallback
+
+from ..annotation import Annotation, detect_file_format, read_file_with_fallback
 
 app = typer.Typer(add_completion=False)
 
@@ -43,19 +45,24 @@ def main(
 
     if input_format == "auto detect":
         input_format = detect_file_format(annotation_file, encoding=encoding)
-    elif input_format.lower() == "gff":
+    elif input_format.lower() == "gff" or input_format.lower() == "gff3":
         input_format = "gff3"
+    elif input_format.lower() == "gtf":
+        input_format = "gtf"
+    else:
+        raise ValueError(f"Invalid input format: {input_format}. Choose 'Auto Detect', 'GFF', 'GFF3' or 'GTF'.")
 
     if output_file == "{annotation-name}.{ext}":
         output_file = f"{annotation_name}"
+        if input_format == "gff3":
+            output_file += ".gtf"
+        elif input_format == "gtf":
+            output_file += ".gff3"
 
     if input_format == "gff3":
-        output_file += ".gtf"
-        annotation.export_gtf(custom_path=output_dir, tag=output_file, UTRs=True)
-
+        annotation.export.gtf(custom_path=output_dir, tag=output_file, UTRs=True)
     elif input_format == "gtf":
-        output_file += ".gff3"
-        annotation.export_gff(custom_path=output_dir, tag=output_file, UTRs=True)
+        annotation.export.gff(custom_path=output_dir, tag=output_file, UTRs=True)
 
 if __name__ == "__main__":
     app()

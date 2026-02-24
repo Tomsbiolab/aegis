@@ -6,234 +6,60 @@ Module defining several genomic classes.
 @authors: David Navarro, Antonio Santiago
 """
 
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .genome import Genome
+
 import re
 import sys
 import copy
 import random
 import time
 import pandas as pd
-import matplotlib.pyplot as plt
 import networkx as nx
 import os
 import warnings
 import math
 import gc
 
-from .plots import pie_chart, barplot
-from .genefunctions import overlap, reverse_complement, find_all_occurrences, parse_gff_line
-from .feature import Feature
-from .gene import Gene
-from .transcript import Transcript
-from .subfeatures import Exon, UTR, Intron
-from .hits import OverlapHit, BlastHit
-
 from statistics import mean
-from scipy.stats import fisher_exact
 from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
 
-default_features = {}
-default_features["gene"] = ["gene", "pseudogene", "transposable_element_gene"]
-default_coding_transcripts = ["mRNA"]
-default_noncoding_transcripts = ["antisense_lncRNA", "antisense_RNA", "miRNA_primary_transcript", "ncRNA", "lncRNA", "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA", "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene", "SRP_RNA", "RNase_MRP_RNA"]
-default_codons = ["start_codon", "stop_codon"]
-default_introns = ["intron"]
-# Some features are clearly transcript level features but they cannot be
-# classed as coding/noncoding just by looking at the name   
-default_features["transcript"] = (["transcript", "transcript_region", "primary_transcript", "pseudotranscript", "pseudogenic_transcript", "mRNA_TE_gene"] + default_coding_transcripts + default_noncoding_transcripts)
-default_features["UTR"] = ["UTR", "three_prime_UTR", "five_prime_UTR", "five_prime_utr", "three_prime_utr"]
-default_features["exon"] = ["exon", "pseudogenic_exon"]
-default_features["CDS"] = ["CDS", "nucleotide_to_protein_match"]
-default_features["other_subfeature"] = ["miRNA"]
+from .feature import Feature
+from .gene import Gene
+from .transcript import Transcript
+from .subfeatures import Exon, UTR
+from .hits import OverlapHit, BlastHit
+from .utils.genefunctions import sort_and_update_genes
+from .utils.misc import read_file_with_fallback
+from .utils.gtf_gff import parse_gff_line, convert_gtf_to_gff3, detect_file_format
+from .annotation_components.stats import AnnotationStats
+from .annotation_components.export import AnnotationExport
+from .annotation_components.motifs import AnnotationMotifs
+from .conf import default_noncoding_transcripts, default_features_r
 
-default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"] + default_introns
-
-default_features_r = {}
-for key, values in default_features.items():
-    for value in values:
-        default_features_r[value] = key
-
-def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):
-    """
-    Tries several encodings to find the suitable one.
-    """
-    for enc in encodings:
-        try:
-            with open(file_path, 'r', encoding=enc) as f:
-                f.readlines()
-                return enc
-        except UnicodeDecodeError:
-            continue
-
-    raise ValueError(f"Not able to decodify '{file_path}'")
-
-def detect_file_format(file_path, encoding, lines_to_check=20):
-    """
-    Detects if a file is likely GTF or GFF3 format.
-    """
-    try:
-        with open(file_path, 'r', encoding=encoding) as f:
-
-            i = 0
-
-            for line in f:
-
-                line = line.strip()
-                if not line:
-                    continue
-
-                if line.startswith("##gff-version 3"):
-                    return 'gff3'
-
-                if line.startswith('#'):
-                    continue
-
-                i += 1
-
-                if i >= lines_to_check:
-                    break
-
-                parts = line.split('\t')
-                if len(parts) == 9:
-                    attributes = parts[8]
-
-                    if re.search(r'\w+=', attributes):
-                        return 'gff3'
-
-                    if re.search(r'\w+\s+"[^"]+";', attributes):
-                        return 'gtf'
-            
-            # unknown format returns gff3
-            return 'gff3'
-            
-    except Exception as e:
-        sys.stderr.write(f"Error reading file for format detection: {e}\n")
-        sys.exit(1)
-
-def parse_gtf_attributes(attr_string):
-    """
-    Parses the GFF/GTF attribute column and returns a dictionary.
-    Handles GTF-specific format where values are quoted.
-    """
-    attributes = {}
-
-    for match in re.finditer(r'(\w+)\s+"([^"]+)"', attr_string):
-        key, value = match.groups()
-        attributes[key] = value
-    return attributes
-
-def format_gff3_attributes(attrs, feature_type):
-    """
-    Formats a dictionary of attributes into a GFF3-compliant string.
-    """
-
-    special_keys = {'gene_id', 'transcript_id', 'exon_id', 'exon_number'}
-    
-    gff3_attrs = []
-
-    if feature_type in default_features["gene"]:
-        if 'gene_id' in attrs:
-            gff3_attrs.append(f"ID={attrs['gene_id']}")
-    
-    elif feature_type in default_features["transcript"]:
-        if 'transcript_id' in attrs:
-            gff3_attrs.append(f"ID={attrs['transcript_id']}")
-        if 'gene_id' in attrs:
-            gff3_attrs.append(f"Parent={attrs['gene_id']}")
-            
-    elif feature_type in default_subfeatures:
-        parent_id = f"{attrs['transcript_id']}"
-        gff3_attrs.append(f"Parent={parent_id}")
-
-        feature_id = f"{attrs['transcript_id']}"
-
-        if 'exon_number' in attrs:
-            feature_id += f"_e{attrs['exon_number']}"
-            gff3_attrs.append(f"ID={feature_id}")
-        elif feature_type in default_features["CDS"]:
-            gff3_attrs.append(f"ID={feature_id}_CDS1")
-
-    if 'gene_name' in attrs:
-        gff3_attrs.append(f"Symbol={attrs['gene_name']}")
-    elif 'transcript_name' in attrs:
-        gff3_attrs.append(f"Symbol={attrs['transcript_name']}")
-
-    for key, value in attrs.items():
-        if key not in special_keys and key not in ['gene_name', 'transcript_name']:
-            gff3_attrs.append(f"{key}={value}")
-            
-    return ";".join(gff3_attrs)
-
-def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
-    """
-    Reads a GTF file, converts it to GFF3 format, and writes to an output file.
-    """
-    with open(gtf_file, 'r', encoding=encoding) as infile, open(gff3_file, 'w', encoding=encoding) as outfile:
-
-        outfile.write("##gff-version 3\n")
-
-        seen_genes = set()
-        seen_transcripts = set()
-
-        for line in infile:
-            if line.startswith('#'):
-                if not line.startswith('##'):
-                    outfile.write(f"#{line}")
-                continue
-
-            parts = line.strip().split('\t')
-            if len(parts) != 9:
-                if not quiet:
-                    sys.stderr.write(f"Warning: Skipping malformed line: {line.strip()}\n")
-                continue
-
-            seqname, source, feature, start, end, score, strand, frame, attr_string = parts
-            attributes = parse_gtf_attributes(attr_string)
-
-            if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes and feature in default_features["gene"]:
-                gene_attrs = {'gene_id': attributes['gene_id']}
-                if 'gene_name' in attributes:
-                    gene_attrs['gene_name'] = attributes['gene_name']
-                if 'gene_biotype' in attributes:
-                    gene_attrs['gene_biotype'] = attributes['gene_biotype']
-                gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
-                gene_line = "\t".join([seqname, source, 'gene', start, end, score, strand, frame, gene_attr_str])
-                outfile.write(gene_line + '\n')
-                seen_genes.add(attributes['gene_id'])
-
-            if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts and feature in default_features["transcript"]:
-                tx_attrs = {k: v for k, v in attributes.items() if 'transcript' in k or 'gene' in k}
-                tx_feature_type = 'transcript'
-                if 'transcript_biotype' in attributes:
-                    if 'RNA' in attributes['transcript_biotype']:
-                        tx_feature_type = attributes['transcript_biotype']
-
-                tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
-                tx_line = "\t".join([seqname, source, tx_feature_type, start, end, score, strand, frame, tx_attr_str])
-                outfile.write(tx_line + '\n')
-                seen_transcripts.add(attributes['transcript_id'])
-
-            if feature not in default_features["transcript"] and feature not in default_features["gene"]:
-                continue
-
-            gff3_attr_string = format_gff3_attributes(attributes, feature)
-
-            gff3_line = "\t".join([seqname, source, feature, start, end, score, strand, frame, gff3_attr_string])
-            outfile.write(gff3_line + '\n')
-
-    if not quiet:
-        print(f"Successfully converted {gtf_file} to a gff format")
-
-def sort_and_update_genes(chrom, genes_dict):
-    genes = sorted(genes_dict.values())
-    sorted_genes = {g.id: g for g in genes} 
-    return chrom, sorted_genes
 
 class Annotation():
+
+    stats: AnnotationStats
+    export: AnnotationExport
+    motifs: AnnotationMotifs
+    genome: str | None
+    all_gene_ids:dict[str, str]
+    # the tuple values consist of transcript id keys consist of (chromosome, gene_id)
+    all_transcript_ids:dict[str, tuple[str, str]]
+    _gene_info:dict[str, set[str]]
+    _transcript_info:dict[str, set[str]]
+
+    chrs:dict[str, dict[str, Gene]]
     
     bar_colors = ["31", "32", "33", "33", "33", "34"]
-    def __init__(self, annot_file_path:str, name:str=None, genome:object=None, original_annotation:object=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True):
+
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True):
         
         start_time = time.time()
 
@@ -247,7 +73,7 @@ class Annotation():
         else:
             self.name = name
 
-        if chosen_chromosomes != None:
+        if chosen_chromosomes is not None and len(chosen_chromosomes) > 0:
             if len(chosen_chromosomes) > 1:
                 self.name = f"{self.name}_{chosen_chromosomes[0]}-{chosen_chromosomes[-1]}"
             else:
@@ -260,11 +86,12 @@ class Annotation():
         self.merged = False
         self.sorted = False
         
-        if genome != None:
+        if genome is not None:
             self.genome = genome.name
             self.id = f"{self.name}_on_{self.genome}"
-        self.genome = None
-        self.id = self.name
+        else:
+            self.genome = None
+            self.id = self.name
 
         if not quiet:
             print(f"\nProcessing {self.id} annotation object\n")
@@ -277,6 +104,7 @@ class Annotation():
         # we save here chr, gene id as the tuple corresponding to each transcript id
         self.all_transcript_ids = {}
         self.all_protein_ids = {}
+        self.protein_equivalences = {}
         self.unmapped = []
         # Here we insert any feature which is of an unknown category
         self.atypical_features = []
@@ -328,7 +156,7 @@ class Annotation():
         if "_confrenamed" in annot_file_path:
             self.confrenamed = True
 
-        if self.genome != None:
+        if genome is not None:
             self.dapfit = genome.dapfit
         else:
             self.dapfit = None
@@ -381,11 +209,14 @@ class Annotation():
         if file_format == 'gtf':
             gff_file = f"{self.name}_{pid}.tmp"
             convert_gtf_to_gff3(self.file, gff_file, encoding, quiet=quiet)
-
         else:
             gff_file = self.file
 
         staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_features_without_id=skip_features_without_id, skip_atypical_features=skip_atypical_features, skip_orphaned_features=skip_orphaned_features, skip_subfeatures_without_id=skip_subfeatures_without_id, quiet=quiet)
+
+        self.stats = AnnotationStats(self)
+        self.export = AnnotationExport(self)
+        self.motifs = AnnotationMotifs(self)
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -429,7 +260,7 @@ class Annotation():
                 progress_bar.update(count)
 
             progress_bar.close()
-            staging[stage] = None
+            staging[stage] = []
             gc.collect()
 
         del self._gene_info
@@ -449,11 +280,11 @@ class Annotation():
 
         self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons)
 
-        if rework_all_CDSs or work_out_missing_CDSs:
+        if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
             self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons)
 
-    def load_data(self, gff_file, encoding, chosen_chromosomes:tuple=None, chosen_coordinates:tuple=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):
+    def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):
         
         staging = {"gene": [], "transcript": [], "exon": [], "CDS": [], "UTR": [], "other_subfeature": []}
 
@@ -868,7 +699,7 @@ class Annotation():
                     elif ft_level == "exon":
                         self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                     elif ft_level == "UTR":
-                        self.chrs[ch][gene_parent].transcripts[parent].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                     else:
                         self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
 
@@ -894,13 +725,13 @@ class Annotation():
                             
                         if pseudo_t in self.chrs[ch][parent].transcripts:
                             if ft_level == "CDS":
-                                self.chrs[ch][gene_parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
                             elif ft_level == "exon":
-                                self.chrs[ch][gene_parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             elif ft_level == "UTR":
-                                self.chrs[ch][gene_parent].transcripts[pseudo_t].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][parent].transcripts[pseudo_t].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             else:
-                                self.chrs[ch][gene_parent].transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][parent].transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                         else:
                             if not skip_orphaned_features:
                                 self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
@@ -922,7 +753,7 @@ class Annotation():
                             elif ft_level == "exon":
                                 self.chrs[ch][parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             elif ft_level == "UTR":
-                                self.chrs[ch][parent].transcripts[temp_id].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][parent].transcripts[temp_id].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             else:
                                 self.chrs[ch][parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))  
                         else:
@@ -978,13 +809,13 @@ class Annotation():
                             attributes["id"] = ID
 
                             if ft_level == "CDS":
-                                self.chrs[ch][gene_parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
                             elif ft_level == "exon":
-                                self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             elif ft_level == "UTR":
-                                self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             else:
-                                self.chrs[ch][gene_parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
+                                self.chrs[ch][inferred_g_id].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
 
             # Cases where the transcript parent was repeated by id in the gff
             else:
@@ -1009,13 +840,13 @@ class Annotation():
                     attributes["parent"] = [parent]
 
                     if ft_level == "CDS":
-                        self.chrs[ch][gene_parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
                     elif ft_level == "exon":
-                        self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                     elif ft_level == "UTR":
-                        self.chrs[ch][gene_parent].transcripts[temp_id].exons.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                     else:
-                        self.chrs[ch][gene_parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
+                        self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)) 
 
                     break
 
@@ -1044,8 +875,12 @@ class Annotation():
 
     def copy(self):
         return copy.deepcopy(self)
+
+    @property
+    def summary(self) -> dict:
+        return self.stats.data
     
-    def update(self, original_annotation:object=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:object=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):
+    def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1102,7 +937,7 @@ class Annotation():
                 #improve at some point, slow with massive lists
                 if g_id not in self.all_gene_ids:
                     self.unmapped.append(g_id)
-        self.update_stats(genome=genome)
+        self.stats.update(genome=genome)
 
         self.update_suffixes()
 
@@ -1309,7 +1144,7 @@ class Annotation():
                             print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                         g.end = t.end
                         self.sorted = False
-                    if earliest_start is None:
+                    if earliest_start is None or latest_end is None:
                         earliest_start = t.start
                         latest_end = t.end
                     else:
@@ -1318,7 +1153,7 @@ class Annotation():
                         if t.end > latest_end:
                             latest_end = t.end
 
-                if earliest_start is not None:
+                if earliest_start is not None and latest_end is not None:
                     if g.start != earliest_start or g.end != latest_end:
                         if not quiet:
                             print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
@@ -1329,7 +1164,7 @@ class Annotation():
         if not quiet:
             print(f"Corrected feature coordinates for {self.id}")
 
-    def generate_sequences(self, genome:object, just_CDSs:bool=False, quiet:bool=False):
+    def generate_sequences(self, genome:Genome, just_CDSs:bool=False, quiet:bool=False):
 
         start_time = time.time()
         for o in self.atypical_features:
@@ -1386,7 +1221,7 @@ class Annotation():
         if not quiet:
             print(f"Clearing sequences of {self.id} annotation object took {round(lapse, 1)} seconds\n")
 
-    def generate_promoters(self, genome:object, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):
+    def generate_promoters(self, genome:Genome, promoter_size:int=2000, promoter_type:str = "standard", generate_sequence:bool=False):
         """
         promoter_type (str): Defines the reference point for the promoters.
             - standard (default): Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS)
@@ -1403,291 +1238,6 @@ class Annotation():
                     if generate_sequence:
                         t.promoter.generate_sequence(genome)
 
-    def find_motifs(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        bin_division = 30
-        bins_genome_division = 30
-
-        if backlist != [] and not backlistname:
-            backlistname = "custom_background"
-
-        if motif_length < 4 or len(motif) < 4:
-            raise ValueError(f"Chosen motif={motif} is too short (len={motif_length}) for promoter search.")
-
-        random_ids = self.return_random_gene_ids(len(query_genes), to_avoid=query_genes)
-        if backlist == []:
-            total = (len(query_genes) * 2) + len(self.all_gene_ids.keys())
-        else:
-            total = (len(query_genes) * 2) + len(backlist)
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;94;1mScanning {glistname} genes for {tf_motif_tag} ({motif}):\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;94;1m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-        
-        if custom_path == "":
-            output_path = self.path + "motifs/"
-            output_file = output_path 
-        else:
-            output_file = custom_path
-            if output_file[-1] != "/":
-                output_file += "/"
-            output_file += "motifs/"
-
-        os.makedirs(output_file, exist_ok=True)
-
-        output_file += f"{tf_motif_tag}"
-
-        motif = motif.upper()
-        promoter_length = 0
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    if t.main:
-                        if hasattr(t, "promoter"):
-                            if t.promoter.seq != "":
-                                promoter_length = len(t.promoter.seq)
-                                break
-                break
-            break
-                    
-        # critical thing to understand here is that we are looking at how a motif
-        # is oriented with regards to the TSS
-        towards_occurrences = []
-        against_occurrences = []
-        interest_proportion = 0
-        avg_motifs_interest = []
-        for id in query_genes:
-            progress_bar.update(1)
-            ch = self.all_gene_ids[id]
-            g = self.chrs[ch][id]
-            for t in g.transcripts.values():
-                if t.main:
-                    p = t.promoter
-                    occurrences_t = find_all_occurrences(motif, p.seq)
-                    occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
-                    occurrence_count_total = len(occurrences_t) + len(occurrences_a)
-                    if occurrence_count_total != 0:
-                        avg_motifs_interest.append(occurrence_count_total)
-                    if occurrences_t != [] or occurrences_a != []:
-                        interest_proportion += 1
-                    for m in occurrences_t:
-                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
-                    for m in occurrences_a:
-                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
-
-
-        midpoints = []
-        for o in towards_occurrences:
-            midpoint = (o[0] + o[1]) // 2
-            midpoint -= promoter_length
-            midpoints.append(midpoint)
-
-        for o in against_occurrences:
-            midpoint = (o[0] + o[1]) // 2
-            midpoint += 1
-            midpoint = (midpoint * -1)
-            midpoints.append(midpoint)
-
-
-        all_occurrences = towards_occurrences + against_occurrences
-        df = pd.DataFrame(all_occurrences, columns=["start", "end", "genomic_start", "genomic_end", "sequence", "orientation with respect to gene", "gene_id", "gene_name", "gene_strand", "chromosome"])
-        if backlist == []:
-            df.to_csv(f"{output_file}_{glistname}.csv", sep="\t")
-        
-        interest_count = len(midpoints)
-        plt.hist(midpoints, bins=(promoter_length//bin_division), color='skyblue', edgecolor='skyblue')
-        plt.grid(False)
-        plt.title(f"{self.id} {tf_motif_tag} {glistname} histogram\npromoters with motif: ({interest_proportion}/{len(query_genes)})")
-        plt.xlabel("promoter position")
-        plt.ylabel(f"motif occurrence count (total: {interest_count})")
-        plt.grid(True)
-        if backlist == []:
-            plt.savefig(f"{output_file}_{glistname}.pdf")
-        plt.close()
-
-        # critical thing to understand here is that we are looking at how a motif
-        # is oriented with regards to the TSS
-        towards_occurrences = []
-        against_occurrences = []
-        avg_motifs_random = []
-        random_proportion = 0
-        for id in random_ids:
-            progress_bar.update(1)
-            ch = self.all_gene_ids[id]
-            g = self.chrs[ch][id]
-            for t in g.transcripts.values():
-                if t.main:
-                    p = t.promoter
-                    occurrences_t = find_all_occurrences(motif, p.seq)
-                    occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
-                    if occurrence_count_total != 0:
-                        avg_motifs_random.append(occurrence_count_total)
-                    if occurrences_t != [] or occurrences_a != []:
-                        random_proportion += 1
-                    for m in occurrences_t:
-                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
-                    for m in occurrences_a:
-                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
-
-        midpoints = []
-        for o in towards_occurrences:
-            midpoint = (o[0] + o[1]) // 2
-            midpoint -= promoter_length
-            midpoints.append(midpoint)
-
-        for o in against_occurrences:
-            midpoint = (o[0] + o[1]) // 2
-            midpoint += 1
-            midpoint = (midpoint * -1)
-            midpoints.append(midpoint)
-
-
-        all_occurrences = towards_occurrences + against_occurrences
-        df = pd.DataFrame(all_occurrences, columns=["start", "end", "genomic_start", "genomic_end", "sequence", "orientation with respect to gene", "gene_id", "gene_name", "gene_strand", "chromosome"])
-        if backlist == []:
-            df.to_csv(f"{output_file}_{glistname}_random.csv", sep="\t")
-
-        random_count = len(midpoints)
-        plt.hist(midpoints, bins=(promoter_length//bin_division), color='grey', edgecolor='grey')
-        plt.grid(False)
-        plt.title(f"{self.id} {tf_motif_tag} {glistname} random histogram\npromoters with motif: ({random_proportion}/{len(query_genes)})")
-        plt.xlabel("promoter position")
-        plt.ylabel(f"motif occurrence count (total: {random_count})")
-        plt.grid(True)
-        if backlist == []:
-            plt.savefig(f"{output_file}_{glistname}_random.pdf")
-        plt.close()
-
-        # critical thing to understand here is that we are looking at how a motif
-        # is oriented with regards to the TSS
-        towards_occurrences = []
-        against_occurrences = []
-        avg_motifs_genomic = []
-        genomic_proportion = 0
-        if backlist == []:
-            for id in self.all_gene_ids:
-                progress_bar.update(1)
-                ch = self.all_gene_ids[id]
-                g = self.chrs[ch][id]
-                for t in g.transcripts.values():
-                    if t.main:
-                        p = t.promoter
-                        occurrences_t = find_all_occurrences(motif, p.seq)
-                        occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
-                        occurrence_count_total = len(occurrences_t) + len(occurrences_a)
-                        if occurrence_count_total != 0:
-                            avg_motifs_genomic.append(occurrence_count_total)
-                        if occurrences_t != [] or occurrences_a != []:
-                            genomic_proportion += 1
-                        for m in occurrences_t:
-                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
-                        for m in occurrences_a:
-                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
-
-            midpoints = []
-            for o in towards_occurrences:
-                midpoint = (o[0] + o[1]) // 2
-                midpoint -= promoter_length
-                midpoints.append(midpoint)
-
-            for o in against_occurrences:
-                midpoint = (o[0] + o[1]) // 2
-                midpoint += 1
-                midpoint = (midpoint * -1)
-                midpoints.append(midpoint)
-
-            genomic_count = len(midpoints)
-            plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
-            plt.grid(False)
-            plt.title(f"{self.id} {tf_motif_tag} full genome histogram\npromoters with motif: ({genomic_proportion}/{len(self.all_gene_ids.keys())})")
-            plt.xlabel("promoter position")
-            plt.ylabel(f"motif occurrence count (total: {genomic_count})")
-            plt.grid(True)
-            plt.savefig(f"{output_file}_whole_genome.pdf")
-            plt.close()
-        
-        else:
-            for id in backlist:
-                progress_bar.update(1)
-                ch = self.all_gene_ids[id]
-                g = self.chrs[ch][id]
-                for t in g.transcripts.values():
-                    if t.main:
-                        p = t.promoter
-                        occurrences_t = find_all_occurrences(motif, p.seq)
-                        occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
-                        occurrence_count_total = len(occurrences_t) + len(occurrences_a)
-                        if occurrence_count_total != 0:
-                            avg_motifs_genomic.append(occurrence_count_total)
-                        if occurrences_t != [] or occurrences_a != []:
-                            genomic_proportion += 1
-                        for m in occurrences_t:
-                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
-                        for m in occurrences_a:
-                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
-
-            midpoints = []
-            for o in towards_occurrences:
-                midpoint = (o[0] + o[1]) // 2
-                midpoint -= promoter_length
-                midpoints.append(midpoint)
-
-            for o in against_occurrences:
-                midpoint = (o[0] + o[1]) // 2
-                midpoint += 1
-                midpoint = (midpoint * -1)
-                midpoints.append(midpoint)
-
-            genomic_count = len(midpoints)
-            plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
-            plt.grid(False)
-            plt.title(f"{self.id} {tf_motif_tag} {backlistname} as background histogram\npromoters with motif: ({genomic_proportion}/{len(backlist)})")
-            plt.xlabel("promoter position")
-            plt.ylabel(f"motif occurrence count (total: {genomic_count})")
-            plt.grid(True)
-            plt.savefig(f"{output_file}_{backlistname}_as_background.pdf")
-            plt.close()
-
-        progress_bar.close()
-
-        # Counts of non-motif occurrences
-        interest_non_count = (len(query_genes) * (int(promoter_length/motif_length)) * 2) - interest_count
-        if backlist == []:
-            genomic_non_count = (len(self.all_gene_ids.keys()) * (int(promoter_length/motif_length)) * 2) - genomic_count
-        else:
-            genomic_non_count = (len(backlist) * (int(promoter_length/motif_length)) * 2) - genomic_count
-        interest_non_proportion = len(query_genes) - interest_proportion
-        if backlist == []:
-            genomic_non_proportion = len(self.all_gene_ids.keys()) - genomic_proportion
-        else:
-            genomic_non_proportion = len(backlist) - genomic_proportion
-
-        odds_ratio_occurrences, p_value_occurrences = fisher_exact([[interest_count, genomic_count], 
-                                                                    [interest_non_count, genomic_non_count]])
-
-        odds_ratio_proportion, p_value_proportion = fisher_exact([[interest_proportion, genomic_proportion], 
-                                                                  [interest_non_proportion, genomic_non_proportion]])
-
-        promoter_percentage_interest = (interest_proportion / len(query_genes)) * 100
-        if backlist == []:
-            promoter_percentage_genome = (genomic_proportion / len(self.all_gene_ids.keys())) * 100
-        else:
-            promoter_percentage_genome = (genomic_proportion / len(backlist)) * 100
-
-        return interest_count, genomic_count, p_value_occurrences, odds_ratio_occurrences, promoter_percentage_interest, promoter_percentage_genome, p_value_proportion, odds_ratio_proportion, avg_motifs_interest, avg_motifs_genomic, output_file
-
     def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):
         random_ids = []
         while len(random_ids) < number:
@@ -1701,569 +1251,7 @@ class Annotation():
 
         return random_ids
 
-    def export_all_features(self, feature_output:str="main", promoters:bool=True, verbose:bool=True, path:str="", most_specific_id_level="promoter", quiet:bool=False):
-        """
-        The "output" parameter can be both, main or all. This parameter only 
-        affects promoter, transcript, CDS and protein sequences. If both is selected
-        a "main features" file and and "all features" file will be produced.
-        """
-
-        feature_output_choices = ["main", "all", "both"]
-        if feature_output not in feature_output_choices:
-            raise ValueError(f"feature_output={feature_output} is not amongst the feature_output_choices={feature_output_choices} to export all features.")
-
-        most_specific_id_level_choices = ["gene", "transcript", "CDS", "protein", "promoter"]
-
-        if most_specific_id_level not in most_specific_id_level_choices:
-            raise ValueError(f"most_specific_id_level={most_specific_id_level} is not amongst the most_specific_id_level_choices={most_specific_id_level_choices} to export proteins.")
-
-        start_time = time.time()
-
-        self.export_genes(verbose, path)
-
-        if feature_output == "both":
-            modes = [True, False]
-        elif feature_output == "main":
-            modes = [True]
-        elif feature_output == "all":
-            modes = [False]
-
-        for b in modes:
-
-            if most_specific_id_level == "promoter" or most_specific_id_level == "protein":
-                self.export_proteins(b, verbose, path)
-                self.export_CDSs(b, verbose, path)
-                self.export_transcripts(b, verbose, path)
-                if promoters:
-                    self.export_promoters(b, verbose, path)
-
-            elif most_specific_id_level == "CDS":
-                self.export_proteins(b, verbose, path, used_id="CDS")
-                self.export_CDSs(b, verbose, path)
-                self.export_transcripts(b, verbose, path)
-                if promoters:
-                    self.export_promoters(b, verbose, path)
-
-            elif most_specific_id_level == "transcript":
-                self.export_proteins(b, verbose, path, used_id="transcript")
-                self.export_CDSs(b, verbose, path, used_id="transcript")
-                self.export_transcripts(b, verbose, path)
-                if promoters:
-                    self.export_promoters(b, verbose, path, used_id="transcript")
-
-            elif most_specific_id_level == "gene":
-                self.export_proteins(b, verbose, path, used_id="gene")
-                self.export_CDSs(b, verbose, path, used_id="gene")
-                self.export_transcripts(b, verbose, path, used_id="gene")
-                if promoters:
-                    self.export_promoters(b, verbose, path, used_id="gene")
-
-        now = time.time()
-        lapse = now - start_time
-        if not quiet:
-            print(f"Extracting {self.id} annotation features took {round(lapse, 1)} seconds\n")
-            
-    def export_proteins(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="protein", unique_proteins_per_gene:bool=False, only_cds_main:bool=True):
-        """
-        Main proteins means only proteins obtained from the main CDSs of the
-        main transcripts. This equates to one protein per gene.
-
-        Verbose will include protein tag details and readthrough options, strand, chromosome, and coordinates.
-
-        Proteins will be exported into fastas with their protein ids unless 
-        CDS, transcript or gene has been selected as used_id. To avoid duplicate
-        equal entries, when choosing gene or transcript only main proteins will
-        be able to be output.
-
-        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
-        """
-
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-
-        output_file += self.id
-        output_file += self.feature_suffix
-        output_file += "_proteins"
-
-        out = ""
-
-        if unique_proteins_per_gene:
-            only_main = False
-            only_cds_main = False
-            if used_id == "gene":
-                used_id = "protein"
-                warnings.warn(f"Used id 'gene' has been changed to 'protein' as unique proteins per gene was selected.", category=UserWarning)
-
-        if used_id == "gene":
-            only_main = True
-            only_cds_main = True
-            output_file += "_g_id_main"
-        else:
-            if used_id == "transcript":
-                only_cds_main = True
-                output_file += "_t_id"
-                if unique_proteins_per_gene:
-                    warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' or 'protein' if all CDSs are to be considered.", category=UserWarning)
-            elif used_id == "CDS":
-                output_file += "_c_id"
-            elif used_id == "protein":
-                output_file += "_p_id"
-
-            if unique_proteins_per_gene:
-                output_file += "_unique_per_gene"
-            elif only_main:
-                output_file += "_main"
-            else:
-                output_file += "_all"
-
-        if verbose:
-            output_file += "_coordinates"
-            
-        output_file += ".fasta"
-        
-        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
-        
-        for genes in self.chrs.values():
-            for g in genes.values():
-                temp_cs = []
-
-                for t in g.transcripts.values():
-                    if only_main:
-                        if t.main:
-                            for c in t.CDSs.values():
-                                if c.seq != "":
-                                    if only_cds_main:
-                                        if c.main:
-                                            temp_cs.append(c)
-                                    else:
-                                        temp_cs.append(c)
-                    else:
-                        for c in t.CDSs.values():
-                            if c.seq != "":
-                                if only_cds_main:
-                                    if c.main:
-                                        temp_cs.append(c)
-                                else:
-                                    temp_cs.append(c)
-
-                if not unique_proteins_per_gene:
-                    final_cs = temp_cs.copy()
-
-                else:
-                    final_cs = []
-                    if len(temp_cs) > 0:
-                        final_cs.append(temp_cs[0])
-
-                    for i, c1 in enumerate(temp_cs):
-                        if i > 0:
-                            add = True
-                            for c2 in final_cs:
-                                if c1.equal_segments(c2):
-                                    add = False
-                            if add:
-                                final_cs.append(c1)
-
-                for c in final_cs:
-
-                    if used_id == "protein":
-                        out += f">{c.protein.id}"
-                    elif used_id == "CDS":
-                        out += f">{c.id}"
-                    elif used_id == "transcript":
-                        out += f">{c.parents[0]}"
-                    elif used_id == "gene":
-                        out += f">{g.id}"
-
-                    if c.protein.summary_tag and verbose:
-                        out += f"|{c.protein.summary_tag}"
-                    if verbose:
-                        out += f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.ch}|{c.start}:{c.end}"
-
-                    out += f"\n{c.protein.seq}\n"        
-                     
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
-
-    def export_unique_proteins(self, genome:object=None, custom_path:str="", quiet:bool=False):
-        start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        
-        if not self.contains_protein_sequences:
-            if genome == None:
-                print(f"You forgot to provide the genome for {self.id} and no sequences exist for CDSs")
-            else:
-                self.generate_sequences(genome, quiet=quiet)
-                self.export_unique_proteins(custom_path=custom_path)
-        else:
-            if custom_path:
-                output_file = Path(custom_path)
-            else:
-                output_file = Path(self.path) / "features"
-            output_file.mkdir(parents=True, exist_ok=True)
-            output_file = str(output_file) + "/"
-            output_file += f"{self.id}{self.feature_suffix}_unique_proteins.fasta"
-            out = ""
-            all_protein_seqs = {}
-            self.all_protein_ids = {}
-            for chrom, genes in self.chrs.items():
-                for g in genes.values():
-                    if g.coding:
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                if c.protein.seq != "":
-                                    all_protein_seqs[c.protein.id] = c.protein.seq
-                                    self.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
-
-            progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mDetermining and exporting unique {self.id} proteins:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
-            
-            
-            unique_sequences = {}
-            self.protein_equivalences = {}
-
-            for protein_id, sequence in all_protein_seqs.items():
-                progress_bar.update(1)
-                if sequence not in unique_sequences:
-                    unique_sequences[sequence] = protein_id
-                    self.protein_equivalences[protein_id] = []
-                else:
-                    first_protein_id = unique_sequences[sequence]
-                    self.protein_equivalences[first_protein_id].append(protein_id)
-
-            for sequence, protein_id in unique_sequences.items():
-                out += f">{protein_id}\n{sequence}\n"
-
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-
-            progress_bar.close()
-
-            now = time.time()
-            lapse = now - start_time
-            if not quiet:
-                print(f"\nExporting unique {self.id} proteins took {round(lapse/60, 1)} minutes")
-
-    def export_CDSs(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="CDS", unique_CDSs_per_gene:bool=False, only_cds_main:bool=True):
-        """
-        Main CDSs means only CDS sequence obtained from the main CDS of the
-        main transcripts.
-
-        Verbose will include strand, chromosome, and coordinates.
-
-        CDSs will be exported into fastas with their CDS ids unless 
-        transcript or gene has been selected as used_id. To avoid duplicate
-        equal entries, when choosing gene or transcript only main CDSs will
-        be able to be output.
-
-        valid_id_choices = ["gene", "transcript", "CDS"]
-        """
-
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-
-        output_file += self.id
-        output_file += self.feature_suffix
-        output_file += "_CDSs"
-
-        out = ""
-
-        if unique_CDSs_per_gene:
-            only_main = False
-            only_cds_main = False
-            if used_id == "gene":
-                used_id = "CDS"
-                warnings.warn(f"Used id 'gene' has been changed to 'CDS' as unique CDSs per gene was selected.", category=UserWarning)
-
-        if used_id == "gene":
-            only_main = True
-            only_cds_main = True
-            output_file += "_g_id_main"
-        else:
-            if used_id == "transcript":
-                only_cds_main = True
-                output_file += "_t_id"
-                if unique_CDSs_per_gene:
-                    warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' if all CDSs are to be considered.", category=UserWarning)
-            elif used_id == "CDS":
-                output_file += "_c_id"
-
-            if unique_CDSs_per_gene:
-                output_file += "_unique_per_gene"
-            elif only_main:
-                output_file += "_main"
-            else:
-                output_file += "_all"
-
-        if verbose:
-            output_file += "_coordinates"
-            
-        output_file += ".fasta"
-        
-        valid_id_choices = ["gene", "transcript", "CDS"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export CDSs.")
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                temp_cs = []
-                for t in g.transcripts.values():
-                    if only_main:
-                        if t.main:
-                            for c in t.CDSs.values():
-                                if c.seq != "":
-                                    if only_cds_main:
-                                        if c.main:
-                                            temp_cs.append(c)
-                                    else:
-                                        temp_cs.append(c)
-                    else:
-                        for c in t.CDSs.values():
-                            if c.seq != "":
-                                if only_cds_main:
-                                    if c.main:
-                                        temp_cs.append(c)
-                                else:
-                                    temp_cs.append(c)
-
-                if not unique_CDSs_per_gene:
-                    final_cs = temp_cs.copy()
-                else:
-                    final_cs = []
-
-                    if len(temp_cs) > 0:
-                        final_cs.append(temp_cs[0])
-
-                    for i, c1 in enumerate(temp_cs):
-                        if i > 0:
-                            add = True
-                            for c2 in final_cs:
-                                if c1.equal_segments(c2):
-                                    add = False
-                            if add:
-                                final_cs.append(c1)
-
-                for c in final_cs:
-
-                    if used_id == "CDS":
-                        out += f">{c.id}"
-                    elif used_id == "transcript":
-                        out += f">{c.parents[0]}"
-                    elif used_id == "gene":
-                        out += f">{g.id}"
-
-                    if verbose:
-                        out += f"|{c.strand}|{c.ch}|{c.start}:{c.end}"
-
-                    out += f"\n{c.seq}\n"
-                     
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
-
-    def export_transcripts(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="transcript", rna_classes:list=[]):
-        """
-        Main means only main transcript sequences are exported.
-
-        Verbose will include strand, chromosome, and coordinates.
-
-        Transcripts will be exported into fastas with their transcript ids unless 
-        gene has been selected as used_id. To avoid duplicate
-        equal entries, when choosing gene only main transcripts will
-        be able to be output.
-
-        valid_id_choices = ["gene", "transcript"]
-        """
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += self.id
-        output_file += self.feature_suffix
-        output_file += "_transcripts"
-
-        out = ""
-
-        if used_id == "gene":
-            only_main = True
-            output_file += "_g_id_main"
-        elif used_id == "transcript":
-            output_file += "_t_id"
-            if only_main:
-                output_file += "_main"
-            else:
-                output_file += "_all"
-
-        if verbose:
-            output_file += "_coordinates"
-            
-        output_file += ".fasta"
-
-        valid_id_choices = ["gene", "transcript"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export transcripts.")
-        
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    if (t.feature in rna_classes) or (not rna_classes):
-                        if t.seq != "":
-                            if only_main and not t.main:
-                                continue
-
-                            if used_id == "transcript":    
-                                out += f">{t.id}"
-                            elif used_id == "gene":
-                                out += f">{g.id}"
-
-                            if verbose:
-                                out += f"|{t.strand}|{t.ch}|{t.start}:{t.end}"
-                            out += f"\n{t.seq}\n"
-
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
-
-    def export_genes(self, verbose:bool=True, custom_path:str=""):
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += self.id
-        output_file += self.feature_suffix
-        output_file += "_genes"
-
-
-        if verbose:
-            output_file += "_coordinates"
-        output_file += ".fasta"
-        out = ""
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                if g.seq != "":
-                    out += f">{g.id}"
-                    if verbose:
-                        out += f"|{g.strand}|{g.ch}|{g.start}:{g.end}"
-                    out += f"\n{g.seq}\n"
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self.id}")
-
-    def export_promoters(self, only_main:bool=True, verbose:bool=True, custom_path:str="", used_id:str="promoter"):
-        """
-
-        Verbose will include promoter type, strand, chromosome, and coordinates.
-
-        """
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += self.id
-        output_file += self.feature_suffix
-        output_file += "_promoters"
-
-        out = ""
-
-        if used_id == "gene":
-            only_main = True
-            output_file += "_g_id_main"
-        else:
-            if used_id == "transcript":
-                output_file += "_t_id"
-            if used_id == "promoter":
-                output_file += "_prom_id"
-            if only_main:
-                output_file += "_main"
-            else:
-                output_file += "_all"
-
-        if verbose:
-            output_file += "_coordinates"
-            
-        output_file += f"_{self.promoter_size}_{self.promoter_types}.fasta"
-
-        valid_id_choices = ["gene", "transcript", "promoter"]
-
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    if only_main and not t.main:
-                        continue
-
-                    if hasattr(t, "promoter"):
-                        if t.promoter.seq != "":
-
-                            if used_id == "promoter":
-                                out += f">{t.promoter.id}"
-                            elif used_id == "transcript":
-                                out += f">{t.id}"
-                            elif used_id == "gene":
-                                out += f">{g.id}"
-
-                            if verbose:
-                                out += f"|{t.promoter.type}|{t.strand}|{t.ch}|{t.promoter.start}:{t.promoter.end}"
-
-                            out += f"\n{t.promoter.seq}\n"
-                        else:
-                            print(f"Warning: transcript {t.id} from annotation {self.id} has no promoter sequence.\n")
-                    else:
-                        print(f"Warning: transcript {t.id} from annotation {self.id} has no promoter.\n")
-
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_promoters(genome) and self.generate_sequences(genome) on {self.id}")
-
-
-    def combine_transcripts(self, genome:object, respect_non_coding:bool=False):
+    def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
                 g.combine_transcripts(genome, respect_non_coding=respect_non_coding)
@@ -2317,7 +1305,7 @@ class Annotation():
         if not quiet:
             print(f"Sorted genes for {self.id}")
 
-    def define_synteny(self, original_annotation:object, sort_processes:int=1, quiet:bool=True):
+    def define_synteny(self, original_annotation:Annotation|None=None, sort_processes:int=1, quiet:bool=True):
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
         start_time = time.time()
@@ -2343,7 +1331,7 @@ class Annotation():
                     g.previous_gene = gene_list[n-1].id
                     g.next_gene = False
 
-        if self.liftover:
+        if self.liftover and original_annotation:
             for genes in self.chrs.values():
                 for g_id, g in genes.items():
                     # this extra bit is for extra liftover copies
@@ -2364,202 +1352,6 @@ class Annotation():
         lapse = now - start_time
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes took {round(lapse, 1)} seconds\n")
-
-    def calculate_transcript_masking(self, hard_masked_genome:object):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                g.generate_hard_sequence(hard_masked_genome)
-                for t in g.transcripts.values():
-                    t.generate_hard_sequence(hard_masked_genome)
-                    t.calculate_masking()
-                    t.clear_sequence(just_hard=True)
-                    for c in t.CDSs.values():
-                        c.generate_hard_sequence(hard_masked_genome)
-                        c.calculate_masking()
-                        c.clear_sequence(just_hard=True)
-        self.update()
-    
-    def calculate_gc_content(self):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                g.calculate_gc_content()
-                for t in g.transcripts.values():
-                    t.calculate_gc_content()
-                    for c in t.CDSs.values():
-                        c.calculate_gc_content()
-
-    def update_stats(self, custom_path:str="", export:bool=False, genome:object=None, max_x:int=None, quiet:bool=True):
-        if not quiet:
-            print(f"\nUpdating stats for {self.id}")
-        if not self.generated_all_sequences or not self.contains_protein_sequences:
-            if genome != None:
-                self.generate_sequences(genome, quiet=quiet)
-                self.clear_sequences(keep_proteins=True)
-
-        self.calculate_gc_content()
-
-        if export:
-            export_folder = Path(custom_path or self.path) / "out_stats"
-            export_folder.mkdir(parents=True, exist_ok=True)
-            export_folder = str(export_folder) + "/"
-
-        to_tally = ["coding_genes", "noncoding_genes", "CDSs_without_stop", "CDSs_with_stop"]
-
-        self.stats = {"mean_transcripts" : [], "mean_exons" : [], "mean_exon_size" : [], "mean_gene_size" : [], "mean_intron_size" : [], "mean_CDS_size" : [], "mean_UTR_size" : [], "mean_transcript_size" : [], "mean_five_prime_UTR_size" : [], "mean_three_prime_UTR_size" : []}
-
-        if genome != None:
-            self.stats["mean_protein_size"] = []
-
-        for key in to_tally:
-            self.stats[key] = []
-
-        for ft, value in self.features.items():
-            self.stats[ft] = value
-
-        self.stats["five_prime_UTRs"] = 0
-        self.stats["three_prime_UTRs"] = 0
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                self.stats["mean_transcripts"].append(len(g.transcripts))
-                self.stats["mean_gene_size"].append(g.size)
-                for t in g.transcripts.values():
-                    if t.main:
-                        if hasattr(t, "introns"):
-                            for i in t.introns:
-                                self.stats["mean_intron_size"].append(i.size)
-
-                        if t.coding:
-                            for c in t.CDSs.values():
-                                if c.main:
-                                    self.stats["mean_CDS_size"].append(c.size)
-                                    if hasattr(c, "UTRs"):
-                                        utr_5 = False
-                                        utr_3 = False
-                                        u_size = 0
-                                        u5_size = 0
-                                        u3_size = 0
-                                        for u in c.UTRs:
-                                            if u.prime == "3'":
-                                                utr_3 = True
-                                                u3_size += u.size
-                                            else:
-                                                utr_5 = True
-                                                u5_size += u.size
-                                            u_size += u.size
-                                        if utr_5:
-                                            self.stats["five_prime_UTRs"] += 1
-                                        if utr_3:
-                                            self.stats["three_prime_UTRs"] += 1
-                                        self.stats["mean_UTR_size"].append(u_size)
-                                        self.stats["mean_five_prime_UTR_size"].append(u5_size)
-                                        self.stats["mean_three_prime_UTR_size"].append(u3_size)
-                                    if genome != None:
-                                        self.stats["mean_protein_size"].append(c.protein.size)
-                            self.stats["coding_genes"].append(g.id)
-                        else:
-                            self.stats["noncoding_genes"].append(g.id)
-
-                        for e in t.exons:
-                            self.stats["mean_exon_size"].append(e.size)
-
-                        self.stats["mean_exons"].append(len(t.exons))
-                        
-                        self.stats["mean_transcript_size"].append(t.size)
-
-        # anything with mean will be also plotted as distribution plots:
-        if export:
-            for key in self.stats:
-                if "mean" in key:
-                    tag = key.split("mean_")[1]
-                    if tag[-1] != "s":
-                        tag += "s"
-                    barplot(self.stats[key], export_folder, f"{self.id}{self.feature_suffix}_{tag}", f"Distribution of {self.id} {tag}", max_x)   
-
-        if genome != None:
-            self.stats["CDSs_without_stop"] = []
-            self.stats["CDSs_with_stop"] = []
-            self.stats["intron_composition"] = set()
-            intron_stats = {}
-            for b in Intron.canonical_seqs:
-                intron_stats[f"intron-exon boundary: {b}"] = 0
-            intron_stats["other_intron_seqs"] = 0
-            for genes in self.chrs.values():
-                for g in genes.values():                    
-                    for t in g.transcripts.values():
-                        if t.main:
-                            if t.coding:
-                                for c in t.CDSs.values():
-                                    if c.main:
-                                        if c.protein != None:
-                                            if not c.protein.end_stop:
-                                                self.stats["CDSs_without_stop"].append(g.id)
-                                            else:
-                                                self.stats["CDSs_with_stop"].append(g.id)
-                                            
-                            for i in t.introns:
-                                self.stats["intron_composition"].add(i.boundary)
-                                if i.canonical:
-                                    intron_stats[f"intron-exon boundary: {i.boundary}"] += 1
-                                else:
-                                    intron_stats["other_intron_seqs"] += 1
-            self.stats["intron_composition"] = list(self.stats["intron_composition"])
-
-            if export:
-                labels = list(intron_stats.keys())
-                mod_labels = []
-                for l in labels:
-                    if "other" in l:
-                        mod_labels.append("other")
-                    else:
-                        mod_labels.append(l.split(": ")[1])
-
-                values = list(intron_stats.values())
-                pie_chart(mod_labels, values, export_folder, f"{self.id}{self.feature_suffix}_intron_composition", f"Intron composition of {self.id} annotation")
-            self.stats.update(intron_stats)
-
-        for key in self.stats:
-            if "mean" in key:
-                if len(self.stats[key]) > 0:
-                    self.stats[key] = mean(self.stats[key])
-                else:
-                    self.stats[key] = 0
-            #tallying
-            elif key in to_tally:
-                self.stats[key] = len(self.stats[key])
-
-        if export:
-            if genome != None:
-                out_file = f"{self.id}{self.feature_suffix}_full_stats.csv"
-            else:
-                out_file = f"{self.id}{self.feature_suffix}_basic_stats.csv"
-
-            warning_df = pd.DataFrame({k: pd.Series(sorted(v)) for k, v in self.warnings.items()}).fillna('')
-            error_df = pd.DataFrame({k: pd.Series(sorted(v)) for k, v in self.errors.items()}).fillna('')
-
-            warning_df.to_csv(f"{export_folder}{self.id}{self.feature_suffix}_warnings.csv", sep="\t", index=False)
-            error_df.to_csv(f"{export_folder}{self.id}{self.feature_suffix}_errors.csv", sep="\t", index=False)
-
-            f_out = open(f"{export_folder}{out_file}", "w", encoding="utf-8")
-            f_out.write("")
-            f_out.close()
-
-            f_out = open(f"{export_folder}{out_file}", "a")
-            x = -1
-            for key, value in self.stats.items():
-                x += 1
-                value_temp = value
-                if isinstance(value, list):
-                    if len(value) > 200:
-                        value_temp = value[:199]
-                        value_temp.append("...")
-                if x == 0:
-                    f_out.write(f"{key}\t{value_temp}")
-                else:
-                    f_out.write(f"\n{key}\t{value_temp}")
-            f_out.close()
-        if not quiet:
-            print(f"\nUpdated stats for {self.id}")
 
     def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):
 
@@ -2624,7 +1416,7 @@ class Annotation():
         self.shared_UTRs = False
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def detect_gene_overlaps(self, other:object=None, sort_processes:int=1, clear=True, quiet:bool=True):
+    def detect_gene_overlaps(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
@@ -2684,7 +1476,7 @@ class Annotation():
                             found_overlap = False
                             if chr in other.chrs:
                                 for g2 in other.chrs[chr].values():
-                                    overlapping, overlap_bp = overlap(g1, g2)
+                                    overlapping, overlap_bp = g1.overlap(g2)
                                     if overlapping:
                                         found_overlap = True
                                     elif found_overlap and g1.end < g2.start:
@@ -2715,7 +1507,7 @@ class Annotation():
                                             overlap_exon_temp = 0
                                             for e1 in t1.exons:
                                                 for e2 in t2.exons:
-                                                    overlap_temp, overlap_bp = overlap(e1, e2)
+                                                    overlap_temp, overlap_bp = e1.overlap(e2)
                                                     if overlap_temp:
                                                         overlap_exon_temp += overlap_bp
                                                         overlapping = True
@@ -2759,7 +1551,7 @@ class Annotation():
                                                     overlap_CDS_temp = 0
                                                     for c1 in CDS1.CDS_segments:
                                                         for c2 in CDS2.CDS_segments:
-                                                            overlap_temp, overlap_bp = overlap(c1, c2)
+                                                            overlap_temp, overlap_bp = c1.overlap(c2)
                                                             if not overlap_temp:
                                                                 continue
                                                             overlap_CDS_temp += overlap_bp
@@ -2805,7 +1597,7 @@ class Annotation():
                                                             overlap_protein_temp = 0
                                                             for c1 in CDS1.CDS_segments:
                                                                 for c2 in CDS2.CDS_segments:
-                                                                    overlap_temp, overlap_bp = overlap(c1, c2)
+                                                                    overlap_temp, overlap_bp = c1.overlap(c2)
                                                                     if not overlap_temp:
                                                                         continue
                                                                     if c1.frame != c2.frame:
@@ -2890,7 +1682,7 @@ class Annotation():
                             g2 = genes[gl_id]
                             if g1.id == g2.id:
                                 continue
-                            overlapping, overlap_bp = overlap(g1, g2)
+                            overlapping, overlap_bp = g1.overlap(g2)
 
                             if overlapping:
                                 self.self_overlapping.add(g1.id)
@@ -2926,7 +1718,7 @@ class Annotation():
                                     overlap_exon_temp = 0
                                     for e1 in t1.exons:
                                         for e2 in t2.exons:
-                                            overlap_temp, overlap_bp = overlap(e1, e2)
+                                            overlap_temp, overlap_bp = e1.overlap(e2)
                                             if overlap_temp:
                                                 overlap_exon_temp += overlap_bp
                                                 overlapping = True
@@ -2969,7 +1761,7 @@ class Annotation():
                                             overlap_CDS_temp = 0
                                             for c1 in CDS1.CDS_segments:
                                                 for c2 in CDS2.CDS_segments:
-                                                    overlap_temp, overlap_bp = overlap(c1, c2)
+                                                    overlap_temp, overlap_bp = c1.overlap(c2)
                                                     if not overlap_temp:
                                                         continue
                                                     overlap_CDS_temp += overlap_bp
@@ -3015,7 +1807,7 @@ class Annotation():
                                                         overlap_protein_temp = 0
                                                         for c1 in CDS1.CDS_segments:
                                                             for c2 in CDS2.CDS_segments:
-                                                                overlap_temp, overlap_bp = overlap(c1, c2)
+                                                                overlap_temp, overlap_bp = c1.overlap(c2)
                                                                 if not overlap_temp:
                                                                     continue
                                                                 if c1.frame != c2.frame:
@@ -3116,233 +1908,7 @@ class Annotation():
                                 if hit.id not in g.aliases:
                                     g.aliases.append(hit.id)
 
-    def export_equivalences(self, custom_path:str="", overlap_threshold:int=6, verbose:bool=True, synteny:bool=False, return_df:bool=True, NAs:bool=True, export_csv:bool=False, export_self:bool=False, output_file:str="", quiet:bool=False, copies_info:bool=False):
-        start_time = time.time()
-        if export_self:
-            export = "self"
-            export_tag = "self_"
-        else:
-            export = "other"
-            export_tag = ""
 
-        tag = f"{export_tag}{self.id}{self.feature_suffix}_overlap_t{overlap_threshold}"
-        
-
-        if custom_path:
-            export_folder = Path(custom_path)
-        else:
-            export_folder = Path(custom_path or self.path) / "overlaps"
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
-
-        rows = []
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for name, hits in g.overlaps.items():
-                    if name == export:
-                        for hit in hits:
-                            if hit.score < overlap_threshold:
-                                continue
-
-                            row = {
-                                "gene_id_A": g.id,
-                                "gene_id_B": hit.id,
-                                "gene_id_A_origin": self.name,
-                                "gene_id_B_origin": hit.origin,
-                                "overlap_score": hit.score,
-                            }
-
-                            if synteny:
-                                row["gene_id_A_synteny_conserved"] = g.conserved_synteny if self.liftover else pd.NA
-                                row["gene_id_B_synteny_conserved"] = hit.target_synteny_conserved
-
-                            if verbose:
-                                row["same_strand"] = hit.orientation
-                                row["min_gene_percent"] = hit.min_gene_percent
-                                row["min_exon_percent"] = hit.min_exon_percent
-                                row["min_CDS_percent"] = hit.min_CDS_percent
-
-                            if copies_info:
-                                row["gene_id_A_copy"] = g.extra_copy
-                                row["gene_id_B_copy"] = hit.extra_copy
-
-                            rows.append(row)
-
-        eq_df = pd.DataFrame(rows)
-
-
-        if eq_df.empty:
-
-            if export == "self":
-                print(f"\nNo {self.id} self overlaps were detected.")
-            else:
-                print(f"\nNo {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' were detected.")
-            cols = [
-                "gene_id_A",
-                "gene_id_B",
-                "gene_id_A_origin",
-                "gene_id_B_origin",
-                "overlap_score",
-            ]
-
-            if synteny:
-                cols += [
-                    "gene_id_A_synteny_conserved",
-                    "gene_id_B_synteny_conserved",
-                ]
-
-            if verbose:
-                cols += [
-                    "same_strand",
-                    "min_gene_percent",
-                    "min_exon_percent",
-                    "min_CDS_percent",
-                ]
-
-            if copies_info:
-                cols += [
-                    "gene_id_A_copy",
-                    "gene_id_B_copy",
-                ]
-            rows = []
-            eq_df = pd.DataFrame(rows, columns=cols)
-
-
-
-        if export == "self":
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
-            eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
-            eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
-
-        else:
-            eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([f'{row["gene_id_A"]}_{row["gene_id_A_origin"]}', f'{row["gene_id_B"]}_{row["gene_id_B_origin"]}'])), axis=1)
-            eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
-
-        if NAs:
-            tag += "_gene_id_A_NAs"
-            if export == "self":
-                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
-            else:
-                overlapping_genes = set(eq_df["gene_id_A"].dropna())
-
-            na_rows = []
-
-            if not copies_info:
-
-                if export == "self":
-
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "overlap_score": 0
-                                })
-
-                    if synteny:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "gene_id_A": g_id
-                            })
-
-                else:
-
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_origin": self.name,
-                                    "overlap_score": 0
-                                })
-
-                    if synteny:
-                        for g_id in self.unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": self.name
-                            })
-
-            else:
-
-                if export == "self":
-
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_copy": g.extra_copy,
-                                    "overlap_score": 0
-                                })
-
-                    if synteny:
-                        if g_id not in overlapping_genes:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_copy": g.extra_copy
-                            })
-
-                else:
-
-                    for genes in self.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_origin": self.name,
-                                    "overlap_score": 0,
-                                    "gene_id_A_copy": g.extra_copy
-                                })
-
-                    if synteny:
-                        for g_id in self.unmapped:
-                            na_rows.append({
-                                "gene_id_A": g_id,
-                                "gene_id_A_origin": self.name,
-                                "gene_id_A_copy": g.extra_copy
-                            })          
-
-            # Combine with the original df
-            if na_rows:
-                eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
-
-        eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
-
-        if synteny:
-            column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
-            ascending = [True, True, False, False, False, True, True]
-        elif export == "self":
-            column_sort_order = ["overlap_score", "gene_id_A", "gene_id_B"]
-            ascending = [False, True, True]
-        else:
-            column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A", "gene_id_B"]
-            ascending = [True, True, False, True, True]            
-
-        eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
-        eq_df.reset_index(drop=True, inplace=True)
-        
-        if export_csv:
-            if output_file:
-                export_path = f"{export_folder}{output_file}"
-            else:
-                export_path = f"{export_folder}{tag}.csv"
-
-            eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
-
-            now = time.time()
-            lapse = now - start_time
-            if not quiet:
-                if export == "self":
-                    print(f"\nExporting {self.id} self overlaps took {round(lapse/60, 1)} minutes")
-                else:
-                    print(f"\nExporting {self.id} overlaps to the following annotation(s) '{self.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
-        
-        if return_df:
-            return eq_df
                   
     def clear_overlaps(self, keep_self=False, keep_other=False):
         if not keep_self:
@@ -3361,124 +1927,6 @@ class Annotation():
             for g in genes.values():
                 g.aliases = []
 
-    def list_genes(self, custom_path:str="", output_file:str="",lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding_info:bool=False, skip_coding:bool=False, skip_non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=False, skip_transposables:bool=False, gene_symbols:bool=False):
-
-        if not custom_path:
-            export_folder = Path(self.path) / "lists"
-        else:
-            export_folder = Path(custom_path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        if not output_file:
-            output_file = f"{export_folder}{self.name}_genes.txt"
-        else:
-            output_file = f"{export_folder}{output_file}"
-
-        if skip_coding and skip_non_coding:
-            print("Warning: Both skip_coding and skip_non_coding are set to True. No genes will be listed.")
-            return
-
-        with open(output_file, "w", encoding="utf-8") as f_out:
-
-            header = ["gene_id"]
-            if chromosomes or coordinates:
-                header.append("scaffold")
-            if coordinates:
-                header.append("gene_start")
-                header.append("gene_end")
-            if lengths:
-                header.append("gene_length")
-            if coding_info:
-                header.append("coding")
-            if gene_symbols:
-                header.append("gene_symbol")
-            f_out.write(sep.join(header) + "\n")
-
-            for chrom, genes in self.chrs.items():
-                for g in genes.values():
-                    if skip_pseudogenes and g.pseudogene:
-                        continue
-                    if skip_transposables and g.transposable:
-                        continue
-                    if skip_coding and g.coding:
-                        continue
-                    if skip_non_coding and not g.coding:
-                        continue
-
-                    out = [g.id]
-                    if chromosomes or coordinates:
-                        out.append(chrom)
-                    if coordinates:
-                        out.append(str(g.start))
-                        out.append(str(g.end))
-                    if lengths:
-                        out.append(str(g.size))
-                    if coding_info:
-                        out.append(str(g.coding))
-                    if gene_symbols:
-                        out.append("|".join(g.symbols))
-                    f_out.write(sep.join(out) + "\n")
-
-    def list_transcripts(self, custom_path:str="", output_file:str="", lengths:bool=False, coordinates:bool=False, chromosomes:bool=False, coding_info:bool=False, skip_coding:bool=False, skip_non_coding:bool=False, sep:str="\t", skip_pseudogenes:bool=False, skip_transposables:bool=False, gene_symbols:bool=False):
-        if not custom_path:
-            export_folder = Path(self.path) / "lists"
-        else:
-            export_folder = Path(custom_path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        if not output_file:
-            output_file = f"{export_folder}{self.name}_transcripts.txt"
-        else:
-            output_file = f"{export_folder}{output_file}"
-
-        if skip_coding and skip_non_coding:
-            print("Warning: Both skip_coding and skip_non_coding are set to True. No transcripts will be listed.")
-            return
-
-        with open(output_file, "w", encoding="utf-8") as f_out:
-
-            header = ["transcript_id"]
-            if chromosomes or coordinates:
-                header.append("scaffold")
-            if coordinates:
-                header.append("transcript_start")
-                header.append("transcript_end")
-            if lengths:
-                header.append("transcript_length")
-            if coding_info:
-                header.append("coding")
-            if gene_symbols:
-                header.append("gene_symbol")
-            f_out.write(sep.join(header) + "\n")
-
-            for chrom, genes in self.chrs.items():
-                for g in genes.values():
-                    if skip_pseudogenes and g.pseudogene:
-                        continue
-                    if skip_transposables and g.transposable:
-                        continue
-
-                    for t in g.transcripts.values():
-                        if skip_coding and t.coding:
-                            continue
-                        if skip_non_coding and not t.coding:
-                            continue
-
-                        out = [t.id]
-                        if chromosomes or coordinates:
-                            out.append(chrom)
-                        if coordinates:
-                            out.append(str(t.start))
-                            out.append(str(t.end))
-                        if lengths:
-                            out.append(str(t.size))
-                        if coding_info:
-                            out.append(str(t.coding))
-                        if gene_symbols:
-                            out.append("|".join(g.symbols))
-                        f_out.write(sep.join(out) + "\n")
 
     def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):
         repeat_CDS_segment_id = False
@@ -3542,268 +1990,8 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def export_gff(self, custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=False, main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, repeat_exons_utrs:bool=False, subfolder:bool=True, quiet:bool=False, skip_orphaned_fts:bool=False):
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mExporting gff for {self.id} annotation:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-
-        if subfolder:
-            export_folder = Path(custom_path or self.path) / "out_gffs"
-        else:
-            export_folder = Path(custom_path or self.path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        output_suffix = ""
-
-        if just_genes:
-            output_suffix += "_just_genes"
-        if no_1bp_features:
-            output_suffix += "_for_lifton"
-
-        if tag == ".gff3":
-            tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
-            if not quiet:
-                print(f"Exporting {self.id} gff with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
-        elif not quiet:
-            print(f"Exporting {self.id} gff to {export_folder}{tag}.")
-
-        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
-            if self.clean or self.dapmod:
-                f_out.write("##gff-version 3\n")
-            else:
-                f_out.write("\n".join(self.gff_header) + "\n")
-
-            if repeat_exons_utrs:
-                self.single_parent_for_exons_utrs(quiet=quiet)
-
-            for x1, genes in enumerate(self.chrs.values()):
-                progress_bar.update(len(genes))
-                for x2, g in enumerate(genes.values()):
-                    
-                    if no_1bp_features:
-                        gene_1bp_feature = False
-                        for t in g.transcripts.values():
-                            for e in t.exons:
-                                if e.size == 1:
-                                    gene_1bp_feature = True
-                            for c in t.CDSs.values():
-                                for cs in c.CDS_segments:
-                                    if cs.size == 1:
-                                        gene_1bp_feature = True
-                                for u in c.UTRs:
-                                    if u.size == 1:
-                                        gene_1bp_feature = True
-
-                        if gene_1bp_feature:
-                            continue
-
-                    f_out.write(g.print_gff())
-
-                    if just_genes:
-                        continue
-
-                    if repeat_exons_utrs or main_only or len(g.transcripts) == 1:
-                        for t in g.transcripts.values():
-                            if main_only:
-                                if not t.main:
-                                    continue
-                            f_out.write(t.print_gff())
-                            for e in t.exons:
-                                f_out.write(e.print_gff())
-
-                            for c in t.CDSs.values():
-                                if main_only:
-                                    if not c.main:
-                                        continue
-                                for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff())
-
-                                if UTRs:
-                                    if hasattr(c, "UTRs"):
-                                        for u in c.UTRs:
-                                            f_out.write(u.print_gff())
-
-                    else:
-                                
-                        for t in g.transcripts.values():                                
-                            f_out.write(t.print_gff())
-
-                        exons = []
-                        for t in g.transcripts.values():
-                            exons.extend(t.exons)
-
-                        exons.sort()
-                        
-                        unique_exons = []
-                        if exons:
-                            unique_exons.append(exons[0])
-                            for i in range(1, len(exons)):
-                                if not exons[i].equal_sequence(exons[i-1]):
-                                    unique_exons.append(exons[i])
-
-                        for e in unique_exons:
-                            f_out.write(e.print_gff())
-
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff())
-
-
-                        if UTRs:
-                            utrs = []
-                            for t in g.transcripts.values():
-                                for c in t.CDSs.values():
-                                    if hasattr(c, "UTRs"):
-                                        utrs.extend(c.UTRs)
-                            utrs.sort()
-
-                            unique_utrs = []
-                            if utrs:
-                                unique_utrs.append(utrs[0])
-                                for i in range(1, len(utrs)):
-                                    if not utrs[i].equal_sequence(utrs[i-1]):
-                                        unique_utrs.append(utrs[i])
-
-                            for u in unique_utrs:
-                                f_out.write(u.print_gff())
-
-                    if x1 == (len(self.chrs) - 1) and x2 == (len(genes) - 1):
-                        continue
-                    f_out.write("###\n")
-
-            progress_bar.close()
-
-            if not skip_atypical_fts:
-                if not just_genes:
-                    for x, ft in enumerate(self.atypical_features):
-                        if x == 0:
-                            f_out.write("###\n")
-                        f_out.write(ft.print_gff())
-                        if x == (len(self.atypical_features) - 1):
-                            continue
-                        f_out.write("###\n")
-            if not skip_orphaned_fts:
-                if not just_genes:
-                    for x, ft in enumerate(self.orphaned_features):
-                        if x == 0:
-                            f_out.write("###\n")
-                        f_out.write(ft.print_gff())
-                        if x == (len(self.orphaned_features) - 1):
-                            continue
-                        f_out.write("###\n")
-
-    def export_gtf(self, custom_path:str="", tag:str=".gtf", main_only:bool=False, UTRs:bool=False, just_genes:bool=False, no_1bp_features:bool=False, quiet:bool=False):
-
-        self.create_gtf_attributes()
-
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mExporting gtf for {self.id} annotation:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-
-        export_folder = Path(custom_path or self.path) / "out_gtfs"
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        output_suffix = ""
-
-        if just_genes:
-            output_suffix += "_just_genes"
-        if no_1bp_features:
-            output_suffix += "_for_lifton"
-
-        if tag == ".gtf":
-            tag = f"{self.id}{self.suffix}{output_suffix}{tag}"
-            if not quiet:
-                print(f"Exporting {self.id} gtf with tag='{tag}' which is dapfit={self.dapfit} and dapmod={self.dapmod} and combined={self.combined}.")
-        elif not quiet:
-            print(f"Exporting {self.id} gtf to {export_folder}{tag}.")
-
-        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
-            f_out.write("#gtf-version 2.2\n")
-
-            for x1, genes in enumerate(self.chrs.values()):
-                progress_bar.update(len(genes))
-                for x2, g in enumerate(genes.values()):
-
-                    if no_1bp_features:
-                        gene_1bp_feature = False
-                        for t in g.transcripts.values():
-                            for e in t.exons:
-                                if e.size == 1:
-                                    gene_1bp_feature = True
-                            for c in t.CDSs.values():
-                                for cs in c.CDS_segments:
-                                    if cs.size == 1:
-                                        gene_1bp_feature = True
-                                for u in c.UTRs:
-                                    if u.size == 1:
-                                        gene_1bp_feature = True
-
-                        if gene_1bp_feature:
-                            continue
-
-                    f_out.write(g.print_gtf())
-
-                    if just_genes:
-                        continue
-
-                    for t in g.transcripts.values():
-                        if main_only:
-                            if not t.main:
-                                continue
-                        original_feature = t.feature
-                        t.feature = "transcript"
-                        f_out.write(t.print_gtf())
-                        t.feature = original_feature
-                        for e in t.exons:
-                            f_out.write(e.print_gtf())
-                        for c in t.CDSs.values():
-                            if main_only:
-                                if not c.main:
-                                    continue
-                            for c_seg in c.CDS_segments:
-                                f_out.write(c_seg.print_gtf())
-                            if UTRs:
-                                if hasattr(c, "UTRs"):
-                                    for u in c.UTRs:
-                                        f_out.write(u.print_gtf())
-
-                    if x1 == (len(self.chrs) - 1) and x2 == (len(genes) - 1):
-                        continue
-                    f_out.write("###\n")
-
-            progress_bar.close()
-
-    def merge(self, other:object, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
+    def merge(self, other:Annotation, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
         """
         Priority is given to self annotation
         """
@@ -4006,7 +2194,7 @@ class Annotation():
         if not quiet:
             print(f"Removed missing transcript parent references for {self.id} annotation.")
 
-    def rework_CDSs(self, genome:object=None, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+    def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
         start_time = time.time()
         if low_memory:
             self.clear_sequences()
@@ -4037,14 +2225,14 @@ class Annotation():
                     t.generate_CDSs_based_on_ORF(low_memory)
                     for c in t.CDSs.values():
                         c.generate_sequence(genome, low_memory)
-                    t.exon_update()
+                    t.update()
                     if t.coding_ratio < coding_ratio_threshold:
                         t.generate_sequence(genome, low_memory)
                         t.generate_best_protein(genome, must_have_stop=False)
                         t.generate_CDSs_based_on_ORF(low_memory)
                         for c in t.CDSs.values():
                             c.generate_sequence(genome, low_memory)
-                    t.exon_update()
+                    t.update()
 
         progress_bar.close()
         self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)
@@ -4373,18 +2561,19 @@ class Annotation():
                                 e_parents[e_unique].add(t.id)
                             else:
                                 e_parents[e_unique] = set([t.id])
+                    
                     e_temp = list(e_temp)
                     e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
 
                     e_ids = {}
                     e_count = 0
 
-                    if t.strand == "+":
+                    if g.strand == "+":
                         for n, e in enumerate(e_temp):
                             e_count_s = f"{(n+1):0{t_id_digits}d}"
                             e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
 
-                    elif t.strand == "-":
+                    elif g.strand == "-":
                         counter = len(e_temp)
                         for n, e in enumerate(e_temp):
                             e_count_s = f"{counter:0{t_id_digits}d}"
@@ -4414,18 +2603,19 @@ class Annotation():
                                     u_parents[u_unique].add(t.id)
                                 else:
                                     u_parents[u_unique] = set([t.id])
+
                     u_temp = list(u_temp)
                     u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
 
                     u_ids = {}
                     u_count = 0
 
-                    if t.strand == "+":
+                    if g.strand == "+":
                         for n, u in enumerate(u_temp):
                             u_count_s = f"{(n+1):0{t_id_digits}d}"
                             u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
 
-                    elif t.strand == "-":
+                    elif g.strand == "-":
                         counter = len(u_temp)
                         for n, u in enumerate(u_temp):
                             u_count_s = f"{counter:0{t_id_digits}d}"
@@ -4642,7 +2832,7 @@ class Annotation():
                     blasts = ",".join(blasts)
                     if blasts:
                         g.attributes.append(f"blasts={blasts}")
-                    alternative_transcript_rescue = ",".join(list(g.alternative_transcript_rescue))
+                    alternative_transcript_rescue = ",".join(g.alternative_transcript_rescue)
                     if alternative_transcript_rescue:
                         g.attributes.append(f"alternative_transcript_rescue={alternative_transcript_rescue}")
                     overlaps = []
@@ -4778,13 +2968,17 @@ class Annotation():
             f_in.close()
             if mode == "protein":
                 for protein_id in self.protein_equivalences:
-                    chr, g, t, c = self.all_protein_ids[protein_id]
+                    chrom, g, t, c = self.all_protein_ids[protein_id]
+                    prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
                     if protein_id in hits:
-                        self.chrs[chr][g].transcripts[t].CDSs[c].protein.blast_hits.append(hits[protein_id])
+                        if prot is not None:
+                            prot.blast_hits.append(hits[protein_id])
                     for protein_id_copy in self.protein_equivalences[protein_id]:
-                        chr, g, t, c = self.all_protein_ids[protein_id_copy]
-                        if protein_id_copy in self.chrs[chr] and protein_id in hits:
-                            self.chrs[chr][g].transcripts[t].CDSs[c].protein.blast_hits.append(hits[protein_id])
+                        chrom, g, t, c = self.all_protein_ids[protein_id_copy]
+                        prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                        if protein_id_copy in self.chrs[chrom] and protein_id in hits:
+                            if prot is not None:
+                                prot.blast_hits.append(hits[protein_id])
             else:
                 "Adding blast hits is not available for gene, transcripts and CDSs yet."
         else:
@@ -4879,36 +3073,26 @@ class Annotation():
                             g.intron_nested = True
                             if self.chrs[chrom][o.id].start < g.start and self.chrs[chrom][o.id].end > g.end:
                                 g.intron_nested_fully_contained = True
-                            
-                            c_start_target = None
-                            c_end_target = None
-                            c_start_query = None
-                            c_end_query = None
 
-                            for t in self.chrs[chrom][o.id].transcripts.values():
-                                if t.main:
-                                    for c in t.CDSs.values():
-                                        if c.main:
-                                            c_start_target = c.start
-                                            c_end_target = c.end
+                            target_cds = self.chrs[chrom][o.id].get_main_CDS_range()
+                            query_cds = g.get_main_CDS_range()
 
-                            for t in g.transcripts.values():
-                                if t.main:
-                                    for c in t.CDSs.values():
-                                        if c.main:
-                                            c_start_query = c.start
-                                            c_end_query = c.end
 
-                            # UTR intron nested means that a main CDS of a gene finishes and starts outside of the overlaped gene's CDS region
-                            if c_start_target != None and c_start_query != None:
+                            if target_cds and query_cds:
+                                c_start_target, c_end_target = target_cds
+                                c_start_query, c_end_query = query_cds
+                                
                                 if c_start_query > c_end_target or c_end_query < c_start_target:
+                                    # UTR intron nested means that a main CDS of a gene finishes and starts outside of the overlaped gene's CDS region
                                     g.UTR_intron_nested = True
-                                    
+
                             for t in self.chrs[chrom][o.id].transcripts.values():
                                 if t.main:
                                     for i in t.introns:
                                         if i.start < g.start and i.end > g.end:
                                             g.intron_nested_single = True
+                                            break
+                                    break
 
     def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
@@ -5034,7 +3218,7 @@ class Annotation():
 
         self.gff_header = new_header.copy()
 
-    def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set=None, min_genes:int=1500, quiet:bool=False):
+    def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
 
         initial_chosen_features = chosen_features.copy()
 
@@ -5142,7 +3326,7 @@ class Annotation():
         if update:
             self.update(quiet=quiet)
 
-    def remove_genes(self, to_remove:set=None, quiet:bool=False):
+    def remove_genes(self, to_remove:set|None=None, quiet:bool=False):
 
         if to_remove is None:
             to_remove = set()
@@ -5358,7 +3542,7 @@ class Annotation():
                                             for e1 in t3.exons:
                                                 for c1 in t4.CDSs.values():
                                                     for cs1 in c1.CDS_segments:
-                                                        overlapping, _ = overlap(e1, cs1)
+                                                        overlapping, _ = e1.overlap(cs1)
                                                         if overlapping:
                                                             g.unrescuable = True
                                                             g.rescue = False
@@ -5407,7 +3591,7 @@ class Annotation():
                                 for t2 in self.chrs[g.ch][o.id].transcripts.values():
                                     for e1 in t.exons:
                                         for e2 in t2.exons:
-                                            overlapping, _ = overlap(e1, e2)
+                                            overlapping, _ = e1.overlap(e2)
                                             if overlapping:
                                                 g.overlap_with_selected_exon = True
                                                 break
@@ -5419,7 +3603,7 @@ class Annotation():
                                         for t2 in self.chrs[g.ch][o2.id].transcripts.values():
                                             for e1 in t.exons:
                                                 for e2 in t2.exons:
-                                                    overlapping, _ = overlap(e1, e2)
+                                                    overlapping, _ = e1.overlap(e2)
                                                     if overlapping:
                                                         self.chrs[g.ch][o.id].overlap_with_selected_exon = True
                                                         break
@@ -5453,7 +3637,7 @@ class Annotation():
                                     for e in t.exons:
                                         for c in t2.CDSs.values():
                                             for cs in c.CDS_segments:
-                                                overlapping, _ = overlap(e, cs)
+                                                overlapping, _ = e.overlap(cs)
                                                 if overlapping:
                                                     g.overlap_with_selected_CDS = True
                                                     break
@@ -5466,7 +3650,7 @@ class Annotation():
                                             for e in t.exons:
                                                 for c in t2.CDSs.values():
                                                     for cs in c.CDS_segments:
-                                                        overlapping, _ = overlap(e, cs)
+                                                        overlapping, _ = e.overlap(cs)
                                                         if overlapping:
                                                             self.chrs[g.ch][o.id].overlap_with_selected_CDS = True
                                                             break
@@ -5644,19 +3828,19 @@ class Annotation():
                             if self.chrs[g.ch][o.id].remove and not self.chrs[g.ch][o.id].rescue and self.chrs[g.ch][o.id].source in reliable_sources:
                                 query_best = g.compare_protein_blast_hits(self.chrs[g.ch][o.id], source_priority)
                                 if not query_best:
-                                    g.alternative_transcript_rescue.add(o.id)
+                                    g.alternative_transcript_rescue.append(o.id)
         gene_groups = []
 
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                if (not g.remove or g.rescue) and g.alternative_transcript_rescue != set():
+                if (not g.remove or g.rescue) and g.alternative_transcript_rescue != []:
                     for g2 in genes.values():
                         if g.id == g2.id:
                             continue
-                        if (not g2.remove or g2.rescue) and g2.alternative_transcript_rescue != set():
-                            if bool(g.alternative_transcript_rescue.intersection(g2.alternative_transcript_rescue)):
-                                temp_group = g.alternative_transcript_rescue | g2.alternative_transcript_rescue
+                        if (not g2.remove or g2.rescue) and g2.alternative_transcript_rescue != []:
+                            if bool(set(g.alternative_transcript_rescue).intersection(set(g2.alternative_transcript_rescue))):
+                                temp_group = set(g.alternative_transcript_rescue) | set(g2.alternative_transcript_rescue)
                                 temp_group.add(g.id)
                                 temp_group.add(g2.id)
                                 found = False
@@ -5716,7 +3900,6 @@ class Annotation():
 
         for genes in self.chrs.values():
             for g in genes.values():
-                g.alternative_transcript_rescue = list(g.alternative_transcript_rescue)
                 progress_bar.update(1)
                 if g.id not in merge_genes and g.alternative_transcript_rescue != []:
                     best = g.alternative_transcript_rescue[0]
@@ -5810,11 +3993,13 @@ class Annotation():
                                             g.remove = True
                                             g.rescue = False
 
-    def rescue_longer_same_frame_CDS(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
+    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
 
         for genes in self.chrs.values():
             for g in genes.values():
                 if not g.remove or g.rescue:
+
+                    main_CDS_size = 0
 
                     for t in g.transcripts.values():
                         if t.main:
@@ -5826,6 +4011,8 @@ class Annotation():
 
                     for o in g.overlaps["self"]:
                         if o.CDSs_in_both:
+
+                            overlap_main_CDS_size = 0
 
                             for t in self.chrs[g.ch][o.id].transcripts.values():
                                 if t.main:
@@ -5859,7 +4046,8 @@ class Annotation():
                                 best_candidate = t_candidate
                                 best_candidate_size = t_candidate.size
 
-                        g.transcripts[best_candidate.id] = best_candidate.copy()
+                        if best_candidate:
+                            g.transcripts[best_candidate.id] = best_candidate.copy()
 
         self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
@@ -5938,21 +4126,11 @@ class Annotation():
                                         g.remove = True
                                         g.rescue = False
 
-    def gene_count(self):
-        gene_objects = 0
-        unique_gene_ids_in_overlaps = set()
-        for genes in self.chrs.values():
-            gene_objects += len(genes)
-            for g in genes.values():
-                for o in g.overlaps["self"]:
-                    unique_gene_ids_in_overlaps.add(o.id)
-        print(f"There are {gene_objects} gene objects and {len(self.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in overlaps.")
-
-    def remove_redundancy(self, source_priority:list, hard_masked_genome:object, quiet:bool=False):
+    def remove_redundancy(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):
         self.remove_duplicate_transcripts(quiet=quiet)
         self.make_alternative_transcripts_into_genes(quiet=quiet)
         self.detect_gene_overlaps(quiet=quiet)
-        self.calculate_transcript_masking(hard_masked_genome=hard_masked_genome)
+        self.stats.calculate_transcript_masking(hard_masked_genome=hard_masked_genome)
         self.mark_noisy_genes(quiet=quiet)
         self.remove_genes(quiet=quiet)
         self.mark_transcriptomic_supported_genes(quiet=quiet)
@@ -6236,13 +4414,13 @@ class Annotation():
         if "gene name synonym(s)" in df.columns:
             synonym_col_exists = True
 
-        for index, row in df.iterrows():
-            gene_name = df.iloc[index, 0]
-            gene_id = df.iloc[index, 1]
+        for _, row in df.iterrows():
+            gene_name = str(row.iloc[0])
+            gene_id = str(row.iloc[1])
             if pseudogene_col_exists:
-                pseudogene = row["pseudogene"]
+                pseudogene = str(row["pseudogene"])
             if synonym_col_exists:
-                gene_synonyms = row["gene name synonym(s)"].split("; ")
+                gene_synonyms = str(row["gene name synonym(s)"]).split("; ")
             ch = self.all_gene_ids[gene_id]
             self.chrs[ch][gene_id].symbols.append(gene_name)
             if not just_gene_names:
@@ -6259,6 +4437,7 @@ class Annotation():
         self.update_attributes(extra_attributes=False, symbols=True, quiet=quiet)
 
     def add_gene_symbols(self, file_path:str, clear:bool=True, header:bool=False, sep:str="\t", quiet:bool=False):
+
         if clear:
             self.clear_gene_names_and_symbols()
 
@@ -6275,9 +4454,9 @@ class Annotation():
 
         df = df.fillna("")
 
-        for index, row in df.iterrows():
-            gene_name = df.iloc[index, 1]
-            gene_id = df.iloc[index, 0]
+        for i in range(len(df)):
+            gene_name = str(df.iat[i, 1])
+            gene_id = str(df.iat[i, 0])
             ch = self.all_gene_ids[gene_id]
             self.chrs[ch][gene_id].symbols.append(gene_name)
 
@@ -6307,7 +4486,7 @@ class Annotation():
         self.update(extra_attributes=extra_attributes, quiet=quiet)
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
         self.update(extra_attributes=extra_attributes, quiet=quiet)
-        self.export_gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
+        self.export.gff(custom_path=custom_path, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
 
     def __str__(self):
         return str(self.id)

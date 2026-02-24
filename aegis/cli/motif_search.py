@@ -1,9 +1,12 @@
 import typer
 import os
-from typing_extensions import Annotated
-from aegis.annotation import Annotation
-from aegis.genome import Genome
 import pandas as pd
+
+from typing_extensions import Annotated
+
+from ..annotation import Annotation
+from ..genome import Genome
+
 
 app = typer.Typer(add_completion=False)
 
@@ -82,7 +85,7 @@ def main(
 
     annotation.generate_promoters(genome=genome, promoter_size=promoter_size, promoter_type=promoter_type, generate_sequence=True)
 
-    annotation.find_motifs(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_dir)
+    annotation.motifs.find_and_plot(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_dir)
     
 if __name__ == "__main__":
     app()

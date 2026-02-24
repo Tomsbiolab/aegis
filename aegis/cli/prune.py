@@ -1,7 +1,9 @@
 import typer
 import os
+
 from typing_extensions import Annotated
-from aegis.annotation import Annotation, read_file_with_fallback
+
+from ..annotation import Annotation, read_file_with_fallback
 
 features = ["gene", "transcript"]
 
@@ -69,7 +71,7 @@ def main(
         annotation.remove_transcripts(input_ids)
 
     output_file += ".gff3"
-    annotation.export_gff(custom_path=output_dir, tag=output_file)
+    annotation.export.gff(custom_path=output_dir, tag=output_file)
 
 
 if __name__ == "__main__":
