@@ -3,6 +3,7 @@ Tests for aegis.genefunctions — pure utility functions.
 """
 
 import pytest
+from pathlib import Path
 from aegis.genefunctions import (
     parse_gff_line,
     parse_gff_attributes,
@@ -52,10 +53,17 @@ class TestParseGffAttributes:
 # ============================================================
 
 class TestParseGffLine:
-    BASE_LINE = "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=gene1;Name=TestGene"
+    LINES_FILE = Path(__file__).resolve().parent / "test_data" / "genefunctions_lines.gff3"
+
+    @classmethod
+    def _read_line(cls, index):
+        """Read a specific line (0-indexed) from genefunctions_lines.gff3."""
+        with open(cls.LINES_FILE) as f:
+            lines = f.read().splitlines()
+        return lines[index]
 
     def test_basic_parsing(self):
-        entry = parse_gff_line(self.BASE_LINE)
+        entry = parse_gff_line(self._read_line(0))  # gene line
         assert entry["ch"] == "chr1"
         assert entry["source"] == "aegis"
         assert entry["feature"] == "gene"
@@ -68,31 +76,27 @@ class TestParseGffLine:
         assert entry["decreasing_coordinates"] is False
 
     def test_pseudogene_detected(self):
-        line = "chr1\taegis\tpseudogene\t100\t500\t.\t+\t.\tID=ps1"
-        entry = parse_gff_line(line)
+        entry = parse_gff_line(self._read_line(1))  # pseudogene line
         assert entry["pseudogene"] is True
 
     def test_transposable_by_feature(self):
-        line = "chr1\taegis\ttransposable_element_gene\t100\t500\t.\t+\t.\tID=te1"
-        entry = parse_gff_line(line)
+        entry = parse_gff_line(self._read_line(2))  # transposable_element_gene line
         assert entry["transposable"] is True
 
     def test_transposable_by_attribute(self):
-        line = "chr1\taegis\tgene\t100\t500\t.\t+\t.\tID=te2;transposable=True"
-        entry = parse_gff_line(line)
+        entry = parse_gff_line(self._read_line(3))  # gene with transposable=True attribute
         assert entry["transposable"] is True
 
     def test_decreasing_coordinates_swapped(self):
-        line = "chr1\taegis\tgene\t5000\t1000\t.\t+\t.\tID=gene2"
-        entry = parse_gff_line(line)
+        entry = parse_gff_line(self._read_line(4))  # gene with start > end
         assert entry["decreasing_coordinates"] is True
         assert entry["start"] == 1000
         assert entry["end"] == 5000
 
     def test_multi_parent(self):
-        line = "chr1\taegis\texon\t100\t200\t.\t+\t.\tID=exon1;Parent=mRNA1,mRNA2"
-        entry = parse_gff_line(line)
+        entry = parse_gff_line(self._read_line(5))  # exon with two parents
         assert entry["parents"] == ["mRNA1", "mRNA2"]
+
 
 
 # ============================================================

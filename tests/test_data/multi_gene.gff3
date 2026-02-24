@@ -1,0 +1,11 @@
+##gff-version 3
+chr1	aegis	gene	1000	5000	.	+	.	ID=geneA;Name=GeneA
+chr1	aegis	mRNA	1000	5000	.	+	.	ID=mRNA_A;Parent=geneA
+chr1	aegis	exon	1000	2000	.	+	.	ID=exonA1;Parent=mRNA_A
+chr1	aegis	exon	3000	5000	.	+	.	ID=exonA2;Parent=mRNA_A
+chr1	aegis	CDS	1200	2000	.	+	0	ID=CDS_A;Parent=mRNA_A
+chr2	aegis	gene	500	3000	.	-	.	ID=geneB;Name=GeneB
+chr2	aegis	mRNA	500	3000	.	-	.	ID=mRNA_B;Parent=geneB
+chr2	aegis	exon	500	1500	.	-	.	ID=exonB1;Parent=mRNA_B
+chr2	aegis	exon	2000	3000	.	-	.	ID=exonB2;Parent=mRNA_B
+chr2	aegis	CDS	600	1500	.	-	0	ID=CDS_B;Parent=mRNA_B

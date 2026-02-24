@@ -19,6 +19,7 @@ from aegis.annotation import (
     default_features,
 )
 
+TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 
 # ============================================================
 # read_file_with_fallback
@@ -59,39 +60,29 @@ class TestReadFileWithFallback:
 # ============================================================
 
 class TestDetectFileFormat:
-    def test_gff3_with_header(self, tmp_path):
-        f = tmp_path / "test.gff3"
-        f.write_text("##gff-version 3\nchr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n")
-        fmt = detect_file_format(str(f), "utf-8")
+    def test_gff3_with_header(self):
+        f = str(TEST_DATA_DIR / "detect_gff3_with_header.gff3")
+        fmt = detect_file_format(f, "utf-8")
         assert fmt == "gff3"
 
-    def test_gff3_without_header(self, tmp_path):
-        f = tmp_path / "test.gff3"
-        f.write_text("chr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n")
-        fmt = detect_file_format(str(f), "utf-8")
+    def test_gff3_without_header(self):
+        f = str(TEST_DATA_DIR / "detect_gff3_without_header.gff3")
+        fmt = detect_file_format(f, "utf-8")
         assert fmt == "gff3"
 
-    def test_gtf_format(self, tmp_path):
-        f = tmp_path / "test.gtf"
-        f.write_text('chr1\taegis\tgene\t1\t100\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n')
-        fmt = detect_file_format(str(f), "utf-8")
+    def test_gtf_format(self):
+        f = str(TEST_DATA_DIR / "detect_gtf.gtf")
+        fmt = detect_file_format(f, "utf-8")
         assert fmt == "gtf"
 
-    def test_gff3_with_comment_and_blank_lines(self, tmp_path):
-        f = tmp_path / "commented.gff3"
-        f.write_text(
-            "# my annotation\n"
-            "\n"
-            "##gff-version 3\n"
-            "chr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n"
-        )
-        fmt = detect_file_format(str(f), "utf-8")
+    def test_gff3_with_comment_and_blank_lines(self):
+        f = str(TEST_DATA_DIR / "detect_gff3_commented.gff3")
+        fmt = detect_file_format(f, "utf-8")
         assert fmt == "gff3"
 
-    def test_gtf_without_header(self, tmp_path):
-        f = tmp_path / "no_header.gtf"
-        f.write_text('chr1\taegis\texon\t50\t200\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n')
-        fmt = detect_file_format(str(f), "utf-8")
+    def test_gtf_without_header(self):
+        f = str(TEST_DATA_DIR / "detect_gtf_no_header.gtf")
+        fmt = detect_file_format(f, "utf-8")
         assert fmt == "gtf"
 
 
@@ -200,7 +191,7 @@ class TestSortAndUpdateGenes:
 class TestAnnotationSmallGFF3:
     def test_load_minimal_gff3(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        assert annot.name == "sample"
+        assert annot.name == "minimal"
         assert len(annot.all_gene_ids) == 1
         assert "gene1" in annot.all_gene_ids
         assert len(annot.all_transcript_ids) >= 1
@@ -233,7 +224,7 @@ class TestAnnotationSmallGFF3:
         annot = Annotation(sample_gff3_file, quiet=True)
         annot2 = annot.copy()
         annot2.name = "changed"
-        assert annot.name == "sample"
+        assert annot.name == "minimal"
 
     def test_feature_counts_include_subfeatures(self, sample_gff3_file):
         """Verify features dict counts exons, CDS, UTR types."""
@@ -308,18 +299,10 @@ class TestAnnotationRealData:
 
 class TestConvertGtfToGff3:
     def test_convert_gtf_basic(self, tmp_path):
-        gtf_file = tmp_path / "test.gtf"
+        gtf_file = str(TEST_DATA_DIR / "convert_basic.gtf")
         gff_file = tmp_path / "test.gff3"
-        gtf_content = (
-            "##sequence-region chr1 1 1000\n"
-            "chr1\taegis\tgene\t100\t500\t.\t+\t.\tgene_id \"GENE1\"; gene_name \"MyGene\";\n"
-            "chr1\taegis\ttranscript\t100\t500\t.\t+\t.\tgene_id \"GENE1\"; transcript_id \"T1\"; transcript_biotype \"mRNA\";\n"
-            "chr1\taegis\texon\t100\t200\t.\t+\t.\tgene_id \"GENE1\"; transcript_id \"T1\";\n"
-            "chr1\taegis\texon\t300\t500\t.\t+\t.\tgene_id \"GENE1\"; transcript_id \"T1\";\n"
-        )
-        gtf_file.write_text(gtf_content)
 
-        convert_gtf_to_gff3(str(gtf_file), str(gff_file), "utf-8", quiet=True)
+        convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
 
         gff_content = gff_file.read_text()
         # Verify headers and format
@@ -331,16 +314,9 @@ class TestConvertGtfToGff3:
     def test_convert_gtf_with_cds_and_exon(self, tmp_path):
         """convert_gtf_to_gff3 only writes gene/transcript-level lines;
         CDS and exon lines are intentionally skipped by the converter."""
-        gtf_file = tmp_path / "cds.gtf"
+        gtf_file = str(TEST_DATA_DIR / "convert_cds.gtf")
         gff_file = tmp_path / "cds.gff3"
-        gtf_content = (
-            "chr1\taegis\tgene\t100\t500\t.\t+\t.\tgene_id \"G1\";\n"
-            "chr1\taegis\ttranscript\t100\t500\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\";\n"
-            "chr1\taegis\texon\t100\t500\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\";\n"
-            "chr1\taegis\tCDS\t150\t450\t.\t+\t0\tgene_id \"G1\"; transcript_id \"T1\";\n"
-        )
-        gtf_file.write_text(gtf_content)
-        convert_gtf_to_gff3(str(gtf_file), str(gff_file), "utf-8", quiet=True)
+        convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
         gff_content = gff_file.read_text()
         assert "ID=G1" in gff_content
         assert "ID=T1" in gff_content
@@ -712,7 +688,7 @@ class TestAnnotationListGenes:
         annot.list_genes(custom_path=str(tmp_path))
         # When custom_path is provided, list_genes uses it directly as the
         # export folder (no "lists" subfolder).  Filename = {self.name}_genes.txt
-        output_file = tmp_path / "multi_genes.txt"
+        output_file = tmp_path / "multi_gene_genes.txt"
         assert output_file.exists()
         content = output_file.read_text()
         assert "gene_id" in content  # header
@@ -722,7 +698,7 @@ class TestAnnotationListGenes:
     def test_list_genes_with_coordinates(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         annot.list_genes(custom_path=str(tmp_path), coordinates=True)
-        output_file = tmp_path / "multi_genes.txt"
+        output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
         assert "scaffold" in content
         assert "gene_start" in content
@@ -731,7 +707,7 @@ class TestAnnotationListGenes:
     def test_list_genes_with_lengths(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         annot.list_genes(custom_path=str(tmp_path), lengths=True)
-        output_file = tmp_path / "multi_genes.txt"
+        output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
         assert "gene_length" in content
 
@@ -756,7 +732,7 @@ class TestAnnotationListTranscripts:
     def test_list_transcripts_basic(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         annot.list_transcripts(custom_path=str(tmp_path))
-        output_file = tmp_path / "multi_transcripts.txt"
+        output_file = tmp_path / "multi_gene_transcripts.txt"
         assert output_file.exists()
         content = output_file.read_text()
         assert "transcript_id" in content
@@ -766,7 +742,7 @@ class TestAnnotationListTranscripts:
     def test_list_transcripts_with_coordinates(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         annot.list_transcripts(custom_path=str(tmp_path), coordinates=True)
-        output_file = tmp_path / "multi_transcripts.txt"
+        output_file = tmp_path / "multi_gene_transcripts.txt"
         content = output_file.read_text()
         assert "transcript_start" in content
         assert "transcript_end" in content

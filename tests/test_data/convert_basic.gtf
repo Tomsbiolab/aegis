@@ -1,0 +1,5 @@
+##sequence-region chr1 1 1000
+chr1	aegis	gene	100	500	.	+	.	gene_id "GENE1"; gene_name "MyGene";
+chr1	aegis	transcript	100	500	.	+	.	gene_id "GENE1"; transcript_id "T1"; transcript_biotype "mRNA";
+chr1	aegis	exon	100	200	.	+	.	gene_id "GENE1"; transcript_id "T1";
+chr1	aegis	exon	300	500	.	+	.	gene_id "GENE1"; transcript_id "T1";

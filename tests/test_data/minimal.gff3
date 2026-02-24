@@ -1,0 +1,9 @@
+##gff-version 3
+chr1	aegis	gene	1000	5000	.	+	.	ID=gene1;Name=TestGene
+chr1	aegis	mRNA	1000	5000	.	+	.	ID=mRNA1;Parent=gene1;Name=TestTranscript
+chr1	aegis	exon	1000	2000	.	+	.	ID=exon1;Parent=mRNA1
+chr1	aegis	exon	3000	5000	.	+	.	ID=exon2;Parent=mRNA1
+chr1	aegis	CDS	1200	2000	.	+	0	ID=CDS1;Parent=mRNA1
+chr1	aegis	CDS	3000	4500	.	+	0	ID=CDS1;Parent=mRNA1
+chr1	aegis	five_prime_UTR	1000	1199	.	+	.	ID=utr5_1;Parent=mRNA1
+chr1	aegis	three_prime_UTR	4501	5000	.	+	.	ID=utr3_1;Parent=mRNA1
