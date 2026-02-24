@@ -341,13 +341,13 @@ class TestAnnotationUniqueIDs:
 
     def test_get_unique_gene_id_no_collision(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.all_gene_ids = {"geneX"}
+        annot.all_gene_ids = {"geneX": "chr1"}
         # No collision for "geneY"
         assert annot._get_unique_gene_id("geneY") == "geneY"
 
     def test_get_unique_transcript_id_no_collision(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.all_transcript_ids = {"tX"}
+        annot.all_transcript_ids = {"tX": ("chr1", "gene1")}
         assert annot._get_unique_transcript_id("tY") == "tY"
 
 
@@ -469,7 +469,7 @@ class TestAnnotationSortGenes:
 class TestAnnotationGeneCount:
     def test_gene_count_prints(self, multi_gene_gff3_file, capsys):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.gene_count()
+        annot.stats.gene_count()
         captured = capsys.readouterr()
         assert "2 gene objects" in captured.out
         assert "2 genes in all gene ids" in captured.out
@@ -681,7 +681,7 @@ class TestAnnotationCorrectCoordinates:
 class TestAnnotationListGenes:
     def test_list_genes_basic(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_genes(custom_path=str(tmp_path))
+        annot.export.list_genes(custom_path=str(tmp_path))
         # When custom_path is provided, list_genes uses it directly as the
         # export folder (no "lists" subfolder).  Filename = {self.name}_genes.txt
         output_file = tmp_path / "multi_gene_genes.txt"
@@ -693,7 +693,7 @@ class TestAnnotationListGenes:
 
     def test_list_genes_with_coordinates(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_genes(custom_path=str(tmp_path), coordinates=True)
+        annot.export.list_genes(custom_path=str(tmp_path), coordinates=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
         assert "scaffold" in content
@@ -702,20 +702,20 @@ class TestAnnotationListGenes:
 
     def test_list_genes_with_lengths(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_genes(custom_path=str(tmp_path), lengths=True)
+        annot.export.list_genes(custom_path=str(tmp_path), lengths=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
         assert "gene_length" in content
 
     def test_list_genes_custom_output_file(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_genes(custom_path=str(tmp_path), output_file="custom_list.txt")
+        annot.export.list_genes(custom_path=str(tmp_path), output_file="custom_list.txt")
         output_file = tmp_path / "custom_list.txt"
         assert output_file.exists()
 
     def test_list_genes_skip_both_coding_and_noncoding(self, multi_gene_gff3_file, tmp_path, capsys):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_genes(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
+        annot.export.list_genes(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
         captured = capsys.readouterr()
         assert "Warning" in captured.out
 
@@ -727,7 +727,7 @@ class TestAnnotationListGenes:
 class TestAnnotationListTranscripts:
     def test_list_transcripts_basic(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_transcripts(custom_path=str(tmp_path))
+        annot.export.list_transcripts(custom_path=str(tmp_path))
         output_file = tmp_path / "multi_gene_transcripts.txt"
         assert output_file.exists()
         content = output_file.read_text()
@@ -737,7 +737,7 @@ class TestAnnotationListTranscripts:
 
     def test_list_transcripts_with_coordinates(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_transcripts(custom_path=str(tmp_path), coordinates=True)
+        annot.export.list_transcripts(custom_path=str(tmp_path), coordinates=True)
         output_file = tmp_path / "multi_gene_transcripts.txt"
         content = output_file.read_text()
         assert "transcript_start" in content
@@ -745,7 +745,7 @@ class TestAnnotationListTranscripts:
 
     def test_list_transcripts_skip_both(self, multi_gene_gff3_file, tmp_path, capsys):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.list_transcripts(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
+        annot.export.list_transcripts(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
         captured = capsys.readouterr()
         assert "Warning" in captured.out
 
@@ -757,7 +757,7 @@ class TestAnnotationListTranscripts:
 class TestAnnotationExportGff:
     def test_export_gff3(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export_gff(custom_path=str(tmp_path), quiet=True)
+        annot.export.gff(custom_path=str(tmp_path), quiet=True)
         out_dir = tmp_path / "out_gffs"
         assert out_dir.exists()
         gff_files = list(out_dir.glob("*.gff3"))
@@ -768,7 +768,7 @@ class TestAnnotationExportGff:
 
     def test_export_gff3_just_genes(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export_gff(custom_path=str(tmp_path), just_genes=True, quiet=True)
+        annot.export.gff(custom_path=str(tmp_path), just_genes=True, quiet=True)
         out_dir = tmp_path / "out_gffs"
         gff_files = list(out_dir.glob("*.gff3"))
         content = gff_files[0].read_text()
@@ -782,7 +782,7 @@ class TestAnnotationExportGff:
 
     def test_export_gff3_no_subfolder(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export_gff(custom_path=str(tmp_path), subfolder=False, quiet=True)
+        annot.export.gff(custom_path=str(tmp_path), subfolder=False, quiet=True)
         gff_files = list(tmp_path.glob("*.gff3"))
         assert len(gff_files) >= 1
 
@@ -794,7 +794,7 @@ class TestAnnotationExportGff:
 class TestAnnotationExportGtf:
     def test_export_gtf(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export_gtf(custom_path=str(tmp_path), quiet=True)
+        annot.export.gtf(custom_path=str(tmp_path), quiet=True)
         out_dir = tmp_path / "out_gtfs"
         assert out_dir.exists()
         gtf_files = list(out_dir.glob("*.gtf"))
@@ -805,7 +805,7 @@ class TestAnnotationExportGtf:
 
     def test_export_gtf_just_genes(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export_gtf(custom_path=str(tmp_path), just_genes=True, quiet=True)
+        annot.export.gtf(custom_path=str(tmp_path), just_genes=True, quiet=True)
         out_dir = tmp_path / "out_gtfs"
         gtf_files = list(out_dir.glob("*.gtf"))
         content = gtf_files[0].read_text()
