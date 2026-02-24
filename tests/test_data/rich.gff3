@@ -1,0 +1,21 @@
+##gff-version 3
+chr1	aegis	gene	1000	5000	.	+	.	ID=geneR1;Name=RichGene1
+chr1	aegis	mRNA	1000	5000	.	+	.	ID=mRNA_R1a;Parent=geneR1
+chr1	aegis	exon	1000	2000	.	+	.	ID=exonR1a1;Parent=mRNA_R1a
+chr1	aegis	exon	3000	5000	.	+	.	ID=exonR1a2;Parent=mRNA_R1a
+chr1	aegis	CDS	1200	2000	.	+	0	ID=CDS_R1a;Parent=mRNA_R1a
+chr1	aegis	CDS	3000	4500	.	+	0	ID=CDS_R1a;Parent=mRNA_R1a
+chr1	aegis	five_prime_UTR	1000	1199	.	+	.	ID=utr5_R1;Parent=mRNA_R1a
+chr1	aegis	three_prime_UTR	4501	5000	.	+	.	ID=utr3_R1;Parent=mRNA_R1a
+chr1	aegis	lnc_RNA	1000	4000	.	+	.	ID=lncRNA_R1b;Parent=geneR1
+chr1	aegis	exon	1000	2000	.	+	.	ID=exonR1b1;Parent=lncRNA_R1b
+chr1	aegis	exon	3000	4000	.	+	.	ID=exonR1b2;Parent=lncRNA_R1b
+chr1	aegis	gene	6000	8000	.	+	.	ID=geneR2;Name=RichGene2_TE
+chr1	aegis	mRNA	6000	8000	.	+	.	ID=mRNA_R2;Parent=geneR2
+chr1	aegis	exon	6000	7000	.	+	.	ID=exonR2_1;Parent=mRNA_R2
+chr1	aegis	exon	7500	8000	.	+	.	ID=exonR2_2;Parent=mRNA_R2
+chr1	aegis	CDS	6100	7000	.	+	0	ID=CDS_R2;Parent=mRNA_R2
+chr2	aegis	gene	500	3000	.	-	.	ID=geneR3;Name=RichGene3_NC
+chr2	aegis	lnc_RNA	500	3000	.	-	.	ID=lncRNA_R3;Parent=geneR3
+chr2	aegis	exon	500	1500	.	-	.	ID=exonR3_1;Parent=lncRNA_R3
+chr2	aegis	exon	2000	3000	.	-	.	ID=exonR3_2;Parent=lncRNA_R3

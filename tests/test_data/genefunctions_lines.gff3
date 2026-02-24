@@ -1,0 +1,6 @@
+chr1	aegis	gene	1000	5000	.	+	.	ID=gene1;Name=TestGene
+chr1	aegis	pseudogene	100	500	.	+	.	ID=ps1
+chr1	aegis	transposable_element_gene	100	500	.	+	.	ID=te1
+chr1	aegis	gene	100	500	.	+	.	ID=te2;transposable=True
+chr1	aegis	gene	5000	1000	.	+	.	ID=gene2
+chr1	aegis	exon	100	200	.	+	.	ID=exon1;Parent=mRNA1,mRNA2

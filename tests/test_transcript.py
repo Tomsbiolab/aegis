@@ -277,12 +277,6 @@ class TestTranscriptSequences:
         e.hard_seqs = ["A"*11, "T"*11]
         t.exons.append(e)
 
-        # We must mock generate_sequence on feature to just use its own seq
-        # since actual generate_sequence expects Biopython/fasta behavior.
-        # But we can pass a dummy genome and if it doesn't crash that's good.
-        # However, calling e.generate_sequence(genome) will overwrite e.seq.
-        # Real Feature.generate_sequence fetches from genome. 
-        # For our test, let's just create a Mock object with dummy generate_sequence.
         class MockExon:
             def __init__(self, seq="AAA"):
                 self.seq = seq

@@ -32,6 +32,8 @@ class Feature():
     end: int
     attributes:list
     misc_attributes:list
+    seqs: list[str]
+    hard_seqs: list[str]
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff = ["id", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "featurecounts_id"]
@@ -151,7 +153,7 @@ class Feature():
             elif self.strand == "-":
                 self.seq = reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])
             elif self.strand == ".":
-                self.seqs = (genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end]))
+                self.seqs = [genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])]
 
     def clear_sequence(self, just_hard=False):
         self.hard_seq = ""
@@ -169,7 +171,7 @@ class Feature():
             elif self.strand == "-":
                 self.hard_seq = reverse_complement(hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end])
             elif self.strand == ".":
-                self.hard_seqs = (hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end]))
+                self.hard_seqs = [hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end])]
             
     def calculate_gc_content(self):
         if self.seq != "":

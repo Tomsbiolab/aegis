@@ -1,0 +1,4 @@
+chr1	aegis	gene	100	500	.	+	.	gene_id "G1";
+chr1	aegis	transcript	100	500	.	+	.	gene_id "G1"; transcript_id "T1";
+chr1	aegis	exon	100	500	.	+	.	gene_id "G1"; transcript_id "T1";
+chr1	aegis	CDS	150	450	.	+	0	gene_id "G1"; transcript_id "T1";
