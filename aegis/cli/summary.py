@@ -39,9 +39,9 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
-    genome = Genome(name=genome_name, genome_file_path=genome_file)
+    genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
 
-    annotation.stats.update(custom_path=output_dir, export=True, genome=genome)
+    annotation.stats.update(custom_path=output_dir, export=True, genome=genome, quiet=quiet)
 
 
 if __name__ == "__main__":
