@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .genome import Genome
 
-import re
 import sys
 import copy
 import random
@@ -24,7 +23,6 @@ import warnings
 import math
 import gc
 
-from statistics import mean
 from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
@@ -33,13 +31,14 @@ from .feature import Feature
 from .gene import Gene
 from .transcript import Transcript
 from .subfeatures import Exon, UTR
-from .hits import OverlapHit, BlastHit
+from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes
 from .utils.misc import read_file_with_fallback
 from .utils.gtf_gff import parse_gff_line, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
+from .annotation_components.overlaps import AnnotationOverlaps
 from .conf import default_noncoding_transcripts, default_features_r
 
 
@@ -110,8 +109,6 @@ class Annotation():
         self.atypical_features = []
         # Here we insert any recognisable feature that was impossible to fit into the current structure
         self.orphaned_features = []
-        self.self_overlapping = []
-        self.overlapped_annotations = []
 
         self.feature_suffix = ""
         self.suffix = ""
@@ -217,6 +214,7 @@ class Annotation():
         self.stats = AnnotationStats(self)
         self.export = AnnotationExport(self)
         self.motifs = AnnotationMotifs(self)
+        self.overlaps = AnnotationOverlaps(self)
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1416,487 +1414,18 @@ class Annotation():
         self.shared_UTRs = False
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def detect_gene_overlaps(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):
-        """
-        Detecting gene overlaps within the same annotation object or between
-        annotation objects, provided they refer to the same genome.
-        """
-        start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        if not self.sorted:
-            self.sort_genes(processes=sort_processes)
-        
-        if other != None:
-            if not other.sorted:
-                other.sort_genes(processes=sort_processes)
-
-        if clear:
-            self.clear_overlaps()
-            if other != None:
-                other.clear_overlaps()
-
-        if other != None:
-
-            if self.genome == other.genome:
-
-                if self.genome == None:
-                    if not quiet:
-                        print(f"Note: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
-                
-                if other.name in self.overlapped_annotations or self.name in other.overlapped_annotations:
-                    print(f"Overlaps between {self.id} and {other.id} "
-                           "annotations have already been detected, please "
-                           "run 'self.clear_overlaps()' if you want to "
-                           "recalculate them")
-                else:
-                    start_time = time.time()
-                    progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mWorking out overlaps between {self.id} and {other.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-
-                    if other.name not in self.overlapped_annotations:
-                        self.overlapped_annotations.append(other.name)
-                    if self.name not in other.overlapped_annotations:
-                        other.overlapped_annotations.append(self.name)
-                    for chr, genes in self.chrs.items():
-                        for g1 in genes.values():
-                            progress_bar.update(1)
-                            found_overlap = False
-                            if chr in other.chrs:
-                                for g2 in other.chrs[chr].values():
-                                    overlapping, overlap_bp = g1.overlap(g2)
-                                    if overlapping:
-                                        found_overlap = True
-                                    elif found_overlap and g1.end < g2.start:
-                                        break
-                                    else:
-                                        continue
-                                    if g1.strand == g2.strand:
-                                        gene_orientation = True
-                                    else:
-                                        gene_orientation = False
-
-                                    gene_query_percent = (overlap_bp / g1.size) * 100                  
-                                    gene_target_percent = (overlap_bp / g2.size) * 100
-
-                                    target_exons = False
-                                    query_exons = False
-                                    best_exon_overlap = 0
-                                    exon_orientation = False
-                                    overlapping = False
-                                    for t1 in g1.transcripts.values():
-                                        if t1.exons != []:
-                                            query_exons = True
-                                        for t2 in g2.transcripts.values():
-                                            if t2.exons != []:
-                                                target_exons = True
-                                            if t1.strand == t2.strand:
-                                                exon_orientation = True
-                                            overlap_exon_temp = 0
-                                            for e1 in t1.exons:
-                                                for e2 in t2.exons:
-                                                    overlap_temp, overlap_bp = e1.overlap(e2)
-                                                    if overlap_temp:
-                                                        overlap_exon_temp += overlap_bp
-                                                        overlapping = True
-                                            if overlap_exon_temp > best_exon_overlap:
-                                                best_exon_overlap = overlap_exon_temp
-                                                exon_query_size = t1.size
-                                                exon_target_size = t2.size
-                                    
-                                    if target_exons and query_exons:
-                                        exons_in_both = True
-                                        if gene_orientation != exon_orientation:
-                                            print(f"Warning: {self.id} query and {other.id} target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}.")
-                                        if overlapping:
-                                            exon_query_percent = (best_exon_overlap / exon_query_size) * 100
-                                            exon_target_percent = (best_exon_overlap / exon_target_size) * 100
-                                        else:
-                                            exon_query_percent = 0
-                                            exon_target_percent = 0
-                                    else:
-                                        exons_in_both = False
-                                        exon_orientation = None
-                                        exon_query_percent = None
-                                        exon_target_percent = None
-
-
-                                    target_CDS = False
-                                    query_CDS = False
-                                    best_CDS_overlap = 0
-                                    CDS_orientation = False
-                                    overlapping = False
-                                    for t1 in g1.transcripts.values():
-                                        if t1.CDSs != {}:
-                                            query_CDS = True
-                                        for t2 in g2.transcripts.values():
-                                            if t2.CDSs != {}:
-                                                target_CDS = True
-                                            if t1.strand == t2.strand:
-                                                CDS_orientation = True
-                                            for CDS1 in t1.CDSs.values():
-                                                for CDS2 in t2.CDSs.values():
-                                                    overlap_CDS_temp = 0
-                                                    for c1 in CDS1.CDS_segments:
-                                                        for c2 in CDS2.CDS_segments:
-                                                            overlap_temp, overlap_bp = c1.overlap(c2)
-                                                            if not overlap_temp:
-                                                                continue
-                                                            overlap_CDS_temp += overlap_bp
-                                                            overlapping = True
-                                                    if overlap_CDS_temp > best_CDS_overlap:
-                                                        best_CDS_overlap = overlap_CDS_temp
-                                                        CDS_query_size = CDS1.size
-                                                        CDS_target_size = CDS2.size
-                                                
-                                    if target_CDS and query_CDS:
-                                        CDSs_in_both = True
-                                        if gene_orientation != CDS_orientation:
-                                            print(f"Warning: {self.id} query and {other.id} target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}.")
-                                        if overlapping:
-                                            CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
-                                            CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
-                                        else:
-                                            CDS_query_percent = 0
-                                            CDS_target_percent = 0
-                                    else:
-                                        CDSs_in_both = False
-                                        CDS_orientation = None
-                                        CDS_query_percent = None
-                                        CDS_target_percent = None
-
-
-                                    protein_query_percent = None
-                                    protein_target_percent = None
-                                    if CDS_query_percent != None and CDS_query_percent != 0:
-                                        if CDS_orientation:
-                                            target_protein = False
-                                            query_protein = False
-                                            best_protein_overlap = 0
-                                            overlapping = False
-                                            for t1 in g1.transcripts.values():
-                                                if t1.CDSs != {}:
-                                                    query_protein = True
-                                                for t2 in g2.transcripts.values():
-                                                    if t2.CDSs != {}:
-                                                        target_protein = True
-                                                    for CDS1 in t1.CDSs.values():
-                                                        for CDS2 in t2.CDSs.values():
-                                                            overlap_protein_temp = 0
-                                                            for c1 in CDS1.CDS_segments:
-                                                                for c2 in CDS2.CDS_segments:
-                                                                    overlap_temp, overlap_bp = c1.overlap(c2)
-                                                                    if not overlap_temp:
-                                                                        continue
-                                                                    if c1.frame != c2.frame:
-                                                                        continue
-                                                                    
-                                                                    overlap_protein_temp += overlap_bp
-                                                                    overlapping = True
-                                                            if overlap_protein_temp > best_protein_overlap:
-                                                                best_protein_overlap = overlap_protein_temp
-                                                                protein_query_size = CDS1.size
-                                                                protein_target_size = CDS2.size
-                                                        
-                                            if target_protein and query_protein:
-                                                if overlapping:
-                                                    protein_query_percent = (best_protein_overlap / protein_query_size) * 100
-                                                    protein_target_percent = (best_protein_overlap / protein_target_size) * 100
-                                                else:
-                                                    protein_query_percent = 0
-                                                    protein_target_percent = 0
-
-                                    g1.overlaps["other"].append(OverlapHit(g2.id, 
-                                                                    other.name,
-                                                                    gene_orientation,
-                                                                    gene_query_percent,
-                                                                    gene_target_percent,
-                                                                    exons_in_both,
-                                                                    exon_query_percent,
-                                                                    exon_target_percent,
-                                                                    CDSs_in_both,
-                                                                    CDS_query_percent,
-                                                                    CDS_target_percent,
-                                                                    protein_query_percent,
-                                                                    protein_target_percent,
-                                                                    g2.conserved_synteny,
-                                                                    g2.extra_copy))
-
-                                    g2.overlaps["other"].append(OverlapHit(g1.id,
-                                                                    self.name,
-                                                                    gene_orientation,
-                                                                    gene_target_percent,
-                                                                    gene_query_percent,
-                                                                    exons_in_both,
-                                                                    exon_target_percent,
-                                                                    exon_query_percent,
-                                                                    CDSs_in_both,
-                                                                    CDS_target_percent,
-                                                                    CDS_query_percent,
-                                                                    protein_query_percent,
-                                                                    protein_target_percent,
-                                                                    g1.conserved_synteny,
-                                                                    g1.extra_copy))
-                    self.add_aliases()
-                    other.add_aliases()
-                    now = time.time()
-                    lapse = now - start_time
-                    progress_bar.close()
-                    if not quiet:
-                        print(f"\nDetecting overlaps between {other.id} and {self.id} annotations took {round(lapse/60, 1)} minutes")
-            else:
-                print(f"Did not generate overlaps between {other.id} and {self.id} annotations as they are associated to different genomes")
-
-        else:
-            if self.self_overlapping != []:
-                print("There are already detected 'self' gene overlaps, please run 'self.clear_overlaps()' if you want to recalculate them")
-            else:
-                progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mWorking out overlaps within {self.id} annotation:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
-
-                # making sure self overlaps are not added twice
-                start_time = time.time()
-                self.self_overlapping = set(self.self_overlapping)
-                for chr, genes in self.chrs.items():
-                    gl = list(genes.keys())[1:]
-                    for g1 in genes.values():
-                        progress_bar.update(1)
-                        found_overlap = False
-                        for gl_id in gl:
-                            g2 = genes[gl_id]
-                            if g1.id == g2.id:
-                                continue
-                            overlapping, overlap_bp = g1.overlap(g2)
-
-                            if overlapping:
-                                self.self_overlapping.add(g1.id)
-                                self.self_overlapping.add(g2.id)
-                                found_overlap = True
-
-                            elif found_overlap and g1.end < g2.start:
-                                break
-                            else:
-                                continue
-
-                            if g1.strand == g2.strand:
-                                gene_orientation = True
-                            else:
-                                gene_orientation = False
-
-                            gene_query_percent = (overlap_bp / g1.size) * 100                  
-                            gene_target_percent = (overlap_bp / g2.size) * 100
-
-                            target_exons = False
-                            query_exons = False
-                            best_exon_overlap = 0
-                            exon_orientation = False
-                            overlapping = False
-                            for t1 in g1.transcripts.values():
-                                if t1.exons != []:
-                                    query_exons = True
-                                for t2 in g2.transcripts.values():
-                                    if t2.exons != []:
-                                        target_exons = True
-                                    if t1.strand == t2.strand:
-                                        exon_orientation = True
-                                    overlap_exon_temp = 0
-                                    for e1 in t1.exons:
-                                        for e2 in t2.exons:
-                                            overlap_temp, overlap_bp = e1.overlap(e2)
-                                            if overlap_temp:
-                                                overlap_exon_temp += overlap_bp
-                                                overlapping = True
-                                    if overlap_exon_temp > best_exon_overlap:
-                                        best_exon_overlap = overlap_exon_temp
-                                        exon_query_size = t1.size
-                                        exon_target_size = t2.size
-                            
-                            if target_exons and query_exons:
-                                exons_in_both = True
-                                if gene_orientation != exon_orientation:
-                                    print(f"Warning: {self.id} query and target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}")
-                                if overlapping:
-                                    exon_query_percent = (best_exon_overlap / exon_query_size) * 100
-                                    exon_target_percent = (best_exon_overlap / exon_target_size) * 100
-                                else:
-                                    exon_query_percent = 0
-                                    exon_target_percent = 0
-                            else:
-                                exons_in_both = False
-                                exon_orientation = None
-                                exon_query_percent = None
-                                exon_target_percent = None
-
-                            target_CDS = False
-                            query_CDS = False
-                            best_CDS_overlap = 0
-                            CDS_orientation = False
-                            overlapping = False
-                            for t1 in g1.transcripts.values():
-                                if t1.CDSs != {}:
-                                    query_CDS = True
-                                for t2 in g2.transcripts.values():
-                                    if t2.CDSs != {}:
-                                        target_CDS = True
-                                    if t1.strand == t2.strand:
-                                        CDS_orientation = True
-                                    for CDS1 in t1.CDSs.values():
-                                        for CDS2 in t2.CDSs.values():
-                                            overlap_CDS_temp = 0
-                                            for c1 in CDS1.CDS_segments:
-                                                for c2 in CDS2.CDS_segments:
-                                                    overlap_temp, overlap_bp = c1.overlap(c2)
-                                                    if not overlap_temp:
-                                                        continue
-                                                    overlap_CDS_temp += overlap_bp
-                                                    overlapping = True
-                                            if overlap_CDS_temp > best_CDS_overlap:
-                                                best_CDS_overlap = overlap_CDS_temp
-                                                CDS_query_size = CDS1.size
-                                                CDS_target_size = CDS2.size
-                                        
-                            if target_CDS and query_CDS:
-                                CDSs_in_both = True
-                                if gene_orientation != CDS_orientation:
-                                    print(f"Error: {self.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}. DO NOT CONTINUE! -> fix the problem!")
-                                if overlapping:
-                                    CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
-                                    CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
-                                else:
-                                    CDS_query_percent = 0
-                                    CDS_target_percent = 0
-                            else:
-                                CDSs_in_both = False
-                                CDS_orientation = None
-                                CDS_query_percent = None
-                                CDS_target_percent = None
-
-                            if CDSs_in_both:
-                                protein_query_percent = 0
-                                protein_target_percent = 0
-                                if CDS_query_percent != None and CDS_query_percent != 0:
-                                    if CDS_orientation:
-                                        target_protein = False
-                                        query_protein = False
-                                        best_protein_overlap = 0
-                                        overlapping = False
-                                        for t1 in g1.transcripts.values():
-                                            if t1.CDSs != {}:
-                                                query_protein = True
-                                            for t2 in g2.transcripts.values():
-                                                if t2.CDSs != {}:
-                                                    target_protein = True
-                                                for CDS1 in t1.CDSs.values():
-                                                    for CDS2 in t2.CDSs.values():
-                                                        overlap_protein_temp = 0
-                                                        for c1 in CDS1.CDS_segments:
-                                                            for c2 in CDS2.CDS_segments:
-                                                                overlap_temp, overlap_bp = c1.overlap(c2)
-                                                                if not overlap_temp:
-                                                                    continue
-                                                                if c1.frame != c2.frame:
-                                                                    continue
-                                                                
-                                                                overlap_protein_temp += overlap_bp
-                                                                overlapping = True
-                                                        if overlap_protein_temp > best_protein_overlap:
-                                                            best_protein_overlap = overlap_protein_temp
-                                                            protein_query_size = CDS1.size
-                                                            protein_target_size = CDS2.size
-                                                    
-                                        if target_protein and query_protein:
-                                            if overlapping:
-                                                protein_query_percent = (best_protein_overlap / protein_query_size) * 100
-                                                protein_target_percent = (best_protein_overlap / protein_target_size) * 100
-                            else:
-
-                                protein_query_percent = None
-                                protein_target_percent = None
-
-                            g1.overlaps["self"].append(OverlapHit(g2.id, self.name,
-                                                                gene_orientation,
-                                                                gene_query_percent,
-                                                                gene_target_percent,
-                                                                exons_in_both,
-                                                                exon_query_percent,
-                                                                exon_target_percent,
-                                                                CDSs_in_both,
-                                                                CDS_query_percent,
-                                                                CDS_target_percent,
-                                                                protein_query_percent,
-                                                                protein_target_percent,
-                                                                g2.conserved_synteny,
-                                                                g2.extra_copy))
-
-                            g2.overlaps["self"].append(OverlapHit(g1.id, self.name,
-                                                                gene_orientation,
-                                                                gene_target_percent,
-                                                                gene_query_percent,
-                                                                exons_in_both,
-                                                                exon_target_percent,
-                                                                exon_query_percent,
-                                                                CDSs_in_both,
-                                                                CDS_target_percent,
-                                                                CDS_query_percent,
-                                                                protein_query_percent,
-                                                                protein_target_percent,
-                                                                g1.conserved_synteny,
-                                                                g1.extra_copy))
-                        try:
-                            gl.remove(g1.id)
-                        except:
-                            pass
-
-                self.self_overlapping = list(self.self_overlapping)
-                progress_bar.close()
-                now = time.time()
-                lapse = now - start_time
-                if not quiet:
-                    print(f"\nDetecting gene overlaps within the {self.id} annotation took {round(lapse/60, 1)} minutes\n")
-                    print(f"\nThere are {len(self.self_overlapping)} genes overlapping with other genes in {self.id} annotation\n")
-                self.add_qualitative_info_to_overlaps()
-
-    def overlaps_as_networks(self, self_mode:bool=True):
-        self.overlap_networks = {}
-        for chr, genes in self.chrs.items():
-            G = nx.Graph()
-            for g in genes.values():
-                if self_mode:
-                    overlaps = g.overlaps["self"]
-                else:
-                    overlaps = g.overlaps["other"]
-                for o in overlaps:
-                    G.add_edge(g.id, o.id)
-            self.overlap_networks[chr] = list(nx.connected_components(G))
-
     def alternative_remove_redundancy(self):
-        nodes = self.overlap_networks[chr][0].nodes()
+        nodes = self.overlaps.networks[chr][0].nodes()
         print("Nodes in the graph:")
         for node in nodes:
             print(node)
 
         # Find articulation points (connector nodes)
-        connector_nodes = list(nx.articulation_points(self.overlap_networks[chr][0]))
+        connector_nodes = list(nx.articulation_points(self.overlaps.networks[chr][0]))
 
         # Remove connector nodes from the graph
         for node in connector_nodes:
-            self.overlap_networks[chr][0].remove_node(node)
+            self.overlaps.networks[chr][0].remove_node(node)
 
     def add_aliases(self, overlap_threshold:int=6):
         for genes in self.chrs.values():
@@ -1907,20 +1436,6 @@ class Annotation():
                             if hit.score >= overlap_threshold:
                                 if hit.id not in g.aliases:
                                     g.aliases.append(hit.id)
-
-
-                  
-    def clear_overlaps(self, keep_self=False, keep_other=False):
-        if not keep_self:
-            self.self_overlapping = []
-            for genes in self.chrs.values():
-                for g in genes.values():
-                    g.overlaps["self"] = []
-        if not keep_other:
-            self.overlapped_annotations = []
-            for genes in self.chrs.values():
-                for g in genes.values():
-                    g.overlaps["other"] = []
     
     def clear_aliases(self):
         for genes in self.chrs.values():
@@ -2000,7 +1515,7 @@ class Annotation():
         other.update(quiet=quiet)
 
         if exon_overlap_threshold != 100 and gene_overlap_threshold != 100:
-            self.detect_gene_overlaps(other, quiet=quiet)
+            self.overlaps.detect(other, quiet=quiet)
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -2982,83 +2497,7 @@ class Annotation():
             else:
                 "Adding blast hits is not available for gene, transcripts and CDSs yet."
         else:
-            print(f"Warning: {mode} chosen is not in accepted list of choices=['protein', 'CDS', 'transcript', 'gene]")
-
-    def add_qualitative_info_to_overlaps(self, quiet:bool=True):
-        """
-        Number of unique full segment overlaps between genes including all transcript variants.
-        """
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        total = len(self.all_gene_ids.keys())
-
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mAdding qualitative info to {self.id} overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-        for genes in self.chrs.values():
-            for g in genes.values():
-                progress_bar.update(1)
-                for o in g.overlaps["self"]:
-                    if o.exon_query_percent > 0:
-
-                        g_exons, g_CDSs, g_UTRs = set(), set(), set()
-                        o_exons, o_CDSs, o_UTRs = set(), set(), set()
-
-                        for t in g.transcripts.values():
-                            if t.main:
-                                g_exons.update(set([(e.start, e.end) for e in t.exons]))
-                                for c in t.CDSs.values():
-                                    if c.main:
-                                        g_CDSs.update(set([(cs.start, cs.end, cs.frame) for cs in c.CDS_segments]))
-                                        g_UTRs.update(set([(u.start, u.end) for u in c.UTRs]))
-                                
-                        chrom = self.all_gene_ids[o.id]
-                        for t in self.chrs[chrom][o.id].transcripts.values():
-                            if t.main:
-                                o_exons.update(set([(e.start, e.end) for e in t.exons]))
-                                for c in t.CDSs.values():
-                                    if c.main:
-                                        o_CDSs.update(set([(cs.start, cs.end, cs.frame) for cs in c.CDS_segments]))
-                                        o_UTRs.update(set([(u.start, u.end) for u in c.UTRs]))
-
-                        for e1 in g_exons:
-                            for e2 in o_exons:
-                                if e1 == e2:
-                                    o.full_exon_overlaps += 1
-
-                        for c1 in g_CDSs:
-                            for c2 in o_CDSs:
-                                if c1[0] == c2[0] and c1[1] == c2[1]:
-                                    o.full_CDS_overlaps += 1
-                                    if c1[2] == c2[2]:
-                                        o.full_protein_overlaps += 1
-
-                        for u1 in g_UTRs:
-                            for u2 in o_UTRs:
-                                if u1 == u2:
-                                    o.full_UTR_overlaps += 1
-
-        progress_bar.close()
-
-    def clear_overlaps_with_selected_CDSs(self):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                g.overlap_with_selected_CDS = False   
-
-    def clear_overlaps_with_selected_exons(self):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                g.overlap_with_selected_exon = False        
+            print(f"Warning: {mode} chosen is not in accepted list of choices=['protein', 'CDS', 'transcript', 'gene]")   
 
     def mark_intron_nesting(self, ignore_removed:bool=True):
         for genes in self.chrs.values():
@@ -3326,7 +2765,7 @@ class Annotation():
         if update:
             self.update(quiet=quiet)
 
-    def remove_genes(self, to_remove:set|None=None, quiet:bool=False):
+    def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):
 
         if to_remove is None:
             to_remove = set()
@@ -3358,6 +2797,8 @@ class Annotation():
             if gene in self.all_gene_ids:
                 chrom = self.all_gene_ids[gene]
                 self.chrs[chrom][gene].remove = True
+                if override_rescue:
+                    self.chrs[chrom][gene].rescue = False
             else:
                 warnings.warn(f"Gene {gene} is not present in annotation {self.id}.", category=UserWarning)
 
@@ -3565,7 +3006,7 @@ class Annotation():
         progress_bar.close()
 
     def mark_overlap_with_other_selected_exons(self, quiet:bool=False):
-        self.clear_overlaps_with_selected_exons()
+        self.overlaps.clear_with_selected_exons()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -3610,7 +3051,7 @@ class Annotation():
         progress_bar.close()        
 
     def mark_overlap_with_other_selected_CDSs(self, quiet:bool=False):
-        self.clear_overlaps_with_selected_CDSs()
+        self.overlaps.clear_with_selected_CDSs()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -4129,7 +3570,7 @@ class Annotation():
     def remove_redundancy(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):
         self.remove_duplicate_transcripts(quiet=quiet)
         self.make_alternative_transcripts_into_genes(quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
         self.stats.calculate_transcript_masking(hard_masked_genome=hard_masked_genome)
         self.mark_noisy_genes(quiet=quiet)
         self.remove_genes(quiet=quiet)
@@ -4141,39 +3582,39 @@ class Annotation():
         self.find_best_gene_model(source_priority, just_with_reliables=False, quiet=quiet)
 
         self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["AUGUSTUS", "Liftoff", "GeneMark.hmm3"], quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
 
         self.rescue_longer_same_frame_CDS(quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
 
         self.remove_CDS_overlaps(source_priority)
         self.mark_intron_nesting()
         self.remove_fully_intron_nested_genes()
 
         self.make_alternative_transcripts_into_genes(quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
 
         self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
         self.mark_overlap_with_other_selected_exons(quiet=quiet)
         self.select_best_possible_non_overlapping_UTR(quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
 
         self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
         self.mark_overlap_with_other_selected_exons(quiet=quiet)
         self.select_best_possible_non_overlapping_UTR(exon=True, quiet=quiet)
 
         self.remove_genes(quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
 
         self.make_alternative_genes_into_transcripts(quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
         self.find_best_gene_model_nested_overlaps(source_priority)
         self.find_best_gene_model_exon_num_overlaps(source_priority)
         self.remove_exon_overlaps(source_priority)
         self.remove_UTRs_from_exon_overlaps()
         self.remove_genes(quiet=quiet)
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
-        self.detect_gene_overlaps(quiet=quiet)
+        self.overlaps.detect(quiet=quiet)
 
     def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):
 
@@ -4292,7 +3733,7 @@ class Annotation():
         if removed_any:
             self.coding_removed = True
         
-        self.clear_overlaps()
+        self.overlaps.clear()
 
         if update:
             self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
@@ -4318,7 +3759,7 @@ class Annotation():
         if removed_any:
             self.non_coding_removed = True
 
-        self.clear_overlaps()
+        self.overlaps.clear()
 
         if update:
             self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)

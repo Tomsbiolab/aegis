@@ -128,13 +128,13 @@ def main(
         if rna_class not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
-    genome = Genome(name=genome_name, genome_file_path=genome_file)
+    genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons)
 
     if "promoter" in features:
         annotation.generate_promoters(genome, promoter_size=promoter_size, promoter_type=promoter_type)
 
-    annotation.generate_sequences(genome)
+    annotation.generate_sequences(genome, quiet=quiet)
 
     if "gene" in features:
 

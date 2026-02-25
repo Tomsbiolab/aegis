@@ -75,7 +75,7 @@ def main(
         output_genome_file = f"{genome_name}_subset.fasta"
 
     if genome_file:
-        g = Genome(genome_name, genome_file)
+        g = Genome(genome_name, genome_file, quiet=quiet)
         a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
         common_actual_chromosomes = common_chromosomes - g.scaffold_names
@@ -101,17 +101,17 @@ def main(
         else:
             chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
 
-        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=min_genes)
+        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=min_genes, quiet=quiet)
     
     else:
         # if chosen_chromosomes is selected min_genes parameter is ignored
-        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0)
+        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0, quiet=quiet)
 
     a.export.gff(custom_path=output_dir, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
     if genome_file:
-        g.subset(chosen_features=chosen_chromosomes)
-        g.export(output_folder=output_dir, file=output_genome_file)
+        g.subset(chosen_features=chosen_chromosomes, quiet=quiet)
+        g.export(output_folder=output_dir, file=output_genome_file, quiet=quiet)
 
 if __name__ == "__main__":
     app()

@@ -120,16 +120,16 @@ def main(
             
         output_file += f"_self_overlaps_t{overlap_threshold}.csv"
 
-        annotations[0].detect_gene_overlaps()
+        annotations[0].overlaps.detect()
 
-        annotations[0].export.equivalences(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs)
+        annotations[0].overlaps.export(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs, quiet=quiet)
 
     elif len(annotation_files) > 1:
 
         if output_filetag == "{annotation-name(s)}":
             output_filetag = ""
             
-        export_group_equivalences(annotations, output_folder=output_dir, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False)
+        export_group_equivalences(annotations, output_folder=output_dir, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False, quiet=quiet)
 
     else:
         raise typer.BadParameter(f"No annotation-files provided.")

@@ -52,9 +52,9 @@ def main(
     if output_file == "{annotation-name}_symbols.gff3":
         output_file = f"{annotation_name}_symbols.gff3"
 
-    annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file)
+    annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file, quiet=quiet)
 
-    annotation.export.gff(custom_path=output_dir, tag=output_file)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
     
 if __name__ == "__main__":
     app()
