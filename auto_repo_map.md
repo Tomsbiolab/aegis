@@ -41,7 +41,6 @@
       - `def define_synteny(self, original_annotation:Annotation|None=None, sort_processes:int=1, quiet:bool=True):`
       - `def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):`
       - `def single_parent_for_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):`
-      - `def alternative_remove_redundancy(self):`
       - `def add_aliases(self, overlap_threshold:int=6):`
       - `def clear_aliases(self):`
       - `def CDS_to_CDS_segment_ids(self, extra_attributes:bool=False, override:bool=False, quiet:bool=False, clean=False):`
@@ -60,34 +59,14 @@
       - `def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, process_atypical:bool=True, quiet:bool=False, process_orphaned:bool=True):`
       - `def create_gtf_attributes(self, quiet:bool=False):`
       - `def add_blast_hits(self, source, blastfile, mode:str="protein"):`
-      - `def mark_intron_nesting(self, ignore_removed:bool=True):`
-      - `def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):`
-      - `def add_reliable_CDS_evidence_score(self, quiet:bool=False):`
-      - `def mark_reliable_CDS_evidences(self, unreliable_sources:list=["GlimmerHMM", "geneid_v1.4"], quiet:bool=False):`
       - `def remove_chromosomes_from_header(self):`
       - `def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
       - `def filter_by_rna_class(self, rna_classes=['mRNA'], quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
       - `def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):`
       - `def remove_missing_genes_in_overlaps(self, quiet:bool=True):`
-      - `def mark_transcriptomic_supported_genes(self, quiet:bool=False):`
-      - `def mark_abinitio_supported_genes(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
-      - `def mark_overlap_with_reliable_genes(self, quiet:bool=False):`
-      - `def find_best_gene_model(self, source_priority:list, just_with_reliables:bool=True, quiet:bool=False):`
-      - `def mark_overlap_with_other_selected_exons(self, quiet:bool=False):`
-      - `def mark_overlap_with_other_selected_CDSs(self, quiet:bool=False):`
-      - `def select_best_possible_non_overlapping_UTR(self, exon=False, quiet:bool=False):`
       - `def remove_duplicate_transcripts(self, quiet:bool=False):`
-      - `def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
-      - `def remove_exon_overlaps(self, source_priority, blast:bool=False):`
-      - `def remove_UTRs_from_exon_overlaps(self):`
-      - `def remove_CDS_overlaps(self, source_priority, blast:bool=False, anti:bool=True):`
-      - `def remove_fully_intron_nested_genes(self):`
-      - `def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
       - `def make_alternative_genes_into_transcripts(self, quiet:bool=False):`
-      - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
-      - `def find_best_gene_model_nested_overlaps(self, source_priority, blast=False):`
-      - `def remove_redundancy(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):`
       - `def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):`
       - `def remove_TE_genes(self, quiet:bool=False):`
       - `def remove_non_TE_genes(self, quiet:bool=False):`
@@ -268,6 +247,30 @@
         - `def clear_with_selected_CDSs(self):`
         - `def clear_with_selected_exons(self):`
         - `def export(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:`
+      - redundancy.py
+        - `class AnnotationRedundancy:`
+        - `def __init__(self, annotation: Annotation):`
+        - `def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):`
+        - `def mark_transcriptomic_supported_genes(self, quiet:bool=False):`
+        - `def mark_abinitio_supported_genes(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
+        - `def add_reliable_CDS_evidence_score(self, quiet:bool=False):`
+        - `def mark_reliable_CDS_evidences(self, unreliable_sources:list=["GlimmerHMM", "geneid_v1.4"], quiet:bool=False):`
+        - `def find_best_gene_model(self, source_priority:list, just_with_reliables:bool=True, quiet:bool=False):`
+        - `def mark_overlap_with_reliable_genes(self, quiet:bool=False):`
+        - `def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
+        - `def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):`
+        - `def remove_CDS_overlaps(self, source_priority, blast:bool=False, anti:bool=True):`
+        - `def mark_intron_nesting(self, ignore_removed:bool=True):`
+        - `def remove_fully_intron_nested_genes(self):`
+        - `def mark_overlap_with_other_selected_CDSs(self, quiet:bool=False):`
+        - `def mark_overlap_with_other_selected_exons(self, quiet:bool=False):`
+        - `def select_best_possible_non_overlapping_UTR(self, exon=False, quiet:bool=False):`
+        - `def find_best_gene_model_nested_overlaps(self, source_priority, blast=False):`
+        - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
+        - `def remove_exon_overlaps(self, source_priority, blast:bool=False):`
+        - `def remove_UTRs_from_exon_overlaps(self):`
+        - `def remove(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):`
+        - `def remove_alternative(self):`
       - stats.py
         - `class AnnotationStats:`
         - `def __init__(self, annotation:Annotation):`
