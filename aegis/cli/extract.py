@@ -87,6 +87,9 @@ def main(
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
     )] = False,
+    no_collapse_CDSs: Annotated[bool, typer.Option(
+        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments."
+    )] = False,
     feature_id: Annotated[str, typer.Option(
         "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}."
     )] = "feature"
@@ -103,6 +106,7 @@ def main(
     """
 
     collapse_exons = not no_collapse_exons
+    collapse_CDSs = not no_collapse_CDSs
 
     for f_type in features:
         if f_type not in FEATURES:
@@ -129,7 +133,7 @@ def main(
             raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
     genome = Genome(name=genome_name, genome_file_path=genome_file)
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
 
     if "promoter" in features:
         annotation.generate_promoters(genome, promoter_size=promoter_size, promoter_type=promoter_type)

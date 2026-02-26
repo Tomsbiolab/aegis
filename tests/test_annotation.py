@@ -1022,3 +1022,443 @@ class TestAnnotationRemoveGenesWithoutSymbols:
         annot.remove_genes_without_symbols(quiet=True)
         assert "geneA" in annot.all_gene_ids
         assert "geneB" not in annot.all_gene_ids
+
+
+# ============================================================
+# Annotation — rework_CDSs (generate CDS from exon-only GFF3)
+# ============================================================
+
+class TestAnnotationReworkCDSs:
+    """Load genome and exon-only Arabidopsis mRNA GFF3, run rework_CDSs,
+    and verify the generated CDS segments match expected values."""
+
+    @pytest.fixture
+    def reworked_annotation(self):
+        from aegis.genome import Genome
+        genome = Genome(
+            "ara_genome",
+            str(TEST_DATA_DIR / "arabidopsis_tair10.fasta"),
+            quiet=True,
+        )
+        annot = Annotation(
+            str(TEST_DATA_DIR / "arabidopsis_generate_cds_mRNA.gff3"),
+            "ara_annotation",
+            quiet=True,
+            genome=genome,
+        )
+        annot.rework_CDSs(genome, quiet=True)
+        return annot
+
+    def test_all_transcripts_have_cds(self, reworked_annotation):
+        """After rework_CDSs every mRNA transcript should be coding."""
+        annot = reworked_annotation
+        gene = annot.chrs["Chr4"]["AT4G00050"]
+        for t in gene.transcripts.values():
+            assert len(t.CDSs) == 1
+
+    def test_generated_cds_segments(self, reworked_annotation):
+        """Verify every CDS segment matches the expected coordinates,
+        phase, ID and parent — grouped by transcript."""
+        annot = reworked_annotation
+        gene = annot.chrs["Chr4"]["AT4G00050"]
+
+        # Expected CDS segments keyed by transcript ID
+        expected = {
+            "AT4G00050.1": [
+                ("Chr4", "Araport11", 17863, 17954, "+", 0, "AT4G00050.1_CDS001", "AT4G00050.1"),
+                ("Chr4", "Araport11", 18030, 18513, "+", 1, "AT4G00050.1_CDS001", "AT4G00050.1"),
+                ("Chr4", "Araport11", 18600, 18692, "+", 0, "AT4G00050.1_CDS001", "AT4G00050.1"),
+                ("Chr4", "Araport11", 18805, 18870, "+", 0, "AT4G00050.1_CDS001", "AT4G00050.1"),
+                ("Chr4", "Araport11", 19296, 19673, "+", 0, "AT4G00050.1_CDS001", "AT4G00050.1"),
+                ("Chr4", "Araport11", 19762, 19848, "+", 0, "AT4G00050.1_CDS001", "AT4G00050.1"),
+            ],
+            "AT4G00050.3": [
+                ("Chr4", "Araport11", 17863, 17954, "+", 0, "AT4G00050.3_CDS001", "AT4G00050.3"),
+                ("Chr4", "Araport11", 18030, 18513, "+", 1, "AT4G00050.3_CDS001", "AT4G00050.3"),
+                ("Chr4", "Araport11", 18600, 18692, "+", 0, "AT4G00050.3_CDS001", "AT4G00050.3"),
+                ("Chr4", "Araport11", 18805, 18870, "+", 0, "AT4G00050.3_CDS001", "AT4G00050.3"),
+                ("Chr4", "Araport11", 19296, 19715, "+", 0, "AT4G00050.3_CDS001", "AT4G00050.3"),
+            ],
+            "AT4G00050.2": [
+                ("Chr4", "Araport11", 18244, 18513, "+", 0, "AT4G00050.2_CDS001", "AT4G00050.2"),
+                ("Chr4", "Araport11", 18600, 18692, "+", 0, "AT4G00050.2_CDS001", "AT4G00050.2"),
+                ("Chr4", "Araport11", 18805, 18870, "+", 0, "AT4G00050.2_CDS001", "AT4G00050.2"),
+                ("Chr4", "Araport11", 19296, 19673, "+", 0, "AT4G00050.2_CDS001", "AT4G00050.2"),
+                ("Chr4", "Araport11", 19762, 19848, "+", 0, "AT4G00050.2_CDS001", "AT4G00050.2"),
+            ],
+        }
+
+        for t_id, expected_segments in expected.items():
+
+            t = gene.transcripts[t_id]
+
+            # Collect all CDS segments across all CDS objects in the transcript
+            actual_segments = []
+            for cds in t.CDSs.values():
+                for seg in cds.CDS_segments:
+                    actual_segments.append((
+                        seg.ch,
+                        seg.source,
+                        seg.start,
+                        seg.end,
+                        seg.strand,
+                        seg.phase,
+                        seg.id,
+                        seg.parents[0],
+                    ))
+
+            assert len(actual_segments) == len(expected_segments)
+
+            for i, (act, exp) in enumerate(zip(actual_segments, expected_segments)):
+                assert act == exp
+
+
+# ============================================================
+# Edge-case GFF3 tests
+# ============================================================
+
+# ---- 1. Exon-only (no CDS/UTR) ----
+
+class TestExonOnlyGFF3:
+    """exons with no gene or mRNA"""
+
+    def test_gene_and_transcript_loaded(self, exon_only_gff3_file):
+        annot = Annotation(exon_only_gff3_file, quiet=True)
+        assert "mRNA_eo1_gene" in annot.all_gene_ids
+        assert "mRNA_eo1" in annot.all_transcript_ids
+
+    def test_gene_coordinates(self, exon_only_gff3_file):
+        annot = Annotation(exon_only_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["mRNA_eo1_gene"]
+        coords = (g.start, g.end)
+        assert coords == (1000, 5000)
+
+
+# ---- 2. CDS-only ----
+
+class TestCDSOnlyGFF3:
+    """Gene→mRNA→CDS with no explicit exons"""
+
+    def test_transcript_is_coding(self, cds_only_gff3_file):
+        annot = Annotation(cds_only_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        assert t.coding is True
+
+    def test_one_cds_with_three_segments(self, cds_only_gff3_file):
+        annot = Annotation(cds_only_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 3
+
+    def test_exons_auto_generated_from_cds(self, cds_only_gff3_file):
+        """When no exons are provided, aegis reconstructs them from CDS segments"""
+        annot = Annotation(cds_only_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        assert len(t.exons) == 3
+
+    def test_auto_exon_coordinates_match_cds(self, cds_only_gff3_file):
+        annot = Annotation(cds_only_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        coords = [(e.start, e.end) for e in t.exons]
+        assert coords == [(1200, 2000), (3000, 3800), (4200, 4800)]
+
+    def test_two_introns_generated(self, cds_only_gff3_file):
+        annot = Annotation(cds_only_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        assert len(t.introns) == 2
+
+    def test_gene_coordinates_corrected(self, cds_only_gff3_file):
+        """Gene coordinates are corrected to match the actual subfeature span"""
+        annot = Annotation(cds_only_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_co1"]
+        assert g.start == 1200
+        assert g.end == 4800
+
+
+# ---- 3. No subfeatures (single-exon fallback) ----
+
+class TestNoSubfeaturesGFF3:
+    """Gene with mRNA but zero subfeatures — single exon generated"""
+
+    def test_two_genes_loaded(self, no_subfeatures_gff3_file):
+        annot = Annotation(no_subfeatures_gff3_file, quiet=True)
+        assert len(annot.all_gene_ids) == 2
+
+    def test_single_exon_spanning_transcript(self, no_subfeatures_gff3_file):
+        """When no subfeatures exist, a single exon spanning the full transcript is created"""
+        annot = Annotation(no_subfeatures_gff3_file, quiet=True)
+        t1 = annot.chrs["chr1"]["gene_ns1"].transcripts["mRNA_ns1"]
+        assert len(t1.exons) == 1
+        assert t1.exons[0].start == 500
+        assert t1.exons[0].end == 3000
+
+    def test_not_coding(self, no_subfeatures_gff3_file):
+        annot = Annotation(no_subfeatures_gff3_file, quiet=True)
+        t1 = annot.chrs["chr1"]["gene_ns1"].transcripts["mRNA_ns1"]
+        t2 = annot.chrs["chr2"]["gene_ns2"].transcripts["mRNA_ns2"]
+        assert t1.coding is False
+        assert t2.coding is False
+
+    def test_no_introns(self, no_subfeatures_gff3_file):
+        annot = Annotation(no_subfeatures_gff3_file, quiet=True)
+        t1 = annot.chrs["chr1"]["gene_ns1"].transcripts["mRNA_ns1"]
+        assert len(t1.introns) == 0
+
+    def test_minus_strand_transcript(self, no_subfeatures_gff3_file):
+        annot = Annotation(no_subfeatures_gff3_file, quiet=True)
+        t2 = annot.chrs["chr2"]["gene_ns2"].transcripts["mRNA_ns2"]
+        assert t2.strand == "-"
+        assert len(t2.exons) == 1
+        assert t2.exons[0].start == 100
+        assert t2.exons[0].end == 2500
+
+
+# ---- 4. Non-coding transcript types ----
+
+class TestNoncodingTranscriptsGFF3:
+    """lnc_RNA, tRNA, rRNA, snoRNA transcript types from conf.py"""
+
+    def test_four_genes_loaded(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        assert len(annot.all_gene_ids) == 4
+
+    def test_all_transcripts_noncoding(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        for genes in annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    assert t.coding is False
+
+    def test_transcript_feature_types_preserved(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        features = set()
+        for genes in annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    features.add(t.feature)
+        assert features == {"lnc_RNA", "tRNA", "rRNA", "snoRNA"}
+
+    def test_lnc_rna_has_two_exons(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_nc1"].transcripts["lncRNA_nc1"]
+        assert len(t.exons) == 2
+
+    def test_trna_has_one_exon(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_nc2"].transcripts["tRNA_nc2"]
+        assert len(t.exons) == 1
+
+    def test_rrna_minus_strand(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        t = annot.chrs["chr2"]["gene_nc3"].transcripts["rRNA_nc3"]
+        assert t.strand == "-"
+        assert len(t.exons) == 2
+
+    def test_no_cds_on_any_transcript(self, noncoding_transcripts_gff3_file):
+        annot = Annotation(noncoding_transcripts_gff3_file, quiet=True)
+        for genes in annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    assert len(t.CDSs) == 0
+
+
+# ---- 5. Pseudogene ----
+
+class TestPseudogeneGFF3:
+    """Pseudogene with exons parented directly to the gene (no transcript).
+    Aegis auto-creates a pseudotranscript"""
+
+    def test_gene_is_pseudogene(self, pseudogene_gff3_file):
+        annot = Annotation(pseudogene_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_ps1"]
+        assert g.pseudogene is True
+
+    def test_pseudotranscript_auto_created(self, pseudogene_gff3_file):
+        annot = Annotation(pseudogene_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_ps1"]
+        assert len(g.transcripts) == 1
+        assert "pseudo_t_ps1" in g.transcripts
+
+    def test_pseudotranscript_has_three_exons(self, pseudogene_gff3_file):
+        annot = Annotation(pseudogene_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ps1"].transcripts["pseudo_t_ps1"]
+        assert len(t.exons) == 3
+
+    def test_pseudotranscript_not_coding(self, pseudogene_gff3_file):
+        annot = Annotation(pseudogene_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ps1"].transcripts["pseudo_t_ps1"]
+        assert t.coding is False
+
+    def test_pseudotranscript_exon_coordinates(self, pseudogene_gff3_file):
+        annot = Annotation(pseudogene_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ps1"].transcripts["pseudo_t_ps1"]
+        coords = [(e.start, e.end) for e in t.exons]
+        assert coords == [(1000, 2000), (3000, 4000), (4500, 5000)]
+
+
+# ---- 6. Overlapping exons (collapse) ----
+
+class TestOverlappingExonsGFF3:
+    """Gene with overlapping exons is collapsed into fewer exons"""
+
+    def test_exons_collapsed(self, overlapping_exons_gff3_file):
+        """4 overlapping/adjacent input exons -> 2 collapsed exons"""
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        assert len(t.exons) == 2
+
+    def test_collapsed_exon_coordinates(self, overlapping_exons_gff3_file):
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        coords = [(e.start, e.end) for e in t.exons]
+        # exons 1000-2500 + 2000-3500 + 3500-4000 overlap → merged into 1000-4000
+        # exon 5000-6000 remains separate
+        assert coords == [(1000, 4000), (5000, 6000)]
+
+    def test_transcript_is_coding(self, overlapping_exons_gff3_file):
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        assert t.coding is True
+
+    def test_one_intron_after_collapse(self, overlapping_exons_gff3_file):
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        assert len(t.introns) == 1
+
+    def test_cds_segments_collapsed(self, overlapping_exons_gff3_file):
+        """3 CDS input segments (2 overlapping) -> 2 collapsed CDS segments"""
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 2
+
+    def test_collapsed_cds_coordinates(self, overlapping_exons_gff3_file):
+        """CDS 1200-2500 + 2000-3500 -> merged 1200-3500; CDS 5000-5800 stays"""
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        cds = list(t.CDSs.values())[0]
+        coords = [(s.start, s.end) for s in cds.CDS_segments]
+        assert coords == [(1200, 3500), (5000, 5800)]
+
+    def test_no_collapse_cds_flag(self, overlapping_exons_gff3_file):
+        """With collapse_CDSs=False the 3 original CDS segments are kept"""
+        annot = Annotation(overlapping_exons_gff3_file, quiet=True, collapse_CDSs=False)
+        t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 3
+
+# ---- 7. Multi CDS IDs ----
+
+class TestMultiCDSIdsGFF3:
+    """CDS segments with different IDs"""
+
+    def test_cds_segments_combined(self, multi_cds_ids_gff3_file):
+        """CDS segments with different IDs but sorted into CDS objects"""
+        annot = Annotation(multi_cds_ids_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
+        assert len(t.CDSs) == 1
+        assert len(t.CDSs["CDS_mc1a"].CDS_segments) == 2
+
+    def test_two_exons(self, multi_cds_ids_gff3_file):
+        annot = Annotation(multi_cds_ids_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
+        assert len(t.exons) == 2
+
+
+# ---- 8. Transcript without Parent (gene inferred) ----
+
+class TestTranscriptNoParentGFF3:
+    """mRNA with no Parent → gene auto-inferred"""
+
+    def test_gene_auto_created(self, transcript_no_parent_gff3_file):
+        annot = Annotation(transcript_no_parent_gff3_file, quiet=True)
+        assert "mRNA_np1_gene" in annot.all_gene_ids
+
+    def test_warning_raised(self, transcript_no_parent_gff3_file):
+        annot = Annotation(transcript_no_parent_gff3_file, quiet=True)
+        assert len(annot.warnings["transcript_with_no_parent"]) == 1
+
+
+# ---- 9. Just CDS without Parent (gene + transcript inferred) ----
+
+class TestCDSNoParentGFF3:
+    """CDS subfeatures with no Parent → gene + transcript auto-inferred"""
+
+    def test_gene_auto_created(self, cds_no_parent_gff3_file):
+        annot = Annotation(cds_no_parent_gff3_file, quiet=True)
+        assert "CDS_cnp1_gene" in annot.all_gene_ids
+
+    def test_transcript_auto_created(self, cds_no_parent_gff3_file):
+        annot = Annotation(cds_no_parent_gff3_file, quiet=True)
+        assert "CDS_cnp1_transcript" in annot.all_transcript_ids
+
+    def test_transcript_is_coding(self, cds_no_parent_gff3_file):
+        annot = Annotation(cds_no_parent_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["CDS_cnp1_gene"].transcripts["CDS_cnp1_transcript"]
+        assert t.coding is True
+
+    def test_cds_has_two_segments(self, cds_no_parent_gff3_file):
+        annot = Annotation(cds_no_parent_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["CDS_cnp1_gene"].transcripts["CDS_cnp1_transcript"]
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 2
+
+    def test_exons_auto_generated(self, cds_no_parent_gff3_file):
+        annot = Annotation(cds_no_parent_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["CDS_cnp1_gene"].transcripts["CDS_cnp1_transcript"]
+        assert len(t.exons) == 2
+        coords = [(e.start, e.end) for e in t.exons]
+        assert coords == [(1200, 2000), (3000, 4800)]
+
+    def test_warning_raised(self, cds_no_parent_gff3_file):
+        annot = Annotation(cds_no_parent_gff3_file, quiet=True)
+        assert len(annot.warnings["subfeature_with_no_parent"]) == 1
+
+
+# ---- 10. Multiple isoforms ----
+
+class TestMultipleIsoformsGFF3:
+    """Gene with 3 mRNA isoforms sharing exon regions but different CDS"""
+
+    def test_single_gene(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        assert len(annot.all_gene_ids) == 1
+        assert "gene_iso1" in annot.all_gene_ids
+
+    def test_three_transcripts(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_iso1"]
+        assert len(g.transcripts) == 3
+
+    def test_all_isoforms_coding(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_iso1"]
+        for t in g.transcripts.values():
+            assert t.coding is True
+
+    def test_each_isoform_has_one_cds(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_iso1"]
+        for t in g.transcripts.values():
+            assert len(t.CDSs) == 1
+
+    def test_isoform_a_has_three_exons(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"]
+        assert len(t.exons) == 3
+
+    def test_isoform_b_has_two_exons(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"]
+        assert len(t.exons) == 2
+
+    def test_isoform_c_has_two_exons(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"]
+        assert len(t.exons) == 2
+
+    def test_transcript_ids_correct(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["gene_iso1"]
+        assert set(g.transcripts.keys()) == {"mRNA_iso1a", "mRNA_iso1b", "mRNA_iso1c"}

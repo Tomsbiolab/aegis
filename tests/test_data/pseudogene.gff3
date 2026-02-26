@@ -1,0 +1,6 @@
+##gff-version 3
+##--- Pseudogene with exons pointing directly at the gene (no transcript) ---
+chr1	aegis	pseudogene	1000	5000	.	+	.	ID=gene_ps1;Name=PseudoGene1
+chr1	aegis	exon	1000	2000	.	+	.	ID=exon_ps1a;Parent=gene_ps1
+chr1	aegis	exon	3000	4000	.	+	.	ID=exon_ps1b;Parent=gene_ps1
+chr1	aegis	exon	4500	5000	.	+	.	ID=exon_ps1c;Parent=gene_ps1

@@ -1,0 +1,8 @@
+##gff-version 3
+##--- Transcript with CDS segments having different IDs (polycistronic) ---
+chr1	aegis	gene	1000	8000	.	+	.	ID=gene_mc1;Name=PolycistronicGene
+chr1	aegis	mRNA	1000	8000	.	+	.	ID=mRNA_mc1;Parent=gene_mc1
+chr1	aegis	exon	1000	4000	.	+	.	ID=exon_mc1a;Parent=mRNA_mc1
+chr1	aegis	exon	5000	8000	.	+	.	ID=exon_mc1b;Parent=mRNA_mc1
+chr1	aegis	CDS	1200	4000	.	+	0	ID=CDS_mc1a;Parent=mRNA_mc1
+chr1	aegis	CDS	5000	7500	.	+	0	ID=CDS_mc1b;Parent=mRNA_mc1

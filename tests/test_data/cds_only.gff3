@@ -1,0 +1,7 @@
+##gff-version 3
+##--- Gene with only CDS segments (no explicit exons or UTRs) ---
+chr1	aegis	gene	1000	5000	.	+	.	ID=gene_co1;Name=CDSOnlyGene
+chr1	aegis	mRNA	1000	5000	.	+	.	ID=mRNA_co1;Parent=gene_co1
+chr1	aegis	CDS	1200	2000	.	+	0	ID=CDS_co1;Parent=mRNA_co1
+chr1	aegis	CDS	3000	3800	.	+	1	ID=CDS_co1;Parent=mRNA_co1
+chr1	aegis	CDS	4200	4800	.	+	0	ID=CDS_co1;Parent=mRNA_co1
