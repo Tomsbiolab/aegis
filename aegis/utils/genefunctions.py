@@ -245,7 +245,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
 
     if clear_overlaps:
         for a in annotations:
-            a.clear_overlaps()
+            a.overlaps.clear()
 
     export_folder = Path(output_folder) / "overlaps"
     export_folder.mkdir(parents=True, exist_ok=True)
@@ -273,7 +273,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
                 if not a1.target and not a2.target:
                     continue
 
-            a1.detect_gene_overlaps(a2, clear=False)
+            a1.overlaps.detect(a2, clear=False)
 
             processed_pairs.add(pair)
 
@@ -316,7 +316,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
             if x != 0:
                 continue
 
-        single_df = a.export.equivalences(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
+        single_df = a.overlaps.export(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
 
         if len(annotations) > 2:
 

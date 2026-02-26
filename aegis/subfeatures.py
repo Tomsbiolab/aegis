@@ -275,7 +275,7 @@ class Intron(Feature):
         elif self.strand == "-":
             self.seq = reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])
         elif self.strand == ".":
-            self.seqs = (genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end]))
+            self.seqs = [genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])]
         self.splice_site_donor = self.seq[0:2]
         self.splice_site_acceptor = self.seq[-2:]
         self.boundary = f"{self.splice_site_donor}-{self.splice_site_acceptor}"
