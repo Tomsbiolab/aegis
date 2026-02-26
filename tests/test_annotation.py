@@ -675,14 +675,14 @@ class TestAnnotationCorrectCoordinates:
 
 
 # ============================================================
-# Annotation — list_genes
+# Annotation — gene_list
 # ============================================================
 
-class TestAnnotationListGenes:
-    def test_list_genes_basic(self, multi_gene_gff3_file, tmp_path):
+class TestAnnotationGeneList:
+    def test_gene_list_basic(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_genes(custom_path=str(tmp_path))
-        # When custom_path is provided, list_genes uses it directly as the
+        annot.export.gene_list(custom_path=str(tmp_path))
+        # When custom_path is provided, gene_list uses it directly as the
         # export folder (no "lists" subfolder).  Filename = {self.name}_genes.txt
         output_file = tmp_path / "multi_gene_genes.txt"
         assert output_file.exists()
@@ -691,43 +691,43 @@ class TestAnnotationListGenes:
         assert "geneA" in content
         assert "geneB" in content
 
-    def test_list_genes_with_coordinates(self, multi_gene_gff3_file, tmp_path):
+    def test_gene_list_with_coordinates(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_genes(custom_path=str(tmp_path), coordinates=True)
+        annot.export.gene_list(custom_path=str(tmp_path), coordinates=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
         assert "scaffold" in content
         assert "gene_start" in content
         assert "gene_end" in content
 
-    def test_list_genes_with_lengths(self, multi_gene_gff3_file, tmp_path):
+    def test_gene_list_with_lengths(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_genes(custom_path=str(tmp_path), lengths=True)
+        annot.export.gene_list(custom_path=str(tmp_path), lengths=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
         assert "gene_length" in content
 
-    def test_list_genes_custom_output_file(self, multi_gene_gff3_file, tmp_path):
+    def test_gene_list_custom_output_file(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_genes(custom_path=str(tmp_path), output_file="custom_list.txt")
+        annot.export.gene_list(custom_path=str(tmp_path), output_file="custom_list.txt")
         output_file = tmp_path / "custom_list.txt"
         assert output_file.exists()
 
-    def test_list_genes_skip_both_coding_and_noncoding(self, multi_gene_gff3_file, tmp_path, capsys):
+    def test_gene_list_skip_both_coding_and_noncoding(self, multi_gene_gff3_file, tmp_path, capsys):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_genes(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
+        annot.export.gene_list(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
         captured = capsys.readouterr()
         assert "Warning" in captured.out
 
 
 # ============================================================
-# Annotation — list_transcripts
+# Annotation — transcript_list
 # ============================================================
 
-class TestAnnotationListTranscripts:
-    def test_list_transcripts_basic(self, multi_gene_gff3_file, tmp_path):
+class TestAnnotationTranscriptList:
+    def test_transcript_list_basic(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_transcripts(custom_path=str(tmp_path))
+        annot.export.transcript_list(custom_path=str(tmp_path))
         output_file = tmp_path / "multi_gene_transcripts.txt"
         assert output_file.exists()
         content = output_file.read_text()
@@ -735,17 +735,17 @@ class TestAnnotationListTranscripts:
         assert "mRNA_A" in content
         assert "mRNA_B" in content
 
-    def test_list_transcripts_with_coordinates(self, multi_gene_gff3_file, tmp_path):
+    def test_transcript_list_with_coordinates(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_transcripts(custom_path=str(tmp_path), coordinates=True)
+        annot.export.transcript_list(custom_path=str(tmp_path), coordinates=True)
         output_file = tmp_path / "multi_gene_transcripts.txt"
         content = output_file.read_text()
         assert "transcript_start" in content
         assert "transcript_end" in content
 
-    def test_list_transcripts_skip_both(self, multi_gene_gff3_file, tmp_path, capsys):
+    def test_transcript_list_skip_both(self, multi_gene_gff3_file, tmp_path, capsys):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.export.list_transcripts(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
+        annot.export.transcript_list(custom_path=str(tmp_path), skip_coding=True, skip_non_coding=True)
         captured = capsys.readouterr()
         assert "Warning" in captured.out
 

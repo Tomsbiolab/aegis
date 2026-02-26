@@ -53,9 +53,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
     else:
         a_liftoff = Annotation(str(liftoff_gff), quiet=quiet)
 
-    a_liftoff.detect_gene_overlaps(annot2, quiet=quiet)
+    a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
-    _ = a_liftoff.export.equivalences(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+    _ = a_liftoff.overlaps.export(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
     del a_liftoff
 
@@ -92,9 +92,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         else:
             a_lifton = Annotation(str(lifton_gff), quiet=quiet)
 
-        a_lifton.detect_gene_overlaps(annot2, quiet=quiet)
+        a_lifton.overlaps.detect(annot2, quiet=quiet)
 
-        _ = a_lifton.export.equivalences(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        _ = a_lifton.overlaps.export(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
         del a_lifton
 

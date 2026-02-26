@@ -270,7 +270,7 @@ class AnnotationOverlaps:
 
         else:
             if self.self != []:
-                print("There are already detected 'self' gene overlaps, please run 'self.clear_overlaps()' if you want to recalculate them")
+                print("There are already detected 'self' gene overlaps, please run 'self.clear()' if you want to recalculate them")
             else:
                 progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
                             bar_format=(
