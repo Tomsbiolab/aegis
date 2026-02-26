@@ -173,13 +173,13 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
-    genomes = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g) for n, g in enumerate(genome_files) ]
+    genomes = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g, quiet=quiet) for n, g in enumerate(genome_files) ]
 
     annotations = []
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file))
+        annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, quiet=quiet))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 

@@ -65,13 +65,13 @@ def main(
     f_in.close()
 
     if feature_type == "gene":
-        annotation.remove_genes(input_ids)
+        annotation.remove_genes(input_ids, override_rescue=True, quiet=quiet)
     
     else:
-        annotation.remove_transcripts(input_ids)
+        annotation.remove_transcripts(input_ids, quiet=quiet)
 
     output_file += ".gff3"
-    annotation.export.gff(custom_path=output_dir, tag=output_file)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
 
 
 if __name__ == "__main__":
