@@ -1,0 +1,4 @@
+##gff-version 3
+##--- CDS subfeatures with no Parent attribute (gene+transcript inferred) ---
+chr1	aegis	CDS	1200	2000	.	+	0	ID=CDS_cnp1
+chr1	aegis	CDS	3000	4800	.	+	0	ID=CDS_cnp1

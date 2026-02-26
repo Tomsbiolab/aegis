@@ -44,6 +44,70 @@ def rich_gff3_file():
 
 
 # ---------------------------------------------------------------------------
+# Edge cases GFF3 files
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def exon_only_gff3_file():
+    """Gene with only exons (no CDS/UTR) — non-coding mRNA."""
+    return str(TEST_DATA_DIR / "exon_only.gff3")
+
+
+@pytest.fixture
+def cds_only_gff3_file():
+    """Gene with only CDS segments (no explicit exons or UTRs)."""
+    return str(TEST_DATA_DIR / "cds_only.gff3")
+
+
+@pytest.fixture
+def no_subfeatures_gff3_file():
+    """Gene with mRNA but zero subfeatures."""
+    return str(TEST_DATA_DIR / "no_subfeatures.gff3")
+
+
+@pytest.fixture
+def noncoding_transcripts_gff3_file():
+    """Several non-coding transcript types (lnc_RNA, tRNA, rRNA, snoRNA)."""
+    return str(TEST_DATA_DIR / "noncoding_transcripts.gff3")
+
+
+@pytest.fixture
+def pseudogene_gff3_file():
+    """Pseudogene with exons pointing directly at the gene (no transcript)."""
+    return str(TEST_DATA_DIR / "pseudogene.gff3")
+
+
+@pytest.fixture
+def overlapping_exons_gff3_file():
+    """Gene with overlapping exons that need collapsing."""
+    return str(TEST_DATA_DIR / "overlapping_exons.gff3")
+
+
+@pytest.fixture
+def multi_cds_ids_gff3_file():
+    """Transcript with CDS segments having different IDs (polycistronic)."""
+    return str(TEST_DATA_DIR / "multi_cds_ids.gff3")
+
+
+@pytest.fixture
+def transcript_no_parent_gff3_file():
+    """Transcript without a Parent attribute (gene inferred)."""
+    return str(TEST_DATA_DIR / "transcript_no_parent.gff3")
+
+
+@pytest.fixture
+def cds_no_parent_gff3_file():
+    """CDS subfeatures with no Parent attribute (gene+transcript inferred)."""
+    return str(TEST_DATA_DIR / "cds_no_parent.gff3")
+
+
+@pytest.fixture
+def multiple_isoforms_gff3_file():
+    """Gene with 3 mRNA isoforms sharing exon regions but different CDS."""
+    return str(TEST_DATA_DIR / "multiple_isoforms.gff3")
+
+
+# ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
 # ---------------------------------------------------------------------------
 

@@ -49,7 +49,7 @@ class Transcript(Feature):
         for exon in self.exons:
             self.size += exon.size
 
-    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True):
+    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
         if self.exons == []:
             self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
@@ -59,6 +59,8 @@ class Transcript(Feature):
             if collapse_exons:
                 self.collapse_exons()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
+        if collapse_CDSs:
+            self.collapse_CDS_segments()
 
         self.update_size()
         self.generate_introns()
@@ -210,6 +212,36 @@ class Transcript(Feature):
                     e.misc_attributes = []
                     e.parents = [self.id]
                     counter -= 1
+
+    def collapse_CDS_segments(self):
+        """
+        Merges overlapping or directly adjacent CDS segments into single segments
+        """
+        for cds in self.CDSs.values():
+            cds.CDS_segments.sort()
+            if len(cds.CDS_segments) < 2:
+                continue
+            merged = []
+            cur = cds.CDS_segments[0].copy()
+            for seg in cds.CDS_segments[1:]:
+                if seg.start <= cur.end + 1:
+                    if seg.end > cur.end:
+                        cur.end = seg.end
+                        cur.size = cur.end - cur.start + 1
+                else:
+                    merged.append(cur)
+                    cur = seg.copy()
+            merged.append(cur)
+            if len(merged) < len(cds.CDS_segments):
+                cds.CDS_segments = merged
+                for seg in cds.CDS_segments:
+                    seg.id = cds.id
+                    seg.attributes = [f"ID={cds.id}", f"Parent={self.id}"]
+                    seg.misc_attributes = []
+                    seg.parents = [self.id]
+                cds.start = cds.CDS_segments[0].start
+                cds.end = cds.CDS_segments[-1].end
+                cds.update()
 
     def clear_UTRs(self):
         for c in self.CDSs.values():

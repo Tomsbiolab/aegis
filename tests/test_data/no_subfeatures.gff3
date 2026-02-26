@@ -1,0 +1,6 @@
+##gff-version 3
+##--- Gene with mRNA but zero subfeatures (no exon/CDS/UTR) ---
+chr1	aegis	gene	500	3000	.	+	.	ID=gene_ns1;Name=NoSubsGene
+chr1	aegis	mRNA	500	3000	.	+	.	ID=mRNA_ns1;Parent=gene_ns1
+chr2	aegis	gene	100	2500	.	-	.	ID=gene_ns2;Name=NoSubsGeneRev
+chr2	aegis	mRNA	100	2500	.	-	.	ID=mRNA_ns2;Parent=gene_ns2

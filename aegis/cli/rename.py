@@ -75,11 +75,15 @@ def main(
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
     )] = False,
+    no_collapse_CDSs: Annotated[bool, typer.Option(
+        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments."
+    )] = False
 ):
     """
     Rename feature ids of an annotation file.
     """
     collapse_exons = not no_collapse_exons
+    collapse_CDSs = not no_collapse_CDSs
 
     for feature in rename_features:
         if feature not in VALID_FEATURES:
@@ -97,13 +101,12 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
 
     if output_file == "{annotation-name}_renamed.gff3":
         output_file = f"{annotation_name}_renamed.gff3"
 
-    annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, collapse_exons=collapse_exons, quiet=quiet)
-
+    annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, quiet=quiet)
     annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
 
 if __name__ == "__main__":

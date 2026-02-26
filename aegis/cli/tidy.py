@@ -84,6 +84,9 @@ def main(
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
     )] = False,
+    no_collapse_CDSs: Annotated[bool, typer.Option(
+        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments."
+    )] = False,
     consider_read_utrs: Annotated[bool, typer.Option(
         "--consider-read-utrs", help="Consider UTRs as read from the GFF rather than inferred."
     )] = False,
@@ -99,6 +102,7 @@ def main(
     """
 
     collapse_exons = not(no_collapse_exons)
+    collapse_CDSs = not(no_collapse_CDSs)
     skip_features_without_id = not(include_features_without_id)
 
     if annotation_name == "{annotation-file}":
@@ -110,7 +114,7 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, consider_read_utrs=consider_read_utrs)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"

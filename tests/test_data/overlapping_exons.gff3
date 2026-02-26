@@ -1,0 +1,11 @@
+##gff-version 3
+##--- Gene with overlapping exons that need collapsing ---
+chr1	aegis	gene	1000	6000	.	+	.	ID=gene_ov1;Name=OverlapExonGene
+chr1	aegis	mRNA	1000	6000	.	+	.	ID=mRNA_ov1;Parent=gene_ov1
+chr1	aegis	exon	1000	2500	.	+	.	ID=exon_ov1a;Parent=mRNA_ov1
+chr1	aegis	exon	2000	3500	.	+	.	ID=exon_ov1b;Parent=mRNA_ov1
+chr1	aegis	exon	3500	4000	.	+	.	ID=exon_ov1c;Parent=mRNA_ov1
+chr1	aegis	exon	5000	6000	.	+	.	ID=exon_ov1d;Parent=mRNA_ov1
+chr1	aegis	CDS	1200	2500	.	+	0	ID=CDS_ov1;Parent=mRNA_ov1
+chr1	aegis	CDS	2000	3500	.	+	2	ID=CDS_ov1;Parent=mRNA_ov1
+chr1	aegis	CDS	5000	5800	.	+	0	ID=CDS_ov1;Parent=mRNA_ov1
