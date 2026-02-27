@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # STAGE 1: BASE IMAGE & SYSTEM DEPENDENCIES
 # -----------------------------------------------------------------------------
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -48,10 +48,12 @@ RUN conda install -n base -c conda-forge mamba -y
 # -----------------------------------------------------------------------------
 # Install most packages directly with Mamba.
 # This is more reliable and avoids compilation/dependency issues.
-# Mamba will resolve compatible versions for Python 3.10.
+# Mamba will resolve compatible versions for Python 3.14.
 RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
-    python=3.10 \
+    python=3.12 \
     pip \
+    setuptools \
+    cigar \
     # Bioinformatics tools
     jcvi \
     last \
@@ -67,7 +69,8 @@ RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
     matplotlib \
     scipy \
     colorlover \
-    tqdm
+    tqdm \
+    typing_extensions
 
 # Activate the environment for subsequent commands
 SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]
@@ -77,8 +80,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Install LiftOn (requires numpy, networkx, etc., already installed by Mamba)
 RUN git clone https://github.com/davnapa/LiftOn.git /opt/LiftOn && \
-    cd /opt/LiftOn && \
-    pip install .
+    /opt/conda/envs/bio_env/bin/pip install /opt/LiftOn
 
 # Install miniprot
 RUN git clone https://github.com/lh3/miniprot /opt/miniprot && \
