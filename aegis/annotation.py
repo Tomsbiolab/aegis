@@ -1488,7 +1488,7 @@ class Annotation():
 
         self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
 
-    def merge(self, other:Annotation, exon_overlap_threshold:float=100, gene_overlap_threshold:float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
+    def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
         """
         Priority is given to self annotation
         """
@@ -1496,7 +1496,7 @@ class Annotation():
         self.update(quiet=quiet)
         other.update(quiet=quiet)
 
-        if exon_overlap_threshold != 100 and gene_overlap_threshold != 100:
+        if max_cds_overlap != 100 or max_exon_overlap != 100 or max_gene_overlap != 100:
             self.overlaps.detect(other, quiet=quiet)
 
         # Check if stdout or stderr are redirected to files
@@ -1528,7 +1528,7 @@ class Annotation():
         else:
             self.id = self.name
         count = 0
-        if exon_overlap_threshold == 100 and gene_overlap_threshold == 100:
+        if max_cds_overlap == 100 and max_exon_overlap == 100 and max_gene_overlap == 100:
             for chr, genes in other.chrs.items():
                 if chr not in self.chrs:
                     self.chrs[chr] = {}
@@ -1559,19 +1559,24 @@ class Annotation():
                         self.chrs[chr][temp_id].id = temp_id
                         self.all_gene_ids[temp_id] = chr
                     else:
+                        cds_scores = [0]
                         exon_scores = [0]
                         gene_scores = [0]
                         for o in g.overlaps["other"]:
+                            if o.min_CDS_percent != None:
+                                cds_scores.append(o.min_CDS_percent)
                             if o.min_exon_percent != None:
                                 exon_scores.append(o.min_exon_percent)
                             if o.min_gene_percent != None:
                                 gene_scores.append(o.min_gene_percent)
 
+                        check_cdss = any(ov.CDSs_in_both for ov in g.overlaps["other"])
                         check_exons = any(ov.exons_in_both for ov in g.overlaps["other"])
 
-                        # some genes may not have annotated exons and hence exon_overlap_threshold cannot be taken into account
-                        if check_exons:
-                            if max(exon_scores) <= exon_overlap_threshold and max(gene_scores) <= gene_overlap_threshold:
+                        # these conditionals are placed here since some genes may lack CDSs, others may even lack exons and hence some of the thresholds may not be applicable
+                        
+                        if check_cdss:
+                            if max(cds_scores) <= max_cds_overlap and max(exon_scores) <= max_exon_overlap and max(gene_scores) <= max_gene_overlap:
                                 temp_id = g.id
                                 while temp_id in self.all_gene_ids:
                                     count += 1
@@ -1579,7 +1584,18 @@ class Annotation():
                                 self.chrs[chr][temp_id] = g.copy()
                                 self.chrs[chr][temp_id].id = temp_id
                                 self.all_gene_ids[temp_id] = chr
-                        elif max(gene_scores) <= gene_overlap_threshold:
+                        
+                        elif check_exons:
+                            if max(exon_scores) <= max_exon_overlap and max(gene_scores) <= max_gene_overlap:
+                                temp_id = g.id
+                                while temp_id in self.all_gene_ids:
+                                    count += 1
+                                    temp_id = f"{g.id}_{count}"
+                                self.chrs[chr][temp_id] = g.copy()
+                                self.chrs[chr][temp_id].id = temp_id
+                                self.all_gene_ids[temp_id] = chr
+
+                        elif max(gene_scores) <= max_gene_overlap:
                             temp_id = g.id
                             while temp_id in self.all_gene_ids:
                                 count += 1

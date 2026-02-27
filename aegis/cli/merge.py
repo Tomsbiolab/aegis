@@ -22,13 +22,17 @@ def main(
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
-    gene_threshold: Annotated[float, typer.Option(
-        "-g", "--gene-threshold",
-        help="Gene overlap threshold in percentage (0-100). A gene will not be added if the maximum overlap of its exons with those of the prioritized annotations exceeds this value. The default 100 disables this check."
+    max_gene_overlap: Annotated[float, typer.Option(
+        "-g", "--max-gene-overlap",
+        help="Max gene overlap percentage. Maximum allowed gene overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of gene overlap)."
     )] = 100,
-    exon_threshold: Annotated[float, typer.Option(
-        "-e", "--exon-threshold",
-        help="Exon overlap threshold in percentage (0-100). A gene will not be added if the maximum overlap of its exons with those of the prioritized annotations exceeds this value. The default 100 disables this check."
+    max_exon_overlap: Annotated[float, typer.Option(
+        "-e", "--max-exon-overlap",
+        help="Max exon overlap percentage. Maximum allowed exon overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of exon overlap)."
+    )] = 100,
+    max_cds_overlap: Annotated[float, typer.Option(
+        "-c", "--max-cds-overlap",
+        help="Max CDS overlap percentage. Maximum allowed CDS overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of CDS overlap)."
     )] = 100,
     skip_renaming: Annotated[bool, typer.Option(
         "--skip-renaming",
@@ -67,8 +71,9 @@ def main(
         print("Merging annotations...")
         base_annotation.merge(
             other=merge_annotation,
-            gene_overlap_threshold=gene_threshold,
-            exon_overlap_threshold=exon_threshold,
+            max_gene_overlap=max_gene_overlap,
+            max_exon_overlap=max_exon_overlap,
+            max_cds_overlap=max_cds_overlap,
             features_to_rename=features
         )
 
