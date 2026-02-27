@@ -4,6 +4,8 @@ Tests for aegis.transcript — the Transcript class.
 
 import pytest
 
+from aegis.annotation import Annotation
+from aegis.genome import Genome
 from aegis.transcript import Transcript
 from aegis.subfeatures import Exon, CDS, UTR, Intron
 from aegis.misc_features import Promoter
@@ -262,74 +264,57 @@ class TestTranscriptRenameUTRs:
 # generate_sequence, generate_hard_sequence, clear_sequence
 # ============================================================
 
-class MockGenome:
-    def __init__(self, ch="chr1", seq="A"*10000):
-        self.ch = ch
-        self.seq = seq
-
 class TestTranscriptSequences:
-    def test_sequence_generation(self):
-        t = make_transcript(strand="+")
-        e = make_exon("e1", 10, 20)
-        e.seq = "A" * 11
-        e.hard_seq = "A" * 11
-        e.seqs = ["A"*11, "T"*11]
-        e.hard_seqs = ["A"*11, "T"*11]
-        t.exons.append(e)
+    """Tests that load a minimal.gff3 / minimal.fasta and get sequences
+    from the parsed transcript."""
 
-        class MockExon:
-            def __init__(self, seq="AAA"):
-                self.seq = seq
-                self.hard_seq = seq
-                self.seqs = [seq, seq]
-                self.hard_seqs = [seq, seq]
-                self.size = len(seq)
-                self.ch = "chr1"
-                self.source = "aegis"
-                self.strand = "+"
-                self.start = 1
-                self.end = len(seq)
-                self.score = "."
-                self.phase = "."
-                self.id = "mock"
-            def generate_sequence(self, g): pass
-            def generate_hard_sequence(self, g): pass
-            def clear_sequence(self, just_hard=False): 
-                self.hard_seq = ""
-                if not just_hard:
-                    self.seq = ""
+    @pytest.fixture(autouse=True)
+    def setup(self, sample_gff3_file, sample_fasta_file):
+        self.annotation = Annotation(sample_gff3_file, quiet=True)
+        self.genome = Genome("test", sample_fasta_file, quiet=True)
 
-        mock_e1 = MockExon("AAA")
-        mock_e2 = MockExon("CCC")
-        t.exons = [mock_e1, mock_e2]
-        t.introns = []
+        # Retrieve the transcript mRNA1 from gene1
+        gene = self.annotation.chrs["chr1"]["gene1"]
+        self.transcript = gene.transcripts["mRNA1"]
 
-        # test generate_sequence
-        t.generate_sequence(MockGenome(), low_memory=True)
-        assert t.seq == "AAACCC"
+    def test_generate_sequence(self):
+        """Generate sequence from transcript and exons."""
+        self.transcript.generate_sequence(self.genome, low_memory=True)
 
-        # test generate_hard_sequence
-        t.generate_hard_sequence(MockGenome(), low_memory=True)
-        assert t.hard_seq == "AAACCC"
+        expected = "".join(exon.seq for exon in self.transcript.exons)
+        assert self.transcript.seq == expected
+        assert len(self.transcript.seq) == 3002  # 1001 + 2001
 
-        # test clear_sequence
-        t.clear_sequence(just_hard=False)
-        assert t.hard_seq == ""
-        assert t.seq == ""
-        assert mock_e1.seq == ""
+    def test_generate_hard_sequence(self):
+        """Generate hard masked sequence from transcript and exons."""
+        self.transcript.generate_hard_sequence(self.genome, low_memory=True)
 
-    def test_sequence_generation_minus_strand(self):
-        t = make_transcript(strand="-")
-        class MockExon:
-            def __init__(self, seq="AAA"):
-                self.seq = seq
-                self.hard_seq = seq
-            def generate_sequence(self, g): pass
-        t.exons = [MockExon("AAA"), MockExon("CCC")]
-        t.introns = []
-        t.generate_sequence(MockGenome(), low_memory=True)
+        expected = "".join(exon.hard_seq for exon in self.transcript.exons)
+        assert self.transcript.hard_seq == expected
 
-        assert t.seq == "CCCAAA"
+    def test_clear_sequence(self):
+        """Clear sequence from transcript and exons."""
+        self.transcript.generate_sequence(self.genome, low_memory=True)
+        self.transcript.generate_hard_sequence(self.genome, low_memory=True)
+        assert self.transcript.seq != ""
+        assert self.transcript.hard_seq != ""
+
+        self.transcript.clear_sequence(just_hard=False)
+
+        assert self.transcript.seq == ""
+        assert self.transcript.hard_seq == ""
+        for exon in self.transcript.exons:
+            assert exon.seq == ""
+
+    def test_clear_sequence_just_hard(self):
+        """Clear hard masked sequence from transcript and exons."""
+        self.transcript.generate_sequence(self.genome, low_memory=True)
+        self.transcript.generate_hard_sequence(self.genome, low_memory=True)
+
+        self.transcript.clear_sequence(just_hard=True)
+
+        assert self.transcript.hard_seq == ""
+        assert self.transcript.seq != ""
 
 
 # ============================================================
