@@ -674,6 +674,9 @@ class AnnotationExport:
                             for e in t.exons:
                                 f_out.write(e.print_gff())
 
+                            for m in t.miRNAs:
+                                f_out.write(m.print_gff())
+
                             for c in t.CDSs.values():
                                 if main_only:
                                     if not c.main:
@@ -706,6 +709,9 @@ class AnnotationExport:
 
                         for e in unique_exons:
                             f_out.write(e.print_gff())
+
+                        for m in t.miRNAs:
+                            f_out.write(m.print_gff())
 
                         for t in g.transcripts.values():
                             for c in t.CDSs.values():

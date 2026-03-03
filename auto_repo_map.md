@@ -9,14 +9,10 @@
   - README.md
   - **.github/**
     - **workflows/**
-  - **.pytest_cache/**
-    - README.md
-    - **v/**
-      - **cache/**
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):`
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
@@ -25,9 +21,9 @@
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
       - `def summary(self) -> dict:`
-      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
+      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):`
       - `def update_suffixes(self, quiet:bool=True):`
-      - `def update_features(self, standardise=True, quiet:bool=True):`
+      - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
       - `def mark_rRNA_transcripts(self, rRNA_transcripts_file, clean:bool=True):`
       - `def remove_other_mRNA_transcripts_from_rRNA_genes(self):`
@@ -813,19 +809,12 @@
       - `def test_rename_exons_rev(self):`
       - `class TestTranscriptRenameUTRs:`
       - `def test_rename_utrs_basic(self):`
-      - `class MockGenome:`
-      - `def __init__(self, ch="chr1", seq="A"*10000):`
       - `class TestTranscriptSequences:`
-      - `def test_sequence_generation(self):`
-      - `class MockExon:`
-      - `def __init__(self, seq="AAA"):`
-      - `def generate_sequence(self, g): pass`
-      - `def generate_hard_sequence(self, g): pass`
-      - `def clear_sequence(self, just_hard=False):`
-      - `def test_sequence_generation_minus_strand(self):`
-      - `class MockExon:`
-      - `def __init__(self, seq="AAA"):`
-      - `def generate_sequence(self, g): pass`
+      - `def setup(self, sample_gff3_file, sample_fasta_file):`
+      - `def test_generate_sequence(self):`
+      - `def test_generate_hard_sequence(self):`
+      - `def test_clear_sequence(self):`
+      - `def test_clear_sequence_just_hard(self):`
       - `class TestTranscriptProteinAndCDS:`
       - `def test_generate_best_protein_plus(self):`
       - `def test_generate_CDSs_based_on_ORF_plus_single(self):`
