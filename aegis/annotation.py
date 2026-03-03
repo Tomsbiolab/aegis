@@ -58,7 +58,7 @@ class Annotation():
     
     bar_colors = ["31", "32", "33", "33", "33", "34"]
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):
         
         start_time = time.time()
 
@@ -277,11 +277,11 @@ class Annotation():
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-        self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+        self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features)
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):
         
@@ -877,7 +877,7 @@ class Annotation():
     def summary(self) -> dict:
         return self.stats.data
     
-    def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
+    def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -918,7 +918,7 @@ class Annotation():
             progress_bar.update(count)
         
         progress_bar.close()
-        self.update_features()
+        self.update_features(standardise=standardise_features, quiet=quiet)
         
         if rename_features != []:
             self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
@@ -979,7 +979,7 @@ class Annotation():
         if not quiet:
             print(f"\nUpdated suffixes for {self.id}")
 
-    def update_features(self, standardise=True, quiet:bool=True):
+    def update_features(self, standardise=False, quiet:bool=True):
         if not quiet:
             print(f"\nUpdating features for {self.id}")
 
