@@ -107,6 +107,12 @@ def multiple_isoforms_gff3_file():
     return str(TEST_DATA_DIR / "multiple_isoforms.gff3")
 
 
+@pytest.fixture
+def subfeature_parent_is_gene_gff3_file():
+    """Exons and CDSs reference a gene ID as Parent (no mRNA/transcript line)."""
+    return str(TEST_DATA_DIR / "subfeature_parent_is_gene.gff3")
+
+
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
 # ---------------------------------------------------------------------------

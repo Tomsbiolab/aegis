@@ -191,7 +191,7 @@ class Annotation():
             "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
             "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
             "possible_policistronic_transcript", "transcript_with_no_exons",
-            "gene_with_no_transcripts", "subfeature_with_no_parent", "repeat_transcript_different_genes", "repeat_transcript_same_gene"
+            "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene"
         ]
 
         self.warnings = {key: set() for key in keys}
@@ -737,13 +737,21 @@ class Annotation():
 
                     # cases where subfeature directly points to a gene that is not a pseudogene
                     else:
-                        # gene without transcripts pointed to
+                        # gene without transcripts pointed to then auto-create a transcript
                         if self.chrs[ch][parent].transcripts == {}:
+                            auto_t_id = f"{parent}_t1"
+                            gene_obj = self.chrs[ch][parent]
+                            self.all_transcript_ids[auto_t_id] = (ch, parent)
+                            self.chrs[ch][parent].transcripts[auto_t_id] = Transcript(
+                                auto_t_id, gene_obj.ch, gene_obj.source, "mRNA",
+                                gene_obj.strand, gene_obj.start, gene_obj.end,
+                                gene_obj.score, ".", gene_obj.attributes
+                            )
                             if not quiet:
-                                print(f"{self.id} Error: {ft} subfeature {ID} references {parent} gene which is not a pseudogene and has no transcripts")
-                            self.errors["subfeature_to_gene"].add(ID)
+                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}")
+                            self.warnings["subfeature_to_gene"].add(ID)
                         # correctly linking the subfeature to the single transcript that exists
-                        elif len(self.chrs[ch][parent].transcripts) == 1:
+                        if len(self.chrs[ch][parent].transcripts) == 1:
                             temp_id = list(self.chrs[ch][parent].transcripts.keys())[0]
                             if ft_level == "CDS":
                                 self.chrs[ch][parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, phase, attributes))
@@ -753,7 +761,7 @@ class Annotation():
                                 self.chrs[ch][parent].transcripts[temp_id].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", attributes))
                             else:
                                 self.chrs[ch][parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes))  
-                        else:
+                        elif len(self.chrs[ch][parent].transcripts) > 1:
                             if not quiet:
                                 print(f"{self.id} Error: {ft} subfeature {ID} references {parent} gene which is not a pseudogene and has multiple transcripts")
                             self.errors["subfeature_to_gene"].add(ID)

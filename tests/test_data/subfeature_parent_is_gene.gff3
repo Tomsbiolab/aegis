@@ -1,0 +1,8 @@
+##gff-version 3
+chr01	aegis	gene	10000	12500	.	+	.	ID=g1
+chr01	aegis	exon	10000	10400	.	+	.	ID=e1;Parent=g1
+chr01	aegis	exon	11000	11300	.	+	.	ID=e2;Parent=g1
+chr01	aegis	exon	12100	12500	.	+	.	ID=e3;Parent=g1
+chr01	aegis	CDS	10150	10400	.	+	0	ID=c1;Parent=g1
+chr01	aegis	CDS	11000	11300	.	+	0	ID=c1;Parent=g1
+chr01	aegis	CDS	12100	12350	.	+	0	ID=c1;Parent=g1
