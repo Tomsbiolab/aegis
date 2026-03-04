@@ -63,6 +63,9 @@ def parse_gff_line(line):
         "decreasing_coordinates": decreasing_coordinates
     }
 
+    if not entry["id"] and entry["parents"]:
+        entry["id"] = f"{entry['parents'][0]}_{feature}_{actual_start}_{actual_end}"
+        attr_dict["id"] = entry["id"]
 
     return entry
 
@@ -90,6 +93,16 @@ def parse_gff_attributes(attributes):
             else:
                 key = sys.intern(key)
                 parsed[key] = val
+
+    if "parent" not in parsed:
+        if "geneid" in parsed:
+            parsed["parent"] = [parsed["geneid"]]
+        elif "gene_id" in parsed:
+            parsed["parent"] = [parsed["gene_id"]]
+        elif "transcriptid" in parsed:
+            parsed["parent"] = [parsed["transcriptid"]]
+        elif "transcript_id" in parsed:
+            parsed["parent"] = [parsed["transcript_id"]]
 
     return parsed
 

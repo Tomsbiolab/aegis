@@ -1562,3 +1562,52 @@ class TestSubfeatureParentIsGene:
     def test_warning_raised(self, subfeature_parent_is_gene_gff3_file):
         annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
         assert len(annot.warnings["subfeature_to_gene"]) > 0
+
+# ---- 12. Non standard Parent attribute format ----
+
+class TestNonStandardParentAttribute:
+    """Tests proper reading of GFF3 files with no gene entries, geneID attributes and no ID on exons"""
+
+    def test_four_genes_loaded(self, geneID_attribute_as_parent_gff3_file):
+        annot = Annotation(geneID_attribute_as_parent_gff3_file, quiet=True)
+        
+        assert len(annot.all_gene_ids) == 4
+        assert "g1" in annot.all_gene_ids
+        assert "g2" in annot.all_gene_ids
+        assert "g3" in annot.all_gene_ids
+        assert "g4" in annot.all_gene_ids
+
+    def test_transcripts_are_associated(self, geneID_attribute_as_parent_gff3_file):
+        annot = Annotation(geneID_attribute_as_parent_gff3_file, quiet=True)
+        
+        g2 = annot.chrs["chr01"]["g2"]
+        assert len(g2.transcripts) == 2
+        assert "t2.1" in g2.transcripts
+        assert "t2.2" in g2.transcripts
+        
+        g3 = annot.chrs["chr01"]["g3"]
+        assert len(g3.transcripts) == 1
+        assert "t3.1" in g3.transcripts
+
+    def test_exons_are_parsed(self, geneID_attribute_as_parent_gff3_file):
+        """Verify that exons are correctly assigned even without IDs in the GFF3"""
+        annot = Annotation(geneID_attribute_as_parent_gff3_file, quiet=True)
+        
+        t = annot.chrs["chr01"]["g3"].transcripts["t3.1"]
+        assert len(t.exons) == 4
+
+        coords = sorted([(e.start, e.end) for e in t.exons])
+        assert coords[0] == (3000, 3100)
+        assert coords[-1] == (3900, 4000)
+
+    def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):
+        """Gene boundaries should encompass all transcripts (min start and max end)"""
+        annot = Annotation(geneID_attribute_as_parent_gff3_file, quiet=True)
+        
+        g = annot.chrs["chr01"]["g2"]
+        assert g.start == 1000
+        assert g.end == 2500
+
+        g1 = annot.chrs["chr01"]["g1"]
+        assert g1.start == 100
+        assert g1.end == 500

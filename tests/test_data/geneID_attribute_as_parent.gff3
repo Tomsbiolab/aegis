@@ -1,0 +1,16 @@
+chr01	aegis	transcript	100	500	1000.00	+	.	ID=t1.1;geneID=g1
+chr01	aegis	exon	100	200	1000.00	+	.	Parent=t1.1
+chr01	aegis	exon	400	500	1000.00	+	.	Parent=t1.1
+chr01	aegis	transcript	1000	2500	1000.00	-	.	ID=t2.1;geneID=g2
+chr01	aegis	exon	1000	1200	1000.00	-	.	Parent=t2.1
+chr01	aegis	exon	2000	2500	1000.00	-	.	Parent=t2.1
+chr01	aegis	transcript	1100	2400	1000.00	-	.	ID=t2.2;geneID=g2
+chr01	aegis	exon	1100	1200	1000.00	-	.	Parent=t2.2
+chr01	aegis	exon	2000	2400	1000.00	-	.	Parent=t2.2
+chr01	aegis	transcript	3000	4000	1000.00	+	.	ID=t3.1;geneID=g3
+chr01	aegis	exon	3000	3100	1000.00	+	.	Parent=t3.1
+chr01	aegis	exon	3200	3300	1000.00	+	.	Parent=t3.1
+chr01	aegis	exon	3500	3600	1000.00	+	.	Parent=t3.1
+chr01	aegis	exon	3900	4000	1000.00	+	.	Parent=t3.1
+chr01	aegis	transcript	5000	5500	1000.00	+	.	ID=t4.1;geneID=g4
+chr01	aegis	exon	5000	5500	1000.00	+	.	Parent=t4.1
