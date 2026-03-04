@@ -2,6 +2,7 @@ import sys
 import re
 
 from ..conf import default_features, default_subfeatures
+from collections import OrderedDict
 
 def parse_gff_line(line):
     parts = line.strip().split("\t")
@@ -149,18 +150,31 @@ def format_gff3_attributes(attrs, feature_type):
 def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
     """
     Reads a GTF file, converts it to GFF3 format, and writes to an output file.
+
+    Uses a two-pass approach:
+      Pass 1 — Collect all lines and infer gene/transcript boundaries from
+               subfeature attributes (gene_id, transcript_id) when no explicit
+               gene or transcript rows exist.
+      Pass 2 — Emit gene, transcript, and subfeature lines in GFF3 format.
     """
-    with open(gtf_file, 'r', encoding=encoding) as infile, open(gff3_file, 'w', encoding=encoding) as outfile:
 
-        outfile.write("##gff-version 3\n")
+    comments = []
+    seen_genes = set()
+    seen_transcripts = set()
+    subfeature_lines = []
 
-        seen_genes = set()
-        seen_transcripts = set()
+    inferred_genes: dict[str, dict] = OrderedDict()
+    inferred_transcripts: dict[str, dict] = OrderedDict()
 
+    explicit_gene_lines = []
+    explicit_transcript_lines = []
+
+    # PASS 1 — read file
+    with open(gtf_file, 'r', encoding=encoding) as infile:
         for line in infile:
             if line.startswith('#'):
                 if not line.startswith('##'):
-                    outfile.write(f"#{line}")
+                    comments.append(line)
                 continue
 
             parts = line.strip().split('\t')
@@ -171,37 +185,143 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
 
             seqname, source, feature, start, end, score, strand, frame, attr_string = parts
             attributes = parse_gtf_attributes(attr_string)
+            start_int = int(start)
+            end_int = int(end)
 
-            if 'gene_id' in attributes and attributes['gene_id'] not in seen_genes and feature in default_features["gene"]:
-                gene_attrs = {'gene_id': attributes['gene_id']}
-                if 'gene_name' in attributes:
-                    gene_attrs['gene_name'] = attributes['gene_name']
-                if 'gene_biotype' in attributes:
-                    gene_attrs['gene_biotype'] = attributes['gene_biotype']
-                gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
-                gene_line = "\t".join([seqname, source, 'gene', start, end, score, strand, frame, gene_attr_str])
-                outfile.write(gene_line + '\n')
-                seen_genes.add(attributes['gene_id'])
+            gene_id = attributes.get('gene_id', '')
+            transcript_id = attributes.get('transcript_id', '')
 
-            if 'transcript_id' in attributes and attributes['transcript_id'] not in seen_transcripts and feature in default_features["transcript"]:
-                tx_attrs = {k: v for k, v in attributes.items() if 'transcript' in k or 'gene' in k}
-                tx_feature_type = 'transcript'
-                if 'transcript_biotype' in attributes:
-                    if 'RNA' in attributes['transcript_biotype']:
-                        tx_feature_type = attributes['transcript_biotype']
-
-                tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
-                tx_line = "\t".join([seqname, source, tx_feature_type, start, end, score, strand, frame, tx_attr_str])
-                outfile.write(tx_line + '\n')
-                seen_transcripts.add(attributes['transcript_id'])
-
-            if feature not in default_features["transcript"] and feature not in default_features["gene"]:
+            if feature in default_features["gene"]:
+                if gene_id and gene_id not in seen_genes:
+                    explicit_gene_lines.append((parts, attributes))
+                    seen_genes.add(gene_id)
                 continue
 
-            gff3_attr_string = format_gff3_attributes(attributes, feature)
+            if feature in default_features["transcript"]:
+                if transcript_id and transcript_id not in seen_transcripts:
+                    explicit_transcript_lines.append((parts, attributes))
+                    seen_transcripts.add(transcript_id)
+                continue
 
-            gff3_line = "\t".join([seqname, source, feature, start, end, score, strand, frame, gff3_attr_string])
-            outfile.write(gff3_line + '\n')
+            subfeature_lines.append((parts, attributes, feature))
+
+            if gene_id:
+                if gene_id not in inferred_genes:
+                    inferred_genes[gene_id] = {
+                        'seqname': seqname, 'source': source,
+                        'strand': strand, 'start': start_int,
+                        'end': end_int, 'gene_name': attributes.get('gene_name', ''),
+                        'gene_biotype': attributes.get('gene_biotype', ''),
+                        'transcript_ids': OrderedDict()
+                    }
+                else:
+                    g = inferred_genes[gene_id]
+                    if start_int < g['start']:
+                        g['start'] = start_int
+                    if end_int > g['end']:
+                        g['end'] = end_int
+
+            if transcript_id:
+                if transcript_id not in inferred_transcripts:
+                    inferred_transcripts[transcript_id] = {
+                        'gene_id': gene_id, 'seqname': seqname,
+                        'source': source, 'strand': strand,
+                        'start': start_int, 'end': end_int,
+                    }
+                else:
+                    t = inferred_transcripts[transcript_id]
+                    if start_int < t['start']:
+                        t['start'] = start_int
+                    if end_int > t['end']:
+                        t['end'] = end_int
+
+                if gene_id and gene_id in inferred_genes:
+                    inferred_genes[gene_id]['transcript_ids'][transcript_id] = True
+
+    # PASS 2 — write GFF3
+    with open(gff3_file, 'w', encoding=encoding) as outfile:
+        outfile.write("##gff-version 3\n")
+
+        for c in comments:
+            outfile.write(f"#{c}")
+
+        for parts, attributes in explicit_gene_lines:
+            gene_attrs = {'gene_id': attributes['gene_id']}
+            if 'gene_name' in attributes:
+                gene_attrs['gene_name'] = attributes['gene_name']
+            if 'gene_biotype' in attributes:
+                gene_attrs['gene_biotype'] = attributes['gene_biotype']
+            gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
+            outfile.write("\t".join([parts[0], parts[1], 'gene', parts[3], parts[4],
+                                     parts[5], parts[6], parts[7], gene_attr_str]) + '\n')
+
+        for gene_id, g in inferred_genes.items():
+            if gene_id in seen_genes:
+                continue
+            gene_attrs = {'gene_id': gene_id}
+            if g['gene_name']:
+                gene_attrs['gene_name'] = g['gene_name']
+            if g['gene_biotype']:
+                gene_attrs['gene_biotype'] = g['gene_biotype']
+            gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
+            outfile.write("\t".join([g['seqname'], g['source'], 'gene',
+                                     str(g['start']), str(g['end']), '.',
+                                     g['strand'], '.', gene_attr_str]) + '\n')
+            seen_genes.add(gene_id)
+
+        for parts, attributes in explicit_transcript_lines:
+            tx_attrs = {k: v for k, v in attributes.items()
+                        if 'transcript' in k or 'gene' in k}
+            tx_feature_type = 'transcript'
+            if 'transcript_biotype' in attributes:
+                if 'RNA' in attributes['transcript_biotype']:
+                    tx_feature_type = attributes['transcript_biotype']
+            tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
+            outfile.write("\t".join([parts[0], parts[1], tx_feature_type,
+                                     parts[3], parts[4], parts[5], parts[6],
+                                     parts[7], tx_attr_str]) + '\n')
+
+        for t_id, t in inferred_transcripts.items():
+            if t_id in seen_transcripts:
+                continue
+            tx_attrs = {'transcript_id': t_id}
+            if t['gene_id']:
+                tx_attrs['gene_id'] = t['gene_id']
+            tx_attr_str = format_gff3_attributes(tx_attrs, 'mRNA')
+            outfile.write("\t".join([t['seqname'], t['source'], 'mRNA',
+                                     str(t['start']), str(t['end']), '.',
+                                     t['strand'], '.', tx_attr_str]) + '\n')
+            seen_transcripts.add(t_id)
+
+        subfeature_counters: dict[tuple[str, str], int] = {}
+
+        for parts, attributes, feature in subfeature_lines:
+            transcript_id = attributes.get('transcript_id', '')
+            gene_name = attributes.get('gene_name', '')
+
+            gff3_attrs = []
+
+            if transcript_id:
+                key = (transcript_id, feature)
+                subfeature_counters[key] = subfeature_counters.get(key, 0) + 1
+                count = subfeature_counters[key]
+                feature_id = f"{transcript_id}_{feature}{count}"
+                gff3_attrs.append(f"ID={feature_id}")
+                gff3_attrs.append(f"Parent={transcript_id}")
+            else:
+                gff3_attr_string = format_gff3_attributes(attributes, feature)
+                outfile.write("\t".join([parts[0], parts[1], feature,
+                                         parts[3], parts[4], parts[5], parts[6],
+                                         parts[7], gff3_attr_string]) + '\n')
+                continue
+
+            if gene_name:
+                gff3_attrs.append(f"Symbol={gene_name}")
+
+            gff3_attr_string = ";".join(gff3_attrs)
+            outfile.write("\t".join([parts[0], parts[1], feature,
+                                     parts[3], parts[4], parts[5], parts[6],
+                                     parts[7], gff3_attr_string]) + '\n')
 
     if not quiet:
         print(f"Successfully converted {gtf_file} to a gff format")
