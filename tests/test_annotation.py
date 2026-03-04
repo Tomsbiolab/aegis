@@ -308,14 +308,69 @@ class TestConvertGtfToGff3:
         assert "ID=T1" in gff_content
 
     def test_convert_gtf_with_cds_and_exon(self, tmp_path):
-        """convert_gtf_to_gff3 only writes gene/transcript-level lines;
-        CDS and exon lines are intentionally skipped by the converter."""
+        """convert_gtf_to_gff3 emits gene, transcript, AND subfeature lines"""
         gtf_file = str(TEST_DATA_DIR / "convert_cds.gtf")
         gff_file = tmp_path / "cds.gff3"
         convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
         gff_content = gff_file.read_text()
         assert "ID=G1" in gff_content
         assert "ID=T1" in gff_content
+        # Subfeature lines should now be present
+        lines = [l for l in gff_content.strip().split("\n") if not l.startswith("#")]
+        features = [l.split("\t")[2] for l in lines]
+        assert "exon" in features
+        assert "CDS" in features
+
+    def test_convert_gtf_exon_cds_only(self, tmp_path):
+        """GTF with only exon/CDS rows should infer gene and transcript lines"""
+        gtf_file = str(TEST_DATA_DIR / "convert_exon_cds_only.gtf")
+        gff_file = tmp_path / "inferred.gff3"
+        convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
+        gff_content = gff_file.read_text()
+
+        assert "##gff-version 3" in gff_content
+        lines = [l for l in gff_content.strip().split("\n") if not l.startswith("#")]
+        features = [l.split("\t")[2] for l in lines]
+
+        assert "gene" in features
+        assert "ID=g1" in gff_content
+
+        assert "mRNA" in features
+        assert "ID=t1" in gff_content
+        assert "ID=t2" in gff_content
+
+        assert "exon" in features
+        assert "CDS" in features
+
+    def test_convert_gtf_exon_cds_only_gene_boundaries(self, tmp_path):
+        """Inferred gene boundaries should span all subfeatures"""
+        gtf_file = str(TEST_DATA_DIR / "convert_exon_cds_only.gtf")
+        gff_file = tmp_path / "bounds.gff3"
+        convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
+        lines = [l for l in gff_file.read_text().strip().split("\n") if not l.startswith("#")]
+        gene_lines = [l for l in lines if l.split("\t")[2] == "gene"]
+        assert len(gene_lines) == 1
+        parts = gene_lines[0].split("\t")
+        # Gene should span from earliest exon start to latest exon end
+        assert int(parts[3]) == 100
+        assert int(parts[4]) == 7400
+
+    def test_annotation_from_exon_only_gtf(self, tmp_path):
+        """Full integration: Annotation should load exon/CDS-only GTF correctly"""
+        gtf_file = str(TEST_DATA_DIR / "convert_exon_cds_only.gtf")
+        annot = Annotation(gtf_file, quiet=True)
+
+        assert "g1" in annot.all_gene_ids
+
+        assert "t1" in annot.all_transcript_ids
+        assert "t2" in annot.all_transcript_ids
+        
+        gene = annot.chrs["chr1"]["g1"]
+        assert len(gene.transcripts) == 2
+        t_re = gene.transcripts["t1"]
+        assert len(t_re.exons) == 5
+        t_rf = gene.transcripts["t2"]
+        assert len(t_rf.exons) == 3
 
 
 # ============================================================

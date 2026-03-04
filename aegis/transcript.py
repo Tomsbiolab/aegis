@@ -707,6 +707,11 @@ class Transcript(Feature):
                 for ft in temp_fts
             ]
             self.collapse_exons()
+            if self.strand == "+":
+                count = 1
+            else:
+                count = len(self.exons)
+            self.rename_exons(count=count, base_id=self.id)
 
         # Exons rebuilt from the transcript
         else:

@@ -90,6 +90,9 @@ def main(
     consider_read_utrs: Annotated[bool, typer.Option(
         "--consider-read-utrs", help="Consider UTRs as read from the GFF rather than inferred."
     )] = False,
+    keep_original_subfeature_ids: Annotated[bool, typer.Option(
+        "--keep-original-subfeature-ids", help="Keep original subfeature ids for CDS, UTR and exon features. By default, since tidy detects shared exons and UTRs between transcripts of the same gene, it will rename these subfeatures accordingly."
+    )] = False,
     include_features_without_id: Annotated[bool, typer.Option(
         "--include-features-without-id", help="Includes features without a specific id."
     )] = False,
@@ -108,6 +111,11 @@ def main(
     collapse_CDSs = not(no_collapse_CDSs)
     skip_features_without_id = not(include_features_without_id)
 
+    if keep_original_subfeature_ids:
+        rename_features = []
+    else:
+        rename_features = ["CDS", "UTR", "exon"]
+
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
@@ -117,7 +125,7 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, standardise_features=standard_features)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
