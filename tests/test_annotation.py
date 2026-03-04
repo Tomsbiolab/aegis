@@ -1531,21 +1531,33 @@ class TestSubfeatureParentIsGene:
 
     def test_transcript_auto_created(self, subfeature_parent_is_gene_gff3_file):
         annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
-        g = annot.chrs["chr1"]["g1"]
+        g = annot.chrs["chr01"]["g1"]
         assert len(g.transcripts) == 1
-        assert "t1" in g.transcripts
+        assert "g1_t1" in g.transcripts
 
     def test_transcript_is_coding(self, subfeature_parent_is_gene_gff3_file):
         annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
-        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        t = annot.chrs["chr01"]["g1"].transcripts["g1_t1"]
         assert t.coding is True
 
     def test_cds_present(self, subfeature_parent_is_gene_gff3_file):
         annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
-        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        t = annot.chrs["chr01"]["g1"].transcripts["g1_t1"]
         assert len(t.CDSs) == 1
         cds = list(t.CDSs.values())[0]
         assert len(cds.CDS_segments) == 3
+
+    def test_exon_coordinates(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        t = annot.chrs["chr01"]["g1"].transcripts["g1_t1"]
+        coords = [(e.start, e.end) for e in t.exons]
+        assert coords == [(10000, 10400), (11000, 11300), (12100, 12500)]
+
+    def test_transcript_boundaries(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        t = annot.chrs["chr01"]["g1"].transcripts["g1_t1"]
+        assert t.start == 10000
+        assert t.end == 12500
 
     def test_warning_raised(self, subfeature_parent_is_gene_gff3_file):
         annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
