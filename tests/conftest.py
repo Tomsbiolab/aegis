@@ -113,6 +113,12 @@ def subfeature_parent_is_gene_gff3_file():
     return str(TEST_DATA_DIR / "subfeature_parent_is_gene.gff3")
 
 
+@pytest.fixture
+def geneID_attribute_as_parent_gff3_file():
+    """GFF3 without gene features and with geneID rather than Parent."""
+    return str(TEST_DATA_DIR / "geneID_attribute_as_parent.gff3")
+
+
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
 # ---------------------------------------------------------------------------

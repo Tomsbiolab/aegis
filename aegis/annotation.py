@@ -2089,7 +2089,7 @@ class Annotation():
                     e_ids = {}
                     e_count = 0
 
-                    if g.strand == "+":
+                    if g.strand == "+" or g.strand == ".":
                         for n, e in enumerate(e_temp):
                             e_count_s = f"{(n+1):0{t_id_digits}d}"
                             e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
@@ -2131,7 +2131,7 @@ class Annotation():
                     u_ids = {}
                     u_count = 0
 
-                    if g.strand == "+":
+                    if g.strand == "+" or g.strand == ".":
                         for n, u in enumerate(u_temp):
                             u_count_s = f"{(n+1):0{t_id_digits}d}"
                             u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
