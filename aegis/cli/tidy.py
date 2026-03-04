@@ -95,6 +95,9 @@ def main(
     )] = False,
     include_features_without_id: Annotated[bool, typer.Option(
         "--include-features-without-id", help="Includes features without a specific id."
+    )] = False,
+    standard_features: Annotated[bool, typer.Option(
+        "--standard_features", help="Standardises feature names to the most common names, for instance 'transcript' or 'pseudotranscript' just become 'mRNA' for downstream tool compatibility."
     )] = False
 
 ):
