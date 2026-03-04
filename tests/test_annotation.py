@@ -1517,3 +1517,36 @@ class TestMultipleIsoformsGFF3:
         annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
         g = annot.chrs["chr1"]["gene_iso1"]
         assert set(g.transcripts.keys()) == {"mRNA_iso1a", "mRNA_iso1b", "mRNA_iso1c"}
+
+
+# ---- 11. Subfeatures reference gene as Parent (no transcript line) ----
+
+class TestSubfeatureParentIsGene:
+    """Exons and CDSs reference a gene ID as Parent with no mRNA/transcript
+    feature in the GFF3. AEGIS should auto-create a transcript."""
+
+    def test_gene_loaded(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        assert "g1" in annot.all_gene_ids
+
+    def test_transcript_auto_created(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        g = annot.chrs["chr1"]["g1"]
+        assert len(g.transcripts) == 1
+        assert "t1" in g.transcripts
+
+    def test_transcript_is_coding(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert t.coding is True
+
+    def test_cds_present(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert len(cds.CDS_segments) == 3
+
+    def test_warning_raised(self, subfeature_parent_is_gene_gff3_file):
+        annot = Annotation(subfeature_parent_is_gene_gff3_file, quiet=True)
+        assert len(annot.warnings["subfeature_to_gene"]) > 0
