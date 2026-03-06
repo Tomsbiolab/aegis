@@ -343,6 +343,7 @@
         - `def hex_to_rgb(hex_string):`
         - `def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):`
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
+      - __init__.py
   - **aegis_bio.egg-info/**
   - **images/**
   - **notebook/**
@@ -365,6 +366,8 @@
       - `def transcript_no_parent_gff3_file():`
       - `def cds_no_parent_gff3_file():`
       - `def multiple_isoforms_gff3_file():`
+      - `def subfeature_parent_is_gene_gff3_file():`
+      - `def geneID_attribute_as_parent_gff3_file():`
       - `def sample_fasta_file():`
       - `def sample_feature():`
       - `def sample_gene():`
@@ -418,6 +421,9 @@
       - `class TestConvertGtfToGff3:`
       - `def test_convert_gtf_basic(self, tmp_path):`
       - `def test_convert_gtf_with_cds_and_exon(self, tmp_path):`
+      - `def test_convert_gtf_exon_cds_only(self, tmp_path):`
+      - `def test_convert_gtf_exon_cds_only_gene_boundaries(self, tmp_path):`
+      - `def test_annotation_from_exon_only_gtf(self, tmp_path):`
       - `class TestAnnotationUniqueIDs:`
       - `def test_get_unique_gene_id(self, sample_gff3_file):`
       - `def test_get_unique_transcript_id(self, sample_gff3_file):`
@@ -573,6 +579,19 @@
       - `def test_isoform_b_has_two_exons(self, multiple_isoforms_gff3_file):`
       - `def test_isoform_c_has_two_exons(self, multiple_isoforms_gff3_file):`
       - `def test_transcript_ids_correct(self, multiple_isoforms_gff3_file):`
+      - `class TestSubfeatureParentIsGene:`
+      - `def test_gene_loaded(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_transcript_auto_created(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_transcript_is_coding(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_cds_present(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_exon_coordinates(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_transcript_boundaries(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_warning_raised(self, subfeature_parent_is_gene_gff3_file):`
+      - `class TestNonStandardParentAttribute:`
+      - `def test_four_genes_loaded(self, geneID_attribute_as_parent_gff3_file):`
+      - `def test_transcripts_are_associated(self, geneID_attribute_as_parent_gff3_file):`
+      - `def test_exons_are_parsed(self, geneID_attribute_as_parent_gff3_file):`
+      - `def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
