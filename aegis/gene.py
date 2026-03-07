@@ -363,6 +363,9 @@ class Gene(Feature):
         return None
 
     def rename_exons(self, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+        """
+        Deals with gene level naming of exons, making sure shared exons receive the same numbering, and that strand orientation of the transcript is also reflected.
+        """
 
         rename = False
 
@@ -378,38 +381,54 @@ class Gene(Feature):
 
             exon_names: dict[tuple[int, int, str, str], str] = {}
 
-            exons:list[Exon] = []
+            exon_d:dict[str, list[Exon]] = {"+":[], "-":[], ".": []}
             for t in self.transcripts.values():
                 for e in t.exons:
-                    exons.append(e)
-            exons.sort()
+                    exon_d[t.strand].append(e)
+            for exons in exon_d.values():
+                exons.sort()
 
-            if self.strand == "+":
-                x = 0
-                for e in exons:
-                    key = (e.start, e.end, e.ch, e.strand)
-                    if key not in exon_names:
-                        if keep_numbering and e.id_number != None:
-                            exon_names[key] = f"{self.base_id}{sep}e{e.id_number:0{digits}d}"
-                        else:
-                            exon_names[key] = f"{self.base_id}{sep}e{x+1:0{digits}d}"
-            else:
-                x = 0
-                for e in exons:
-                    key = (e.start, e.end, e.ch, e.strand)
-                    if key not in exon_names:
-                        if keep_numbering and e.id_number != None:
-                            exon_names[key] = str(e.id_number)
-                        else:
-                            exon_names[key] = ""
+            x = 0
 
-                x = len(exon_names) + 1
-
-                for key in reversed(exon_names):
-                    if exon_names[key] == "":
-                        exon_names[key] = f"{self.base_id}{sep}e{x-1:0{digits}d}"
+            for e in exon_d["+"]:
+                key = (e.start, e.end, e.ch, e.strand)
+                if key not in exon_names:
+                    if keep_numbering and e.id_number != None:
+                        exon_names[key] = f"{self.base_id}{sep}e{e.id_number:0{digits}d}"
                     else:
-                        exon_names[key] = f"{self.base_id}{sep}e{exon_names[key]:0{digits}d}"
+                        x += 1
+                        exon_names[key] = f"{self.base_id}{sep}e{x:0{digits}d}"
+
+            for e in exon_d["-"]:
+
+                rev_exon_names = {}
+                key = (e.start, e.end, e.ch, e.strand)
+                if key not in rev_exon_names:
+                    if keep_numbering and e.id_number != None:
+                        rev_exon_names[key] = str(e.id_number)
+                    else:
+                        rev_exon_names[key] = ""
+
+                x += len(rev_exon_names) + 1
+                total = x
+
+                for key in reversed(rev_exon_names):
+                    if rev_exon_names[key] == "":
+                        x -= 1
+                        exon_names[key] = f"{self.base_id}{sep}e{x:0{digits}d}"
+                    else:
+                        exon_names[key] = f"{self.base_id}{sep}e{rev_exon_names[key]:0{digits}d}"
+
+                x = total
+
+            for e in exon_d["."]:
+                key = (e.start, e.end, e.ch, e.strand)
+                if key not in exon_names:
+                    if keep_numbering and e.id_number != None:
+                        exon_names[key] = f"{self.base_id}{sep}e{e.id_number:0{digits}d}"
+                    else:
+                        x += 1
+                        exon_names[key] = f"{self.base_id}{sep}e{x:0{digits}d}"
 
             for t in self.transcripts.values():
                 for e in t.exons:
