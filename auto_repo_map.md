@@ -9,6 +9,10 @@
   - README.md
   - **.github/**
     - **workflows/**
+  - **.pytest_cache/**
+    - README.md
+    - **v/**
+      - **cache/**
   - **aegis/**
     - annotation.py
       - `class Annotation():`
@@ -50,7 +54,7 @@
       - `def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
-      - `def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
+      - `def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
       - `def update_keys(self, quiet:bool=True):`
       - `def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, process_atypical:bool=True, quiet:bool=False, process_orphaned:bool=True):`
       - `def create_gtf_attributes(self, quiet:bool=False):`
@@ -299,7 +303,7 @@
       - reformat.py
         - `def main(`
       - rename.py
-        - `def split_callback(value:str):`
+        - `def split_callback(value:str) -> list[str]:`
         - `def main(`
       - subset.py
         - `def split_callback(value:str):`

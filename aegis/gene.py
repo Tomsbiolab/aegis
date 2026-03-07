@@ -132,18 +132,16 @@ class Gene(Feature):
 
     def obtain_base_id(self, original:bool=False):
 
-        if self.id.endswith("_gene"):
-            self.base_id = self.id[:-5]
-        elif self.id.endswith("gene"):
+        if self.id.endswith("gene"):
             self.base_id = self.id[:-4]
-        elif self.id.startswith("gene:"):
-            self.base_id = self.id[5:]
-        elif self.id.startswith("gene-"):
-            self.base_id = self.id[5:]
         elif self.id.startswith("gene"):
             self.base_id = self.id[4:]
+        elif self.id.startswith("g"):
+            self.base_id = self.id[1:]
         else:
             self.base_id = self.id
+
+        self.base_id = self.base_id.strip("_,.-/:;")
 
         if original:
             self.original_base_id = self.base_id

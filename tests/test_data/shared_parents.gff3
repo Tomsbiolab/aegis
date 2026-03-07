@@ -1,0 +1,10 @@
+chr1	aegis	gene	1000	6000	.	+	.	ID=gene_ov1;Name=OverlapExonGene
+chr1	aegis	mRNA	1000	6000	.	+	.	ID=mRNA_ov1;Parent=gene_ov1
+chr1	aegis	exon	1000	1300	.	+	.	ID=exon_2;Parent=mRNA_ov1
+chr1	aegis	exon	2000	5500	.	+	.	ID=exon_3;Parent=mRNA_ov1
+chr1	aegis	exon	5000	6000	.	+	.	ID=exon_4;Parent=mRNA_ov1
+chr1	aegis	mRNA	500	6000	.	+	.	ID=mRNA_ov2;Parent=gene_ov1
+chr1	aegis	exon	500	800	.	+	.	ID=exon_1;Parent=mRNA_ov2
+chr1	aegis	exon	1000	1300	.	+	.	ID=exon_2;Parent=mRNA_ov2
+chr1	aegis	exon	2000	5500	.	+	.	ID=exon_3;Parent=mRNA_ov2
+chr1	aegis	exon	5000	6000	.	+	.	ID=exon_4;Parent=mRNA_ov2

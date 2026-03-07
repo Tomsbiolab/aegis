@@ -20,10 +20,10 @@ def main(
     annotation_files: Annotated[List[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
-    annotation_names: Annotated[List[str], typer.Option(
+    annotation_names: Annotated[str, typer.Option(
         "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2",
         callback=split_callback
-    )] = ["{annotation-filename(s)}"],
+    )] = "{annotation-filename(s)}",
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output directory."
     )] = "./aegis_output/",
@@ -67,7 +67,7 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    if annotation_names != ["{annotation-filename(s)}"]:
+    if annotation_names != "{annotation-filename(s)}":
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
@@ -122,7 +122,7 @@ def main(
 
         annotations[0].overlaps.detect()
 
-        annotations[0].overlaps.export(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, return_df=False, NAs=include_NAs, quiet=quiet)
+        _ = annotations[0].overlaps.export(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, NAs=include_NAs, quiet=quiet)
 
     elif len(annotation_files) > 1:
 

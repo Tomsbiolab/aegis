@@ -746,12 +746,6 @@ class Annotation():
                                     self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
                                 if not quiet:
                                     print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is a gene, but since infer_gene_and_transcript_from_subfeatures is False, the gene and transcript were not auto-created.")
-
-                            elif only_infer_if_none_of_the_parents_exist and not true_orphans:
-                                self.warnings["subfeature_to_gene"].add(ID)
-                                if not skip_orphaned_features:
-                                    self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
-                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is a gene, although at least one of the listed parents was found, and since only_infer_if_none_of_the_parents_exist is True, the gene and transcript were not auto-created.")
                             else:
                                 count = 1
                                 auto_t_id = f"{parent}_t{count}"
@@ -1848,7 +1842,7 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
-    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
+    def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
