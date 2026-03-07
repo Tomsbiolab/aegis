@@ -97,7 +97,7 @@ def main(
         "--include-features-without-id", help="Includes features without a specific id."
     )] = False,
     standard_features: Annotated[bool, typer.Option(
-        "--standard_features", help="Standardises feature names to the most common names, for instance 'transcript' or 'pseudotranscript' just become 'mRNA' for downstream tool compatibility."
+        "--standard-features", help="Standardises feature names to the most common names, for instance 'transcript' or 'pseudotranscript' just become 'mRNA' for downstream tool compatibility."
     )] = False
 
 ):
@@ -125,7 +125,7 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features, standardise_features=standard_features)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"

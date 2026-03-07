@@ -8,12 +8,12 @@ from ..annotation import Annotation
 app = typer.Typer(add_completion=False)
 
 
-def split_callback(value:str):
+def split_callback(value:str) -> list[str]:
     if value:
         return [item.strip() for item in value.split(",")]
     return []
 
-VALID_FEATURES: list = ["gene", "transcript", "CDS", "exon", "UTR"]
+VALID_FEATURES: list[str] = ["gene", "transcript", "CDS", "exon", "UTR"]
 
 @app.command()
 def main(
@@ -29,10 +29,10 @@ def main(
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation file."
     )] = "{annotation-name}_renamed.gff3",
-    rename_features: Annotated[list[str], typer.Option(
+    rename_features: Annotated[str, typer.Option(
         "-f", "--features", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {VALID_FEATURES}.",
         callback=split_callback
-    )] = ["transcript", "CDS", "exon", "UTR"],
+    )] = "transcript,CDS,exon,UTR",
     keep_ids_with_gene_id_contained: Annotated[bool, typer.Option(
         "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id."
     )] = False,

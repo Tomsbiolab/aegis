@@ -9,6 +9,10 @@
   - README.md
   - **.github/**
     - **workflows/**
+  - **.pytest_cache/**
+    - README.md
+    - **v/**
+      - **cache/**
   - **aegis/**
     - annotation.py
       - `class Annotation():`
@@ -50,7 +54,7 @@
       - `def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
-      - `def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
+      - `def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
       - `def update_keys(self, quiet:bool=True):`
       - `def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, process_atypical:bool=True, quiet:bool=False, process_orphaned:bool=True):`
       - `def create_gtf_attributes(self, quiet:bool=False):`
@@ -135,6 +139,7 @@
       - `def longer_CDS(self, other:Gene):`
       - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
       - `def get_main_CDS_range(self):`
+      - `def rename_exons(self, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
       - `def __str__(self):`
     - genome.py
       - `class Scaffold():`
@@ -299,7 +304,7 @@
       - reformat.py
         - `def main(`
       - rename.py
-        - `def split_callback(value:str):`
+        - `def split_callback(value:str) -> list[str]:`
         - `def main(`
       - subset.py
         - `def split_callback(value:str):`
@@ -343,6 +348,7 @@
         - `def hex_to_rgb(hex_string):`
         - `def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):`
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
+      - __init__.py
   - **aegis_bio.egg-info/**
   - **images/**
   - **notebook/**
@@ -365,6 +371,8 @@
       - `def transcript_no_parent_gff3_file():`
       - `def cds_no_parent_gff3_file():`
       - `def multiple_isoforms_gff3_file():`
+      - `def subfeature_parent_is_gene_gff3_file():`
+      - `def geneID_attribute_as_parent_gff3_file():`
       - `def sample_fasta_file():`
       - `def sample_feature():`
       - `def sample_gene():`
@@ -418,6 +426,9 @@
       - `class TestConvertGtfToGff3:`
       - `def test_convert_gtf_basic(self, tmp_path):`
       - `def test_convert_gtf_with_cds_and_exon(self, tmp_path):`
+      - `def test_convert_gtf_exon_cds_only(self, tmp_path):`
+      - `def test_convert_gtf_exon_cds_only_gene_boundaries(self, tmp_path):`
+      - `def test_annotation_from_exon_only_gtf(self, tmp_path):`
       - `class TestAnnotationUniqueIDs:`
       - `def test_get_unique_gene_id(self, sample_gff3_file):`
       - `def test_get_unique_transcript_id(self, sample_gff3_file):`
@@ -573,6 +584,19 @@
       - `def test_isoform_b_has_two_exons(self, multiple_isoforms_gff3_file):`
       - `def test_isoform_c_has_two_exons(self, multiple_isoforms_gff3_file):`
       - `def test_transcript_ids_correct(self, multiple_isoforms_gff3_file):`
+      - `class TestSubfeatureParentIsGene:`
+      - `def test_gene_loaded(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_transcript_auto_created(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_transcript_is_coding(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_cds_present(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_exon_coordinates(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_transcript_boundaries(self, subfeature_parent_is_gene_gff3_file):`
+      - `def test_warning_raised(self, subfeature_parent_is_gene_gff3_file):`
+      - `class TestNonStandardParentAttribute:`
+      - `def test_four_genes_loaded(self, geneID_attribute_as_parent_gff3_file):`
+      - `def test_transcripts_are_associated(self, geneID_attribute_as_parent_gff3_file):`
+      - `def test_exons_are_parsed(self, geneID_attribute_as_parent_gff3_file):`
+      - `def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`

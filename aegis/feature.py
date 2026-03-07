@@ -10,6 +10,9 @@ import re
 from .utils.genefunctions import reverse_complement
 from .utils.misc import count_occurrences
 
+from functools import total_ordering
+
+@total_ordering
 class Feature():
     """
     Parent class including basic gff feature properties, that can then be
@@ -31,6 +34,7 @@ class Feature():
     start: int
     end: int
     attributes:list
+    parents:list[str]
     misc_attributes:list
     seqs: list[str]
     hard_seqs: list[str]

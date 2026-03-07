@@ -719,6 +719,7 @@ class Annotation():
                         if self.chrs[ch][parent].transcripts == {}:
                             # PSEUDOGENES referred to by transcript subfeatures are given a single pseudotranscript
                             self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, ".", self.chrs[ch][parent].attributes)
+                            self.all_transcript_ids[pseudo_t] = (ch, parent)
                             
                         if pseudo_t in self.chrs[ch][parent].transcripts:
                             if ft_level == "CDS":
@@ -739,17 +740,29 @@ class Annotation():
                     else:
                         # gene without transcripts pointed to then auto-create a transcript
                         if self.chrs[ch][parent].transcripts == {}:
-                            auto_t_id = f"{parent}_t1"
-                            gene_obj = self.chrs[ch][parent]
-                            self.all_transcript_ids[auto_t_id] = (ch, parent)
-                            self.chrs[ch][parent].transcripts[auto_t_id] = Transcript(
-                                auto_t_id, gene_obj.ch, gene_obj.source, "mRNA",
-                                gene_obj.strand, gene_obj.start, gene_obj.end,
-                                gene_obj.score, ".", gene_obj.attributes
-                            )
-                            if not quiet:
-                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}")
-                            self.warnings["subfeature_to_gene"].add(ID)
+                            if not infer_gene_and_transcript_from_subfeatures:
+                                self.warnings["subfeature_to_gene"].add(ID)
+                                if not skip_orphaned_features:
+                                    self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
+                                if not quiet:
+                                    print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is a gene, but since infer_gene_and_transcript_from_subfeatures is False, the gene and transcript were not auto-created.")
+                            else:
+                                count = 1
+                                auto_t_id = f"{parent}_t{count}"
+                                while auto_t_id in self.all_transcript_ids:
+                                    count += 1
+                                    auto_t_id = f"{parent}_t{count}"
+
+                                gene_obj = self.chrs[ch][parent]
+                                self.all_transcript_ids[auto_t_id] = (ch, parent)
+                                self.chrs[ch][parent].transcripts[auto_t_id] = Transcript(
+                                    auto_t_id, gene_obj.ch, gene_obj.source, "mRNA",
+                                    gene_obj.strand, gene_obj.start, gene_obj.end,
+                                    gene_obj.score, ".", gene_obj.attributes
+                                )
+                                if not quiet:
+                                    print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}")
+                                self.warnings["subfeature_to_gene"].add(ID)
                         # correctly linking the subfeature to the single transcript that exists
                         if len(self.chrs[ch][parent].transcripts) == 1:
                             temp_id = list(self.chrs[ch][parent].transcripts.keys())[0]
@@ -780,6 +793,8 @@ class Annotation():
                     else:
                         if not infer_gene_and_transcript_from_subfeatures:
                             self.warnings["missing_subfeature_parent"].add(ID)
+                            if not skip_orphaned_features:
+                                self.orphaned_features.append((Feature(ID, ch, source, ft, strand, start, end, score, ".", attributes)))
                             if not quiet:
                                 print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation")
 
@@ -929,7 +944,7 @@ class Annotation():
         self.update_features(standardise=standardise_features, quiet=quiet)
         
         if rename_features != []:
-            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
+            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
         self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
         self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes)
         self.correct_gene_transcript_and_subfeature_coordinates()
@@ -1360,7 +1375,7 @@ class Annotation():
     def homogenise_parents_for_shared_exons_utrs(self, extra_attributes:bool=False, quiet:bool=True):
         for genes in self.chrs.values():
             for g in genes.values():
-                exon_groups = {}
+                exon_groups: dict[tuple[int, int, str, str], list[Exon]] = {}
                 for t in g.transcripts.values():
                     for e in t.exons:
                         key = (e.start, e.end, e.ch, e.strand)
@@ -1380,7 +1395,7 @@ class Annotation():
                     else:
                         group[0].parents.sort()
 
-                utr_groups = {}
+                utr_groups: dict[tuple[int, int, str, str], list[UTR]] = {}
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
                         for u in c.UTRs:
@@ -1827,7 +1842,7 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
-    def rename_ids(self, custom_path:str="", features:list=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
+    def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -1865,8 +1880,6 @@ class Annotation():
                 warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' parameter will be ignored.", category=UserWarning)
             elif keep_ids_with_gene_id_contained:
                 warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.", category=UserWarning)
-
-
 
         for genes in self.chrs.values():
             for g in genes.values():

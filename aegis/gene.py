@@ -20,7 +20,7 @@ class Gene(Feature):
         'overlap_with_selected_exon', 'alternative_transcript_rescue',
         'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single',
         'UTR_intron_nested', 'transcriptomic_evidence', 'abinitio_evidence',
-        'base_id', 'original_base_id'
+        'base_id', 'original_base_id', 'renamed_exons', 'renamed_utrs'
     )
 
     transcripts:dict[str, Transcript]
@@ -75,6 +75,9 @@ class Gene(Feature):
 
         self.transcriptomic_evidence = False
         self.abinitio_evidence = False
+
+        self.renamed_exons = False
+        self.renamed_utrs = False
 
 
         self.obtain_base_id(original=True)
@@ -132,18 +135,16 @@ class Gene(Feature):
 
     def obtain_base_id(self, original:bool=False):
 
-        if self.id.endswith("_gene"):
-            self.base_id = self.id[:-5]
-        elif self.id.endswith("gene"):
+        if self.id.endswith("gene"):
             self.base_id = self.id[:-4]
-        elif self.id.startswith("gene:"):
-            self.base_id = self.id[5:]
-        elif self.id.startswith("gene-"):
-            self.base_id = self.id[5:]
         elif self.id.startswith("gene"):
             self.base_id = self.id[4:]
+        elif self.id.startswith("g"):
+            self.base_id = self.id[1:]
         else:
             self.base_id = self.id
+
+        self.base_id = self.base_id.strip("_,.-/:;")
 
         if original:
             self.original_base_id = self.base_id
@@ -360,6 +361,64 @@ class Gene(Feature):
                 break
 
         return None
+
+    def rename_exons(self, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+
+        rename = False
+
+        if keep_ids_with_base_id_contained:
+            for t in self.transcripts.values():
+                for e in t.exons:
+                    if self.base_id not in e.id:
+                        rename = True
+        else:
+            rename = True
+
+        if rename:
+
+            exon_names: dict[tuple[int, int, str, str], str] = {}
+
+            exons:list[Exon] = []
+            for t in self.transcripts.values():
+                for e in t.exons:
+                    exons.append(e)
+            exons.sort()
+
+            if self.strand == "+":
+                x = 0
+                for e in exons:
+                    key = (e.start, e.end, e.ch, e.strand)
+                    if key not in exon_names:
+                        if keep_numbering and e.id_number != None:
+                            exon_names[key] = f"{self.base_id}{sep}e{e.id_number:0{digits}d}"
+                        else:
+                            exon_names[key] = f"{self.base_id}{sep}e{x+1:0{digits}d}"
+            else:
+                x = 0
+                for e in exons:
+                    key = (e.start, e.end, e.ch, e.strand)
+                    if key not in exon_names:
+                        if keep_numbering and e.id_number != None:
+                            exon_names[key] = str(e.id_number)
+                        else:
+                            exon_names[key] = ""
+
+                x = len(exon_names) + 1
+
+                for key in reversed(exon_names):
+                    if exon_names[key] == "":
+                        exon_names[key] = f"{self.base_id}{sep}e{x-1:0{digits}d}"
+                    else:
+                        exon_names[key] = f"{self.base_id}{sep}e{exon_names[key]:0{digits}d}"
+
+            for t in self.transcripts.values():
+                for e in t.exons:
+                    key = (e.start, e.end, e.ch, e.strand)
+                    e.id = exon_names[key]
+
+                    if e.original_id != e.id:
+                        self.renamed_exons = True
+                        e.update_numbering()
 
     def __str__(self):
         if self.symbols != []:
