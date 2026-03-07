@@ -1881,8 +1881,6 @@ class Annotation():
             elif keep_ids_with_gene_id_contained:
                 warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.", category=UserWarning)
 
-
-
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():

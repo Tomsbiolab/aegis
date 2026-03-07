@@ -139,6 +139,7 @@
       - `def longer_CDS(self, other:Gene):`
       - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
       - `def get_main_CDS_range(self):`
+      - `def rename_exons(self, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
       - `def __str__(self):`
     - genome.py
       - `class Scaffold():`
