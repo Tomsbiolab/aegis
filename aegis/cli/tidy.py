@@ -60,11 +60,11 @@ def main(
     clean_features: Annotated[bool, typer.Option(
         "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues."
     )] = False,
-    for_featurecounts: Annotated[bool, typer.Option(
-        "--for-featurecounts", help="Creates a special attribute 'featurecounts_id' which has the gene-id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the gene-id level."
+    add_gene_id: Annotated[bool, typer.Option(
+        "--add-gene-id", help="Creates a special attribute 'Gene_id' which has the Gene_id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the Gene_id level."
     )] = False,
-    symbols_as_descriptors: Annotated[bool, typer.Option(
-        "--symbols-as-descriptors", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display."
+    symbols_as_description: Annotated[bool, typer.Option(
+        "--symbols-as-description", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display."
     )] = False,
     repeat_exons_utrs: Annotated[bool, typer.Option(
         "--repeat-exons-utrs", help="Creates individual exon/UTR entries with individual parental references for cases where a feature has more than one transcript level parent."
@@ -93,9 +93,6 @@ def main(
     keep_original_subfeature_ids: Annotated[bool, typer.Option(
         "--keep-original-subfeature-ids", help="Keep original subfeature ids for CDS, UTR and exon features. By default, since tidy detects shared exons and UTRs between transcripts of the same gene, it will rename these subfeatures accordingly."
     )] = False,
-    include_features_without_id: Annotated[bool, typer.Option(
-        "--include-features-without-id", help="Includes features without a specific id."
-    )] = False,
     standard_features: Annotated[bool, typer.Option(
         "--standard-features", help="Standardises feature names to the most common names, for instance 'transcript' or 'pseudotranscript' just become 'mRNA' for downstream tool compatibility."
     )] = False
@@ -109,7 +106,6 @@ def main(
 
     collapse_exons = not(no_collapse_exons)
     collapse_CDSs = not(no_collapse_CDSs)
-    skip_features_without_id = not(include_features_without_id)
 
     if keep_original_subfeature_ids:
         rename_features = []
@@ -125,7 +121,7 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, skip_features_without_id=skip_features_without_id, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features, standardise_features=standard_features)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features, standardise_features=standard_features)
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
@@ -135,16 +131,14 @@ def main(
     else:
         annotation.CDS_segment_to_CDS_ids()
 
-    if symbols_as_descriptors:
+    if symbols_as_description:
         remove_symbols = True
 
     if features:
         annotation.filter_by_rna_class(rna_classes=features)
         clean_features = True
 
-    annotation.update_attributes(clean=clean_attributes, featurecountsID=for_featurecounts, symbols=(not remove_symbols), symbols_as_descriptors=symbols_as_descriptors, aliases=(not remove_aliases), quiet=quiet)
-
-    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id)
 
 if __name__ == "__main__":
     app()

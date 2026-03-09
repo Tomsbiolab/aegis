@@ -21,9 +21,9 @@ class CDS(Feature):
 
     def __init__(self, CDS_segments:list, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str, start:int, 
-                 end:int, score:str, phase:str, attributes:str|list|dict):
+                 end:int, score:str, phase:str, parents:list[str], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, attributes)    
+                         score, phase, parents, attributes)    
         self.main = False
         self.CDS_segments = CDS_segments
         #self.kozak = ""
@@ -236,19 +236,19 @@ class Exon(Feature):
 
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
-                 strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str|list|dict):
+                 strand:str, start:int, end:int, score:str, phase:str, parents:list[str], 
+                 attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, attributes)
+                         score, phase, parents, attributes)
 
 class UTR(Feature):
 
     __slots__ = ('prime',)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
-                 strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str|list|dict):
+                 strand:str, start:int, end:int, score:str, phase:str, parents:list[str],
+                 attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, attributes)
+                         score, phase, parents, attributes)
         self.prime = "3'"
 
 class Intron(Feature):
@@ -259,10 +259,10 @@ class Intron(Feature):
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
-                 strand:str, start:int, end:int, score:str, phase:str, 
-                 attributes:str|list|dict):
+                 strand:str, start:int, end:int, score:str, phase:str, parents:list[str],
+                 attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, attributes)
+                         score, phase, parents, attributes)
         self.intra_coding = False
         self.boundary = ""
         self.canonical = False

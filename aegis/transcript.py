@@ -30,9 +30,9 @@ class Transcript(Feature):
 
     def __init__(self, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str, 
-                 phase:str, attributes:str|list|dict):
+                 phase:str, parents:list[str], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, attributes)
+                         score, phase, parents, attributes)
         self.exons = []
         self.CDSs = {}
         self.temp_CDSs = []
@@ -212,11 +212,11 @@ class Transcript(Feature):
                         
                         cur_end = e.end
                 else:
-                    merged.append(Exon("combined", self.exons[x].ch, self.exons[x].source, "exon", self.exons[x].strand, cur_start, cur_end, self.exons[x].score, ".", f"ID=combined;Parent={self.id}"))
+                    merged.append(Exon("combined", self.exons[x].ch, self.exons[x].source, "exon", self.exons[x].strand, cur_start, cur_end, self.exons[x].score, ".", [self.id]))
                     cur_start = e.start
                     cur_end = e.end
 
-            merged.append(Exon("combined", self.exons[-1].ch, self.exons[-1].source, "exon", self.exons[-1].strand, cur_start, cur_end, self.exons[-1].score, ".",  f"ID=combined;Parent={self.id}"))
+            merged.append(Exon("combined", self.exons[-1].ch, self.exons[-1].source, "exon", self.exons[-1].strand, cur_start, cur_end, self.exons[-1].score, ".", [self.id]))
 
             if len(merged) < len(self.exons):
                 self.collapsed_exons = True
@@ -239,11 +239,11 @@ class Transcript(Feature):
                         if seg.end > cur_end:
                             cur_end = seg.end
                     else:
-                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, ".", f"ID={cds.id};Parent={self.id}"))
+                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, ".", [self.id]))
                         cur_start = seg.start
                         cur_end = seg.end
 
-                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, ".", f"ID={cds.id};Parent={self.id}"))
+                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, ".", [self.id]))
 
                 if len(merged) < len(cds.CDS_segments):
                     cds.CDS_segments = merged
@@ -324,11 +324,7 @@ class Transcript(Feature):
                 temp_start = 1
                 temp_end = 0
 
-
-            self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source,
-                                    self.feature, self.strand, temp_start,
-                                    temp_end, self.score, ".",
-                                    self.attributes)
+            self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, ".", [self.id])
 
     def generate_best_protein(self, genome:Genome|None=None, must_have_stop:bool=True):
         if (self.strand == "+") or (self.strand == "-"):
@@ -401,19 +397,15 @@ class Transcript(Feature):
                             if (index == start_exon) and (index == end_exon):
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
                                                             e.start+surplus_start, e.start+surplus_end,
-                                                            e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                                            e.score, e.phase, [self.id]))
                             elif index == start_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start+surplus_start, e.end, e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                                            e.start+surplus_start, e.end, e.score, e.phase, [self.id]))
                             elif (index > start_exon) and (index < end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, [self.id]))
                             elif index == end_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start, e.start+surplus_end, e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                                            e.start, e.start+surplus_end, e.score, e.phase, [self.id]))
 
                 elif self.strand == "-":
                     temp_size = 0
@@ -441,19 +433,15 @@ class Transcript(Feature):
                             if (index == start_exon) and (index == end_exon):
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
                                                             e.end-surplus_end, e.end-surplus_start,
-                                                            e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                                            e.score, e.phase, [self.id]))
                             elif index == start_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start, e.end-surplus_start, e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                                            e.start, e.end-surplus_start, e.score, e.phase, [self.id]))
                             elif (index > start_exon) and (index < end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, [self.id]))
                             elif index == end_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.end-surplus_end, e.end, e.score, e.phase, 
-                                                            f"ID={self.id}_CDS1;Parent={self.id}"))
+                                                            e.end-surplus_end, e.end, e.score, e.phase, [self.id]))
 
                 elif self.strand == ".":
                     pass
@@ -534,7 +522,7 @@ class Transcript(Feature):
                                                 self.temp_CDSs[0].start,
                                                 self.temp_CDSs[-1].end,
                                                 self.temp_CDSs[0].score,
-                                                ".", self.temp_CDSs[0].attributes)
+                                                ".", [self.id])
                         if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
                             if not quiet:
                                 print(f"Warning: Transcript {self.id} may be "
@@ -555,7 +543,7 @@ class Transcript(Feature):
                                             segments[0].source, segments[0].feature,
                                             segments[0].strand, segments[0].start,
                                             segments[-1].end, segments[0].score,
-                                            ".", segments[0].attributes)
+                                            ".", [self.id])
                         if not quiet:
                             print(f"Warning: Transcript {self.id} is likely to be "
                                 "polycistronic since CDS segments overlap and they "
@@ -586,7 +574,7 @@ class Transcript(Feature):
                                             self.temp_CDSs[0].start,
                                             self.temp_CDSs[-1].end,
                                             self.temp_CDSs[0].score,
-                                            ".", self.temp_CDSs[0].attributes)
+                                            ".", [self.id])
 
             del self.temp_CDSs
 
@@ -649,30 +637,28 @@ class Transcript(Feature):
                 if exon.end < c.CDS_segments[0].start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
-                                      exon.score, ".", ""))
+                                      exon.score, ".", [self.id]))
                 elif exon.start < c.CDS_segments[0].start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, c.CDS_segments[0].start-1,
-                                      exon.score, ".", ""))
+                                      exon.score, ".", [self.id]))
                 if exon.start > c.CDS_segments[-1].end:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
-                                      exon.score, ".", ""))
+                                      exon.score, ".", [self.id]))
                 elif exon.end > c.CDS_segments[-1].end:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, c.CDS_segments[-1].end+1, exon.end,
-                                      exon.score, ".", ""))
+                                      exon.score, ".", [self.id]))
             c.UTRs.sort()
             if c.strand == "+" or c.strand == ".":
                 for n, u in enumerate(c.UTRs):
                     u.id = f"{c.id}_u{n+1}"
-                    u.attributes = f"ID={u.id};Parent={self.id}"
                     u.parents = [self.id]
             elif c.strand == "-":
                 counter = len(c.UTRs)
                 for n, u in enumerate(c.UTRs):
-                    u.id = f"{c.id}_u{counter}"
-                    u.attributes = f"ID={u.id};Parent={self.id}"      
+                    u.id = f"{c.id}_u{counter}"      
                     u.parents = [self.id]  
                     counter -= 1
         self.update_UTRs()
@@ -712,12 +698,12 @@ class Transcript(Feature):
 
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
-            self.exons = [ Exon("temp", ft.ch, ft.source, "exon", ft.strand, ft.start, ft.end, ft.score, ".", f"ID=temp;Parent={self.id}") for ft in temp_fts ]
+            self.exons = [ Exon("temp", ft.ch, ft.source, "exon", ft.strand, ft.start, ft.end, ft.score, ".", [self.id]) for ft in temp_fts ]
             self.collapse_exons()
 
         # Exons rebuilt from the transcript
         else:
-            self.exons = [Exon(f"temp", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", f"ID=temp;Parent={self.id}")]
+            self.exons = [Exon(f"temp", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", [self.id])]
 
         self.rename_exons(base_id=self.id)
         self.generated_exons = True
@@ -732,7 +718,7 @@ class Transcript(Feature):
             self.introns.append(Intron(f"{self.id}_intron_{counter}", self.ch,
                                        self.source, "intron", self.strand,
                                        exon.end + 1, self.exons[n+1].start - 1,
-                                       self.score, ".", f"ID={self.id}_intron_{counter};Parent={self.id}"))
+                                       self.score, ".", [self.id]))
         if self.strand == "+":
             for i in self.introns:
                 for c in self.CDSs.values():

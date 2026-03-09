@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+from pandas.core.algorithms import value_counts
+
 if TYPE_CHECKING:
     from .genome import Genome
 
@@ -22,7 +24,7 @@ class Feature():
 
     __slots__ = (
         'id', 'original_id', 'ch', 'source', 'feature', 'start', 'end',
-        'score', 'strand', 'phase', 'frame', 'attributes', 'gtf_attributes',
+        'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id',
         'size', 'seq', 'hard_seq', 'seqs', 'hard_seqs', 'parents', 'names',
         'symbols', 'descriptors', 'processes', 'synonyms', 'gc_content',
         'aliases', 'blast_hits', 'renamed', 'id_number', 'original_id_number',
@@ -33,17 +35,18 @@ class Feature():
     size: int
     start: int
     end: int
-    attributes:list
     parents:list[str]
-    misc_attributes:list
+    misc_attributes:list[str]
     seqs: list[str]
     hard_seqs: list[str]
     id_number: int|None
     original_id_number: int|None
+    gene_id: str|None
+    temp_attributes: list[str]
 
     # These attributes cannot be mistaken by misc attributes or any other
-    attributes_to_ignore_when_reading_gff = ["id", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "featurecounts_id"]
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, attributes:str|list|dict):
+    attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, parents:list[str], attributes:dict={}):
         
         self.id = feature_id
         self.original_id = feature_id
@@ -57,27 +60,13 @@ class Feature():
         self.phase = phase
         self.frame = "."
         self.coding = False
-
-        if isinstance(attributes, dict):
-            self.attributes = []
-            for key, value in attributes.items():
-                if isinstance(value, list):
-                    # Join list items with a comma
-                    combined_value = ",".join(value)
-                    self.attributes.append(f"{key}={combined_value}")
-                else:
-                    self.attributes.append(f"{key}={value}")
-
-        elif isinstance(attributes, list):
-            self.attributes = attributes
-        else:
-            self.attributes = [x.strip() for x in attributes.split(";") if x.strip()]
-        
+        self.gene_id = None
+        self.parents = parents[:]
+       
         self.gtf_attributes = []
         self.size = (self.end - self.start) + 1
         self.seq = ""
         self.hard_seq = ""
-        self.parents = []
         self.names = []
         self.symbols = []
         self.descriptors = []
@@ -94,49 +83,30 @@ class Feature():
 
         self.extra_copy = False
 
-        for a in self.attributes:
-            a_label = a.split("=")[0].lower()
-            if len(a.split("=")) > 1:
-                a_value = a.split("=")[1]
-            else:
-                a_value = ""
-            if "parent" == a_label:
-                parents = a_value.split(",")
-                for p in parents:
-                    p = p.strip()
-                    if p not in self.parents and p != "":
-                        self.parents.append(p)
-            elif "alias" == a_label:
-                aliases = a_value.split(",")
-                for alias in aliases:
-                    if alias not in self.aliases and alias != "":
-                        alias = alias.strip()
-                        self.aliases.append(alias)
-            elif a_label in Feature.attributes_to_ignore_when_reading_gff:
-                continue
-            elif "symbol" == a_label:
-                symbols = a_value.split(",")
-                for symbol in symbols:
-                    if symbol not in self.symbols and symbol != "":
-                        symbol = symbol.strip()
-                        self.symbols.append(symbol)
-            elif "name" in a_label:
-                names = a_value.split(",")
-                for name in names:
-                    if name not in self.names and name != "":
-                        name = name.strip()
-                        self.names.append(name)
-            elif "extra_copy_number" in a_label:
-                a_value = int(a_value.strip())
-                if a_value > 0:
-                    self.extra_copy = True
+        for key, value in attributes.items():
 
+            if key == "Alias":
+                self.aliases = value[:]
+
+            elif key == "Name":
+                self.names = value[:]
+        
+            elif key == "Symbol":
+                self.symbols = value[:]
+
+            elif "extra_copy_number" in key:
+                value = int(value.strip())
+                if value > 0:
+                    self.extra_copy = True
+                self.misc_attributes.append(f"{key}={value}")
+            elif key.lower in Feature.attributes_to_ignore_when_reading_gff:
+                continue
             else:
-                self.misc_attributes.append(a)
+                self.misc_attributes.append(f"{key}={value}")
+
         self.update_numbering(original=True)
 
         self.masked_fraction = 0
-
 
     def update_numbering(self, original:bool=False):
 
@@ -184,17 +154,39 @@ class Feature():
             gc_count = self.seq.count('G') + self.seq.count('C')
             self.gc_content = round((gc_count / self.size), 2)
 
-    def print_gff(self):
-        attribute_string = ";".join(self.attributes)
-        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t"
-               f"{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t"
-               f"{attribute_string}\n")
+    def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False):
+
+        parent_string = ",".join(self.parents)
+        temp_attributes = [f"ID={self.id}", f"Parent={parent_string}"]
+        if featurecountsID:
+            temp_attributes.append(f"Gene_id={self.gene_id}")
+
+        if symbols:
+            symbol_string = ",".join(self.symbols)
+            temp_attributes.append(f"Symbol={symbol_string}")
+
+        if symbols_as_description:
+            symbol_string = ",".join(self.symbols)
+            temp_attributes.append(f"Description={symbol_string}")
+
+        if names:
+            name_string = ",".join(self.names)
+            temp_attributes.append(f"Name={name_string}")
+
+        if aliases:
+            alias_string = ",".join(self.aliases)
+            temp_attributes.append(f"Alias={alias_string}")
+
+        if not clean:
+            temp_attributes.extend(self.misc_attributes)
+
+        attribute_string = ";".join(temp_attributes)
+
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
 
     def print_gtf(self):
         attribute_string = "; ".join(self.gtf_attributes)
-        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t"
-               f"{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t"
-               f"{attribute_string}\n")
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
     
     def copy(self):
         return copy.deepcopy(self)
@@ -203,8 +195,7 @@ class Feature():
         return str(self.id)
 
     def equal_sequence(self, other):
-        return (self.start == other.start and self.end == other.end
-                and self.ch == other.ch and self.strand == other.strand)
+        return (self.start == other.start and self.end == other.end and self.ch == other.ch and self.strand == other.strand)
     
     def equal_coordinates(self, other):
         return self.start == other.start and self.end == other.end and self.ch == other.ch
@@ -214,17 +205,6 @@ class Feature():
     
     def __le__(self, other):
         return (self.start < other.start) or (self.start == other.start and self.end <= other.end)
-    
-    def __eq__(self, other):
-        """
-        If a feature is exactly the same as each other
-        """
-        return (self.start == other.start and self.end == other.end
-                and self.ch == other.ch and self.id == other.id
-                and self.source == other.source
-                and self.strand == other.strand and self.score == other.score 
-                and self.phase == other.phase and
-                self.attributes == other.attributes)
 
     def longer(self, other:Feature):
         if self.seq != "" and other.seq != "":
@@ -236,14 +216,16 @@ class Feature():
             print(f"Error: Either {self.id} or {other.id} sequences are empty!")
 
     def overlap(self, other:Feature):
+        """
+        Make sure the features have the same .ch (or chromosome/scaffold) before calling this function
+        """
         overlapping = False
 
-        interval1 = self.size
-        interval2 = other.size
-        small = min(self.start, self.end, other.start, other.end)
-        large = max(self.start, self.end, other.start, other.end)
-
-        overlap_bp = (interval1 + interval2) - ((large - small) + 1)
+        overlap_start = max(self.start, other.start)
+        overlap_end = min(self.end, other.end)
+        
+        # Calculate overlap length
+        overlap_bp = (overlap_end - overlap_start) + 1
 
         # checking only overlapping features
         if overlap_bp > 0:
