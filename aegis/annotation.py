@@ -58,7 +58,7 @@ class Annotation():
     
     bar_colors = ["31", "32", "33", "33", "33", "34"]
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):
         
         start_time = time.time()
 
@@ -277,11 +277,11 @@ class Annotation():
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-        self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features)
+        self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
-            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features)
+            self.update(original_annotation=original_annotation, genome=genome, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features)
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):
         
@@ -900,7 +900,7 @@ class Annotation():
     def summary(self) -> dict:
         return self.stats.data
     
-    def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):
+    def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -927,8 +927,9 @@ class Annotation():
                 if count >= batch_size:
                     progress_bar.update(count)
                     count = 0
+                g.collapse_subfeatures(exons=collapse_exons, CDSs=collapse_CDSs)
                 for t in g.transcripts.values():
-                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
                     if t.polycistronic == "no":
                         continue
                     elif t.polycistronic == "maybe":
@@ -944,7 +945,7 @@ class Annotation():
         self.update_features(standardise=standardise_features, quiet=quiet)
         
         if rename_features != []:
-            self.rename_ids(features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, extra_attributes=extra_attributes, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+            self.rename_ids(features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, extra_attributes=extra_attributes, quiet=quiet)
         self.remove_missing_transcript_parent_references(extra_attributes=extra_attributes)
         self.homogenise_parents_for_shared_exons_utrs(extra_attributes=extra_attributes)
         self.correct_gene_transcript_and_subfeature_coordinates()
@@ -1842,7 +1843,7 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
-    def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
+    def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -1854,10 +1855,10 @@ class Annotation():
             raise ValueError(f"Rename ids was called but no feature levels were chosen. Select from: {acceptable_features}.")
         
         if prefix:
-            if keep_ids_with_gene_id_contained or features != acceptable_features or remove_point_suffix:
+            if keep_existing_ids_if_derived_from_base_id or features != acceptable_features or remove_point_suffix:
                 ignored_options = []
-                if keep_ids_with_gene_id_contained:
-                    ignored_options.append("keep_ids_with_gene_id_contained")
+                if keep_existing_ids_if_derived_from_base_id:
+                    ignored_options.append("keep_existing_ids_if_derived_from_base_id")
                 if features != acceptable_features:
                     ignored_options.append("features")
                 if remove_point_suffix:
@@ -1871,21 +1872,6 @@ class Annotation():
 
         if cds_segment_ids and "CDS" not in features:
             warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.", category=UserWarning)
-
-
-        if repeat_exons_utrs:
-            if keep_subfeature_numbers and keep_ids_with_gene_id_contained:
-                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' and 'keep_ids_with_gene_id_contained' parameters will be ignored.", category=UserWarning)
-            elif keep_subfeature_numbers:
-                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_subfeature_numbers' parameter will be ignored.", category=UserWarning)
-            elif keep_ids_with_gene_id_contained:
-                warnings.warn("Since shared exons and UTRs have been selected, renaming of feature ids is necessary so 'keep_ids_with_gene_id_contained' parameter will be ignored.", category=UserWarning)
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
-                g.update()
 
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
@@ -1964,7 +1950,7 @@ class Annotation():
                         if prefix or (base_id_present and base_id_missing):
                             t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers)
                         else:
-                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained)
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
 
                         if t.renamed:
                             changed_features.add("transcript")
@@ -2003,9 +1989,9 @@ class Annotation():
                         if "CDS" in features or prefix:
 
                             if prefix or (base_id_present and base_id_missing):
-                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=False, cds_segment_ids=cds_segment_ids)
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False, cds_segment_ids=cds_segment_ids)
                             else:
-                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, cds_segment_ids=cds_segment_ids)
+                                c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, cds_segment_ids=cds_segment_ids)
 
                             if c.renamed:
                                 changed_features.add("CDS")
@@ -2013,165 +1999,50 @@ class Annotation():
                         for cs in c.CDS_segments:
                             cs.parents = [t.id]
 
-                    if repeat_exons_utrs:
 
-                        base_id_present = False
-                        base_id_missing = False
+                    base_id_present = False
+                    base_id_missing = False
 
-                        for e in t.exons:
-                            e.parents = [t.id]
-                            if g.base_id in e.id:
+                    for e in t.exons:
+                        e.parents = [t.id]
+                        if g.base_id in e.id:
+                            base_id_present = True
+                        else:
+                            base_id_missing = True
+
+                    if base_id_present and base_id_missing:
+                        warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
+
+
+                    base_id_present = False
+                    base_id_missing = False
+
+                    for c in t.CDSs.values():
+                        for u in c.UTRs:
+                            u.parents = [t.id]
+                            if g.base_id in u.id:
                                 base_id_present = True
                             else:
                                 base_id_missing = True
 
-                        if base_id_present and base_id_missing:
-                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
+                    if base_id_present and base_id_missing:
+                        warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of UTR id formats and renaming errors could occur!", category=UserWarning)
 
-                        if t.strand == "-":
-                            e_count = e_count_rev
-                            rev = True
-                        else:
-                            rev = False
 
-                        if "exon" in features or prefix:
-                            if prefix or (base_id_present and base_id_missing):
-                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
-                            else:
-                                t.rename_exons(base_id=g.base_id, count=e_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
+                if "exon" in features or prefix:
+                    g.rename_exons(sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
 
-                        e_count += len(t.exons)
+                    if g.renamed_exons:
+                        changed_features.add("exon")
 
-                        e_count_rev -= len(t.exons)
+                    if g.renamed_utrs:
+                        changed_features.add("UTR")
 
-                        base_id_present = False
-                        base_id_missing = False
-
-                        for c in t.CDSs.values():
-                            for u in c.UTRs:
-                                u.parents = [t.id]
-                                if g.base_id in u.id:
-                                    base_id_present = True
-                                else:
-                                    base_id_missing = True
-
-                        if base_id_present and base_id_missing:
-                            warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
-
-                        if t.strand == "-":
-                            u_count = u_count_rev
-                            rev = True
-                        else:
-                            rev = False
-
-                        if "UTR" in features or prefix:
-                            if prefix or (base_id_present and base_id_missing):
-                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, rev=rev)
-                            else:
-                                t.rename_utrs(base_id=g.base_id, count=u_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_ids_with_base_id_contained=keep_ids_with_gene_id_contained, rev=rev)
-
-                        for c in t.CDSs.values():
-                            u_count += len(c.UTRs)
-                            u_count_rev -= len(c.UTRs)
-
-                        if t.renamed_exons:
-                            changed_features.add("exon")
-
-                        if t.renamed_utrs:
-                            changed_features.add("UTR")
-
-                if not repeat_exons_utrs:
-
-                    e_temp = set()
-                    e_parents = {}
-                    
-                    for t in g.transcripts.values():
-                        # gather all unique exons and sort them, then grant IDs
-                        # based on start and end coordinates and start renaming
-                        for e in t.exons:
-                            e_unique = f"{e.start}_{e.end}_{e.strand}"
-                            e_temp.add((e.start, e.end, e.strand))
-                            if e_unique in e_parents:
-                                e_parents[e_unique].add(t.id)
-                            else:
-                                e_parents[e_unique] = set([t.id])
-                    
-                    e_temp = list(e_temp)
-                    e_temp = sorted(e_temp, key=lambda x: (x[0], x[1]))
-
-                    e_ids = {}
-                    e_count = 0
-
-                    if g.strand == "+" or g.strand == ".":
-                        for n, e in enumerate(e_temp):
-                            e_count_s = f"{(n+1):0{t_id_digits}d}"
-                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
-
-                    elif g.strand == "-":
-                        counter = len(e_temp)
-                        for n, e in enumerate(e_temp):
-                            e_count_s = f"{counter:0{t_id_digits}d}"
-                            e_ids[f"{e[0]}_{e[1]}_{e[2]}"] = f"{g.base_id}{sep}e{e_count_s}"
-                            counter -= 1
-
-                    for t in g.transcripts.values():
-                        for e in t.exons:
-                            new_parents = e_parents[f"{e.start}_{e.end}_{e.strand}"]
-                            e.parents = list(new_parents.copy())
-                            e.parents.sort()
-                            e.id = e_ids[f"{e.start}_{e.end}_{e.strand}"]
-
-                            if e.id != e.original_id:
-                                changed_features.add("exon")
-
-                    u_temp = set()
-                    u_parents = {}
-                    for t in g.transcripts.values():
-                        # gather all unique UTR segments and sort them, then grant IDs
-                        # based on start and end coordinates and start renaming
-                        for c in t.CDSs.values():
-                            for u in c.UTRs:
-                                u_unique = f"{u.start}_{u.end}"
-                                u_temp.add((u.start, u.end))
-                                if u_unique in u_parents:
-                                    u_parents[u_unique].add(t.id)
-                                else:
-                                    u_parents[u_unique] = set([t.id])
-
-                    u_temp = list(u_temp)
-                    u_temp = sorted(u_temp, key=lambda x: (x[0], x[1]))
-
-                    u_ids = {}
-                    u_count = 0
-
-                    if g.strand == "+" or g.strand == ".":
-                        for n, u in enumerate(u_temp):
-                            u_count_s = f"{(n+1):0{t_id_digits}d}"
-                            u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
-
-                    elif g.strand == "-":
-                        counter = len(u_temp)
-                        for n, u in enumerate(u_temp):
-                            u_count_s = f"{counter:0{t_id_digits}d}"
-                            u_ids[f"{u[0]}_{u[1]}"] = f"{g.base_id}{sep}u{u_count_s}"
-                            counter -= 1
-                            
-                    for t in g.transcripts.values():
-                        for c in t.CDSs.values():
-                            for u in c.UTRs:
-                                new_parents = u_parents[f"{u.start}_{u.end}"]
-                                u.parents = list(new_parents.copy())
-                                u.parents.sort()
-                                u.id = u_ids[f"{u.start}_{u.end}"]
-                                if u.id != u.original_id:
-                                    changed_features.add("UTR")
 
         progress_bar.close()
 
-        if repeat_exons_utrs:
-            self.homogenise_parents_for_shared_exons_utrs(quiet=quiet, extra_attributes=extra_attributes)
-        else:
-            self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
+        self.homogenise_parents_for_shared_exons_utrs(quiet=quiet, extra_attributes=extra_attributes)
+        self.update_attributes(extra_attributes=extra_attributes, quiet=quiet)
         self.update_keys(quiet=quiet)
         self.update_gene_and_transcript_list(quiet=quiet)
 

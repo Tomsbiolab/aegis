@@ -16,7 +16,7 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_features_without_id:bool=True, skip_subfeatures_without_id:bool=False, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_features_without_id:bool=False, skip_atypical_features:bool=False, skip_orphaned_features:bool=False, skip_subfeatures_without_id:bool=False, quiet:bool=False):`
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
@@ -25,7 +25,7 @@
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
       - `def summary(self) -> dict:`
-      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_ids_with_gene_id_contained:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):`
+      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, extra_attributes:bool=False, genome:Genome|None=None, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False):`
       - `def update_suffixes(self, quiet:bool=True):`
       - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
@@ -54,7 +54,7 @@
       - `def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
-      - `def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_ids_with_gene_id_contained:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, repeat_exons_utrs:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
+      - `def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, extra_attributes:bool=False, correspondences:bool=False, quiet:bool=False):`
       - `def update_keys(self, quiet:bool=True):`
       - `def update_attributes(self, clean:bool=False, featurecountsID:bool=False, aliases:bool=True, extra_attributes:bool=False, symbols:bool=False, symbols_as_descriptors=False, process_atypical:bool=True, quiet:bool=False, process_orphaned:bool=True):`
       - `def create_gtf_attributes(self, quiet:bool=False):`
@@ -139,7 +139,9 @@
       - `def longer_CDS(self, other:Gene):`
       - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
       - `def get_main_CDS_range(self):`
-      - `def rename_exons(self, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
+      - `def rename_exons(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
+      - `def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
+      - `def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True):`
       - `def __str__(self):`
     - genome.py
       - `class Scaffold():`
@@ -178,7 +180,7 @@
       - `def update_size(self):`
       - `def update_phase(self):`
       - `def update_frame(self):`
-      - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):`
+      - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):`
       - `def clear_UTRs(self):`
       - `def generate_sequence(self, genome:Genome, low_memory:bool=False):`
       - `def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):`
@@ -197,10 +199,10 @@
       - `class Transcript(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str,`
       - `def update_size(self):`
-      - `def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):`
-      - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):`
-      - `def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
-      - `def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):`
+      - `def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):`
+      - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
+      - `def rename_exons(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
+      - `def rename_utrs(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
       - `def collapse_exons(self):`
       - `def collapse_CDS_segments(self):`
       - `def clear_UTRs(self):`
@@ -830,7 +832,6 @@
       - `def test_exon_update_with_exons(self):`
       - `class TestTranscriptRenameExons:`
       - `def test_rename_exons_basic(self):`
-      - `def test_rename_exons_rev(self):`
       - `class TestTranscriptRenameUTRs:`
       - `def test_rename_utrs_basic(self):`
       - `class TestTranscriptSequences:`

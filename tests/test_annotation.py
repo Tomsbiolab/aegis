@@ -1162,6 +1162,10 @@ class TestAnnotationReworkCDSs:
                         seg.parents[0],
                     ))
 
+            print(actual_segments)
+
+            print(expected_segments)
+
             assert len(actual_segments) == len(expected_segments)
 
             for i, (act, exp) in enumerate(zip(actual_segments, expected_segments)):

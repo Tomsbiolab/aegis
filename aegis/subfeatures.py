@@ -33,7 +33,7 @@ class CDS(Feature):
         self.full_UTR_exons = 0
         self.frame = "."
         self.protein = None
-        self.update_size()
+        self.update()
 
     def update(self):
         self.update_size()
@@ -79,12 +79,12 @@ class CDS(Feature):
                 cs.frame = frame
 
 
-    def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, cds_segment_ids:bool=False):
+    def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):
 
         rename = False
         rename_cs = False
 
-        if keep_ids_with_base_id_contained:
+        if keep_existing_ids_if_derived_from_base_id:
             if base_gene_id not in self.id:
                 rename = True
             for cs in self.CDS_segments:

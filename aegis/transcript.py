@@ -17,7 +17,7 @@ class Transcript(Feature):
         'miRNAs', 'overlaps', 'renamed_exons', 'renamed_utrs', 'polycistronic',
         'coding_ratio', 'promoter', 'protein_start', 'protein_end_stop',
         'protein_early_stop', 'protein_nucleotide_surplus', 'protein_gaps',
-        'protein_seq', 'coding_start', 'coding_end', 'introns'
+        'protein_seq', 'coding_start', 'coding_end', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
     )
 
     CDSs: dict[str, CDS]
@@ -43,24 +43,24 @@ class Transcript(Feature):
         self.renamed_exons = False
         self.renamed_utrs = False
         self.polycistronic = "no"
+
+        self.collapsed_exons = False
+        self.collapsed_CDS_segments = False
+        self.generated_exons = False
     
     def update_size(self):
         self.size = 0
         for exon in self.exons:
             self.size += exon.size
 
-    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True):
+    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
         if self.exons == []:
             self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
             self.exons.sort()
         else:
             self.exons.sort()
-            if collapse_exons:
-                self.collapse_exons()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
-        if collapse_CDSs:
-            self.collapse_CDS_segments()
 
         self.update_size()
         self.generate_introns()
@@ -95,11 +95,11 @@ class Transcript(Feature):
                     if e.start < c_end and e.end > c_start:
                         e.coding = True
 
-    def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):
 
         rename = False
 
-        if keep_ids_with_base_id_contained:
+        if keep_existing_ids_if_derived_from_base_id:
             if base_id not in self.id:
                 rename = True
         else:
@@ -122,11 +122,11 @@ class Transcript(Feature):
                 self.renamed = True
                 self.update_numbering()
 
-    def rename_exons(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+    def rename_exons(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):
 
         rename = False
 
-        if keep_ids_with_base_id_contained:
+        if keep_existing_ids_if_derived_from_base_id:
             for e in self.exons:
                 if base_id not in e.id:
                     rename = True
@@ -134,25 +134,34 @@ class Transcript(Feature):
             rename = True
 
         if rename:
-            for x, e in enumerate(self.exons):
-                if rev and x != 0:
-                    count -= 1
-                else:
-                    count += 1
-                if keep_numbering and e.id_number != None:
-                    e.id = f"{base_id}{sep}e{e.id_number:0{digits}d}"
-                else:
-                    e.id = f"{base_id}{sep}e{count:0{digits}d}"
 
-                if e.original_id != e.id:
-                    self.renamed_exons = True
-                    e.update_numbering()
+            if self.strand == "+" or self.strand == ".":
+                for x, e in enumerate(self.exons):
+                    if keep_numbering and e.id_number != None:
+                        e.id = f"{base_id}{sep}e{e.id_number:0{digits}d}"
+                    else:
+                        e.id = f"{base_id}{sep}e{x+1:0{digits}d}"
 
-    def rename_utrs(self, count:int, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False, rev:bool=False):
+                    if e.original_id != e.id:
+                        self.renamed_exons = True
+                        e.update_numbering()
+                
+            elif self.strand == "-":
+                for x, e in enumerate(reversed(self.exons)):
+                    if keep_numbering and e.id_number != None:
+                        e.id = f"{base_id}{sep}e{e.id_number:0{digits}d}"
+                    else:
+                        e.id = f"{base_id}{sep}e{x+1:0{digits}d}"
+
+                    if e.original_id != e.id:
+                        self.renamed_exons = True
+                        e.update_numbering()
+
+    def rename_utrs(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):
 
         rename = False
 
-        if keep_ids_with_base_id_contained:
+        if keep_existing_ids_if_derived_from_base_id:
             for c in self.CDSs.values():
                 for u in c.UTRs:
                     if base_id not in u.id:
@@ -161,87 +170,88 @@ class Transcript(Feature):
             rename = True
 
         if rename:
-            for x, c in enumerate(self.CDSs.values()):
-                for j, u in enumerate(c.UTRs):
-                    if rev and x != 0 and j != 0:
-                        count -= 1
-                    else:
-                        count += 1
-                    if keep_numbering and u.id_number != None:
-                        u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
-                    else:
-                        u.id = f"{base_id}{sep}u{count:0{digits}d}"
 
-                    if u.original_id != u.id:
-                        self.renamed_utrs = True
-                        u.update_numbering()
+            if self.strand == "+" or self.strand == ".":
+                for c in self.CDSs.values():
+                    for x, u in enumerate(c.UTRs):
+                        if keep_numbering and u.id_number != None:
+                            u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
+                        else:
+                            u.id = f"{base_id}{sep}u{x+1:0{digits}d}"
+
+                        if u.original_id != u.id:
+                            self.renamed_utrs = True
+                            u.update_numbering()
+                
+            elif self.strand == "-":
+                for c in reversed(self.CDSs.values()):
+                    for x, u in enumerate(reversed(c.UTRs)):
+                        if keep_numbering and u.id_number != None:
+                            u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
+                        else:
+                            u.id = f"{base_id}{sep}u{x+1:0{digits}d}"
+
+                        if u.original_id != u.id:
+                            self.renamed_utrs = True
+                            u.update_numbering()
 
     def collapse_exons(self):
         """
         Merges overlapping or directly adjacent exons into single exons.
         """
-        self.exons.sort()
-        if len(self.exons) < 2:
-            return
-        merged = []
-        cur_start = self.exons[0].start
-        cur_end = self.exons[0].end
-        for e in self.exons[1:]:
-            if e.start <= cur_end + 1:
-                if e.end > cur_end:
+        
+        if len(self.exons) > 1:
+
+            self.exons.sort()
+            merged = []
+            cur_start = self.exons[0].start
+            cur_end = self.exons[0].end
+            for x, e in enumerate(self.exons[1:]):
+                if e.start <= cur_end + 1:
+                    if e.end > cur_end:
+                        
+                        cur_end = e.end
+                else:
+                    merged.append(Exon("combined", self.exons[x].ch, self.exons[x].source, "exon", self.exons[x].strand, cur_start, cur_end, self.exons[x].score, ".", f"ID=combined;Parent={self.id}"))
+                    cur_start = e.start
                     cur_end = e.end
-            else:
-                merged.append(Exon("combined", self.ch, self.source, "exon", self.strand, cur_start, cur_end, self.score, ".", ""))
-                cur_start = e.start
-                cur_end = e.end
-        merged.append(Exon("combined", self.ch, self.source, "exon", self.strand, cur_start, cur_end, self.score, ".", ""))
-        if len(merged) < len(self.exons):
-            self.exons = merged
-            if self.strand == "+":
-                for n, e in enumerate(self.exons):
-                    e.id = f"{self.id}_e{n+1}"
-                    e.attributes = [f"ID={e.id}", f"Parent={self.id}"]
-                    e.misc_attributes = []
-                    e.parents = [self.id]
-                    e.phase = "."
-            elif self.strand == "-":
-                counter = len(self.exons)
-                for n, e in enumerate(self.exons):
-                    e.id = f"{self.id}_e{counter}"
-                    e.attributes = [f"ID={e.id}", f"Parent={self.id}"]
-                    e.misc_attributes = []
-                    e.parents = [self.id]
-                    counter -= 1
+
+            merged.append(Exon("combined", self.exons[-1].ch, self.exons[-1].source, "exon", self.exons[-1].strand, cur_start, cur_end, self.exons[-1].score, ".",  f"ID=combined;Parent={self.id}"))
+
+            if len(merged) < len(self.exons):
+                self.collapsed_exons = True
+                self.exons = merged
+                self.update()
 
     def collapse_CDS_segments(self):
         """
         Merges overlapping or directly adjacent CDS segments into single segments
         """
         for cds in self.CDSs.values():
-            cds.CDS_segments.sort()
-            if len(cds.CDS_segments) < 2:
-                continue
-            merged = []
-            cur = cds.CDS_segments[0].copy()
-            for seg in cds.CDS_segments[1:]:
-                if seg.start <= cur.end + 1:
-                    if seg.end > cur.end:
-                        cur.end = seg.end
-                        cur.size = cur.end - cur.start + 1
-                else:
-                    merged.append(cur)
-                    cur = seg.copy()
-            merged.append(cur)
-            if len(merged) < len(cds.CDS_segments):
-                cds.CDS_segments = merged
-                for seg in cds.CDS_segments:
-                    seg.id = cds.id
-                    seg.attributes = [f"ID={cds.id}", f"Parent={self.id}"]
-                    seg.misc_attributes = []
-                    seg.parents = [self.id]
-                cds.start = cds.CDS_segments[0].start
-                cds.end = cds.CDS_segments[-1].end
-                cds.update()
+
+            if len(cds.CDS_segments) > 1:
+                cds.CDS_segments.sort()
+                merged = []
+                cur_start = cds.CDS_segments[0].start
+                cur_end = cds.CDS_segments[0].end
+                for x, seg in enumerate(cds.CDS_segments[1:]):
+                    if seg.start <= cur_end + 1:
+                        if seg.end > cur_end:
+                            cur_end = seg.end
+                    else:
+                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, ".", f"ID={cds.id};Parent={self.id}"))
+                        cur_start = seg.start
+                        cur_end = seg.end
+
+                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, ".", f"ID={cds.id};Parent={self.id}"))
+
+                if len(merged) < len(cds.CDS_segments):
+                    cds.CDS_segments = merged
+                    self.collapsed_CDS_segments = True
+                    cds.update()
+                    
+        if self.collapsed_CDS_segments:
+            self.update()
 
     def clear_UTRs(self):
         for c in self.CDSs.values():
@@ -653,7 +663,7 @@ class Transcript(Feature):
                                       exon.strand, c.CDS_segments[-1].end+1, exon.end,
                                       exon.score, ".", ""))
             c.UTRs.sort()
-            if c.strand == "+":
+            if c.strand == "+" or c.strand == ".":
                 for n, u in enumerate(c.UTRs):
                     u.id = f"{c.id}_u{n+1}"
                     u.attributes = f"ID={u.id};Parent={self.id}"
@@ -699,25 +709,18 @@ class Transcript(Feature):
                     temp_fts.append(cs.copy())
                 for u in c.UTRs:
                     temp_fts.append(u.copy())
+
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
-            self.exons = [
-                Exon("temp", ft.ch, ft.source, "exon", ft.strand,
-                     ft.start, ft.end, ft.score, ".", "")
-                for ft in temp_fts
-            ]
+            self.exons = [ Exon("temp", ft.ch, ft.source, "exon", ft.strand, ft.start, ft.end, ft.score, ".", f"ID=temp;Parent={self.id}") for ft in temp_fts ]
             self.collapse_exons()
-            if self.strand == "+":
-                count = 1
-            else:
-                count = len(self.exons)
-            self.rename_exons(count=count, base_id=self.id)
 
         # Exons rebuilt from the transcript
         else:
-            self.exons = [Exon(f"{self.id}_e1", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", "")]
-            self.exons[0].attributes = [f"ID={self.exons[0].id}", f"Parent={self.id}"]
-            self.exons[0].parents = [self.id]
+            self.exons = [Exon(f"temp", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", f"ID=temp;Parent={self.id}")]
+
+        self.rename_exons(base_id=self.id)
+        self.generated_exons = True
 
     def generate_introns(self):
         self.introns = []

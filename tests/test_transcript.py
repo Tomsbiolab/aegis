@@ -227,19 +227,10 @@ class TestTranscriptRenameExons:
         t = make_transcript()
         t.exons.append(make_exon("exon_a", 1000, 2000))
         t.exons.append(make_exon("exon_b", 3000, 5000))
-        t.rename_exons(count=0, base_id="geneA", sep=".", digits=2)
+        t.rename_exons(base_id="geneA", sep=".", digits=2)
 
         assert t.exons[0].id == "geneA.e01"
         assert t.exons[1].id == "geneA.e02"
-
-    def test_rename_exons_rev(self):
-        t = make_transcript()
-        t.exons.append(make_exon("exon_a", 1000, 2000))
-        t.exons.append(make_exon("exon_b", 3000, 5000))
-        t.rename_exons(count=3, base_id="geneA", sep="_", digits=3, rev=True)
-
-        assert t.exons[0].id == "geneA_e004"
-        assert t.exons[1].id == "geneA_e003"
 
 
 # ============================================================
@@ -255,7 +246,7 @@ class TestTranscriptRenameUTRs:
         c.UTRs = [u1, u2]
         t.CDSs = {"cds1": c}
         
-        t.rename_utrs(count=0, base_id="geneA", sep="-", digits=1)
+        t.rename_utrs(base_id="geneA", sep="-", digits=1)
         assert t.CDSs["cds1"].UTRs[0].id == "geneA-u1"
         assert t.CDSs["cds1"].UTRs[1].id == "geneA-u2"
 

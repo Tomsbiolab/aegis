@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from .genome import Genome
     from .transcript import Transcript
     from .hits import OverlapHit
+    from .subfeatures import UTR
 
 from .feature import Feature
 from .subfeatures import Exon
@@ -79,7 +80,6 @@ class Gene(Feature):
         self.renamed_exons = False
         self.renamed_utrs = False
 
-
         self.obtain_base_id(original=True)
 
 
@@ -88,7 +88,11 @@ class Gene(Feature):
         self.sort_transcripts()
         self.coding = False
         self.noncoding = False
+
+        generated_exons = False
         for t in self.transcripts.values():
+            if t.generated_exons:
+                generated_exons = True
             if t.coding:
                 self.coding = True
             else:
@@ -132,6 +136,9 @@ class Gene(Feature):
             print(f"Error: gene {self.id} has no transcripts annotated")
 
         self.homogenise_exon_scores()
+
+        if generated_exons:
+            self.rename_exons()
 
     def obtain_base_id(self, original:bool=False):
 
@@ -362,63 +369,213 @@ class Gene(Feature):
 
         return None
 
-    def rename_exons(self, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_ids_with_base_id_contained:bool=False):
+    def rename_exons(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):
+        """
+        Deals with gene level naming of exons, making sure shared exons receive the same numbering, also considering strand orientation.
+        """
+
+        if base_id == "":
+            base_id = self.base_id
 
         rename = False
-
-        if keep_ids_with_base_id_contained:
+        # as long as any of the exons does not contain the base id, rename is triggered
+        if keep_existing_ids_if_derived_from_base_id:
             for t in self.transcripts.values():
                 for e in t.exons:
-                    if self.base_id not in e.id:
+                    if base_id not in e.id:
                         rename = True
         else:
             rename = True
 
         if rename:
 
-            exon_names: dict[tuple[int, int, str, str], str] = {}
-
-            exons:list[Exon] = []
-            for t in self.transcripts.values():
-                for e in t.exons:
-                    exons.append(e)
-            exons.sort()
-
-            if self.strand == "+":
-                x = 0
-                for e in exons:
-                    key = (e.start, e.end, e.ch, e.strand)
-                    if key not in exon_names:
-                        if keep_numbering and e.id_number != None:
-                            exon_names[key] = f"{self.base_id}{sep}e{e.id_number:0{digits}d}"
-                        else:
-                            exon_names[key] = f"{self.base_id}{sep}e{x+1:0{digits}d}"
-            else:
-                x = 0
-                for e in exons:
-                    key = (e.start, e.end, e.ch, e.strand)
-                    if key not in exon_names:
-                        if keep_numbering and e.id_number != None:
-                            exon_names[key] = str(e.id_number)
-                        else:
-                            exon_names[key] = ""
-
-                x = len(exon_names) + 1
-
-                for key in reversed(exon_names):
-                    if exon_names[key] == "":
-                        exon_names[key] = f"{self.base_id}{sep}e{x-1:0{digits}d}"
-                    else:
-                        exon_names[key] = f"{self.base_id}{sep}e{exon_names[key]:0{digits}d}"
-
-            for t in self.transcripts.values():
-                for e in t.exons:
-                    key = (e.start, e.end, e.ch, e.strand)
-                    e.id = exon_names[key]
-
-                    if e.original_id != e.id:
+            if name_exons_independently_for_each_transcript:
+                for t in self.transcripts.values():
+                    t.rename_exons(base_id=self.id, sep=sep, digits=digits, keep_numbering=keep_numbering, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+                    if t.renamed_exons:
                         self.renamed_exons = True
-                        e.update_numbering()
+
+            else:
+                
+                exon_names: dict[tuple[int, int, str, str], str] = {}
+
+                exon_d:dict[str, list[Exon]] = {"+":[], "-":[], ".": []}
+
+                for t in self.transcripts.values():
+                    for e in t.exons:
+                        exon_d[t.strand].append(e)
+                for exons in exon_d.values():
+                    exons.sort()
+
+                x = 0
+
+                for e in exon_d["+"]:
+                    key = (e.start, e.end, e.ch, e.strand)
+                    if key not in exon_names:
+                        if keep_numbering and e.id_number != None:
+                            exon_names[key] = f"{base_id}{sep}e{e.id_number:0{digits}d}"
+                        else:
+                            x += 1
+                            exon_names[key] = f"{base_id}{sep}e{x:0{digits}d}"
+
+
+                rev_exon_names = {}
+                for e in exon_d["-"]:
+
+                    key = (e.start, e.end, e.ch, e.strand)
+                    if key not in rev_exon_names:
+                        if keep_numbering and e.id_number != None:
+                            rev_exon_names[key] = str(e.id_number)
+                        else:
+                            rev_exon_names[key] = ""
+
+                x += len(rev_exon_names) + 1
+                total = x
+
+                for key in rev_exon_names:
+                    if rev_exon_names[key] == "":
+                        x -= 1
+                        exon_names[key] = f"{base_id}{sep}e{x:0{digits}d}"
+                    else:
+                        exon_names[key] = f"{base_id}{sep}e{rev_exon_names[key]:0{digits}d}"
+
+                x = total
+
+                for e in exon_d["."]:
+                    key = (e.start, e.end, e.ch, e.strand)
+                    if key not in exon_names:
+                        if keep_numbering and e.id_number != None:
+                            exon_names[key] = f"{base_id}{sep}e{e.id_number:0{digits}d}"
+                        else:
+                            x += 1
+                            exon_names[key] = f"{base_id}{sep}e{x:0{digits}d}"
+
+                for t in self.transcripts.values():
+                    for e in t.exons:
+                        key = (e.start, e.end, e.ch, e.strand)
+                        e.id = exon_names[key]
+
+                        if e.original_id != e.id:
+                            self.renamed_exons = True
+                            t.renamed_exons = True
+                            e.update_numbering()
+
+
+
+    def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):
+        """
+        Deals with gene level naming of utrs, making sure shared utrs receive the same numbering, also considering strand orientation.
+        """
+
+        if base_id == "":
+            base_id = self.base_id
+
+        rename = False
+        # as long as any of the exons does not contain the base id, rename is triggered
+        if keep_existing_ids_if_derived_from_base_id:
+            for t in self.transcripts.values():
+                for c in t.CDSs.values():
+                    for u in c.UTRs:
+                        if base_id not in u.id:
+                            rename = True
+        else:
+            rename = True
+
+        if rename:
+
+            if name_exons_independently_for_each_transcript:
+                for t in self.transcripts.values():
+                    t.rename_utrs(base_id=self.id, sep=sep, digits=digits, keep_numbering=keep_numbering, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+                    if t.renamed_utrs:
+                        self.renamed_utrs = True
+
+            else:
+                
+                utr_names: dict[tuple[int, int, str, str], str] = {}
+
+                utr_d:dict[str, list[UTR]] = {"+":[], "-":[], ".": []}
+
+                for t in self.transcripts.values():
+                    for c in t.CDSs.values():
+                        for u in c.UTRs:
+                            utr_d[t.strand].append(u)
+                for utrs in utr_d.values():
+                    utrs.sort()
+
+                x = 0
+
+                for u in utr_d["+"]:
+                    key = (u.start, u.end, u.ch, u.strand)
+                    if key not in utr_names:
+                        if keep_numbering and u.id_number != None:
+                            utr_names[key] = f"{base_id}{sep}u{u.id_number:0{digits}d}"
+                        else:
+                            x += 1
+                            utr_names[key] = f"{base_id}{sep}u{x:0{digits}d}"
+
+                rev_utr_names = {}
+                for u in utr_d["-"]:
+
+                    
+                    key = (u.start, u.end, u.ch, u.strand)
+                    if key not in rev_utr_names:
+                        if keep_numbering and u.id_number != None:
+                            rev_utr_names[key] = str(u.id_number)
+                        else:
+                            rev_utr_names[key] = ""
+
+                x += len(rev_utr_names) + 1
+                total = x
+
+                for key in rev_utr_names:
+                    if rev_utr_names[key] == "":
+                        x -= 1
+                        utr_names[key] = f"{base_id}{sep}u{x:0{digits}d}"
+                    else:
+                        utr_names[key] = f"{base_id}{sep}u{rev_utr_names[key]:0{digits}d}"
+
+                x = total
+
+                for u in utr_d["."]:
+                    key = (u.start, u.end, u.ch, u.strand)
+                    if key not in utr_names:
+                        if keep_numbering and u.id_number != None:
+                            utr_names[key] = f"{base_id}{sep}u{u.id_number:0{digits}d}"
+                        else:
+                            x += 1
+                            utr_names[key] = f"{base_id}{sep}u{x:0{digits}d}"
+
+                for t in self.transcripts.values():
+                    for c in t.CDSs.values():
+                        for u in c.UTRs:
+                            key = (u.start, u.end, u.ch, u.strand)
+                            u.id = utr_names[key]
+
+                            if u.original_id != u.id:
+                                self.renamed_utrs = True
+                                t.renamed_utrs = True
+                                u.update_numbering()
+
+    def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True):
+
+        collapsed_exons = False
+        collapsed_CDS_segments = False
+        for t in self.transcripts.values():
+            if exons:
+                t.collapse_exons()
+                if t.collapsed_exons == True:
+                    collapsed_exons = True
+            if CDSs:
+                t.collapse_CDS_segments()
+                if t.collapsed_CDS_segments:
+                    collapsed_CDS_segments = True
+
+        if collapsed_exons or collapsed_CDS_segments:
+            if collapsed_exons:
+                self.rename_exons()
+            if collapsed_CDS_segments:
+                self.rename_utrs()
+            self.update()
 
     def __str__(self):
         if self.symbols != []:
