@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from pandas.core.algorithms import value_counts
-
 if TYPE_CHECKING:
     from .genome import Genome
 
