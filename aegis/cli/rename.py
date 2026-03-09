@@ -33,7 +33,7 @@ def main(
         "-f", "--features", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {VALID_FEATURES}.",
         callback=split_callback
     )] = "transcript,CDS,exon,UTR",
-    keep_ids_with_gene_id_contained: Annotated[bool, typer.Option(
+    keep_existing_ids_if_derived_from_base_id: Annotated[bool, typer.Option(
         "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id."
     )] = False,
     keep_numbering: Annotated[bool, typer.Option(
@@ -106,7 +106,7 @@ def main(
     if output_file == "{annotation-name}_renamed.gff3":
         output_file = f"{annotation_name}_renamed.gff3"
 
-    annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_ids_with_gene_id_contained=keep_ids_with_gene_id_contained, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, quiet=quiet)
+    annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, quiet=quiet)
     annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
 
 if __name__ == "__main__":
