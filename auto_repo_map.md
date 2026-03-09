@@ -60,7 +60,7 @@
       - `def create_gtf_attributes(self):`
       - `def add_blast_hits(self, source, blastfile, mode:str="protein"):`
       - `def remove_chromosomes_from_header(self):`
-      - `def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
+      - `def subset(self, chosen_features:set[str], gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
       - `def filter_by_rna_class(self, rna_classes=['mRNA'], quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
       - `def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):`

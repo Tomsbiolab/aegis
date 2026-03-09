@@ -1682,21 +1682,21 @@ class Annotation():
                             if p in self.all_transcript_ids:
                                 if g.transcripts[p].strand == e.strand:
                                     new_parents.append(p)
-                        e.parents = new_parents.copy()
+                        e.parents = new_parents
                         e.parents.sort()
                     for c in t.CDSs.values():
                         new_parents = []
                         for p in c.parents:
                             if p in self.all_transcript_ids:
                                 new_parents.append(p)
-                        c.parents = new_parents.copy()
+                        c.parents = new_parents
                         c.parents.sort()
                         for cs in c.CDS_segments:
                             new_parents = []
                             for p in cs.parents:
                                 if p in self.all_transcript_ids:
                                     new_parents.append(p)
-                            cs.parents = new_parents.copy()
+                            cs.parents = new_parents
                             cs.parents.sort()
         if not quiet:
             print(f"Removed missing transcript parent references for {self.id} annotation.")
@@ -2043,46 +2043,31 @@ class Annotation():
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys())*3, disable=disable,
+        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
                                 bar_format=(
                     f'\033[1;95mUpdating {self.id} dictionary keys:\033[0m '
                     '{percentage:3.0f}%|'
                     f'\033[1;95m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-
-        # fixing CDS keys
-        for genes in self.chrs.values():
-            for g in genes.values():
-                progress_bar.update(1)
-                for t in g.transcripts.values():
-                    new_CDSs = {}
-                    for c in t.CDSs.values():
-                        if c.id not in new_CDSs:
-                            new_CDSs[c.id] = c.copy()
-                        else:
-                            print(f"Error: Repeated {c.id} CDS in {t.id} transcript in {self.id} annotation when updating keys.")
-                    t.CDSs = new_CDSs.copy()
-
-        for genes in self.chrs.values():
-            for g in genes.values():
-                progress_bar.update(1)
-                new_transcripts = {}
-                for t in g.transcripts.values():
-                    if t.id not in new_transcripts:
-                        new_transcripts[t.id] = t.copy()
-                    else:
-                        print(f"Error: Repeated {t.id} transcript in {g.id} gene in {self.id} annotation when updating keys.")
-                g.transcripts = new_transcripts.copy()
-
-
-        for chrom, genes in self.chrs.items():
+        for chrom, genes_dict in self.chrs.items():
             new_genes = {}
-            for g in genes.values():
+            
+            for gene in genes_dict.values():
+                new_transcripts = {}
+                for transcript in gene.transcripts.values():
+                    new_cdss = {cds.id: cds for cds in transcript.CDSs.values()}
+                    transcript.CDSs = new_cdss
+                    
+                    new_transcripts[transcript.id] = transcript
+                
+                gene.transcripts = new_transcripts
+
+                new_genes[gene.id] = gene
                 progress_bar.update(1)
-                new_genes[g.id] = g.copy()
-            self.chrs[chrom] = new_genes.copy()
-            del new_genes
+                
+            # Replace the chromosome's gene dict with the updated version
+            self.chrs[chrom] = new_genes
 
         progress_bar.close()
 
@@ -2176,9 +2161,9 @@ class Annotation():
                 if keep_header:
                     new_header.append(line)
 
-        self.gff_header = new_header.copy()
+        self.gff_header = new_header
 
-    def subset(self, chosen_features, gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
+    def subset(self, chosen_features:set[str], gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
 
         initial_chosen_features = chosen_features.copy()
 
