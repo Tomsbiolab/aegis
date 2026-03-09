@@ -89,6 +89,6 @@ class Promoter(Feature):
     __slots__ = ('type',)
     def __init__(self, promoter_type, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str,
-                 phase:str, attributes:str|list|dict):
-        super().__init__(feature_id, ch, source, feature, strand, start, end, score, phase, attributes)
+                 phase:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, phase, parents, attributes)
         self.type = promoter_type

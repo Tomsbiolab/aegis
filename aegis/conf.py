@@ -19,5 +19,3 @@ default_features_r = {}
 for key, values in default_features.items():
     for value in values:
         default_features_r[value] = key
-
-additional_parent_tags = ["geneid", "gene_id", "transcriptid", "transcript_id"]

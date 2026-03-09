@@ -30,7 +30,7 @@ class Transcript(Feature):
 
     def __init__(self, feature_id:str, ch:str, source:str, 
                  feature:str, strand:str, start:int, end:int, score:str, 
-                 phase:str, parents:list[str], attributes:dict={}):
+                 phase:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
                          score, phase, parents, attributes)
         self.exons = []

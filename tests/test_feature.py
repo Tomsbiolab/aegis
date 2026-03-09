@@ -23,7 +23,7 @@ def make_feature(**overrides):
         end=500,
         score=".",
         phase=".",
-        attributes="ID=feat001;Name=TestFeature;Alias=TF1,TF2;Symbol=TFS"
+        attributes={"Name":["TestFeature"], "Alias": ["TF1", "TF2"], "Symbol": ["TFS"]}
     )
     defaults.update(overrides)
     return Feature(**defaults)
@@ -62,15 +62,6 @@ class TestFeatureInit:
         f = make_feature()
         assert "TFS" in f.symbols
 
-    def test_parent_parsed(self):
-        f = make_feature(attributes="ID=exon1;Parent=mRNA1")
-        assert "mRNA1" in f.parents
-
-    def test_multiple_parents(self):
-        f = make_feature(attributes="ID=exon1;Parent=mRNA1,mRNA2")
-        assert "mRNA1" in f.parents
-        assert "mRNA2" in f.parents
-
     def test_id_number_extraction(self):
         f = make_feature(feature_id="gene123")
         assert f.id_number == 123
@@ -80,22 +71,15 @@ class TestFeatureInit:
         f = make_feature(feature_id="gene_abc")
         assert f.id_number is None
 
-    def test_dict_attributes(self):
-        attrs = {"id": "feat1", "name": "Test", "parent": ["mRNA1"]}
-        f = make_feature(attributes=attrs)
+    def test_dict_and_list_attributes(self):
+        f = make_feature(feature_id="feat01", attributes={"Name": ["Test"]}, parents=["mRNA1"])
         # feature_id arg is used for self.id, dict is converted to attributes list
-        assert f.id == "feat001"
+        assert f.id == "feat01"
         assert "mRNA1" in f.parents
-
-    def test_list_attributes(self):
-        attrs = ["ID=feat1", "Name=Test"]
-        f = make_feature(attributes=attrs)
-        # feature_id arg is used for self.id, list is stored as self.attributes
-        assert f.id == "feat001"
         assert "Test" in f.names
 
     def test_misc_attributes_collected(self):
-        f = make_feature(attributes="ID=feat1;Dbxref=GeneID:12345;custom=value")
+        f = make_feature(feature_id="feat1", attributes={"Dbxref": "GeneID:12345", "custom": "value"})
         assert any("Dbxref" in a for a in f.misc_attributes)
         assert any("custom" in a for a in f.misc_attributes)
 
@@ -112,7 +96,7 @@ class TestFeatureMethods:
         assert f.size == 501
 
     def test_print_gff_format(self):
-        f = make_feature(attributes="ID=feat001")
+        f = make_feature(feature_id="feat001")
         gff_line = f.print_gff()
         assert gff_line.startswith("chr1\taegis\tgene\t100\t500")
         assert "ID=feat001" in gff_line
@@ -165,12 +149,12 @@ class TestFeatureComparisons:
     def test_equal_features(self):
         f1 = make_feature()
         f2 = make_feature()
-        assert f1 == f2
+        assert f1.identical(f2)
 
     def test_not_equal_different_id(self):
         f1 = make_feature(feature_id="a")
         f2 = make_feature(feature_id="b")
-        assert not (f1 == f2)
+        assert not (f1.identical(f2))
 
     def test_lt_by_start(self):
         f1 = make_feature(start=100, end=500)
