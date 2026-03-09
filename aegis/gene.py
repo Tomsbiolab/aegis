@@ -37,9 +37,9 @@ class Gene(Feature):
     
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str,
-                 start:int, end:int, score:str, phase:str, attributes:str|list|dict):
+                 start:int, end:int, score:str, phase:str, parents:list[str], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, attributes)
+                         score, phase, parents, attributes)
         self.pseudogene = pseudogene
         self.transposable = transposable
         # transcripts will be added as {"transcript_id" : transcript_object}
@@ -228,14 +228,13 @@ class Gene(Feature):
                 for i, tempft1 in enumerate(temp_fts):
                     for j, tempft2 in enumerate(temp_fts):
                         if i != j:
-                            interval1 = tempft1.size
-                            interval2 = tempft2.size
-                            small = min(tempft1.start, tempft1.end, tempft2.start, tempft2.end)
-                            large = max(tempft1.start, tempft1.end, tempft2.start, tempft2.end)
-                            overlap_bp = ((interval1 + interval2) - ((large - small) + 1))
-                            # >= is crucial to combine contiguous features
-                            if overlap_bp >= 0:
-                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, ".", "")
+                            small = min(tempft1.start, tempft2.start)
+                            large = max(tempft1.end, tempft2.end)
+
+                            overlapping, _ = tempft1.overlap(tempft2)
+
+                            if overlapping:
+                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, ".", [self.id])
                                 add = True
                                 # this is to avoid adding a same overlap twice
                                 for f in features_to_add:
@@ -259,14 +258,13 @@ class Gene(Feature):
             temp_coding_feature = "mRNA"
             if not self.coding:
                 temp_coding_feature = "lncRNA"
-            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, ".", f"ID={self.id}_t001;Parent={self.id}")
+            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, ".", [self.id])
             self.transcripts[f"{self.id}_t001"].exons = temp_fts.copy()
             counter = 0
             for e in self.transcripts[f"{self.id}_t001"].exons:
                 counter += 1
                 e.feature = "exon"
                 e.id = f"{self.id}_generated_exon_{counter}"
-                e.attributes = [f"ID={e.id}", f"Parent={self.id}_t001"]
                 e.parents = [f"{self.id}_t001"]
 
         for t in self.transcripts.values():
@@ -576,6 +574,89 @@ class Gene(Feature):
             if collapsed_CDS_segments:
                 self.rename_utrs()
             self.update()
+
+    def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False):
+
+        parent_string = ",".join(self.parents)
+        temp_attributes = [f"ID={self.id}", f"Parent={parent_string}"]
+
+        if symbols:
+            symbol_string = ",".join(self.symbols)
+            temp_attributes.append(f"Symbol={symbol_string}")
+
+        if symbols_as_description:
+            symbol_string = ",".join(self.symbols)
+            temp_attributes.append(f"Description={symbol_string}")
+
+        if names:
+            name_string = ",".join(self.names)
+            temp_attributes.append(f"Name={name_string}")
+
+        if aliases:
+            alias_string = ",".join(self.aliases)
+            temp_attributes.append(f"Alias={alias_string}")
+
+        if not clean:
+            temp_attributes.extend(self.misc_attributes)
+
+        if self.pseudogene:
+            temp_attributes.append(f"Pseudogene={self.pseudogene}")
+        if self.transposable:
+            temp_attributes.append(f"Transposable={self.transposable}")
+
+        if extra_attributes:
+
+            temp_attributes.append(f"reliable_score={self.reliable_score}")
+            temp_attributes.append(f"remove={self.remove}")
+            temp_attributes.append(f"rescue={self.rescue}")
+            blasts = []
+            for b in self.blast_hits:
+                blasts.append(f"{b.source}_{b.score}")
+            blasts = ",".join(blasts)
+            if blasts:
+                temp_attributes.append(f"blasts={blasts}")
+            alternative_transcript_rescue = ",".join(self.alternative_transcript_rescue)
+            if alternative_transcript_rescue:
+                temp_attributes.append(f"alternative_transcript_rescue={alternative_transcript_rescue}")
+            overlaps = []
+            for o in self.overlaps["self"]:
+                if o.score >= 5:
+                    overlaps.append(o.id)
+            overlaps = ",".join(overlaps)
+            if overlaps:
+                temp_attributes.append(f"CDS_orientated_overlaps={overlaps}")
+
+            gene_masked_fraction = self.masked_fraction
+            transcript_masked_fraction = 0
+            CDS_masked_fraction = 0
+            gene_GC_content = self.gc_content
+            transcript_GC_content = 0
+            CDS_GC_content = 0
+
+            for t in self.transcripts.values():
+                if t.main:
+                    transcript_masked_fraction = t.masked_fraction
+                    transcript_GC_content = t.gc_content
+                    for c in t.CDSs.values():
+                        if c.main:
+                            CDS_masked_fraction = c.masked_fraction
+                            CDS_GC_content = c.gc_content
+
+            temp_attributes.append(f"gene_masked_fraction={gene_masked_fraction}")
+            temp_attributes.append(f"transcript_masked_fraction={transcript_masked_fraction}")
+            temp_attributes.append(f"CDS_masked_fraction={CDS_masked_fraction}")
+            temp_attributes.append(f"gene_GC_content={gene_GC_content}")
+            temp_attributes.append(f"transcript_GC_content={transcript_GC_content}")
+            temp_attributes.append(f"CDS_GC_content={CDS_GC_content}")
+            temp_attributes.append(f"intron_nested={self.intron_nested}")
+            temp_attributes.append(f"intron_nested_fully_contained={self.intron_nested_fully_contained}")
+            temp_attributes.append(f"intron_nested_single={self.intron_nested_single}")
+            temp_attributes.append(f"intron_UTR_nested={self.UTR_intron_nested}")
+
+        attribute_string = ";".join(temp_attributes)
+
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
+
 
     def __str__(self):
         if self.symbols != []:
