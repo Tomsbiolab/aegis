@@ -1,0 +1,16 @@
+##gff-version 3
+chr01	aegis	gene	1	1200	.	+	.	ID=gene1
+chr01	aegis	mRNA	1	1200	.	+	.	ID=mRNA1;Parent=gene1
+chr01	aegis	exon	1	1200	.	+	.	ID=exon1;Parent=mRNA1
+chr01	aegis	CDS	1	1200	.	+	0	ID=CDS1;Parent=mRNA1
+##
+chr01	aegis	gene	1205	2405	.	+	.	ID=gene2
+chr01	aegis	mRNA	1205	2405	.	+	.	ID=mRNA2;Parent=gene2
+chr01	aegis	mRNA	1205	1295	.	+	.	ID=mRNA3;Parent=gene2
+chr01	aegis	mRNA	1205	2405	.	+	.	ID=mRNA4;Parent=gene2
+chr01	aegis	exon	1205	2405	.	+	.	ID=exon2;Parent=mRNA2
+chr01	aegis	exon	1205	1295	.	+	.	ID=exon3;Parent=mRNA3
+chr01	aegis	exon	1205	2405	.	+	.	ID=exon4;Parent=mRNA4
+chr01	aegis	CDS	1205	2405	.	+	0	ID=CDS2;Parent=mRNA2
+chr01	aegis	CDS	1205	1295	.	+	0	ID=CDS3;Parent=mRNA3
+chr01	aegis	CDS	1205	2405	.	+	0	ID=CDS4;Parent=mRNA4
