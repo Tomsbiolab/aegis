@@ -1,7 +1,7 @@
 import sys
 import re
 
-from ..conf import default_features, default_subfeatures, additional_parent_tags
+from ..conf import default_features, default_subfeatures
 from collections import OrderedDict
 
 def parse_gff_line(line):
@@ -40,12 +40,14 @@ def parse_gff_line(line):
     else:
         transposable = False
 
+    transcript = False
+    gene = False
     if feature in default_features["gene"]:
-        gene = True
-    else:
-        gene = False
+        gene = True        
+    elif feature in default_features["transcript"]:
+        transcript = True
 
-    attr_dict = parse_gff_attributes(parts[8], gene)
+    attr_dict = parse_gff_attributes(parts[8], gene, transcript)
     
     if not transposable:
         if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
@@ -80,7 +82,7 @@ def parse_gff_line(line):
 
     return entry
 
-def parse_gff_attributes(attributes, gene:bool=False):
+def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
     if not attributes or attributes == ".":
         return {}
@@ -98,10 +100,10 @@ def parse_gff_attributes(attributes, gene:bool=False):
             key = key.strip()
             val = val.strip()
 
-            if key.lower() == "id" or (gene and key.lower() in {"gene_id", "geneid"}):
+            if key.lower() == "id" or gene and key.lower() in {"gene_id", "geneid"} or transcript and key.lower() in {"transcript_id", "transcriptid"}:
                 mod_key = sys.intern("ID")
                 parsed[mod_key] = val
-            elif key.lower() in {"parent", "parents", "derives_from"}:
+            elif key.lower() in {"parent", "parents", "derives_from"} or key.lower() in {"gene_id", "geneid", "transcript_id", "transcriptid"}:
                 mod_key = sys.intern("Parent")
                 parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
             elif key.lower() == "alias":
@@ -116,17 +118,6 @@ def parse_gff_attributes(attributes, gene:bool=False):
             else:
                 key = sys.intern(key)
                 parsed[key] = val
-
-    if not gene:
-
-        if "Parent" not in parsed:
-            for tag in additional_parent_tags:
-                if tag in parsed:
-                    parsed["Parent"] = [parsed[tag]]
-                    break
-                elif tag.capitalize() in parsed:
-                    parsed["Parent"] = [parsed[tag.capitalize()]]
-                    break
 
     return parsed
 

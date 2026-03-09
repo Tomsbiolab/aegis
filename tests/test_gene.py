@@ -25,7 +25,7 @@ def make_gene(**overrides):
         end=2000,
         score=".",
         phase=".",
-        attributes="ID=gene001;Name=TestGene"
+        attributes={"Name": ["TestGene"]}
     )
     defaults.update(overrides)
     return Gene(**defaults)
@@ -42,7 +42,7 @@ def make_transcript(feature_id="mRNA1", start=100, end=2000, **overrides):
         end=end,
         score=".",
         phase=".",
-        attributes=f"ID={feature_id};Parent=gene001"
+        parents=["gene001"]
     )
     defaults.update(overrides)
     return Transcript(**defaults)
@@ -187,7 +187,7 @@ class TestGeneStr:
         assert "TestGene" in result
 
     def test_str_no_names_or_symbols(self):
-        g = make_gene(attributes="ID=gene001")
+        g = make_gene(feature_id="gene001", attributes={"Name":[], "Symbol":[]})
         result = str(g)
         assert result == "gene001"
 

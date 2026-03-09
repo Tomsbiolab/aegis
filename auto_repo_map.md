@@ -106,7 +106,7 @@
       - `def clean_annotation_tag(annotation_tag):`
     - feature.py
       - `class Feature():`
-      - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, parents:list[str], attributes:dict=`
+      - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
       - `def update_size(self):`
       - `def calculate_masking(self):`
@@ -123,7 +123,8 @@
       - `def __lt__(self, other):`
       - `def __le__(self, other):`
       - `def longer(self, other:Feature):`
-      - `def overlap(self, other:Feature):`
+      - `def identical(self, other:Feature) -> bool:`
+      - `def overlap(self, other:Feature) -> tuple[bool, int]:`
       - `def compare_blast_hits(self, other:Feature, source_priority:list):`
     - gene.py
       - `class Gene(Feature):`
@@ -228,8 +229,10 @@
         - `def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):`
         - `def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True):`
         - `def unique_proteins(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):`
+        - `def unique_transcripts(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False, rna_classes: list = []):`
+        - `def unique_CDSs(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):`
         - `def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):`
-        - `def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = []):`
+        - `def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False):`
         - `def genes(self, verbose: bool = True, custom_path: str = ""):`
         - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter"):`
         - `def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):`
@@ -334,7 +337,7 @@
         - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
         - `def parse_gff_line(line):`
-        - `def parse_gff_attributes(attributes, gene:bool=False):`
+        - `def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):`
         - `def parse_gtf_attributes(attr_string):`
         - `def format_gff3_attributes(attrs, feature_type):`
         - `def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):`
@@ -352,6 +355,8 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
+  - **aegis_output/**
+    - **features/**
   - **images/**
   - **notebook/**
   - **scripts/**
@@ -599,6 +604,8 @@
       - `def test_transcripts_are_associated(self, geneID_attribute_as_parent_gff3_file):`
       - `def test_exons_are_parsed(self, geneID_attribute_as_parent_gff3_file):`
       - `def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):`
+    - test_cli_extract.py
+      - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
@@ -629,12 +636,9 @@
       - `def test_names_parsed(self):`
       - `def test_aliases_parsed(self):`
       - `def test_symbols_parsed(self):`
-      - `def test_parent_parsed(self):`
-      - `def test_multiple_parents(self):`
       - `def test_id_number_extraction(self):`
       - `def test_id_number_no_digits(self):`
-      - `def test_dict_attributes(self):`
-      - `def test_list_attributes(self):`
+      - `def test_dict_and_list_attributes(self):`
       - `def test_misc_attributes_collected(self):`
       - `class TestFeatureMethods:`
       - `def test_update_size(self):`
@@ -848,5 +852,6 @@
       - `def test_generate_CDSs_based_on_ORF_minus_multiple(self):`
     - __init__.py
     - **test_data/**
+      - **features_output/**
   - **use_examples/**
     - extend_3_UTRs.py

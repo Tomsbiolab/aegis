@@ -24,7 +24,7 @@ def make_feature_segment(feature_id="seg1", start=100, end=300, phase="0"):
         end=end,
         score=".",
         phase=phase,
-        attributes=f"ID={feature_id};Parent=mRNA1"
+        parents=["mRNA1"]
     )
 
 
@@ -47,7 +47,7 @@ def make_cds(segments=None, feature_id="cds1"):
         end=last.end,
         score=".",
         phase="0",
-        attributes=f"ID={feature_id};Parent=mRNA1"
+        parents=["mRNA1"]
     )
 
 
@@ -118,7 +118,7 @@ class TestExon:
             end=2000,
             score=".",
             phase=".",
-            attributes="ID=exon1;Parent=mRNA1"
+            parents=["mRNA1"]
         )
         assert e.id == "exon1"
         assert e.size == 1001
@@ -141,7 +141,7 @@ class TestUTR:
             end=5000,
             score=".",
             phase=".",
-            attributes="ID=utr1;Parent=mRNA1"
+            parents=["mRNA1"]
         )
         assert u.prime == "3'"
 
@@ -156,7 +156,7 @@ class TestUTR:
             end=1199,
             score=".",
             phase=".",
-            attributes="ID=utr1;Parent=mRNA1"
+            parents=["mRNA1"]
         )
         assert u.size == 200
         assert isinstance(u, Feature)
@@ -178,7 +178,7 @@ class TestIntron:
             end=2999,
             score=".",
             phase=".",
-            attributes="ID=intron1;Parent=mRNA1"
+            parents=["mRNA1"]
         )
         assert i.id == "intron1"
         assert i.intra_coding is False
@@ -197,8 +197,7 @@ class TestIntron:
             start=2001,
             end=2999,
             score=".",
-            phase=".",
-            attributes="ID=intron1"
+            phase="."
         )
         assert i.size == 999
 
@@ -212,7 +211,6 @@ class TestIntron:
             start=2001,
             end=2999,
             score=".",
-            phase=".",
-            attributes="ID=intron1"
+            phase="."
         )
         assert isinstance(i, Feature)

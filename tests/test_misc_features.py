@@ -67,8 +67,7 @@ class TestPromoter:
             start=2000,
             end=4000,
             score=".",
-            phase=".",
-            attributes="ID=prom1"
+            phase="."
         )
         assert pr.type == "standard"
         assert pr.id == "prom1"
@@ -86,8 +85,7 @@ class TestPromoter:
             start=10000,
             end=12000,
             score=".",
-            phase=".",
-            attributes="ID=prom2"
+            phase="."
         )
         assert pr.type == "ATG"
         assert pr.strand == "-"

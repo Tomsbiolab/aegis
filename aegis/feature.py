@@ -46,7 +46,7 @@ class Feature():
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, parents:list[str], attributes:dict={}):
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[], attributes:dict={}):
         
         self.id = feature_id
         self.original_id = feature_id
@@ -215,7 +215,29 @@ class Feature():
         else:
             print(f"Error: Either {self.id} or {other.id} sequences are empty!")
 
-    def overlap(self, other:Feature):
+    def identical(self, other:Feature) -> bool:
+        """
+        Checks if all attributes in __slots__ are identical.
+        Two attributes are identical if:
+        1. Both are uninitialized.
+        2. Both are initialized and have the same value.
+        """
+        if not isinstance(other, type(self)):
+            return False
+
+        for attr in self.__slots__:
+            self_has = hasattr(self, attr)
+            other_has = hasattr(other, attr)
+
+            if self_has != other_has:
+                return False
+
+            if self_has:
+                if getattr(self, attr) != getattr(other, attr):
+                    return False
+        return True
+
+    def overlap(self, other:Feature) -> tuple[bool, int]:
         """
         Make sure the features have the same .ch (or chromosome/scaffold) before calling this function
         """

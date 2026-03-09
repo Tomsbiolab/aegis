@@ -27,7 +27,7 @@ def make_transcript(**overrides):
         end=5000,
         score=".",
         phase=".",
-        attributes="ID=mRNA1;Parent=gene1"
+        parents=["gene1"]
     )
     defaults.update(overrides)
     return Transcript(**defaults)
@@ -44,7 +44,7 @@ def make_exon(feature_id, start, end, **overrides):
         end=end,
         score=".",
         phase=".",
-        attributes=f"ID={feature_id};Parent=mRNA1"
+        parents=["mRNA1"]
     )
     defaults.update(overrides)
     return Exon(**defaults)
@@ -240,9 +240,9 @@ class TestTranscriptRenameExons:
 class TestTranscriptRenameUTRs:
     def test_rename_utrs_basic(self):
         t = make_transcript()
-        c = CDS([], "cds1", "chr1", "aegis", "CDS", "+", 1000, 2000, ".", ".", "")
-        u1 = UTR("utr1", "chr1", "aegis", "UTR", "+", 1000, 1500, ".", ".", "")
-        u2 = UTR("utr2", "chr1", "aegis", "UTR", "+", 1800, 2000, ".", ".", "")
+        c = CDS([], "cds1", "chr1", "aegis", "CDS", "+", 1000, 2000, ".", ".")
+        u1 = UTR("utr1", "chr1", "aegis", "UTR", "+", 1000, 1500, ".", ".")
+        u2 = UTR("utr2", "chr1", "aegis", "UTR", "+", 1800, 2000, ".", ".")
         c.UTRs = [u1, u2]
         t.CDSs = {"cds1": c}
         

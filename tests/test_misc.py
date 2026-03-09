@@ -24,14 +24,17 @@ from aegis.utils.misc import count_occurrences, find_all_occurrences
 
 class TestParseGffAttributes:
     def test_standard_attributes(self):
-        attrs = parse_gff_attributes("ID=gene1;Name=MyGene;Note=some note")
-        assert attrs["id"] == "gene1"
-        assert attrs["name"] == "MyGene"
-        assert attrs["note"] == "some note"
+        attrs = parse_gff_attributes("ID=gene1;Name=MyGene;Note=some note;Symbol=1,2;Alias=A1,A45")
+        assert attrs["ID"] == "gene1"
+        assert attrs["Name"] == ["MyGene"]
+        assert attrs["Alias"] == ["A1", "A45"]
+        assert attrs["Symbol"] == ["1", "2"]
+        assert attrs["Note"] == "some note"
 
     def test_parent_attribute_splits_into_list(self):
-        attrs = parse_gff_attributes("ID=exon1;Parent=mRNA1,mRNA2")
-        assert attrs["parent"] == ["mRNA1", "mRNA2"]
+        attrs = parse_gff_attributes("ID=exon1;Name=E123,E2;Parent=mRNA1,mRNA2")
+        assert attrs["Name"] == ["E123", "E2"]
+        assert attrs["Parent"] == ["mRNA1", "mRNA2"]
 
     def test_empty_string(self):
         assert parse_gff_attributes("") == {}
@@ -41,11 +44,11 @@ class TestParseGffAttributes:
 
     def test_single_attribute(self):
         attrs = parse_gff_attributes("ID=feat1")
-        assert attrs["id"] == "feat1"
+        assert attrs["ID"] == "feat1"
 
     def test_derives_from_treated_as_parent(self):
         attrs = parse_gff_attributes("ID=cds1;Derives_from=mRNA1")
-        assert attrs["parent"] == ["mRNA1"]
+        assert attrs["Parent"] == ["mRNA1"]
 
 
 # ============================================================
@@ -265,7 +268,7 @@ class TestOverlap:
     class MockFeature(Feature):
         def __init__(self, start, end):
             super().__init__(feature_id="mock", ch="mock", source="mock", feature="mock", strand="mock", start=start, end=end,
-                             score=".", phase=".", attributes={})
+                             score=".", phase=".", parents=[], attributes={})
 
     def test_overlapping_features(self):
         f1 = self.MockFeature(100, 300)

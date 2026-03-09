@@ -158,8 +158,8 @@ class TestFormatGff3Attributes:
 
 class TestSortAndUpdateGenes:
     def test_sort_genes(self):
-        g1 = Gene(False, False, "gB", "chr1", "aegis", "gene", "+", 500, 1000, ".", ".", "ID=gB")
-        g2 = Gene(False, False, "gA", "chr1", "aegis", "gene", "+", 100, 400, ".", ".", "ID=gA")
+        g1 = Gene(False, False, "gB", "chr1", "aegis", "gene", "+", 500, 1000, ".", ".")
+        g2 = Gene(False, False, "gA", "chr1", "aegis", "gene", "+", 100, 400, ".", ".")
         genes_dict = {"gB": g1, "gA": g2}
         ch, sorted_dict = sort_and_update_genes("chr1", genes_dict)
         assert ch == "chr1"
@@ -168,14 +168,14 @@ class TestSortAndUpdateGenes:
         assert starts == sorted(starts)
 
     def test_sort_single_gene(self):
-        g = Gene(False, False, "gX", "chr1", "aegis", "gene", "+", 100, 500, ".", ".", "ID=gX")
+        g = Gene(False, False, "gX", "chr1", "aegis", "gene", "+", 100, 500, ".", ".")
         ch, sorted_dict = sort_and_update_genes("chr1", {"gX": g})
         assert ch == "chr1"
         assert list(sorted_dict.keys()) == ["gX"]
 
     def test_sort_already_sorted(self):
-        g1 = Gene(False, False, "g1", "chr1", "aegis", "gene", "+", 100, 300, ".", ".", "ID=g1")
-        g2 = Gene(False, False, "g2", "chr1", "aegis", "gene", "+", 400, 600, ".", ".", "ID=g2")
+        g1 = Gene(False, False, "g1", "chr1", "aegis", "gene", "+", 100, 300, ".", ".")
+        g2 = Gene(False, False, "g2", "chr1", "aegis", "gene", "+", 400, 600, ".", ".")
         ch, sorted_dict = sort_and_update_genes("chr1", {"g1": g1, "g2": g2})
         assert list(sorted_dict.keys()) == ["g1", "g2"]
 
@@ -437,7 +437,7 @@ class TestAnnotationMarkingFunctions:
         annot = Annotation(sample_gff3_file, quiet=True)
         gene1 = annot.chrs["chr1"]["gene1"]
         gene1.feature = "rRNA_gene"
-        rrna_t = Transcript("rRNA1", "chr1", "aegis", "rRNA", "+", 10, 50, ".", ".", "ID=rRNA1;Parent=gene1")
+        rrna_t = Transcript("rRNA1", "chr1", "aegis", "rRNA", "+", 10, 50, ".", ".", ["gene1"])
         gene1.transcripts["rRNA1"] = rrna_t
 
         assert len(gene1.transcripts) == 2
@@ -484,10 +484,10 @@ class TestAnnotationUpdate:
     def test_update_suffixes_multiple_flags(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         annot.combined = True
-        annot.aegis = True
+        annot.full_renamed_ids   = True
         annot.update_suffixes(quiet=True)
         assert "_combined" in annot.suffix
-        assert "_aegis" in annot.suffix
+        assert "_full_renamed_ids" in annot.suffix
 
     def test_update_features_counts(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
@@ -617,7 +617,7 @@ class TestAnnotationRemoveTranscriptsWithNoExons:
         annot = Annotation(sample_gff3_file, quiet=True)
         gene = annot.chrs["chr1"]["gene1"]
         # Add a bogus transcript with no exons
-        empty_t = Transcript("emptyT", "chr1", "aegis", "mRNA", "+", 100, 200, ".", ".", "ID=emptyT;Parent=gene1")
+        empty_t = Transcript("emptyT", "chr1", "aegis", "mRNA", "+", 100, 200, ".", ".", ["gene1"])
         empty_t.exons = []
         gene.transcripts["emptyT"] = empty_t
         original_t_count = len(gene.transcripts)
@@ -643,7 +643,7 @@ class TestAnnotationRemoveExonsWithUnmatchedStrand:
         assert t.strand == "+"
 
         # Add an exon on the wrong strand
-        wrong_exon = Exon("wrongE", "chr1", "aegis", "exon", "-", 100, 200, ".", ".", "ID=wrongE;Parent=mRNA1")
+        wrong_exon = Exon("wrongE", "chr1", "aegis", "exon", "-", 100, 200, ".", ".", ["mRNA1"])
         t.exons.append(wrong_exon)
         original_count = len(t.exons)
 
@@ -1044,7 +1044,7 @@ class TestAnnotationRemoveGenesWithNoTranscripts:
         from aegis.gene import Gene
         annot = Annotation(sample_gff3_file, quiet=True)
         # Add a gene with no transcripts
-        empty_gene = Gene(False, False, "emptyG", "chr1", "aegis", "gene", "+", 100, 200, ".", ".", "ID=emptyG")
+        empty_gene = Gene(False, False, "emptyG", "chr1", "aegis", "gene", "+", 100, 200, ".", ".")
         annot.chrs["chr1"]["emptyG"] = empty_gene
         annot.all_gene_ids["emptyG"] = "chr1"
 
