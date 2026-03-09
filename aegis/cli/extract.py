@@ -151,7 +151,11 @@ def main(
         else:
             used_id = "transcript"
 
-        if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
+        if "unique_per_gene" in mode:
+            annotation.export.transcripts(only_main=False, verbose=detailed_headers, custom_path=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True)
+        elif "unique" in mode:
+            annotation.export.unique_transcripts(custom_path=output_dir, quiet=quiet, rna_classes=rna_classes)
+        elif "all" in mode:
             annotation.export.transcripts(only_main=False, verbose=detailed_headers, custom_path=output_dir, used_id=used_id, rna_classes=rna_classes)
         else:
             annotation.export.transcripts(custom_path=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes)
@@ -185,8 +189,10 @@ def main(
         else:
             used_id = "CDS"
 
-        if "unique_per_gene" in mode or "unique" in mode:
+        if "unique_per_gene" in mode:
             annotation.export.CDSs(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True)
+        elif "unique" in mode:
+            annotation.export.unique_CDSs(custom_path=output_dir, quiet=quiet)
         elif "all" in mode:
             annotation.export.CDSs(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
         else:

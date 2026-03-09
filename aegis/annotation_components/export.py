@@ -289,6 +289,135 @@ class AnnotationExport:
             if not quiet:
                 print(f"\nExporting unique {self._annot.id} proteins took {round(lapse/60, 1)} minutes")
 
+    def unique_transcripts(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False, rna_classes: list = []):
+        start_time = time.time()
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected or quiet:
+            disable = True
+        else:
+            disable = False
+        
+        if not self._annot.contains_all_sequences:
+            if genome == None:
+                print(f"You forgot to provide the genome for {self._annot.id} and no sequences exist for transcripts")
+            else:
+                self._annot.generate_sequences(genome, quiet=quiet)
+                self.unique_transcripts(custom_path=custom_path, rna_classes=rna_classes)
+        else:
+            if custom_path:
+                output_file = Path(custom_path)
+            else:
+                output_file = Path(self._annot.path) / "features"
+            output_file.mkdir(parents=True, exist_ok=True)
+            output_file = str(output_file) + "/"
+            output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_transcripts.fasta"
+            out = ""
+            all_transcript_seqs = {}
+            for chrom, genes in self._annot.chrs.items():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        if (t.feature in rna_classes) or (not rna_classes):
+                            if t.seq != "":
+                                all_transcript_seqs[t.id] = t.seq
+
+            progress_bar = tqdm(total=len(all_transcript_seqs.keys()), disable=disable,
+                            bar_format=(
+                f'\033[1;91mDetermining and exporting unique {self._annot.id} transcripts:\033[0m '
+                '{percentage:3.0f}%|'
+                f'\033[1;91m{{bar}}\033[0m| '
+                '{n}/{total} [{elapsed}<{remaining}]'))
+            
+            
+            unique_sequences = {}
+
+            for transcript_id, sequence in all_transcript_seqs.items():
+                progress_bar.update(1)
+                if sequence not in unique_sequences:
+                    unique_sequences[sequence] = transcript_id
+
+            for sequence, transcript_id in unique_sequences.items():
+                out += f">{transcript_id}\n{sequence}\n"
+
+            f_out = open(output_file, "w", encoding="utf-8")
+            f_out.write(out)
+            f_out.close()
+
+            progress_bar.close()
+
+            now = time.time()
+            lapse = now - start_time
+            if not quiet:
+                print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
+
+    def unique_CDSs(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):
+        start_time = time.time()
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected or quiet:
+            disable = True
+        else:
+            disable = False
+        
+        if not self._annot.contains_CDS_sequences:
+            if genome == None:
+                print(f"You forgot to provide the genome for {self._annot.id} and no sequences exist for CDSs")
+            else:
+                self._annot.generate_sequences(genome, quiet=quiet)
+                self.unique_CDSs(custom_path=custom_path)
+        else:
+            if custom_path:
+                output_file = Path(custom_path)
+            else:
+                output_file = Path(self._annot.path) / "features"
+            output_file.mkdir(parents=True, exist_ok=True)
+            output_file = str(output_file) + "/"
+            output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_CDSs.fasta"
+            out = ""
+            all_CDS_seqs = {}
+            for chrom, genes in self._annot.chrs.items():
+                for g in genes.values():
+                    if g.coding:
+                        for t in g.transcripts.values():
+                            for c in t.CDSs.values():
+                                if c.seq != "":
+                                    all_CDS_seqs[c.id] = c.seq
+
+            progress_bar = tqdm(total=len(all_CDS_seqs.keys()), disable=disable,
+                            bar_format=(
+                f'\033[1;91mDetermining and exporting unique {self._annot.id} CDSs:\033[0m '
+                '{percentage:3.0f}%|'
+                f'\033[1;91m{{bar}}\033[0m| '
+                '{n}/{total} [{elapsed}<{remaining}]'))
+            
+            
+            unique_sequences = {}
+
+            for CDS_id, sequence in all_CDS_seqs.items():
+                progress_bar.update(1)
+                if sequence not in unique_sequences:
+                    unique_sequences[sequence] = CDS_id
+
+            for sequence, CDS_id in unique_sequences.items():
+                out += f">{CDS_id}\n{sequence}\n"
+
+            f_out = open(output_file, "w", encoding="utf-8")
+            f_out.write(out)
+            f_out.close()
+
+            progress_bar.close()
+
+            now = time.time()
+            lapse = now - start_time
+            if not quiet:
+                print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
+
     def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
@@ -413,7 +542,7 @@ class AnnotationExport:
         else:
             print(f"Warning: Run self.generate_sequences(genome) on {self._annot.id}")
 
-    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = []):
+    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False):
         """
         Main means only main transcript sequences are exported.
 
@@ -438,12 +567,20 @@ class AnnotationExport:
 
         out = ""
 
+        if unique_transcripts_per_gene:
+            only_main = False
+            if used_id == "gene":
+                used_id = "transcript"
+                warnings.warn(f"Used id 'gene' has been changed to 'transcript' as unique transcripts per gene was selected.", category=UserWarning)
+
         if used_id == "gene":
             only_main = True
             output_file += "_g_id_main"
         elif used_id == "transcript":
             output_file += "_t_id"
-            if only_main:
+            if unique_transcripts_per_gene:
+                output_file += "_unique_per_gene"
+            elif only_main:
                 output_file += "_main"
             else:
                 output_file += "_all"
@@ -459,20 +596,41 @@ class AnnotationExport:
         
         for genes in self._annot.chrs.values():
             for g in genes.values():
+                temp_ts = []
                 for t in g.transcripts.values():
                     if (t.feature in rna_classes) or (not rna_classes):
                         if t.seq != "":
-                            if only_main and not t.main:
-                                continue
+                            if only_main:
+                                if t.main:
+                                    temp_ts.append(t)
+                            else:
+                                temp_ts.append(t)
 
-                            if used_id == "transcript":    
-                                out += f">{t.id}"
-                            elif used_id == "gene":
-                                out += f">{g.id}"
+                if not unique_transcripts_per_gene:
+                    final_ts = temp_ts.copy()
+                else:
+                    final_ts = []
+                    if len(temp_ts) > 0:
+                        final_ts.append(temp_ts[0])
 
-                            if verbose:
-                                out += f"|{t.strand}|{t.ch}|{t.start}:{t.end}"
-                            out += f"\n{t.seq}\n"
+                    for i, t1 in enumerate(temp_ts):
+                        if i > 0:
+                            add = True
+                            for t2 in final_ts:
+                                if t1.seq == t2.seq:
+                                    add = False
+                            if add:
+                                final_ts.append(t1)
+
+                for t in final_ts:
+                    if used_id == "transcript":    
+                        out += f">{t.id}"
+                    elif used_id == "gene":
+                        out += f">{g.id}"
+
+                    if verbose:
+                        out += f"|{t.strand}|{t.ch}|{t.start}:{t.end}"
+                    out += f"\n{t.seq}\n"
 
         if out != "":
             f_out = open(output_file, "w", encoding="utf-8")
