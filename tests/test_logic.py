@@ -8,7 +8,7 @@ TEST_FOLDER = pathlib.Path(__file__).parent
 DATA_FOLDER = TEST_FOLDER / "test_data"
 
 def test_with_gff_local_file():
-    input_path = DATA_FOLDER / "arabidopsis_araport11.gff3"
+    input_path = DATA_FOLDER / "input" / "annotation" / "arabidopsis_araport11.gff3"
 
     ara = Annotation(str(input_path), "ara")
 
@@ -17,7 +17,7 @@ def test_with_gff_local_file():
     assert num_genes == 3000
 
 def test_with_fasta_local_file():
-    input_path = DATA_FOLDER / "arabidopsis_tair10.fasta"
+    input_path = DATA_FOLDER / "input" / "fasta" / "arabidopsis_tair10.fasta"
 
     g = Genome("ara_genome", str(input_path), quiet=True)
 

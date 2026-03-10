@@ -56,7 +56,7 @@ class TestParseGffAttributes:
 # ============================================================
 
 class TestParseGffLine:
-    LINES_FILE = Path(__file__).resolve().parent / "test_data" / "genefunctions_lines.gff3"
+    LINES_FILE = Path(__file__).resolve().parent / "test_data" / "input" / "annotation" / "genefunctions_lines.gff3"
 
     @classmethod
     def _read_line(cls, index):
