@@ -6,7 +6,7 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.command()
 def main(

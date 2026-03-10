@@ -9,7 +9,7 @@ authors = [
 	{ name = "Amandine Velt", email = "Amandine.Velt@inrae.fr" },
 ]
 name = "aegis-bio"
-version = "0.2.4"
+version = "0.2.5"
 description = "Annotation Extraction Genomic Integration Suite."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -39,17 +39,4 @@ dependencies = [
 packages = ["aegis", "aegis.cli", "aegis.utils", "aegis.annotation_components"]
 
 [project.scripts]
-aegis-extract = "aegis.cli.extract:app"
-aegis-overlap = "aegis.cli.overlap:app"
-aegis-orthology = "aegis.cli.orthology:app"
-aegis-reformat = "aegis.cli.reformat:app"
-aegis-summary = "aegis.cli.summary:app"
-aegis-prune = "aegis.cli.prune:app"
-aegis-rename = "aegis.cli.rename:app"
-aegis-symbols = "aegis.cli.symbols:app"
-aegis-motifs = "aegis.cli.motifs:app"
-aegis-merge = "aegis.cli.merge:app"
-aegis-tidy = "aegis.cli.tidy:app"
-aegis-subset = "aegis.cli.subset:app"
-aegis-tidy-genome = "aegis.cli.tidy_genome:app"
-aegis-list = "aegis.cli.list:app"
+aegis = "aegis.cli:app"

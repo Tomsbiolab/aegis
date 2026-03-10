@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..utils.genefunctions import export_group_equivalences
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 def split_callback(value:str):
     if value:
@@ -39,10 +39,10 @@ def main(
     simple: Annotated[bool, typer.Option(
         "-s", "--simple", help="Whether to remove percentage overlap details at different feature levels for a more simple output table."
     )] = False,
-    original_annotation_files: Annotated[list[str], typer.Option(
+    original_annotation_files: Annotated[str, typer.Option(
         "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer, separated by commas. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
         callback=split_callback
-    )] = [],
+    )] = "",
     reference_annotation: Annotated[str, typer.Option(
         "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
     )] = "None",

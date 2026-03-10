@@ -7,7 +7,7 @@ from ..annotation import Annotation, read_file_with_fallback
 
 features = ["gene", "transcript"]
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(

@@ -5,14 +5,13 @@ import numpy as np
 import warnings
 import shutil
 from pathlib import Path
-from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 def split_callback(value:str):
     if value:
@@ -24,25 +23,24 @@ def main(
     annotation_files: Annotated[list[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
-    genome_files: Annotated[list[str], typer.Option(
-        "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. genomefile1,genomefile2,genomefile3,genomefile4",
+    genome_files: Annotated[str, typer.Option(
+        "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g 'genomefile1,genomefile2,genomefile3,genomefile4'",
         callback=split_callback
-    )],
-    annotation_names: Annotated[list[str], typer.Option(
-        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2,name3,name4",
+    )] = "",
+    annotation_names: Annotated[str, typer.Option(
+        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names 'name1,name2,name3,name4'",
         callback=split_callback
-    )] = ["{annotation-filename(s)}"],
-
-    output_dir: Annotated[str|Path, typer.Option(
+    )] = "{annotation-filename(s)}",
+    output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_filename: Annotated[str, typer.Option(
         "-o", "--output-file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
     )] = "equivalences{other_tags}.tsv",
-    group_names: Annotated[list[str], typer.Option(
+    group_names: Annotated[str, typer.Option(
         "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
         callback=split_callback
-    )] = [],
+    )] = "",
     skip_synteny: Annotated[bool, typer.Option(
         "--skip-synteny", help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome."
     )] = False,
@@ -58,9 +56,9 @@ def main(
     skip_rbhs: Annotated[bool, typer.Option(
         "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
     )] = False,
-    lift_feature_types: Annotated[list[str], typer.Option(
+    lift_feature_types: Annotated[str, typer.Option(
         "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
-    )] = ["ALL"],
+    )] = "ALL",
     skip_lifton: Annotated[bool, typer.Option(
         "--skip-lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
     )] = False,
@@ -133,7 +131,7 @@ def main(
         raise typer.Exit(code=1)
     
 
-    if annotation_names != ["{annotation-filename(s)}"]:
+    if annotation_names != "{annotation-filename(s)}":
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -153,6 +151,9 @@ def main(
     
     if len(annotation_files) != len(set(annotation_files)):
         raise typer.BadParameter("Avoid repeated annotation filename(s).")
+
+    if len(genome_files) != len(annotation_files):
+        raise typer.BadParameter("A single genome file must be provided for each annotation file.")
     
     if len(genome_files) != len(set(genome_files)):
         raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
@@ -186,13 +187,13 @@ def main(
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-    output_dir = Path(output_dir).resolve() / "orthologues"
+    output_dir_path = Path(output_dir).resolve() / "orthologues"
+    output_dir = str(output_dir_path) + "/"
 
-    if output_dir.exists():
+    if output_dir_path.exists():
         warnings.warn(f"The folder '{output_dir}' already exists. Please be aware that conflict may arise with existing output and/or temp folder files.")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = str(output_dir) + "/"
+    output_dir_path.mkdir(parents=True, exist_ok=True)
 
     results_directory = Path(f"{output_dir}temp/")
     protein_path = results_directory / "proteins"
@@ -218,7 +219,7 @@ def main(
         mcscan_path = results_directory / "mcscan"
         mcscan_path.mkdir(parents=True, exist_ok=True)
 
-    if lift_feature_types == ["ALL"]:
+    if lift_feature_types == "ALL":
         lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"]
     
     lift_feature_types_file = results_directory / "chosen_liftover_features.txt"

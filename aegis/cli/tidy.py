@@ -11,7 +11,7 @@ RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA",
                 "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
                 "SRP_RNA", "RNase_MRP_RNA"]
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 def split_callback(value:str):
     if value:

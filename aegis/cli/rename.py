@@ -5,7 +5,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
 def split_callback(value:str) -> list[str]:
@@ -82,6 +82,7 @@ def main(
     """
     Rename feature ids of an annotation file.
     """
+
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs
 
