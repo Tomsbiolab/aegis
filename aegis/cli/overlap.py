@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..utils.genefunctions import export_group_equivalences
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 def split_callback(value:str):
     if value:

@@ -11,7 +11,7 @@ from ..annotation import Annotation
 from ..genome import Genome
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 def split_callback(value:str):
     if value:

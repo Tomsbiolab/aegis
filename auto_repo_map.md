@@ -222,6 +222,7 @@
       - `def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):`
       - `def clear_sequence(self, just_hard:bool=False):`
     - __init__.py
+    - __main__.py
     - **annotation_components/**
       - export.py
         - `class AnnotationExport:`
@@ -324,6 +325,7 @@
       - tidy_genome.py
         - `def main(`
       - __init__.py
+      - __main__.py
     - **utils/**
       - evalue.py
         - `def parse_evalue(e):`
