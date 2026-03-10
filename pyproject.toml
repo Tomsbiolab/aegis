@@ -9,10 +9,10 @@ authors = [
 	{ name = "Amandine Velt", email = "Amandine.Velt@inrae.fr" },
 ]
 name = "aegis-bio"
-version = "0.2.5"
+version = "0.2.6"
 description = "Annotation Extraction Genomic Integration Suite."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12.3"
 classifiers = [
 	"Programming Language :: Python :: 3",
 	"Operating System :: OS Independent"
@@ -31,12 +31,22 @@ dependencies = [
     "scipy>=1.7.3",
     "tqdm>=4.67.1",
     "typer>=0.16.1",
-    "typing_extensions>=4.15.0",
-	"pytest>=8.4.1"
+    "typing_extensions>=4.15.0"
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4.1"]
+
 
 [tool.setuptools]
 packages = ["aegis", "aegis.cli", "aegis.utils", "aegis.annotation_components"]
 
 [project.scripts]
 aegis = "aegis.cli:app"
+
+[project.urls]
+"Homepage" = "https://github.com/tomsbiolab/aegis"
+"Bug Tracker" = "https://github.com/tomsbiolab/aegis/issues"
+"Documentation" = "https://github.com/tomsbiolab/aegis#readme"
+"Source Code" = "https://github.com/tomsbiolab/aegis"
+"Docker Hub" = "https://hub.docker.com/r/tomsbiolab/aegis"
