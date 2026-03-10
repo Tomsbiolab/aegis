@@ -55,19 +55,19 @@ docker pull tomsbiolab/aegis
 ```
 
 **2. Run an AEGIS command:**
-The following command runs `aegis-extract` on a test dataset. The `-v` flag is crucial as it makes your current directory accessible inside the container.
+The following command runs `aegis extract` on a test dataset. The `-v` flag is crucial as it makes your current directory accessible inside the container.
 
 ```bash
-docker run --rm -ti -v `pwd`:`pwd` -w `pwd` tomsbiolab/aegis aegis-extract -f protein test_data/arabidopsis_araport11.gff3 test_data/arabidopsis_tair10.fasta
+docker run --rm -ti -v `pwd`:`pwd` -w `pwd` tomsbiolab/aegis aegis extract -f protein test_data/arabidopsis_araport11.gff3 test_data/arabidopsis_tair10.fasta
 ```
 
 **3. (Optional) Build the image locally:**
 If you want to build the image from the source code in this repository, you can use the provided `Dockerfile`.
 
 ```bash
-docker build -t aegis-local .
+docker build -t aegis local .
 ```
-You can then run your local image by replacing `tomsbiolab/aegis` with `aegis-local`.
+You can then run your local image by replacing `tomsbiolab/aegis` with `aegis local`.
 
 ### Using Singularity
 
@@ -85,12 +85,12 @@ This will create a single `aegis.sif` file in your current directory.
 Use the `singularity run` command to execute AEGIS. The `-B` flag mounts your current directory into the container.
 
 ```bash
-singularity run -B `pwd`:`pwd` aegis.sif aegis-extract -f protein test_data/arabidopsis_tair10.gff3 test_data/arabidopsis_tair10.fasta
+singularity run -B `pwd`:`pwd` aegis.sif aegis extract -f protein test_data/arabidopsis_tair10.gff3 test_data/arabidopsis_tair10.fasta
 ```
 
 ### From PyPI (Python Package Index)
 
-Easiest way to install, however, some dependencies will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use aegis-orthology you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. 
+Easiest way to install, however, some dependencies will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use aegis orthology you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. 
 
 ```bash
 pip3 install aegis-bio
@@ -113,7 +113,7 @@ Aegis is designed to be used as a library in your Python scripts or directly thr
 
 ### CLI commands
 
-All of the commands are called with aegis-{subcommand} in a terminal:
+All of the commands are called with aegis {subcommand} in a terminal:
 
 - Extract
 	- Extracts all kinds of fasta features from an annotation.
