@@ -7,6 +7,10 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python Version](https://img.shields.io/badge/python-3.7%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
+[![PyPI version](https://img.shields.io/pypi/v/aegis-bio)](https://pypi.org/project/aegis-bio/)
+[![Docker Hub](https://img.shields.io/badge/docker-pull-blue)](https://hub.docker.com/r/tomsbiolab/aegis)
+[![GitHub license](https://img.shields.io/github/license/tomsbiolab/aegis)](https://github.com/tomsbiolab/aegis/blob/main/LICENSE.md)
+
 **AEGIS** is a powerful and flexible Python-based suite for the manipulation, analysis, and integration of genomic annotations. It provides a robust, object-oriented framework for working with genomic data, enabling complex analyses and data transformations with intuitive, high-level commands.
 
 ## Key Features
