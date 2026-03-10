@@ -57,27 +57,27 @@ class TestReadFileWithFallback:
 
 class TestDetectFileFormat:
     def test_gff3_with_header(self):
-        f = str(TEST_DATA_DIR / "detect_gff3_with_header.gff3")
+        f = str(TEST_DATA_DIR / "input/annotation/detect_gff3_with_header.gff3")
         fmt = detect_file_format(f, "utf-8")
         assert fmt == "gff3"
 
     def test_gff3_without_header(self):
-        f = str(TEST_DATA_DIR / "detect_gff3_without_header.gff3")
+        f = str(TEST_DATA_DIR / "input/annotation/detect_gff3_without_header.gff3")
         fmt = detect_file_format(f, "utf-8")
         assert fmt == "gff3"
 
     def test_gtf_format(self):
-        f = str(TEST_DATA_DIR / "detect_gtf.gtf")
+        f = str(TEST_DATA_DIR / "input/annotation/detect_gtf.gtf")
         fmt = detect_file_format(f, "utf-8")
         assert fmt == "gtf"
 
     def test_gff3_with_comment_and_blank_lines(self):
-        f = str(TEST_DATA_DIR / "detect_gff3_commented.gff3")
+        f = str(TEST_DATA_DIR / "input/annotation/detect_gff3_commented.gff3")
         fmt = detect_file_format(f, "utf-8")
         assert fmt == "gff3"
 
     def test_gtf_without_header(self):
-        f = str(TEST_DATA_DIR / "detect_gtf_no_header.gtf")
+        f = str(TEST_DATA_DIR / "input/annotation/detect_gtf_no_header.gtf")
         fmt = detect_file_format(f, "utf-8")
         assert fmt == "gtf"
 
@@ -281,7 +281,7 @@ class TestAnnotationRichGFF3:
 
 class TestAnnotationRealData:
     def test_load_grapevine(self, test_data_dir):
-        gff_path = str(test_data_dir / "grapevine_v5.1.gff3")
+        gff_path = str(test_data_dir / "input/annotation/grapevine_v5.1.gff3")
         if not os.path.exists(gff_path):
             pytest.skip("test_data not available")
         annot = Annotation(gff_path, quiet=True)
@@ -295,7 +295,7 @@ class TestAnnotationRealData:
 
 class TestConvertGtfToGff3:
     def test_convert_gtf_basic(self, tmp_path):
-        gtf_file = str(TEST_DATA_DIR / "convert_basic.gtf")
+        gtf_file = str(TEST_DATA_DIR / "input/annotation/convert_basic.gtf")
         gff_file = tmp_path / "test.gff3"
 
         convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
@@ -309,7 +309,7 @@ class TestConvertGtfToGff3:
 
     def test_convert_gtf_with_cds_and_exon(self, tmp_path):
         """convert_gtf_to_gff3 emits gene, transcript, AND subfeature lines"""
-        gtf_file = str(TEST_DATA_DIR / "convert_cds.gtf")
+        gtf_file = str(TEST_DATA_DIR / "input/annotation/convert_cds.gtf")
         gff_file = tmp_path / "cds.gff3"
         convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
         gff_content = gff_file.read_text()
@@ -323,7 +323,7 @@ class TestConvertGtfToGff3:
 
     def test_convert_gtf_exon_cds_only(self, tmp_path):
         """GTF with only exon/CDS rows should infer gene and transcript lines"""
-        gtf_file = str(TEST_DATA_DIR / "convert_exon_cds_only.gtf")
+        gtf_file = str(TEST_DATA_DIR / "input/annotation/convert_exon_cds_only.gtf")
         gff_file = tmp_path / "inferred.gff3"
         convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
         gff_content = gff_file.read_text()
@@ -344,7 +344,7 @@ class TestConvertGtfToGff3:
 
     def test_convert_gtf_exon_cds_only_gene_boundaries(self, tmp_path):
         """Inferred gene boundaries should span all subfeatures"""
-        gtf_file = str(TEST_DATA_DIR / "convert_exon_cds_only.gtf")
+        gtf_file = str(TEST_DATA_DIR / "input/annotation/convert_exon_cds_only.gtf")
         gff_file = tmp_path / "bounds.gff3"
         convert_gtf_to_gff3(gtf_file, str(gff_file), "utf-8", quiet=True)
         lines = [l for l in gff_file.read_text().strip().split("\n") if not l.startswith("#")]
@@ -357,7 +357,7 @@ class TestConvertGtfToGff3:
 
     def test_annotation_from_exon_only_gtf(self, tmp_path):
         """Full integration: Annotation should load exon/CDS-only GTF correctly"""
-        gtf_file = str(TEST_DATA_DIR / "convert_exon_cds_only.gtf")
+        gtf_file = str(TEST_DATA_DIR / "input/annotation/convert_exon_cds_only.gtf")
         annot = Annotation(gtf_file, quiet=True)
 
         assert "g1" in annot.all_gene_ids
@@ -1092,11 +1092,11 @@ class TestAnnotationReworkCDSs:
         from aegis.genome import Genome
         genome = Genome(
             "ara_genome",
-            str(TEST_DATA_DIR / "arabidopsis_tair10.fasta"),
+            str(TEST_DATA_DIR / "input/fasta/arabidopsis_tair10.fasta"),
             quiet=True,
         )
         annot = Annotation(
-            str(TEST_DATA_DIR / "arabidopsis_generate_cds_mRNA.gff3"),
+            str(TEST_DATA_DIR / "input/annotation/arabidopsis_generate_cds_mRNA.gff3"),
             "ara_annotation",
             quiet=True,
             genome=genome,

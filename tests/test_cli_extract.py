@@ -34,10 +34,10 @@ runner = CliRunner()
 )
 def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):
     """
-    Test the aegis-extract CLI with different options and compare with reference outputs.
+    Test the aegis extract CLI with different options and compare with reference outputs.
     """
-    gff3_path = test_data_dir / "extract_test.gff3"
-    fasta_path = test_data_dir / "extract_test.fasta"
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
     
     output_dir = tmp_path / "aegis_output" / "features"
     output_dir.mkdir(parents=True, exist_ok=True)
