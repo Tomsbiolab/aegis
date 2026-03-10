@@ -856,5 +856,8 @@
     - __init__.py
     - **test_data/**
       - **features_output/**
+      - **input/**
+        - **annotation/**
+        - **fasta/**
   - **use_examples/**
     - extend_3_UTRs.py

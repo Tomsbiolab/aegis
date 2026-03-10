@@ -1,4 +1,4 @@
-name: Publish to PyPI and Docker Hub
+name: Publish to PyPI, Docker Hub and GHCR
 
 on:
   release:
@@ -7,8 +7,17 @@ on:
 jobs:
   release-assets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # --- PREPARE ---
+      # This step ensures the image name is lowercase for GHCR compatibility
+      - name: Prepare image name
+        run: |
+          echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       # --- PYTHON PUBLISH ---
       - name: Set up Python
@@ -24,18 +33,43 @@ jobs:
           python -m build
           twine upload dist/*
 
-      # --- DOCKER PUBLISH ---
+      # --- DOCKER and GHCR LOGINS ---
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
+      # --- BUILD AND PUSH ---
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title=AEGIS
+            org.opencontainers.image.description=AEGIS: Annotation Extraction Genomic Integration Suite
+            org.opencontainers.image.version=${{ github.event.release.tag_name }}
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/aegis:${{ github.event.release.tag_name }}
             ${{ secrets.DOCKERHUB_USERNAME }}/aegis:latest
+            ghcr.io/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+            ghcr.io/${{ env.IMAGE_NAME }}:latest
+
+      # --- UPDATE DOCKER HUB METADATA ---
+      - name: Update Docker Hub Description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/aegis
+          short-description: "AEGIS: Annotation Extraction Genomic Integration Suite"
+          readme-filepath: ./README.md

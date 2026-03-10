@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
+  <img src="https://github.com/Tomsbiolab/aegis/blob/main/images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
 </p>
 
 # AEGIS: Annotation Extraction Genomic Integration Suite
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python Version](https://img.shields.io/badge/python-3.7%2B-brightgreen.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.12.3%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
 [![PyPI version](https://img.shields.io/pypi/v/aegis-bio)](https://pypi.org/project/aegis-bio/)
 [![Docker Hub](https://img.shields.io/badge/docker-pull-blue)](https://hub.docker.com/r/tomsbiolab/aegis)
