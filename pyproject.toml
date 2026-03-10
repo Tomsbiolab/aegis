@@ -31,12 +31,9 @@ dependencies = [
     "scipy>=1.7.3",
     "tqdm>=4.67.1",
     "typer>=0.16.1",
-    "typing_extensions>=4.15.0"
+    "typing_extensions>=4.15.0",
+    "pytest>=8.4.1"
 ]
-
-[project.optional-dependencies]
-dev = ["pytest>=8.4.1"]
-
 
 [tool.setuptools]
 packages = ["aegis", "aegis.cli", "aegis.utils", "aegis.annotation_components"]
