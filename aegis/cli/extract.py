@@ -59,10 +59,10 @@ def main(
         - 'unique': Keep only one copy of each unique protein/CDS sequence across the entire output.""",
         callback=split_callback
     )] = "all,main",
-    rna_classes: Annotated[list[str], typer.Option(
+    rna_classes: Annotated[str, typer.Option(
         "-r", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback
-    )] = [],
+    )] = "",
     promoter_size: Annotated[int, typer.Option(
         "-ps", "--promoter-size", help=f"Size of the promoter region in base pairs (bp). Used only if 'promoter' is a selected feature."
     )] = 2000,

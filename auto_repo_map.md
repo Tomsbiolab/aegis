@@ -323,6 +323,7 @@
         - `def main(`
       - tidy_genome.py
         - `def main(`
+      - __init__.py
     - **utils/**
       - evalue.py
         - `def parse_evalue(e):`

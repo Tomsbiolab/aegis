@@ -3,6 +3,7 @@ import os
 import random
 import warnings
 
+from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
@@ -10,8 +11,8 @@ from ..genome import Genome
 
 def split_callback(value:str):
     if value:
-        return set([item.strip() for item in value.split(",")])
-    return set([])
+        return [item.strip() for item in value.split(",")]
+    return []
 
 app = typer.Typer(add_completion=False)
 @app.command()
@@ -25,10 +26,10 @@ def main(
     chr_cap: Annotated[int, typer.Option(
         "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s)."
     )] = 2,
-    chosen_chromosomes: Annotated[set[str], typer.Option(
-        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s)",
+    chosen_chromosomes: Annotated[str, typer.Option(
+        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s). Add them and separate them by commas e.g. --chromosomes 'chr1,chr3'.",
     callback=split_callback
-    )] = set(),
+    )] = "",
     gene_cap: Annotated[int, typer.Option(
         "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,
@@ -57,6 +58,7 @@ def main(
     """
     Obtain subsets of an annotation file, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
     """
+    chosen_chromosomes_set = set(chosen_chromosomes)
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -87,30 +89,30 @@ def main(
         a = Annotation(annotation_file, annotation_name, quiet=quiet)
         common_chromosomes = set(a.chrs)
 
-    if not chosen_chromosomes:
+    if not chosen_chromosomes_set:
         if chr_cap > len(common_chromosomes):
-            chosen_chromosomes = common_chromosomes.copy()
+            chosen_chromosomes_set = common_chromosomes.copy()
             if genome_file:
-                warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) common to both genome and annotation files. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
+                warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(chosen_chromosomes_set)}) common to both genome and annotation files. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
             else:
-                warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(common_chromosomes)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
+                warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(chosen_chromosomes_set)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
         elif chr_cap <= len(common_actual_chromosomes_minus_mt_chl):
-            chosen_chromosomes = set(random.sample(list(common_actual_chromosomes_minus_mt_chl), chr_cap))
+            chosen_chromosomes_set = set(random.sample(list(common_actual_chromosomes_minus_mt_chl), chr_cap))
         elif chr_cap <= len(common_actual_chromosomes):
-            chosen_chromosomes = set(random.sample(list(common_actual_chromosomes), chr_cap))
+            chosen_chromosomes_set = set(random.sample(list(common_actual_chromosomes), chr_cap))
         else:
-            chosen_chromosomes = set(random.sample(list(common_chromosomes), chr_cap))
+            chosen_chromosomes_set = set(random.sample(list(common_chromosomes), chr_cap))
 
-        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=min_genes, quiet=quiet)
+        chosen_chromosomes_set = a.subset(chosen_features=chosen_chromosomes_set, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=min_genes, quiet=quiet)
     
     else:
         # if chosen_chromosomes is selected min_genes parameter is ignored
-        chosen_chromosomes = a.subset(chosen_features=chosen_chromosomes, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0, quiet=quiet)
+        chosen_chromosomes_set = a.subset(chosen_features=chosen_chromosomes_set, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0, quiet=quiet)
 
     a.export.gff(custom_path=output_dir, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
     if genome_file:
-        g.subset(chosen_features=chosen_chromosomes, quiet=quiet)
+        g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)
         g.export(output_folder=output_dir, file=output_genome_file, quiet=quiet)
 
 if __name__ == "__main__":

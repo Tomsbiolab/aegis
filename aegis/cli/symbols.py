@@ -5,7 +5,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.command()
 def main(
@@ -52,7 +52,7 @@ def main(
     if output_file == "{annotation-name}_symbols.gff3":
         output_file = f"{annotation_name}_symbols.gff3"
 
-    annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file, quiet=quiet)
+    annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file)
 
     annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
     
