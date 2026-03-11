@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/Tomsbiolab/aegis/blob/main/images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/Tomsbiolab/aegis/main/images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
 </p>
 
 # AEGIS: Annotation Extraction Genomic Integration Suite
