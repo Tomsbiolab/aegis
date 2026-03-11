@@ -10,6 +10,7 @@ import subprocess
 
 from pathlib import Path
 from collections import Counter
+import gzip
 
 def pickle_load(file):
     f = open(file, "rb")
@@ -54,13 +55,24 @@ def run_command(working_directory: Path, command: list):
         raise
 
 
+def open_file(file_path, mode='r', encoding=None):
+    """
+    Transparently opens a file or a gzipped file, depending on the extension.
+    """
+    if str(file_path).endswith('.gz'):
+        if 'r' in mode and 'b' not in mode:
+            mode += 't'
+        return gzip.open(file_path, mode, encoding=encoding)
+    return open(file_path, mode, encoding=encoding)
+
+
 def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):
     """
     Tries several encodings to find the suitable one.
     """
     for enc in encodings:
         try:
-            with open(file_path, 'r', encoding=enc) as f:
+            with open_file(file_path, 'r', encoding=enc) as f:
                 f.readlines()
                 return enc
         except UnicodeDecodeError:

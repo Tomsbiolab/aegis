@@ -3,6 +3,7 @@ import re
 
 from ..conf import default_features, default_subfeatures
 from collections import OrderedDict
+from .misc import open_file
 
 def parse_gff_line(line):
     parts = line.strip().split("\t")
@@ -198,7 +199,7 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
     explicit_transcript_lines = []
 
     # PASS 1 — read file
-    with open(gtf_file, 'r', encoding=encoding) as infile:
+    with open_file(gtf_file, 'r', encoding=encoding) as infile:
         for line in infile:
             if line.startswith('#'):
                 if not line.startswith('##'):
@@ -267,7 +268,7 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                     inferred_genes[gene_id]['transcript_ids'][transcript_id] = True
 
     # PASS 2 — write GFF3
-    with open(gff3_file, 'w', encoding=encoding) as outfile:
+    with open_file(gff3_file, 'w', encoding=encoding) as outfile:
         outfile.write("##gff-version 3\n")
 
         for c in comments:
@@ -359,7 +360,7 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
     Detects if a file is likely GTF or GFF3 format.
     """
     try:
-        with open(file_path, 'r', encoding=encoding) as f:
+        with open_file(file_path, 'r', encoding=encoding) as f:
 
             i = 0
 

@@ -32,7 +32,7 @@ from .transcript import Transcript
 from .subfeatures import Exon, UTR
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes
-from .utils.misc import read_file_with_fallback
+from .utils.misc import read_file_with_fallback, open_file
 from .utils.gtf_gff import parse_gff_line, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
@@ -289,7 +289,7 @@ class Annotation():
 
         chromosomes_t = set()
 
-        with open(gff_file, encoding=encoding) as f:
+        with open_file(gff_file, encoding=encoding) as f:
 
             for line in f:
                 line = line.strip()

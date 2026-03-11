@@ -10,6 +10,8 @@ from os import system
 from Bio import SeqIO
 from pathlib import Path
 
+from aegis.utils.misc import open_file
+
 class Scaffold():
     mitochondria_suffixes = ["m", "M"]
     chloroplast_suffixes = ["c", "C"]
@@ -126,7 +128,7 @@ class Genome():
         self.equivalences = {}
 
         count = 0
-        with open (self.file, "r", encoding="utf-8") as handle:
+        with open_file(self.file, "r", encoding="utf-8") as handle:
             for record in SeqIO.parse(handle, "fasta"):
                 scaffold_id = record.id
                 count += 1
