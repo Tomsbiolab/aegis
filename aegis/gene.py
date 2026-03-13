@@ -83,7 +83,7 @@ class Gene(Feature):
         self.obtain_base_id(original=True)
 
 
-    def update(self):
+    def update(self, quiet:bool=False):
         self.update_size()
         self.sort_transcripts()
         self.coding = False
@@ -132,8 +132,8 @@ class Gene(Feature):
                     best_id = t.id
             if best_id:
                 self.transcripts[best_id].main = True
-        else:
-            print(f"Error: gene {self.id} has no transcripts annotated")
+        elif not quiet and not self.pseudogene:
+            print(f"Warning: gene {self.id} has no transcripts annotated")
 
         self.homogenise_exon_scores()
 

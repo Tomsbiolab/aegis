@@ -129,7 +129,7 @@
     - gene.py
       - `class Gene(Feature):`
       - `def __init__(self, pseudogene:bool, transposable:bool, feature_id:str,`
-      - `def update(self):`
+      - `def update(self, quiet:bool=False):`
       - `def obtain_base_id(self, original:bool=False):`
       - `def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):`
       - `def sort_transcripts(self):`
