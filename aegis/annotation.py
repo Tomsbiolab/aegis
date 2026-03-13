@@ -829,9 +829,9 @@ class Annotation():
 
                     if gene_parent not in self.chrs[ch]:
                         continue
-                    if self.chrs[ch][parent].start <= start:
+                    if self.chrs[ch][gene_parent].transcripts[parent].start <= start:
                         continue
-                    if self.chrs[ch][parent].end >= end:
+                    if self.chrs[ch][gene_parent].transcripts[parent].end >= end:
                         continue
 
                     found = True
@@ -913,7 +913,7 @@ class Annotation():
                         self.warnings["possible_policistronic_transcript"].add(t.id) 
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].add(t.id)
-                g.update()
+                g.update(quiet=quiet)
 
         if count > 0:
             progress_bar.update(count)

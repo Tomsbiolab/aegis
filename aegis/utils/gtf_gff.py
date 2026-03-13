@@ -107,7 +107,7 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
             elif key.lower() in {"parent", "parents", "derives_from"} or key.lower() in {"gene_id", "geneid", "transcript_id", "transcriptid"}:
                 mod_key = sys.intern("Parent")
                 parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
-            elif key.lower() == "alias":
+            elif key.lower() in {"alias", "gene_synonym"}:
                 mod_key = sys.intern("Alias")
                 parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
             elif key.lower() == "name":
