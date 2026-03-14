@@ -19,6 +19,7 @@ class AnnotationStats:
     Accessed via 'annotation_object.stats'.
     """
     data: dict
+    _annot: Annotation
 
     def __init__(self, annotation:Annotation):
         self._annot = annotation

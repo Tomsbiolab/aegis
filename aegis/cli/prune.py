@@ -68,7 +68,7 @@ def main(
         annotation.remove_genes(input_ids, override_rescue=True, quiet=quiet)
     
     else:
-        annotation.remove_transcripts(input_ids, quiet=quiet)
+        annotation.remove_transcripts(input_ids, remove_genes_accordingly=True, quiet=quiet)
 
     output_file += ".gff3"
     annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
