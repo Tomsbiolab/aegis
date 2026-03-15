@@ -1,0 +1,35 @@
+chr1	aegis	gene	1000	8000	.	+	.	ID=g1
+chr1	aegis	mRNA	1000	8000	.	+	.	ID=g1_mRNA1;Parent=g1
+chr1	aegis	exon	1000	4000	.	+	.	ID=exon1;Parent=g1_mRNA1
+chr1	aegis	exon	5000	8000	.	+	.	ID=exon2;Parent=g1_mRNA1
+chr1	aegis	CDS	1200	4000	.	+	0	ID=CDS1;Parent=g1_mRNA1
+chr1	aegis	CDS	500	6000	.	+	0	ID=CDS1;Parent=g1_mRNA1
+#
+chr2	aegis	gene	1000	8000	.	+	.	ID=g2
+chr2	aegis	mRNA	1000	8000	.	+	.	ID=g2_mRNA1;Parent=g2
+chr2	aegis	exon	1000	4000	.	+	.	ID=g2_exon1;Parent=g2_mRNA1
+chr2	aegis	exon	5000	8000	.	+	.	ID=g2_exon2;Parent=g2_mRNA1
+#
+chr7	aegis	gene	8500	9000	.	+	.	ID=g3
+#
+chr11	aegis	gene	10000	18000	.	+	.	ID=g5
+chr11	aegis	mRNA	10000	18000	.	+	.	ID=g5_mRNA1;Parent=g5
+chr11	aegis	exon	10000	14000	.	+	.	ID=g5_exon1;Parent=g5_mRNA1
+chr11	aegis	exon	15000	18000	.	+	.	ID=g5_exon2;Parent=g5_mRNA1
+chr11	aegis	CDS	12000	14000	.	+	0	ID=g5_CDS1;Parent=g5_mRNA1
+chr11	aegis	CDS	15000	17500	.	+	0	ID=g5_CDS1;Parent=g5_mRNA1
+#
+chr12	aegis	gene	10000	18000	.	+	.	ID=g4
+chr12	aegis	mRNA	10000	18000	.	+	.	ID=g4_mRNA1;Parent=g4
+chr12	aegis	exon	10000	14000	.	+	.	ID=g4_exon1;Parent=g4_mRNA1
+chr12	aegis	exon	15000	18000	.	+	.	ID=g4_exon2;Parent=g4_mRNA1
+chr12	aegis	CDS	12000	14000	.	+	0	ID=g4_CDS1;Parent=g4_mRNA1
+chr12	aegis	CDS	15000	17500	.	+	0	ID=g4_CDS1;Parent=g4_mRNA1
+#
+chr19	aegis	gene	1000	8000	.	+	.	ID=g40
+chr19	aegis	mRNA	1000	8000	.	+	.	ID=g40_mRNA1;Parent=g40
+chr19	aegis	exon	1000	4000	.	+	.	ID=g40_exon1;Parent=g40_mRNA1
+chr19	aegis	exon	5000	8000	.	+	.	ID=g40_exon2;Parent=g40_mRNA1
+chr19	aegis	CDS	1200	4000	.	+	0	ID=g40_CDS1;Parent=g40_mRNA1
+chr19	aegis	CDS	5000	7500	.	+	0	ID=g40_CDS1;Parent=g40_mRNA1
+#

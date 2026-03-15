@@ -1728,7 +1728,7 @@ class TestAnnotationClashOfIDs:
 # MicroRNA GFF3 files in human and Arabidopsis format
 # ============================================================
 
-class TestAnnotationMiRNAs:
+class TestAnnotationMerge:
     annot: Annotation
     def test_miRNA_human_format(self, miRNA_human_format_gff3_file):
         annot = Annotation(miRNA_human_format_gff3_file, quiet=True)
@@ -1776,3 +1776,38 @@ class TestAnnotationMiRNAs:
         assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].miRNAs[0].start == 1024077
         assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].miRNAs[0].end == 1024097
         
+
+# ============================================================
+# Testing different merging styles
+# ============================================================
+
+class TestAnnotationMiRNAs:
+    annot: Annotation
+    def test_merge_gff3(self, merge_gff3_file_1, merge_gff3_file_2):
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        assert len(annot.all_gene_ids) == 5
+        annot2 = Annotation(merge_gff3_file_2, quiet=True)
+        assert len(annot2.all_gene_ids) == 6
+
+        annot.merge(annot2, quiet=True)
+        assert len(annot.all_gene_ids) == 11
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, rename_clashing_ids=False, quiet=True)
+        assert len(annot.all_gene_ids) == 6
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_cds_overlap=0, max_exon_overlap=0, max_gene_overlap=0, quiet=True)
+        assert len(annot.all_gene_ids) == 7
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_cds_overlap=0, quiet=True)
+        assert len(annot.all_gene_ids) == 9
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_exon_overlap=50, quiet=True)
+        assert len(annot.all_gene_ids) == 9
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_gene_overlap=50, quiet=True)
+        assert len(annot.all_gene_ids) == 8

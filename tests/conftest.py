@@ -139,6 +139,16 @@ def miRNA_arabidopsis_format_gff3_file():
     """miRNA GFF3 file in Arabidopsis format."""
     return str(TEST_DATA_DIR / "input/annotation/miRNA_arabidopsis_format.gff3")
 
+@pytest.fixture
+def merge_gff3_file_1():
+    """GFF3 file with features that will merge differently depending on the parameters."""
+    return str(TEST_DATA_DIR / "input/annotation/for_merge_1.gff3")
+
+@pytest.fixture
+def merge_gff3_file_2():
+    """GFF3 file with features that will merge differently depending on the parameters."""
+    return str(TEST_DATA_DIR / "input/annotation/for_merge_2.gff3")
+
 
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/

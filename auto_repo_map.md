@@ -45,7 +45,7 @@
       - `def clear_aliases(self):`
       - `def CDS_to_CDS_segment_ids(self, override:bool=False):`
       - `def CDS_segment_to_CDS_ids(self, override:bool=False):`
-      - `def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):`
+      - `def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], rename_clashing_ids:bool=True, quiet:bool=False):`
       - `def remove_exons_with_unmatched_strand(self, remove_transcripts_accordingly:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False):`
       - `def detect_transcripts_with_no_exons(self, remove_transcripts:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False):`
       - `def remove_transcripts(self, to_remove:set, remove_genes_accordingly:bool=False,quiet:bool=False):`
@@ -361,6 +361,8 @@
   - **aegis_bio.egg-info/**
   - **aegis_output/**
     - **features/**
+  - **htmlcov/**
+    - coverage_html_cb_dd2e7eb5.js
   - **images/**
   - **notebook/**
   - **scripts/**
@@ -388,6 +390,8 @@
       - `def clash_of_ids_gff3_file():`
       - `def miRNA_human_format_gff3_file():`
       - `def miRNA_arabidopsis_format_gff3_file():`
+      - `def merge_gff3_file_1():`
+      - `def merge_gff3_file_2():`
       - `def sample_fasta_file():`
       - `def sample_feature():`
       - `def sample_gene():`
@@ -616,9 +620,11 @@
       - `def test_shared_parents_are_detected_with_overlapping_exons(self, shared_parents_gff3_file):`
       - `class TestAnnotationClashOfIDs:`
       - `def test_clash_of_ids_and_transcriptless_gene_removal(self, clash_of_ids_gff3_file):`
-      - `class TestAnnotationMiRNAs:`
+      - `class TestAnnotationMerge:`
       - `def test_miRNA_human_format(self, miRNA_human_format_gff3_file):`
       - `def test_miRNA_arabidopsis_format(self, miRNA_arabidopsis_format_gff3_file):`
+      - `class TestAnnotationMiRNAs:`
+      - `def test_merge_gff3(self, merge_gff3_file_1, merge_gff3_file_2):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py
