@@ -596,7 +596,7 @@ class TestAnnotationRemoveTranscripts:
     def test_remove_transcript_by_id(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         assert "mRNA_A" in annot.all_transcript_ids
-        annot.remove_transcripts(to_remove={"mRNA_A"}, quiet=True)
+        annot.remove_transcripts(to_remove={"mRNA_A"}, remove_genes_accordingly=True, quiet=True)
         # Removing the only transcript should also remove the parent gene
         assert "geneA" not in annot.all_gene_ids
 
@@ -604,7 +604,7 @@ class TestAnnotationRemoveTranscripts:
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            annot.remove_transcripts(to_remove={"fake_transcript"}, quiet=False)
+            annot.remove_transcripts(to_remove={"fake_transcript"}, remove_genes_accordingly=True, quiet=False)
             assert any("fake_transcript" in str(warning.message) for warning in w)
 
 
@@ -623,7 +623,7 @@ class TestAnnotationRemoveTranscriptsWithNoExons:
         original_t_count = len(gene.transcripts)
         assert original_t_count >= 2
 
-        annot.remove_transcripts_with_no_exons(quiet=True)
+        annot.detect_transcripts_with_no_exons(remove_transcripts=True, remove_genes_accordingly=True, quiet=True)
         gene = annot.chrs["chr1"]["gene1"]
         assert "emptyT" not in gene.transcripts
         assert "transcript_with_no_exons" in annot.warnings
@@ -681,7 +681,7 @@ class TestAnnotationFilterByRnaClass:
     def test_keep_only_mrna(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
         # geneR1 has mRNA + lnc_RNA; geneR3 has lnc_RNA only
-        annot.filter_by_rna_class(rna_classes=["mRNA"], quiet=True)
+        annot.filter_by_rna_class(rna_classes=["mRNA"], remove_genes_accordingly=True, quiet=True)
         # geneR3 (lnc_RNA only) should have been removed
         assert "geneR3" not in annot.all_gene_ids
         # geneR1 should keep only the mRNA transcript
@@ -691,7 +691,7 @@ class TestAnnotationFilterByRnaClass:
 
     def test_keep_lnc_rna(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
-        annot.filter_by_rna_class(rna_classes=["lnc_RNA"], quiet=True)
+        annot.filter_by_rna_class(rna_classes=["lnc_RNA"], remove_genes_accordingly=True, quiet=True)
         # geneR2 (mRNA only) should have been removed
         assert "geneR2" not in annot.all_gene_ids
         # geneR3 should still exist
@@ -1048,14 +1048,14 @@ class TestAnnotationRemoveGenesWithNoTranscripts:
         annot.chrs["chr1"]["emptyG"] = empty_gene
         annot.all_gene_ids["emptyG"] = "chr1"
 
-        annot.remove_genes_with_no_transcripts(quiet=True)
+        annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
         assert "emptyG" not in annot.chrs["chr1"]
         assert "gene_with_no_transcripts" in annot.warnings
         assert "emptyG" in annot.warnings["gene_with_no_transcripts"]
 
     def test_keeps_gene_with_transcripts(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.remove_genes_with_no_transcripts(quiet=True)
+        annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
         # gene1 has transcripts, so it should remain
         assert "gene1" in annot.chrs["chr1"]
 

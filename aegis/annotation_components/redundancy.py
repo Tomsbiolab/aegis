@@ -14,6 +14,7 @@ class AnnotationRedundancy:
     Component for handling redundancy removal for the Annotation class.
     Accessed via 'annotation_object.redundancy'.
     """
+    _annot: Annotation
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 

@@ -12,9 +12,9 @@ default_features["transcript"] = (["transcript", "transcript_region", "primary_t
 default_features["UTR"] = ["UTR", "three_prime_UTR", "five_prime_UTR", "five_prime_utr", "three_prime_utr"]
 default_features["exon"] = ["exon", "pseudogenic_exon"]
 default_features["CDS"] = ["CDS", "nucleotide_to_protein_match"]
-default_features["other_subfeature"] = ["miRNA"]
+default_features["miRNA"] = ["miRNA"]
 
-default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["other_subfeature"] + default_introns
+default_subfeatures = default_features["UTR"] + default_features["exon"] + default_features["CDS"] + default_codons + default_features["miRNA"] + default_introns
 
 default_features_r = {}
 for key, values in default_features.items():

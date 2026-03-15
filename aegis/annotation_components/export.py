@@ -20,6 +20,8 @@ class AnnotationExport:
     Component for handling export methods for the Annotation class.
     Accessed via 'annotation_object.export'.
     """
+    _annot: Annotation
+    
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 
@@ -748,7 +750,7 @@ class AnnotationExport:
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False):
+    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -821,7 +823,7 @@ class AnnotationExport:
                         if gene_1bp_feature:
                             continue
 
-                    f_out.write(g.print_gff(extra_attributes=extra_attributes, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                    f_out.write(g.print_gff(extra_attributes=extra_attributes, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                     if just_genes:
                         continue
@@ -831,29 +833,29 @@ class AnnotationExport:
                             if main_only:
                                 if not t.main:
                                     continue
-                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                             for e in t.exons:
-                                f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                             for m in t.miRNAs:
-                                f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                             for c in t.CDSs.values():
                                 if main_only:
                                     if not c.main:
                                         continue
                                 for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                                 if UTRs:
                                     if hasattr(c, "UTRs"):
                                         for u in c.UTRs:
-                                            f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                            f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                     else:
                                 
                         for t in g.transcripts.values():                                
-                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                         exons = []
                         for t in g.transcripts.values():
@@ -869,15 +871,17 @@ class AnnotationExport:
                                     unique_exons.append(exons[i])
 
                         for e in unique_exons:
-                            f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
-                        for m in t.miRNAs:
-                            f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
 
                         for t in g.transcripts.values():
+
                             for c in t.CDSs.values():
                                 for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+
+                            for m in t.miRNAs:
+                                f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if UTRs:
                             utrs = []
                             for t in g.transcripts.values():
@@ -894,7 +898,7 @@ class AnnotationExport:
                                         unique_utrs.append(utrs[i])
 
                             for u in unique_utrs:
-                                f_out.write(u.print_gff(featurecountsID=featurecountsID))
+                                f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                     if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
                         continue
@@ -907,7 +911,7 @@ class AnnotationExport:
                     for x, ft in enumerate(self._annot.atypical_features):
                         if x == 0:
                             f_out.write("###\n")
-                        f_out.write(ft.print_gff())
+                        f_out.write(ft.print_gff(clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if x == (len(self._annot.atypical_features) - 1):
                             continue
                         f_out.write("###\n")
@@ -916,7 +920,7 @@ class AnnotationExport:
                     for x, ft in enumerate(self._annot.orphaned_features):
                         if x == 0:
                             f_out.write("###\n")
-                        f_out.write(ft.print_gff())
+                        f_out.write(ft.print_gff(clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if x == (len(self._annot.orphaned_features) - 1):
                             continue
                         f_out.write("###\n")

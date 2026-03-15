@@ -95,8 +95,23 @@ def main(
     )] = False,
     standard_features: Annotated[bool, typer.Option(
         "--standard-features", help="Standardises feature names to the most common names, for instance 'transcript' or 'pseudotranscript' just become 'mRNA' for downstream tool compatibility."
+    )] = False,
+    remove_genes_with_no_transcripts: Annotated[bool, typer.Option(
+        "--remove-genes-with-no-transcripts", help="Removes genes with no transcripts."
+    )] = False,
+    remove_transcripts_with_no_exons: Annotated[bool, typer.Option(
+        "--remove-transcripts-with-no-exons", help="Removes transcripts with no exons."
+    )] = False,
+    keep_missing_transcript_parent_references: Annotated[bool, typer.Option(
+        "--keep-missing-transcript-parent-references", help="Keep parental references to missing transcripts. These are removed by default."
+    )] = False,
+    print_empty_attributes: Annotated[bool, typer.Option(
+        "--print-empty-attributes", help="Print empty attributes. These are normally skipped."
+    )] = False,
+    print_orphaned_features: Annotated[bool, typer.Option(
+        "--print-orphaned-features", help="Print orphaned features. Orphaned features are features which are not assigned to any gene, or genes which could not be incorporated into the annotation object. These are normally skipped."
     )] = False
-
+    
 ):
     """
     Cleans and reformats a GFF/GTF file to correct common formatting errors and improve compatibility with other bioinformatics tools.
@@ -106,6 +121,7 @@ def main(
 
     collapse_exons = not(no_collapse_exons)
     collapse_CDSs = not(no_collapse_CDSs)
+    remove_missing_transcript_parent_references = not(keep_missing_transcript_parent_references)
 
     if keep_original_subfeature_ids:
         rename_features = []
@@ -121,7 +137,7 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features, standardise_features=standard_features)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features, standardise_features=standard_features, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts, skip_orphaned_features=not(print_orphaned_features))
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
@@ -138,7 +154,7 @@ def main(
         annotation.filter_by_rna_class(rna_classes=features)
         clean_features = True
 
-    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes)
 
 if __name__ == "__main__":
     app()

@@ -152,28 +152,37 @@ class Feature():
             gc_count = self.seq.count('G') + self.seq.count('C')
             self.gc_content = round((gc_count / self.size), 2)
 
-    def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False):
+    def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):
 
-        parent_string = ",".join(self.parents)
-        temp_attributes = [f"ID={self.id}", f"Parent={parent_string}"]
+        temp_attributes = [f"ID={self.id}"]
+
+        if self.parents:
+            parent_string = ",".join(self.parents)
+            if parent_string or print_empty_attributes:
+                temp_attributes.append(f"Parent={parent_string}")
+
         if featurecountsID:
             temp_attributes.append(f"Gene_id={self.gene_id}")
 
         if symbols:
             symbol_string = ",".join(self.symbols)
-            temp_attributes.append(f"Symbol={symbol_string}")
+            if symbol_string or print_empty_attributes:
+                temp_attributes.append(f"Symbol={symbol_string}")
 
         if symbols_as_description:
             symbol_string = ",".join(self.symbols)
-            temp_attributes.append(f"Description={symbol_string}")
+            if symbol_string or print_empty_attributes:
+                temp_attributes.append(f"Description={symbol_string}")
 
         if names:
             name_string = ",".join(self.names)
-            temp_attributes.append(f"Name={name_string}")
+            if name_string or print_empty_attributes:
+                temp_attributes.append(f"Name={name_string}")
 
         if aliases:
             alias_string = ",".join(self.aliases)
-            temp_attributes.append(f"Alias={alias_string}")
+            if alias_string or print_empty_attributes:
+                temp_attributes.append(f"Alias={alias_string}")
 
         if not clean:
             temp_attributes.extend(self.misc_attributes)

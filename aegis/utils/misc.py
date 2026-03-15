@@ -3,6 +3,11 @@ Created on Thu Jan 19 15:26:49 2023
 
 @authors: David Navarro, Antonio Santiago
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Any, TextIO
 
 import pickle
 import re
@@ -55,15 +60,15 @@ def run_command(working_directory: Path, command: list):
         raise
 
 
-def open_file(file_path, mode='r', encoding=None):
+def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:
     """
-    Transparently opens a file or a gzipped file, depending on the extension.
+    Transparently opens a text file or a gzipped text file, depending on the extension.
     """
     if str(file_path).endswith('.gz'):
         if 'r' in mode and 'b' not in mode:
             mode += 't'
-        return gzip.open(file_path, mode, encoding=encoding)
-    return open(file_path, mode, encoding=encoding)
+        return gzip.open(file_path, mode, encoding=encoding) # type: ignore
+    return open(file_path, mode, encoding=encoding) # type: ignore
 
 
 def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):

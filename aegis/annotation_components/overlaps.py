@@ -20,6 +20,7 @@ class AnnotationOverlaps:
     Component for handling overlaps methods for the Annotation class.
     Accessed via 'annotation_object.overlaps'.
     """
+    _annot: Annotation
     def __init__(self, annotation:Annotation):
         self._annot = annotation
         self.self = []
