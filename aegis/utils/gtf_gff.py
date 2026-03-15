@@ -5,54 +5,53 @@ from ..conf import default_features, default_subfeatures
 from collections import OrderedDict
 from .misc import open_file
 
+ID_OR_PARENT_KEYS = {"gene_id", "geneid", "transcript_id", "transcriptid"}
+PARENT_KEYS = {"parent", "parents", "derives_from"}
+ALIAS_KEYS = {"alias", "gene_synonym"}
+
+INT_ID = sys.intern("ID")
+INT_PARENT = sys.intern("Parent")
+INT_ALIAS = sys.intern("Alias")
+INT_NAME = sys.intern("Name")
+INT_SYMBOL = sys.intern("Symbol")
+
 def parse_gff_line(line):
     parts = line.strip().split("\t")
 
     # Interning high-frequency strings
-
     source = sys.intern(parts[1])
     feature = sys.intern(parts[2])
     strand = sys.intern(parts[6])
     phase = sys.intern(parts[7])
 
-    if feature == "nucleotide_to_protein_match":
-        ch = sys.intern(parts[0].split(":")[0])
-    
-    else:
-        ch = sys.intern(parts[0])
+    ch = sys.intern(parts[0].split(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
 
-    if "pseudo" in feature:
-        pseudogene = True
-    else:
-        pseudogene = False
+    pseudogene = "pseudo" in feature
+    transposable = "transposable" in feature or "transposon" in feature
 
     start = int(parts[3])
     end = int(parts[4])
 
-    if start > end:
-        decreasing_coordinates = True
-        actual_start, actual_end = (int(parts[4]), int(parts[3]))
+    decreasing_coordinates = start > end
+    if decreasing_coordinates:
+        actual_start, actual_end = end, start
     else:
-        decreasing_coordinates = False
-        actual_start, actual_end = (start, end)
+        actual_start, actual_end = start, end
 
-    if "transposable" in feature or "transposon" in feature:
-        transposable = True
-    else:
-        transposable = False
-
-    transcript = False
-    gene = False
-    if feature in default_features["gene"]:
-        gene = True        
-    elif feature in default_features["transcript"]:
-        transcript = True
+    gene = feature in default_features["gene"]
+    transcript = feature in default_features["transcript"]
 
     attr_dict = parse_gff_attributes(parts[8], gene, transcript)
     
     if not transposable:
         if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
             transposable = True
+
+    entry_id = attr_dict.pop(INT_ID, "")
+    parents = attr_dict.pop(INT_PARENT, [])
+
+    if not entry_id and parents:
+        entry_id = f"{parents[0]}_{feature}_{actual_start}_{actual_end}"
 
     entry = {
         "ch": ch,
@@ -64,22 +63,12 @@ def parse_gff_line(line):
         "strand": strand,
         "phase": phase,
         "attributes": attr_dict,
-        "id": attr_dict.get("ID", ""),
-        "parents": attr_dict.get("Parent", []),
+        "id": entry_id,
+        "parents": parents,
         "pseudogene": pseudogene,
         "transposable": transposable,
         "decreasing_coordinates": decreasing_coordinates
     }
-
-    if "ID" in attr_dict:
-        del attr_dict["ID"]
-    if "Parent" in attr_dict:
-        del attr_dict["Parent"]
-
-    entry["attributes"] = attr_dict
-
-    if not entry["id"] and entry["parents"]:
-        entry["id"] = f"{entry['parents'][0]}_{feature}_{actual_start}_{actual_end}"
 
     return entry
 
@@ -92,33 +81,36 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     
     for p in attributes.split(";"):
         p = p.strip()
-        if not p: 
+        if not p or "=" not in p: 
             continue
 
-        if "=" in p:
-            key, val = p.split("=", 1)
+        key, val = p.split("=", 1)
+        key = key.strip()
+        val = val.strip()
 
-            key = key.strip()
-            val = val.strip()
+        lower_key = key.lower()
 
-            if key.lower() == "id" or gene and key.lower() in {"gene_id", "geneid"} or transcript and key.lower() in {"transcript_id", "transcriptid"}:
-                mod_key = sys.intern("ID")
-                parsed[mod_key] = val
-            elif key.lower() in {"parent", "parents", "derives_from"} or key.lower() in {"gene_id", "geneid", "transcript_id", "transcriptid"}:
-                mod_key = sys.intern("Parent")
-                parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
-            elif key.lower() in {"alias", "gene_synonym"}:
-                mod_key = sys.intern("Alias")
-                parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
-            elif key.lower() == "name":
-                mod_key = sys.intern("Name")
-                parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
-            elif key.lower() == "symbol":
-                mod_key = sys.intern("Symbol")
-                parsed[mod_key] = [x.strip() for x in val.split(",") if x.strip()]
-            else:
-                key = sys.intern(key)
-                parsed[key] = val
+        if lower_key == "id" or (gene and lower_key in {"gene_id", "geneid"}) or (transcript and lower_key in {"transcript_id", "transcriptid"}):
+            if INT_ID not in parsed:
+                parsed[INT_ID] = val
+                
+        elif lower_key in PARENT_KEYS or lower_key in ID_OR_PARENT_KEYS:
+            if INT_PARENT not in parsed:
+                parsed[INT_PARENT] = [x.strip() for x in val.split(",") if x.strip()]
+                
+        elif lower_key in ALIAS_KEYS:
+            if INT_ALIAS not in parsed:
+                parsed[INT_ALIAS] = [x.strip() for x in val.split(",") if x.strip()]
+                
+        elif lower_key == "name":
+            if INT_NAME not in parsed:
+                parsed[INT_NAME] = [x.strip() for x in val.split(",") if x.strip()]
+                
+        elif lower_key == "symbol":
+            parsed[INT_SYMBOL] = [x.strip() for x in val.split(",") if x.strip()]
+            
+        else:
+            parsed[sys.intern(key)] = val
 
     return parsed
 

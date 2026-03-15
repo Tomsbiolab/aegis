@@ -53,10 +53,11 @@ class Annotation():
     all_transcript_ids:dict[str, tuple[str, str]]
     _gene_info:dict[str, set[str]]
     _transcript_info:dict[str, set[str]]
+    _miRNA_info:set[str]
 
     chrs:dict[str, dict[str, Gene]]
     
-    bar_colors = ["31", "32", "33", "33", "33", "34"]
+    bar_colors = ["31", "32", "34", "33", "33", "33"]
 
     def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False):
         
@@ -187,7 +188,7 @@ class Annotation():
         self.errors = {key: set() for key in keys}
         
         keys = [
-            "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_other_subfeature", "decreasing_coordinates",
+            "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
             "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
             "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
             "possible_policistronic_transcript", "transcript_with_no_exons",
@@ -229,10 +230,16 @@ class Annotation():
 
         self._gene_info = {}
         self._transcript_info = {}
+        self._miRNA_info = set()
 
         batch_size = 5000
 
         for n, stage in enumerate(staging):
+
+            if len(staging[stage]) < batch_size:
+                corrected_batch_size = len(staging[stage])
+            else:
+                corrected_batch_size = batch_size
 
             progress_bar = tqdm(total=len(staging[stage]), disable=disable, bar_format=(
                 f'\033[1;{Annotation.bar_colors[n]}mAdding {stage}s:\033[0m '
@@ -243,7 +250,7 @@ class Annotation():
             count = 0
 
             for entry in staging[stage]:
-                if stage in ["UTR", "CDS", "exon", "other_subfeature"]:
+                if stage in {"UTR", "CDS", "miRNA", "exon"}:
                     self._add_subfeature(entry, ft_level=stage, infer_gene_and_transcript_from_subfeatures=infer_genes_from_subfeatures, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
                 elif stage == "transcript":
                     self._add_transcript(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, infer_gene_from_transcript=infer_genes_from_transcripts, skip_orphaned_features=skip_orphaned_features, quiet=quiet)
@@ -251,7 +258,7 @@ class Annotation():
                     self._add_gene(entry, rename_repeated_id=incorporate_and_rename_repeated_ids, quiet=quiet)
 
                 count += 1
-                if count >= batch_size:
+                if count >= corrected_batch_size:
                     progress_bar.update(count)
                     count = 0
 
@@ -264,6 +271,7 @@ class Annotation():
 
         del self._gene_info
         del self._transcript_info
+        del self._miRNA_info
         del staging
 
         gc.collect()
@@ -285,7 +293,7 @@ class Annotation():
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):
         
-        staging = {"gene": [], "transcript": [], "exon": [], "CDS": [], "UTR": [], "other_subfeature": []}
+        staging = {"gene": [], "transcript": [], "miRNA": [],"exon": [], "CDS": [], "UTR": []}
 
         chromosomes_t = set()
 
@@ -677,6 +685,7 @@ class Annotation():
                         self.chrs[ch][gene_parent].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", parents, attributes))
                     else:
                         self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", parents, attributes))
+                        self._miRNA_info.add(ID)
 
                 elif parent in self.all_gene_ids:
                     if self.all_gene_ids[parent] != ch:
@@ -708,6 +717,7 @@ class Annotation():
                                 self.chrs[ch][parent].transcripts[pseudo_t].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", [pseudo_t], attributes))
                             else:
                                 self.chrs[ch][parent].transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", [pseudo_t], attributes))
+                                self._miRNA_info.add(ID)
                         else:
                             if not skip_orphaned_features:
                                 self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", parents, attributes))
@@ -750,13 +760,21 @@ class Annotation():
                             elif ft_level == "UTR":
                                 self.chrs[ch][parent].transcripts[temp_id].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", [temp_id], attributes))
                             else:
-                                self.chrs[ch][parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", [temp_id], attributes))  
+                                self.chrs[ch][parent].transcripts[temp_id].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", [temp_id], attributes))
+                                self._miRNA_info.add(ID)  
                         elif len(self.chrs[ch][parent].transcripts) > 1:
                             if not quiet:
                                 print(f"{self.id} Error: {ft} subfeature {ID} references {parent} gene which is not a pseudogene and has multiple transcripts")
                             self.errors["subfeature_to_gene"].add(ID)
 
-                # parent not found within created genes or transcripts
+                # if parent an miRNA
+                elif parent in self._miRNA_info:
+                    if ft_level == "exon":
+                        continue
+                    else:
+                        print(f"Warning: {ft} subfeature {ID} references {parent} miRNA and this feature is not an exon.")
+
+                # parent not found within created genes or transcripts or miRNAs
                 else:
                     
                     if liftover_exception and self.liftover:
@@ -814,7 +832,8 @@ class Annotation():
                             elif ft_level == "UTR":
                                 self.chrs[ch][inferred_g_id].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", temp_parents, attributes))
                             else:
-                                self.chrs[ch][inferred_g_id].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", temp_parents, attributes)) 
+                                self.chrs[ch][inferred_g_id].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", temp_parents, attributes))
+                                self._miRNA_info.add(ID)
 
             # Cases where the transcript parent was repeated by id in the gff
             else:
