@@ -237,7 +237,7 @@
         - `def genes(self, verbose: bool = True, custom_path: str = ""):`
         - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter"):`
         - `def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):`
-        - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False):`
+        - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True):`
         - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):`
         - `def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
         - `def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
@@ -384,6 +384,10 @@
       - `def multiple_isoforms_gff3_file():`
       - `def subfeature_parent_is_gene_gff3_file():`
       - `def geneID_attribute_as_parent_gff3_file():`
+      - `def shared_parents_gff3_file():`
+      - `def clash_of_ids_gff3_file():`
+      - `def miRNA_human_format_gff3_file():`
+      - `def miRNA_arabidopsis_format_gff3_file():`
       - `def sample_fasta_file():`
       - `def sample_feature():`
       - `def sample_gene():`
@@ -608,6 +612,13 @@
       - `def test_transcripts_are_associated(self, geneID_attribute_as_parent_gff3_file):`
       - `def test_exons_are_parsed(self, geneID_attribute_as_parent_gff3_file):`
       - `def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):`
+      - `class TestAnnotationSharedExonParents:`
+      - `def test_shared_parents_are_detected_with_overlapping_exons(self, shared_parents_gff3_file):`
+      - `class TestAnnotationClashOfIDs:`
+      - `def test_clash_of_ids_and_transcriptless_gene_removal(self, clash_of_ids_gff3_file):`
+      - `class TestAnnotationMiRNAs:`
+      - `def test_miRNA_human_format(self, miRNA_human_format_gff3_file):`
+      - `def test_miRNA_arabidopsis_format(self, miRNA_arabidopsis_format_gff3_file):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py
@@ -864,6 +875,5 @@
       - **input/**
         - **annotation/**
         - **fasta/**
-      - **other/**
   - **use_examples/**
     - extend_3_UTRs.py

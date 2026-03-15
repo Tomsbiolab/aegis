@@ -770,7 +770,8 @@ class Annotation():
                 # if parent an miRNA
                 elif parent in self._miRNA_info:
                     if ft_level == "exon":
-                        continue
+                        if not skip_orphaned_features:
+                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", parents, attributes))
                     else:
                         print(f"Warning: {ft} subfeature {ID} references {parent} miRNA and this feature is not an exon.")
 

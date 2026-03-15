@@ -750,7 +750,7 @@ class AnnotationExport:
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False):
+    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -837,8 +837,9 @@ class AnnotationExport:
                             for e in t.exons:
                                 f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
-                            for m in t.miRNAs:
-                                f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                            if miRNAs:
+                                for m in t.miRNAs:
+                                    f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                             for c in t.CDSs.values():
                                 if main_only:
@@ -880,8 +881,9 @@ class AnnotationExport:
                                 for c_seg in c.CDS_segments:
                                     f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
-                            for m in t.miRNAs:
-                                f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                            if miRNAs:
+                                for m in t.miRNAs:
+                                    f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if UTRs:
                             utrs = []
                             for t in g.transcripts.values():
