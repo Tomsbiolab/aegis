@@ -118,6 +118,37 @@ def geneID_attribute_as_parent_gff3_file():
     """GFF3 without gene features and with geneID rather than Parent."""
     return str(TEST_DATA_DIR / "input/annotation/geneID_attribute_as_parent.gff3")
 
+@pytest.fixture
+def shared_parents_gff3_file():
+    """GFF3 with exons that should share parents but are neither named uniformly nor sharing any parents."""
+    return str(TEST_DATA_DIR / "input/annotation/shared_parents_plus_negative_strand.gff3")
+
+
+@pytest.fixture
+def clash_of_ids_gff3_file():
+    """ID clashes at the gene and transcript level of different styles."""
+    return str(TEST_DATA_DIR / "input/annotation/clash_of_ids.gff3")
+
+@pytest.fixture
+def miRNA_human_format_gff3_file():
+    """miRNA GFF3 file in human format."""
+    return str(TEST_DATA_DIR / "input/annotation/miRNA_human_format.gff3")
+
+@pytest.fixture
+def miRNA_arabidopsis_format_gff3_file():
+    """miRNA GFF3 file in Arabidopsis format."""
+    return str(TEST_DATA_DIR / "input/annotation/miRNA_arabidopsis_format.gff3")
+
+@pytest.fixture
+def merge_gff3_file_1():
+    """GFF3 file with features that will merge differently depending on the parameters."""
+    return str(TEST_DATA_DIR / "input/annotation/for_merge_1.gff3")
+
+@pytest.fixture
+def merge_gff3_file_2():
+    """GFF3 file with features that will merge differently depending on the parameters."""
+    return str(TEST_DATA_DIR / "input/annotation/for_merge_2.gff3")
+
 
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/

@@ -770,7 +770,8 @@ class Annotation():
                 # if parent an miRNA
                 elif parent in self._miRNA_info:
                     if ft_level == "exon":
-                        continue
+                        if not skip_orphaned_features:
+                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", parents, attributes))
                     else:
                         print(f"Warning: {ft} subfeature {ID} references {parent} miRNA and this feature is not an exon.")
 
@@ -862,9 +863,7 @@ class Annotation():
                     elif ft_level == "UTR":
                         self.chrs[ch][gene_parent].transcripts[parent].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, ".", [parent], attributes))
                     else:
-                        self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", [parent], attributes)) 
-
-                    break
+                        self.chrs[ch][gene_parent].transcripts[parent].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, ".", [parent], attributes))
 
                 if not found and not quiet:
                     print(f"{self.id} Error: {ID} {ft} feature could not be assigned to any transcript. Possibly due to unforseen id clash issue")
@@ -1508,13 +1507,17 @@ class Annotation():
                             for cs in c.CDS_segments:
                                 cs.id = c.id
 
-    def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], quiet:bool=False):
+    def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], rename_clashing_ids:bool=True, quiet:bool=False):
         """
         Priority is given to self annotation
         """
         start_time = time.time()
         self.update(quiet=quiet)
         other.update(quiet=quiet)
+
+        if rename_clashing_ids:
+            features_to_rename.extend(["transcript", "CDS", "exon", "UTR"])
+            features_to_rename = list(set(features_to_rename))
 
         if max_cds_overlap != 100 or max_exon_overlap != 100 or max_gene_overlap != 100:
             self.overlaps.detect(other, quiet=quiet)
@@ -1556,12 +1559,16 @@ class Annotation():
                     progress_bar.update(1)
                     count = 0
                     temp_id = g.id
-                    while temp_id in self.all_gene_ids:
-                        count += 1
-                        temp_id = f"{g.id}_{count}"
-                    self.chrs[chr][temp_id] = g.copy()
-                    self.chrs[chr][temp_id].id = temp_id
-                    self.all_gene_ids[temp_id] = chr
+                    if rename_clashing_ids:
+                        while temp_id in self.all_gene_ids:
+                            count += 1
+                            temp_id = f"{g.id}_{count}"
+
+                    if temp_id not in self.chrs[chr]:
+                        self.chrs[chr][temp_id] = g.copy()
+                        self.chrs[chr][temp_id].id = temp_id
+                        self.all_gene_ids[temp_id] = chr
+                        
 
         else:
             for chr, genes in other.chrs.items():
@@ -1572,12 +1579,14 @@ class Annotation():
                     count = 0
                     if g.overlaps["other"] == []:
                         temp_id = g.id
-                        while temp_id in self.all_gene_ids:
-                            count += 1
-                            temp_id = f"{g.id}_{count}"
-                        self.chrs[chr][temp_id] = g.copy()
-                        self.chrs[chr][temp_id].id = temp_id
-                        self.all_gene_ids[temp_id] = chr
+                        if rename_clashing_ids:
+                            while temp_id in self.all_gene_ids:
+                                count += 1
+                                temp_id = f"{g.id}_{count}"
+                        if temp_id not in self.chrs[chr]:
+                            self.chrs[chr][temp_id] = g.copy()
+                            self.chrs[chr][temp_id].id = temp_id
+                            self.all_gene_ids[temp_id] = chr
                     else:
                         cds_scores = [0]
                         exon_scores = [0]
@@ -1598,30 +1607,36 @@ class Annotation():
                         if check_cdss:
                             if max(cds_scores) <= max_cds_overlap and max(exon_scores) <= max_exon_overlap and max(gene_scores) <= max_gene_overlap:
                                 temp_id = g.id
-                                while temp_id in self.all_gene_ids:
-                                    count += 1
-                                    temp_id = f"{g.id}_{count}"
-                                self.chrs[chr][temp_id] = g.copy()
-                                self.chrs[chr][temp_id].id = temp_id
-                                self.all_gene_ids[temp_id] = chr
+                                if rename_clashing_ids:
+                                    while temp_id in self.all_gene_ids:
+                                        count += 1
+                                        temp_id = f"{g.id}_{count}"
+                                if temp_id not in self.chrs[chr]:
+                                    self.chrs[chr][temp_id] = g.copy()
+                                    self.chrs[chr][temp_id].id = temp_id
+                                    self.all_gene_ids[temp_id] = chr
                         
                         elif check_exons:
                             if max(exon_scores) <= max_exon_overlap and max(gene_scores) <= max_gene_overlap:
                                 temp_id = g.id
-                                while temp_id in self.all_gene_ids:
-                                    count += 1
-                                    temp_id = f"{g.id}_{count}"
-                                self.chrs[chr][temp_id] = g.copy()
-                                self.chrs[chr][temp_id].id = temp_id
+                                if rename_clashing_ids:
+                                    while temp_id in self.all_gene_ids:
+                                        count += 1
+                                        temp_id = f"{g.id}_{count}"
+                                if temp_id not in self.chrs[chr]:
+                                    self.chrs[chr][temp_id] = g.copy()
+                                    self.chrs[chr][temp_id].id = temp_id
                                 self.all_gene_ids[temp_id] = chr
 
                         elif max(gene_scores) <= max_gene_overlap:
                             temp_id = g.id
-                            while temp_id in self.all_gene_ids:
-                                count += 1
-                                temp_id = f"{g.id}_{count}"
-                            self.chrs[chr][temp_id] = g.copy()
-                            self.chrs[chr][temp_id].id = temp_id
+                            if rename_clashing_ids:
+                                while temp_id in self.all_gene_ids:
+                                    count += 1
+                                    temp_id = f"{g.id}_{count}"
+                            if temp_id not in self.chrs[chr]:
+                                self.chrs[chr][temp_id] = g.copy()
+                                self.chrs[chr][temp_id].id = temp_id
                             self.all_gene_ids[temp_id] = chr
 
         self.merged = True
