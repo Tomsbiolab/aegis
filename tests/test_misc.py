@@ -14,7 +14,7 @@ from aegis.utils.genefunctions import (
 )
 
 from aegis.feature import Feature
-from aegis.utils.gtf_gff import parse_gff_line, parse_gff_attributes
+from aegis.utils.gtf_gff import parse_gff_parts, parse_gff_attributes
 from aegis.utils.misc import count_occurrences, find_all_occurrences
 
 
@@ -52,7 +52,7 @@ class TestParseGffAttributes:
 
 
 # ============================================================
-# parse_gff_line
+# parse_gff_parts
 # ============================================================
 
 class TestParseGffLine:
@@ -66,39 +66,51 @@ class TestParseGffLine:
         return lines[index]
 
     def test_basic_parsing(self):
-        entry = parse_gff_line(self._read_line(0))  # gene line
-        assert entry["ch"] == "chr1"
-        assert entry["source"] == "aegis"
-        assert entry["feature"] == "gene"
-        assert entry["start"] == 1000
-        assert entry["end"] == 5000
-        assert entry["strand"] == "+"
-        assert entry["id"] == "gene1"
-        assert entry["pseudogene"] is False
-        assert entry["transposable"] is False
-        assert entry["decreasing_coordinates"] is False
+        line = self._read_line(0)
+        line = line.strip().split("\t")
+        entry = parse_gff_parts(line)
+        assert entry.ch == "chr1"
+        assert entry.source == "aegis"
+        assert entry.feature == "gene"
+        assert entry.start == 1000
+        assert entry.end == 5000
+        assert entry.strand == "+"
+        assert entry.id == "gene1"
+        assert entry.pseudogene is False
+        assert entry.transposable is False
+        assert entry.decreasing_coordinates is False
 
     def test_pseudogene_detected(self):
-        entry = parse_gff_line(self._read_line(1))  # pseudogene line
-        assert entry["pseudogene"] is True
+        line = self._read_line(1)
+        line = line.strip().split("\t")
+        entry = parse_gff_parts(line)
+        assert entry.pseudogene is True
 
     def test_transposable_by_feature(self):
-        entry = parse_gff_line(self._read_line(2))  # transposable_element_gene line
-        assert entry["transposable"] is True
+        line = self._read_line(2)
+        line = line.strip().split("\t")
+        entry = parse_gff_parts(line)
+        assert entry.transposable is True
 
     def test_transposable_by_attribute(self):
-        entry = parse_gff_line(self._read_line(3))  # gene with transposable=True attribute
-        assert entry["transposable"] is True
+        line = self._read_line(3)
+        line = line.strip().split("\t")
+        entry = parse_gff_parts(line)
+        assert entry.transposable is True
 
     def test_decreasing_coordinates_swapped(self):
-        entry = parse_gff_line(self._read_line(4))  # gene with start > end
-        assert entry["decreasing_coordinates"] is True
-        assert entry["start"] == 1000
-        assert entry["end"] == 5000
+        line = self._read_line(4)
+        line = line.strip().split("\t")
+        entry = parse_gff_parts(line)
+        assert entry.decreasing_coordinates is True
+        assert entry.start == 1000
+        assert entry.end == 5000
 
     def test_multi_parent(self):
-        entry = parse_gff_line(self._read_line(5))  # exon with two parents
-        assert entry["parents"] == ["mRNA1", "mRNA2"]
+        line = self._read_line(5)
+        line = line.strip().split("\t")
+        entry = parse_gff_parts(line)
+        assert entry.parents == ["mRNA1", "mRNA2"]
 
 
 

@@ -234,7 +234,6 @@ class CDS(Feature):
 
 class Exon(Feature):
 
-
     def __init__(self, feature_id:str, ch:str, source:str, feature:str,
                  strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[], 
                  attributes:dict={}):

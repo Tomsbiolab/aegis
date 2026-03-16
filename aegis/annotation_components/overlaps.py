@@ -54,7 +54,15 @@ class AnnotationOverlaps:
             if other != None:
                 other.overlaps.clear()
 
+        for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.overlaps = {"self" : [], "other" : []}
+
         if other != None:
+
+            for genes in other.chrs.values():
+                for g in genes.values():
+                    g.overlaps = {"self" : [], "other" : []}
 
             if self._annot.genome == other.genome:
 
@@ -270,6 +278,7 @@ class AnnotationOverlaps:
                 print(f"Did not generate overlaps between {other.id} and {self._annot.id} annotations as they are associated to different genomes")
 
         else:
+
             if self.self != []:
                 print("There are already detected 'self' gene overlaps, please run 'self.clear()' if you want to recalculate them")
             else:
@@ -501,12 +510,14 @@ class AnnotationOverlaps:
             self.self = []
             for genes in self._annot.chrs.values():
                 for g in genes.values():
-                    g.overlaps["self"] = []
+                    if g.overlaps is not None:
+                        g.overlaps["self"] = []
         if not keep_other:
             self.other = []
             for genes in self._annot.chrs.values():
                 for g in genes.values():
-                    g.overlaps["other"] = []
+                    if g.overlaps is not None:
+                        g.overlaps["other"] = []
 
     def add_qualitative_info(self, quiet:bool=True):
         """

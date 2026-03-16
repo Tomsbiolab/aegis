@@ -3,9 +3,12 @@ import re
 
 from ..conf import default_features, default_subfeatures
 from collections import OrderedDict
+from dataclasses import dataclass
 from .misc import open_file
 
-ID_OR_PARENT_KEYS = {"gene_id", "geneid", "transcript_id", "transcriptid"}
+ALT_ID_gene = {"gene_id", "geneid"}
+ALT_ID_transcript = {"transcript_id", "transcriptid"}
+ID_OR_PARENT_KEYS = ALT_ID_gene.union(ALT_ID_transcript)
 PARENT_KEYS = {"parent", "parents", "derives_from"}
 ALIAS_KEYS = {"alias", "gene_synonym"}
 
@@ -15,8 +18,34 @@ INT_ALIAS = sys.intern("Alias")
 INT_NAME = sys.intern("Name")
 INT_SYMBOL = sys.intern("Symbol")
 
-def parse_gff_line(line):
-    parts = line.strip().split("\t")
+MAPPED_ATTRIBUTES = {
+    "parent": INT_PARENT,
+    "parents": INT_PARENT,
+    "derives_from": INT_PARENT,
+    "alias": INT_ALIAS,
+    "gene_synonym": INT_ALIAS,
+    "name": INT_NAME,
+    "symbol": INT_SYMBOL,
+}
+
+@dataclass(slots=True)
+class GffEntry:
+    ch: str
+    source: str
+    feature: str
+    start: int
+    end: int
+    score: str
+    strand: str
+    phase: str
+    attributes: dict[str, str]
+    id: str
+    parents: list[str]
+    pseudogene: bool
+    transposable: bool
+    decreasing_coordinates: bool
+
+def parse_gff_parts(parts):
 
     # Interning high-frequency strings
     source = sys.intern(parts[1])
@@ -24,7 +53,7 @@ def parse_gff_line(line):
     strand = sys.intern(parts[6])
     phase = sys.intern(parts[7])
 
-    ch = sys.intern(parts[0].split(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
+    ch = sys.intern(parts[0].partition(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
 
     pseudogene = "pseudo" in feature
     transposable = "transposable" in feature or "transposon" in feature
@@ -53,24 +82,22 @@ def parse_gff_line(line):
     if not entry_id and parents:
         entry_id = f"{parents[0]}_{feature}_{actual_start}_{actual_end}"
 
-    entry = {
-        "ch": ch,
-        "source": source,
-        "feature": feature,
-        "start": actual_start,
-        "end": actual_end,
-        "score": parts[5],
-        "strand": strand,
-        "phase": phase,
-        "attributes": attr_dict,
-        "id": entry_id,
-        "parents": parents,
-        "pseudogene": pseudogene,
-        "transposable": transposable,
-        "decreasing_coordinates": decreasing_coordinates
-    }
-
-    return entry
+    return GffEntry(
+        ch=ch,
+        source=source,
+        feature=feature,
+        start=actual_start,
+        end=actual_end,
+        score=parts[5],
+        strand=strand,
+        phase=phase,
+        attributes=attr_dict,
+        id=entry_id,
+        parents=parents,
+        pseudogene=pseudogene,
+        transposable=transposable,
+        decreasing_coordinates=decreasing_coordinates
+    )
 
 def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
@@ -80,37 +107,42 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     parsed = {}
     
     for p in attributes.split(";"):
-        p = p.strip()
-        if not p or "=" not in p: 
-            continue
 
-        key, val = p.split("=", 1)
+        key, sep, val = p.partition("=")
+        if not sep: # Means '=' was not found
+            continue
+        
         key = key.strip()
         val = val.strip()
 
         lower_key = key.lower()
 
-        if lower_key == "id" or (gene and lower_key in {"gene_id", "geneid"}) or (transcript and lower_key in {"transcript_id", "transcriptid"}):
+        if lower_key == "id":
             if INT_ID not in parsed:
                 parsed[INT_ID] = val
-                
-        elif lower_key in PARENT_KEYS or lower_key in ID_OR_PARENT_KEYS:
+            continue
+            
+        # Promote gene_id/transcript_id ONLY if correct feature type and ID is missing
+        if (gene and lower_key in ALT_ID_gene) or (transcript and lower_key in ALT_ID_transcript):
+            if INT_ID not in parsed:
+                parsed[INT_ID] = val
+            continue
+
+        # --- Priority 2: Mapped logic (Parents, Names, Symbols, etc.) ---
+        if lower_key in MAPPED_ATTRIBUTES:
+            target_key = MAPPED_ATTRIBUTES[lower_key]
+            if target_key not in parsed:
+                parsed[target_key] = [x.strip() for x in val.split(",") if x.strip()]
+            continue
+            
+        # Handle the "ID_OR_PARENT" fallback logic (e.g. gene_id as Parent)
+        if lower_key in ID_OR_PARENT_KEYS:
             if INT_PARENT not in parsed:
                 parsed[INT_PARENT] = [x.strip() for x in val.split(",") if x.strip()]
-                
-        elif lower_key in ALIAS_KEYS:
-            if INT_ALIAS not in parsed:
-                parsed[INT_ALIAS] = [x.strip() for x in val.split(",") if x.strip()]
-                
-        elif lower_key == "name":
-            if INT_NAME not in parsed:
-                parsed[INT_NAME] = [x.strip() for x in val.split(",") if x.strip()]
-                
-        elif lower_key == "symbol":
-            parsed[INT_SYMBOL] = [x.strip() for x in val.split(",") if x.strip()]
-            
-        else:
-            parsed[sys.intern(key)] = val
+            continue
+
+        # Otherwise, it's a normal attribute
+        parsed[sys.intern(key)] = val
 
     return parsed
 
