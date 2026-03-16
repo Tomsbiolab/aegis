@@ -206,7 +206,7 @@ class TestAnnotationSmallGFF3:
         gene = annot.chrs["chr1"]["gene1"]
         assert len(gene.transcripts) >= 1
         t = list(gene.transcripts.values())[0]
-        assert "gene1" in t.parents
+        assert "gene1" in t.parents # type: ignore
 
     def test_multi_gene_gff3(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
@@ -932,9 +932,9 @@ class TestAnnotationClearGeneNamesAndSymbols:
         gene.synonyms = ["Syn1"]
 
         annot.clear_gene_names_and_symbols(quiet=True)
-        assert gene.names == []
-        assert gene.symbols == []
-        assert gene.synonyms == []
+        assert gene.names is None
+        assert gene.symbols is None
+        assert gene.synonyms is None
 
 
 # ============================================================
@@ -1225,7 +1225,8 @@ class TestCDSOnlyGFF3:
     def test_two_introns_generated(self, cds_only_gff3_file):
         annot = Annotation(cds_only_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
-        assert len(t.introns) == 2
+        annot.generate_introns()
+        assert len(t.introns) == 2 # type: ignore
 
     def test_gene_coordinates_corrected(self, cds_only_gff3_file):
         """Gene coordinates are corrected to match the actual subfeature span"""
@@ -1262,7 +1263,8 @@ class TestNoSubfeaturesGFF3:
     def test_no_introns(self, no_subfeatures_gff3_file):
         annot = Annotation(no_subfeatures_gff3_file, quiet=True)
         t1 = annot.chrs["chr1"]["gene_ns1"].transcripts["mRNA_ns1"]
-        assert len(t1.introns) == 0
+        annot.generate_introns()
+        assert len(t1.introns) == 0 # type: ignore
 
     def test_minus_strand_transcript(self, no_subfeatures_gff3_file):
         annot = Annotation(no_subfeatures_gff3_file, quiet=True)
@@ -1383,7 +1385,8 @@ class TestOverlappingExonsGFF3:
     def test_one_intron_after_collapse(self, overlapping_exons_gff3_file):
         annot = Annotation(overlapping_exons_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
-        assert len(t.introns) == 1
+        annot.generate_introns()
+        assert len(t.introns) == 1 # type: ignore
 
     def test_cds_segments_collapsed(self, overlapping_exons_gff3_file):
         """3 CDS input segments (2 overlapping) -> 2 collapsed CDS segments"""

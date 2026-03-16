@@ -28,7 +28,7 @@ def make_gene(**overrides):
         attributes={"Name": ["TestGene"]}
     )
     defaults.update(overrides)
-    return Gene(**defaults)
+    return Gene(**defaults) # type: ignore
 
 
 def make_transcript(feature_id="mRNA1", start=100, end=2000, **overrides):
@@ -45,7 +45,7 @@ def make_transcript(feature_id="mRNA1", start=100, end=2000, **overrides):
         parents=["gene001"]
     )
     defaults.update(overrides)
-    return Transcript(**defaults)
+    return Transcript(**defaults) # type: ignore
 
 
 # ============================================================

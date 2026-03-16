@@ -29,18 +29,24 @@ class Feature():
         'misc_attributes', 'extra_copy', 'masked_fraction', 'coding'
     )
 
-    gtf_attributes: list[str]
+    gtf_attributes: list[str]|None
     size: int
     start: int
     end: int
-    parents:list[str]
-    misc_attributes:list[str]
+    parents:list[str]|None
+    misc_attributes:None|list[str]
     seqs: list[str]
     hard_seqs: list[str]
     id_number: int|None
     original_id_number: int|None
     gene_id: str|None
     temp_attributes: list[str]
+    descriptors:list|None
+    synonyms:list|None
+    aliases:list|None
+    blast_hits:list|None
+    names:list|None
+    symbols:list|None
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
@@ -59,25 +65,27 @@ class Feature():
         self.frame = "."
         self.coding = False
         self.gene_id = None
-        self.parents = parents[:]
+        if parents:
+            self.parents = parents[:]
+        else:
+            self.parents = None
        
-        self.gtf_attributes = []
+        self.gtf_attributes = None
         self.size = (self.end - self.start) + 1
         self.seq = ""
         self.hard_seq = ""
-        self.names = []
-        self.symbols = []
-        self.descriptors = []
-        self.processes = []
-        self.synonyms = []
+        self.names = None
+        self.symbols = None
+        self.descriptors = None
+        self.synonyms = None
         self.gc_content = 0
-        self.aliases = []
-        self.blast_hits = []
+        self.aliases = None
+        self.blast_hits = None
         self.renamed = False
         self.id_number = None
         self.original_id_number = None
 
-        self.misc_attributes = []
+        self.misc_attributes = None
 
         self.extra_copy = False
 
@@ -96,10 +104,14 @@ class Feature():
                 value = int(value.strip())
                 if value > 0:
                     self.extra_copy = True
+                if self.misc_attributes is None:
+                    self.misc_attributes = []
                 self.misc_attributes.append(f"{key}={value}")
-            elif key.lower in Feature.attributes_to_ignore_when_reading_gff:
+            elif key.lower() in Feature.attributes_to_ignore_when_reading_gff:
                 continue
             else:
+                if self.misc_attributes is None:
+                    self.misc_attributes = []
                 self.misc_attributes.append(f"{key}={value}")
 
         self.update_numbering(original=True)
@@ -161,30 +173,30 @@ class Feature():
             if parent_string or print_empty_attributes:
                 temp_attributes.append(f"Parent={parent_string}")
 
-        if featurecountsID:
+        if featurecountsID and self.gene_id is not None:
             temp_attributes.append(f"Gene_id={self.gene_id}")
 
-        if symbols:
+        if symbols and self.symbols is not None:
             symbol_string = ",".join(self.symbols)
             if symbol_string or print_empty_attributes:
                 temp_attributes.append(f"Symbol={symbol_string}")
 
-        if symbols_as_description:
+        if symbols_as_description and self.symbols is not None:
             symbol_string = ",".join(self.symbols)
             if symbol_string or print_empty_attributes:
                 temp_attributes.append(f"Description={symbol_string}")
 
-        if names:
+        if names and self.names is not None:
             name_string = ",".join(self.names)
             if name_string or print_empty_attributes:
                 temp_attributes.append(f"Name={name_string}")
 
-        if aliases:
+        if aliases and self.aliases is not None:
             alias_string = ",".join(self.aliases)
             if alias_string or print_empty_attributes:
                 temp_attributes.append(f"Alias={alias_string}")
 
-        if not clean:
+        if not clean and self.misc_attributes is not None:
             temp_attributes.extend(self.misc_attributes)
 
         attribute_string = ";".join(temp_attributes)
@@ -192,7 +204,7 @@ class Feature():
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
 
     def print_gtf(self):
-        attribute_string = "; ".join(self.gtf_attributes)
+        attribute_string = "; ".join(self.gtf_attributes) # type: ignore
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
     
     def copy(self):

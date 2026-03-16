@@ -33,7 +33,7 @@ class Gene(Feature):
     old_next_gene:str|None|bool
     conserved_synteny:bool|None
     alternative_transcript_rescue:list
-    overlaps:dict[str, list[OverlapHit]]
+    overlaps:dict[str, list[OverlapHit]]|None
     
     def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
                  ch:str, source:str, feature:str, strand:str,
@@ -56,7 +56,7 @@ class Gene(Feature):
         self.coding = False
         self.noncoding = False
 
-        self.overlaps = {"self" : [], "other" : []}
+        self.overlaps = None
 
         self.remove = False
         self.rescue = False
@@ -576,28 +576,37 @@ class Gene(Feature):
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 
         temp_attributes = [f"ID={self.id}"]
+        if print_empty_attributes:
+            if self.symbols is None:
+                self.symbols = []
+            if self.names is None:
+                self.names = []
+            if self.aliases is None:
+                self.aliases = []
+            if self.misc_attributes is None:
+                self.misc_attributes = []
 
-        if symbols:
+        if symbols and self.symbols is not None:
             symbol_string = ",".join(self.symbols)
             if symbol_string or print_empty_attributes:
                 temp_attributes.append(f"Symbol={symbol_string}")
 
-        if symbols_as_description:
+        if symbols_as_description and self.symbols is not None:
             symbol_string = ",".join(self.symbols)
             if symbol_string or print_empty_attributes:
                 temp_attributes.append(f"Description={symbol_string}")
 
-        if names:
+        if names and self.names is not None:
             name_string = ",".join(self.names)
             if name_string or print_empty_attributes:
                 temp_attributes.append(f"Name={name_string}")
 
-        if aliases:
+        if aliases and self.aliases is not None:
             alias_string = ",".join(self.aliases)
             if alias_string or print_empty_attributes:
                 temp_attributes.append(f"Alias={alias_string}")
 
-        if not clean:
+        if not clean and self.misc_attributes is not None:
             temp_attributes.extend(self.misc_attributes)
 
         if self.pseudogene:
@@ -611,8 +620,9 @@ class Gene(Feature):
             temp_attributes.append(f"remove={self.remove}")
             temp_attributes.append(f"rescue={self.rescue}")
             blasts = []
-            for b in self.blast_hits:
-                blasts.append(f"{b.source}_{b.score}")
+            if self.blast_hits is not None:
+                for b in self.blast_hits:
+                    blasts.append(f"{b.source}_{b.score}")
             blasts = ",".join(blasts)
             if blasts:
                 temp_attributes.append(f"blasts={blasts}")
@@ -620,9 +630,10 @@ class Gene(Feature):
             if alternative_transcript_rescue:
                 temp_attributes.append(f"alternative_transcript_rescue={alternative_transcript_rescue}")
             overlaps = []
-            for o in self.overlaps["self"]:
-                if o.score >= 5:
-                    overlaps.append(o.id)
+            if self.overlaps is not None:
+                for o in self.overlaps["self"]:
+                    if o.score >= 5:
+                        overlaps.append(o.id)
             overlaps = ",".join(overlaps)
             if overlaps:
                 temp_attributes.append(f"CDS_orientated_overlaps={overlaps}")
@@ -660,9 +671,9 @@ class Gene(Feature):
 
 
     def __str__(self):
-        if self.symbols != []:
+        if self.symbols:
             return f"{self.id}: {self.symbols}"
-        elif self.names != []:
+        elif self.names:
             return f"{self.id}: {self.names}"
         else:
             return f"{self.id}"

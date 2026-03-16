@@ -53,11 +53,15 @@ class AnnotationStats:
         for genes in self._annot.chrs.values():
             gene_objects += len(genes)
             for g in genes.values():
-                for o in g.overlaps["self"]:
-                    unique_gene_ids_in_overlaps.add(o.id)
+                if g.overlaps is not None:
+                    for o in g.overlaps["self"]:
+                        unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
     def update(self, custom_path:str="", export:bool=False, genome:Genome|None=None, max_x:int|None=None, quiet:bool=True):
+
+        self._annot.update_features(quiet=quiet)
+        self._annot.generate_introns()
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
         if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:

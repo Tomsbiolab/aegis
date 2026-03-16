@@ -22,7 +22,7 @@ class Transcript(Feature):
 
     CDSs: dict[str, CDS]
     exons: list[Exon]
-    introns: list[Intron]
+    introns: list[Intron]| None
     UTRs: list[UTR]
     temp_CDSs: list[CDS|Feature]
     temp_UTRs: list[UTR]
@@ -43,6 +43,7 @@ class Transcript(Feature):
         self.renamed_exons = False
         self.renamed_utrs = False
         self.polycistronic = "no"
+        self.introns = None
 
         self.collapsed_exons = False
         self.collapsed_CDS_segments = False
@@ -63,7 +64,6 @@ class Transcript(Feature):
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
 
         self.update_size()
-        self.generate_introns()
 
         CDS_size = 0
 
@@ -257,8 +257,6 @@ class Transcript(Feature):
         for c in self.CDSs.values():
             c.clear_UTRs()
         self.temp_UTRs = []
-        self.exons = []
-        self.update()
 
     def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):
         """
@@ -514,7 +512,7 @@ class Transcript(Feature):
                             temp_id = self.temp_CDSs[0].id
                         else:
                             temp_id = self.temp_CDSs[-1].id
-                        self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
+                        self.CDSs[temp_id] = CDS(self.temp_CDSs, temp_id, 
                                                 self.temp_CDSs[0].ch, 
                                                 self.temp_CDSs[0].source, 
                                                 self.temp_CDSs[0].feature,
@@ -539,7 +537,7 @@ class Transcript(Feature):
                             else:
                                 CDS_temp[c.id].append(c)
                         for c_id, segments in CDS_temp.items():
-                            self.CDSs[c_id] = CDS(segments.copy(), c_id, segments[0].ch,
+                            self.CDSs[c_id] = CDS(segments, c_id, segments[0].ch,
                                             segments[0].source, segments[0].feature,
                                             segments[0].strand, segments[0].start,
                                             segments[-1].end, segments[0].score,
@@ -566,7 +564,7 @@ class Transcript(Feature):
                         temp_id = self.temp_CDSs[0].id
                     else:
                         temp_id = self.temp_CDSs[-1].id
-                    self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
+                    self.CDSs[temp_id] = CDS(self.temp_CDSs, temp_id, 
                                             self.temp_CDSs[0].ch, 
                                             self.temp_CDSs[0].source, 
                                             self.temp_CDSs[0].feature,
@@ -621,7 +619,7 @@ class Transcript(Feature):
         if hasattr(self, "temp_UTRs"):
             self.temp_UTRs.sort()
             for c in self.CDSs.values():
-                c.UTRs = self.temp_UTRs.copy()
+                c.UTRs = self.temp_UTRs
             del self.temp_UTRs
 
     def generate_UTRs(self):
@@ -692,9 +690,9 @@ class Transcript(Feature):
         for c in self.CDSs.values():
             if c.main:
                 for cs in c.CDS_segments:
-                    temp_fts.append(cs.copy())
+                    temp_fts.append(cs)
                 for u in c.UTRs:
-                    temp_fts.append(u.copy())
+                    temp_fts.append(u)
 
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
@@ -736,8 +734,9 @@ class Transcript(Feature):
         for exon in self.exons:
             exon.generate_sequence(genome)
         if not low_memory:
-            for intron in self.introns:
-                intron.generate_sequence(genome)
+            if self.introns is not None:
+                for intron in self.introns:
+                    intron.generate_sequence(genome)
             if hasattr(self, "promoter"):
                 self.promoter.generate_sequence(genome)
         self.seq = ""
@@ -758,8 +757,9 @@ class Transcript(Feature):
         for exon in self.exons:
             exon.generate_hard_sequence(hard_masked_genome)
         if not low_memory:
-            for intron in self.introns:
-                intron.generate_hard_sequence(hard_masked_genome)
+            if self.introns is not None:
+                for intron in self.introns:
+                    intron.generate_hard_sequence(hard_masked_genome)
             if hasattr(self, "promoter"):
                 self.promoter.generate_hard_sequence(hard_masked_genome)
         self.hard_seq = ""
@@ -782,7 +782,7 @@ class Transcript(Feature):
             self.promoter.hard_seq = ""
         for exon in self.exons:
             exon.clear_sequence(just_hard=just_hard)
-        if hasattr(self, "introns"):
+        if self.introns is not None:
             for intron in self.introns:
                 intron.clear_sequence(just_hard=just_hard)        
 
