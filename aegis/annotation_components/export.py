@@ -87,7 +87,7 @@ class AnnotationExport:
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, readthrough:str = "both"):
+    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, readthrough:str = "both", use_name_not_id: bool = False):
         """
         Main proteins means only proteins obtained from the main CDSs of the
         main transcripts. This equates to one protein per gene.
@@ -108,8 +108,10 @@ class AnnotationExport:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_proteins"
 
@@ -386,7 +388,7 @@ class AnnotationExport:
         if not quiet:
             print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
 
-    def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):
+    def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -408,7 +410,10 @@ class AnnotationExport:
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
 
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_CDSs"
 
@@ -504,7 +509,7 @@ class AnnotationExport:
                         f_out.write(f"\n{c.seq}\n")
 
 
-    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False):
+    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False):
         """
         Main means only main transcript sequences are exported.
 
@@ -523,7 +528,10 @@ class AnnotationExport:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_transcripts"
 
@@ -594,14 +602,17 @@ class AnnotationExport:
                             f_out.write(f"|{t.strand}|{t.ch}|{t.start}:{t.end}")
                         f_out.write(f"\n{t.seq}\n")
 
-    def genes(self, verbose: bool = True, custom_path: str = ""):
+    def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False):
         if custom_path:
             output_file = Path(custom_path)
         else:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_genes"
 
@@ -618,7 +629,7 @@ class AnnotationExport:
                             f_out.write(f"|{g.strand}|{g.ch}|{g.start}:{g.end}")
                         f_out.write(f"\n{g.seq}\n")
 
-    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard"):
+    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False):
         """
 
         Verbose will include promoter type, strand, chromosome, and coordinates.
@@ -630,7 +641,10 @@ class AnnotationExport:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_promoters"
 
