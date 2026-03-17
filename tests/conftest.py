@@ -177,7 +177,6 @@ def sample_feature():
         start=100,
         end=500,
         score=".",
-        phase=".",
         attributes={"Name": ["TestFeature"], "Alias": ["TF1"]}
     )
 
@@ -197,6 +196,5 @@ def sample_gene():
         start=100,
         end=2000,
         score=".",
-        phase=".",
         attributes={"Name": ["TestGene"]}
     )

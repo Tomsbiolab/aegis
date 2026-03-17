@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..annotation import Annotation
-    from ..genome import Genome
 
 import pandas as pd
 
@@ -25,18 +24,13 @@ class AnnotationStats:
         self._annot = annotation
         self.data = {}
 
-    def calculate_transcript_masking(self, hard_masked_genome:Genome):
+    def calculate_transcript_masking(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                g.generate_hard_sequence(hard_masked_genome)
                 for t in g.transcripts.values():
-                    t.generate_hard_sequence(hard_masked_genome)
                     t.calculate_masking()
-                    t.clear_sequence(just_hard=True)
                     for c in t.CDSs.values():
-                        c.generate_hard_sequence(hard_masked_genome)
                         c.calculate_masking()
-                        c.clear_sequence(just_hard=True)
         self._annot.update()
     
     def calculate_gc_content(self):
@@ -58,16 +52,16 @@ class AnnotationStats:
                         unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
-    def update(self, custom_path:str="", export:bool=False, genome:Genome|None=None, max_x:int|None=None, quiet:bool=True):
+    def update(self, custom_path:str="", export:bool=False, max_x:int|None=None, quiet:bool=True):
 
         self._annot.update_features(quiet=quiet)
         self._annot.generate_introns()
         if not quiet:
             print(f"\nUpdating stats for {self._annot.id}")
-        if not self._annot.generated_all_sequences or not self._annot.contains_protein_sequences:
-            if genome != None:
-                self._annot.generate_sequences(genome, quiet=quiet)
-                self._annot.clear_sequences(keep_proteins=True)
+
+        if not self._annot.contains_protein_sequences:
+            if self._annot.genome is not None:
+                self._annot.generate_proteins(readthrough="both")
 
         self.calculate_gc_content()
 
@@ -80,7 +74,7 @@ class AnnotationStats:
 
         self.data = {"mean_transcripts" : [], "mean_exons" : [], "mean_exon_size" : [], "mean_gene_size" : [], "mean_intron_size" : [], "mean_CDS_size" : [], "mean_UTR_size" : [], "mean_transcript_size" : [], "mean_five_prime_UTR_size" : [], "mean_three_prime_UTR_size" : []}
 
-        if genome != None:
+        if self._annot.genome is not None:
             self.data["mean_protein_size"] = []
 
         for key in to_tally:
@@ -98,7 +92,7 @@ class AnnotationStats:
                 self.data["mean_gene_size"].append(g.size)
                 for t in g.transcripts.values():
                     if t.main:
-                        if hasattr(t, "introns"):
+                        if t.introns:
                             for i in t.introns:
                                 self.data["mean_intron_size"].append(i.size)
 
@@ -127,7 +121,7 @@ class AnnotationStats:
                                         self.data["mean_UTR_size"].append(u_size)
                                         self.data["mean_five_prime_UTR_size"].append(u5_size)
                                         self.data["mean_three_prime_UTR_size"].append(u3_size)
-                                    if genome is not None and c.protein is not None:
+                                    if self._annot.genome is not None and c.protein is not None:
                                         self.data["mean_protein_size"].append(c.protein.size)
                             self.data["coding_genes"].append(g.id)
                         else:
@@ -149,7 +143,7 @@ class AnnotationStats:
                         tag += "s"
                     barplot(self.data[key], export_folder, f"{self._annot.id}{self._annot.feature_suffix}_{tag}", f"Distribution of {self._annot.id} {tag}", max_x)   
 
-        if genome != None:
+        if self._annot.genome is not None:
             self.data["CDSs_without_stop"] = []
             self.data["CDSs_with_stop"] = []
             self.data["intron_composition"] = set()
@@ -169,13 +163,13 @@ class AnnotationStats:
                                                 self.data["CDSs_without_stop"].append(g.id)
                                             else:
                                                 self.data["CDSs_with_stop"].append(g.id)
-                                            
-                            for i in t.introns:
-                                self.data["intron_composition"].add(i.boundary)
-                                if i.canonical:
-                                    intron_stats[f"intron-exon boundary: {i.boundary}"] += 1
-                                else:
-                                    intron_stats["other_intron_seqs"] += 1
+                            if t.introns:
+                                for i in t.introns:
+                                    self.data["intron_composition"].add(i.boundary)
+                                    if i.canonical:
+                                        intron_stats[f"intron-exon boundary: {i.boundary}"] += 1
+                                    else:
+                                        intron_stats["other_intron_seqs"] += 1
             self.data["intron_composition"] = list(self.data["intron_composition"])
 
             if export:
@@ -202,7 +196,7 @@ class AnnotationStats:
                 self.data[key] = len(self.data[key])
 
         if export:
-            if genome != None:
+            if self._annot.genome is not None:
                 out_file = f"{self._annot.id}{self._annot.feature_suffix}_full_stats.csv"
             else:
                 out_file = f"{self._annot.id}{self._annot.feature_suffix}_basic_stats.csv"

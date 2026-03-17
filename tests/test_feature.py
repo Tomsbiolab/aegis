@@ -22,11 +22,10 @@ def make_feature(**overrides):
         start=100,
         end=500,
         score=".",
-        phase=".",
         attributes={"Name":["TestFeature"], "Alias": ["TF1", "TF2"], "Symbol": ["TFS"]}
     )
     defaults.update(overrides)
-    return Feature(**defaults)
+    return Feature(**defaults) # type: ignore
 
 
 # ============================================================
@@ -51,16 +50,16 @@ class TestFeatureInit:
 
     def test_names_parsed(self):
         f = make_feature()
-        assert "TestFeature" in f.names
+        assert "TestFeature" in f.names # type: ignore
 
     def test_aliases_parsed(self):
         f = make_feature()
-        assert "TF1" in f.aliases
-        assert "TF2" in f.aliases
+        assert "TF1" in f.aliases # type: ignore
+        assert "TF2" in f.aliases # type: ignore
 
     def test_symbols_parsed(self):
         f = make_feature()
-        assert "TFS" in f.symbols
+        assert "TFS" in f.symbols # type: ignore
 
     def test_id_number_extraction(self):
         f = make_feature(feature_id="gene123")
@@ -75,8 +74,8 @@ class TestFeatureInit:
         f = make_feature(feature_id="feat01", attributes={"Name": ["Test"]}, parents=["mRNA1"])
         # feature_id arg is used for self.id, dict is converted to attributes list
         assert f.id == "feat01"
-        assert "mRNA1" in f.parents
-        assert "Test" in f.names
+        assert "mRNA1" in f.parents # type: ignore
+        assert "Test" in f.names # type: ignore
 
     def test_misc_attributes_collected(self):
         f = make_feature(feature_id="feat1", attributes={"Dbxref": "GeneID:12345", "custom": "value"})
@@ -111,34 +110,6 @@ class TestFeatureMethods:
     def test_str(self):
         f = make_feature()
         assert str(f) == "feat001"
-
-    def test_calculate_gc_content(self):
-        f = make_feature(start=1, end=10)
-        f.seq = "GGCCAATTGG"  # 6 GC out of 10
-        f.calculate_gc_content()
-        assert f.gc_content == 0.6
-
-    def test_calculate_gc_content_empty_seq(self):
-        f = make_feature()
-        f.seq = ""
-        f.calculate_gc_content()
-        assert f.gc_content == 0
-
-    def test_clear_sequence(self):
-        f = make_feature()
-        f.seq = "ATGC"
-        f.hard_seq = "ATGC"
-        f.clear_sequence()
-        assert f.seq == ""
-        assert f.hard_seq == ""
-
-    def test_clear_sequence_just_hard(self):
-        f = make_feature()
-        f.seq = "ATGC"
-        f.hard_seq = "NNNN"
-        f.clear_sequence(just_hard=True)
-        assert f.seq == "ATGC"  # preserved
-        assert f.hard_seq == ""
 
 
 # ============================================================
@@ -190,11 +161,3 @@ class TestFeatureComparisons:
         f1 = make_feature(strand="+")
         f2 = make_feature(strand="-")
         assert not f1.equal_sequence(f2)
-
-    def test_longer(self):
-        f1 = make_feature()
-        f1.seq = "ATGCATGC"
-        f2 = make_feature()
-        f2.seq = "ATGC"
-        assert f1.longer(f2) is True
-        assert f2.longer(f1) is False

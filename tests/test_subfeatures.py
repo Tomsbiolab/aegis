@@ -12,7 +12,7 @@ from aegis.feature import Feature
 # Helpers
 # ============================================================
 
-def make_feature_segment(feature_id="seg1", start=100, end=300, phase="0"):
+def make_feature_segment(feature_id="seg1", start=100, end=300):
     """Create a Feature segment to use as a CDS segment."""
     return Feature(
         feature_id=feature_id,
@@ -23,7 +23,6 @@ def make_feature_segment(feature_id="seg1", start=100, end=300, phase="0"):
         start=start,
         end=end,
         score=".",
-        phase=phase,
         parents=["mRNA1"]
     )
 
@@ -31,8 +30,8 @@ def make_feature_segment(feature_id="seg1", start=100, end=300, phase="0"):
 def make_cds(segments=None, feature_id="cds1"):
     if segments is None:
         segments = [
-            make_feature_segment("seg1", 1200, 2000, "0"),
-            make_feature_segment("seg2", 3000, 4500, "0"),
+            make_feature_segment("seg1", 1200, 2000),
+            make_feature_segment("seg2", 3000, 4500),
         ]
     first = segments[0]
     last = segments[-1]
@@ -46,7 +45,6 @@ def make_cds(segments=None, feature_id="cds1"):
         start=first.start,
         end=last.end,
         score=".",
-        phase="0",
         parents=["mRNA1"]
     )
 
@@ -72,13 +70,14 @@ class TestCDS:
 
     def test_update_phase(self):
         segments = [
-            make_feature_segment("s1", 100, 400, "0"),
-            make_feature_segment("s2", 500, 700, "."),
+            make_feature_segment("s1", 100, 400),
+            make_feature_segment("s2", 500, 700),
         ]
         cds = make_cds(segments=segments)
+        cds.phase = None
         cds.update_phase()
         # Phase of second segment should be computed
-        assert cds.CDS_segments[1].phase != "."
+        assert cds.CDS_segments[1].phase is not None
 
     def test_equal_segments_same(self):
         cds1 = make_cds()
@@ -93,13 +92,11 @@ class TestCDS:
     def test_clear_utrs(self):
         cds = make_cds()
         # Set up UTR state first so clear_UTRs has something to delete
-        cds.UTRs = {"utr1": "test"}
-        cds.five_prime_UTR_seq = "ATGC"
-        cds.three_prime_UTR_seq = "TTTT"
+        cds.UTRs = ["utr1", "utr2"] # type: ignore
+        cds.full_UTR_exons = 2
         cds.clear_UTRs()
-        assert not hasattr(cds, 'UTRs')
-        assert cds.five_prime_UTR_seq == ""
-        assert cds.three_prime_UTR_seq == ""
+        assert cds.UTRs == []
+        assert cds.full_UTR_exons == 0
 
 
 # ============================================================
@@ -117,7 +114,6 @@ class TestExon:
             start=1000,
             end=2000,
             score=".",
-            phase=".",
             parents=["mRNA1"]
         )
         assert e.id == "exon1"
@@ -140,7 +136,6 @@ class TestUTR:
             start=4501,
             end=5000,
             score=".",
-            phase=".",
             parents=["mRNA1"]
         )
         assert u.prime == "3'"
@@ -155,7 +150,6 @@ class TestUTR:
             start=1000,
             end=1199,
             score=".",
-            phase=".",
             parents=["mRNA1"]
         )
         assert u.size == 200
@@ -177,15 +171,10 @@ class TestIntron:
             start=2001,
             end=2999,
             score=".",
-            phase=".",
             parents=["mRNA1"]
         )
         assert i.id == "intron1"
         assert i.intra_coding is False
-        assert i.boundary == ""
-        assert i.canonical is False
-        assert i.splice_site_donor == ""
-        assert i.splice_site_acceptor == ""
 
     def test_size(self):
         i = Intron(
@@ -196,8 +185,7 @@ class TestIntron:
             strand="+",
             start=2001,
             end=2999,
-            score=".",
-            phase="."
+            score="."
         )
         assert i.size == 999
 
@@ -210,7 +198,6 @@ class TestIntron:
             strand="+",
             start=2001,
             end=2999,
-            score=".",
-            phase="."
+            score="."
         )
         assert isinstance(i, Feature)

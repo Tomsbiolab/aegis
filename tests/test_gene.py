@@ -24,7 +24,6 @@ def make_gene(**overrides):
         start=100,
         end=2000,
         score=".",
-        phase=".",
         attributes={"Name": ["TestGene"]}
     )
     defaults.update(overrides)
@@ -41,7 +40,6 @@ def make_transcript(feature_id="mRNA1", start=100, end=2000, **overrides):
         start=start,
         end=end,
         score=".",
-        phase=".",
         parents=["gene001"]
     )
     defaults.update(overrides)

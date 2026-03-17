@@ -9,6 +9,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
+from ..feature import Feature
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -180,7 +181,7 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, quiet=quiet))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[n], annot_file_path=annotation_file, quiet=quiet))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
@@ -248,10 +249,11 @@ def main(
 
             del a_lifton
 
-        a.generate_sequences(genomes[n], quiet=quiet)
+        Feature._ACTIVE_GENOME = a.genome
+
         a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
         a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
-        a.clear_sequences(quiet=quiet)
+        a.clear_proteins()
 
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 

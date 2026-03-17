@@ -135,11 +135,6 @@ def main(
     genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
 
-    if "promoter" in features:
-        annotation.generate_promoters(genome, promoter_size=promoter_size, promoter_type=promoter_type)
-
-    annotation.generate_sequences(genome, quiet=quiet)
-
     if "gene" in features:
 
         annotation.export.genes(custom_path=output_dir, verbose=detailed_headers)
@@ -208,9 +203,9 @@ def main(
             used_id = "promoter"
 
         if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
-            annotation.export.promoters(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
+            annotation.export.promoters(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
         else:
-            annotation.export.promoters(custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
+            annotation.export.promoters(custom_path=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
 
 if __name__ == "__main__":
     app()

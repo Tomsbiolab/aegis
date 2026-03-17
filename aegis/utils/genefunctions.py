@@ -18,15 +18,13 @@ import warnings
 
 from pathlib import Path
 from Bio.Data import CodonTable
-from Bio.Seq import Seq
 
+_STR_FROM = "ACGTRYSWKMBDHVNX-"
+_STR_TO   = "TGCAYRSWMKVHDBNX-"
+_BYTES_COMP_TABLE = bytes.maketrans(_STR_FROM.encode(), _STR_TO.encode())
 
-def reverse_complement(in_seq) -> str:
-    in_seq = Seq(in_seq)
-    out_seq = str(in_seq.reverse_complement())
-        
-    return out_seq
-
+def reverse_complement(in_seq: str) -> str:
+    return in_seq.encode('ascii').translate(_BYTES_COMP_TABLE)[::-1].decode('ascii')
 
 def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:
     orfs = []

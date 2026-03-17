@@ -26,11 +26,10 @@ def make_transcript(**overrides):
         start=1000,
         end=5000,
         score=".",
-        phase=".",
         parents=["gene1"]
     )
     defaults.update(overrides)
-    return Transcript(**defaults)
+    return Transcript(**defaults) # type: ignore
 
 
 def make_exon(feature_id, start, end, **overrides):
@@ -43,11 +42,10 @@ def make_exon(feature_id, start, end, **overrides):
         start=start,
         end=end,
         score=".",
-        phase=".",
         parents=["mRNA1"]
     )
     defaults.update(overrides)
-    return Exon(**defaults)
+    return Exon(**defaults) # type: ignore
 
 
 # ============================================================
@@ -240,9 +238,9 @@ class TestTranscriptRenameExons:
 class TestTranscriptRenameUTRs:
     def test_rename_utrs_basic(self):
         t = make_transcript()
-        c = CDS([], "cds1", "chr1", "aegis", "CDS", "+", 1000, 2000, ".", ".")
-        u1 = UTR("utr1", "chr1", "aegis", "UTR", "+", 1000, 1500, ".", ".")
-        u2 = UTR("utr2", "chr1", "aegis", "UTR", "+", 1800, 2000, ".", ".")
+        c = CDS([], "cds1", "chr1", "aegis", "CDS", "+", 1000, 2000, ".")
+        u1 = UTR("utr1", "chr1", "aegis", "UTR", "+", 1000, 1500, ".")
+        u2 = UTR("utr2", "chr1", "aegis", "UTR", "+", 1800, 2000, ".")
         c.UTRs = [u1, u2]
         t.CDSs = {"cds1": c}
         
@@ -268,57 +266,12 @@ class TestTranscriptSequences:
         gene = self.annotation.chrs["chr1"]["gene1"]
         self.transcript = gene.transcripts["mRNA1"]
 
-    def test_generate_sequence(self):
-        """Generate sequence from transcript and exons."""
-        self.transcript.generate_sequence(self.genome, low_memory=True)
-
-        expected = "".join(exon.seq for exon in self.transcript.exons)
-        assert self.transcript.seq == expected
-        assert len(self.transcript.seq) == 3002  # 1001 + 2001
-
-    def test_generate_hard_sequence(self):
-        """Generate hard masked sequence from transcript and exons."""
-        self.transcript.generate_hard_sequence(self.genome, low_memory=True)
-
-        expected = "".join(exon.hard_seq for exon in self.transcript.exons)
-        assert self.transcript.hard_seq == expected
-
-    def test_clear_sequence(self):
-        """Clear sequence from transcript and exons."""
-        self.transcript.generate_sequence(self.genome, low_memory=True)
-        self.transcript.generate_hard_sequence(self.genome, low_memory=True)
-        assert self.transcript.seq != ""
-        assert self.transcript.hard_seq != ""
-
-        self.transcript.clear_sequence(just_hard=False)
-
-        assert self.transcript.seq == ""
-        assert self.transcript.hard_seq == ""
-        for exon in self.transcript.exons:
-            assert exon.seq == ""
-
-    def test_clear_sequence_just_hard(self):
-        """Clear hard masked sequence from transcript and exons."""
-        self.transcript.generate_sequence(self.genome, low_memory=True)
-        self.transcript.generate_hard_sequence(self.genome, low_memory=True)
-
-        self.transcript.clear_sequence(just_hard=True)
-
-        assert self.transcript.hard_seq == ""
-        assert self.transcript.seq != ""
-
 
 # ============================================================
 # Proteins & CDSs
 # ============================================================
 
 class TestTranscriptProteinAndCDS:
-    def test_generate_best_protein_plus(self):
-        t = make_transcript(strand="+")
-
-        t.seq = "ATGGCC"
-        t.generate_best_protein(None, must_have_stop=False)
-        assert t.protein_seq == "MA"
         
     def test_generate_CDSs_based_on_ORF_plus_single(self):
         # Create a transcript with a single exon

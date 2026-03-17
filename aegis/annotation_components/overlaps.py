@@ -55,14 +55,16 @@ class AnnotationOverlaps:
                 other.overlaps.clear()
 
         for genes in self._annot.chrs.values():
-                for g in genes.values():
+            for g in genes.values():
+                if not g.overlaps:
                     g.overlaps = {"self" : [], "other" : []}
 
         if other != None:
 
             for genes in other.chrs.values():
                 for g in genes.values():
-                    g.overlaps = {"self" : [], "other" : []}
+                    if not g.overlaps:
+                        g.overlaps = {"self" : [], "other" : []}
 
             if self._annot.genome == other.genome:
 
@@ -496,10 +498,13 @@ class AnnotationOverlaps:
         for chr, genes in self._annot.chrs.items():
             G = nx.Graph()
             for g in genes.values():
+                overlaps = []
                 if self_mode:
-                    overlaps = g.overlaps["self"]
+                    if g.overlaps is not None:
+                        overlaps = g.overlaps["self"]
                 else:
-                    overlaps = g.overlaps["other"]
+                    if g.overlaps is not None:
+                        overlaps = g.overlaps["other"]
                 for o in overlaps:
                     G.add_edge(g.id, o.id)
             self.networks[chr] = list(nx.connected_components(G))
@@ -543,6 +548,8 @@ class AnnotationOverlaps:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
+                if g.overlaps is None:
+                    continue
                 for o in g.overlaps["self"]:
                     if o.exon_query_percent > 0:
 
@@ -620,6 +627,8 @@ class AnnotationOverlaps:
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
+                if g.overlaps is None:
+                    continue
                 for name, hits in g.overlaps.items():
                     if name == export:
                         for hit in hits:
