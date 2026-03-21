@@ -288,23 +288,40 @@ class TestOverlap:
         assert is_overlapping is True
         assert bp == 101  # 200..300 inclusive
 
+    def test_overlapping_features_displaced(self):
+        f1 = self.MockFeature(500, 6000)
+        f2 = self.MockFeature(2000, 8000)
+        is_overlapping, bp = f1.overlap(f2)
+        assert is_overlapping is True
+        assert bp == 4001
+
     def test_non_overlapping_features(self):
         f1 = self.MockFeature(100, 200)
         f2 = self.MockFeature(300, 400)
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is False
+        assert bp == 0
 
     def test_adjacent_features(self):
         f1 = self.MockFeature(100, 200)
         f2 = self.MockFeature(201, 300)
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is False
+        assert bp == 0
+
+    def test_small_overlap(self):
+        f1 = self.MockFeature(100, 200)
+        f2 = self.MockFeature(200, 300)
+        is_overlapping, bp = f1.overlap(f2)
+        assert is_overlapping is True
+        assert bp == 1
 
     def test_contained_feature(self):
         f1 = self.MockFeature(100, 500)
         f2 = self.MockFeature(200, 300)
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
+        assert bp == 101
 
     def test_identical_features(self):
         f1 = self.MockFeature(100, 200)
@@ -312,3 +329,4 @@ class TestOverlap:
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 101
+

@@ -284,6 +284,9 @@ class Feature():
         if overlap_bp > 0:
             overlapping = True
 
+        elif overlap_bp < 0:
+            overlap_bp = 0
+
         return overlapping, overlap_bp
 
     def compare_blast_hits(self, other:Feature, source_priority:list):

@@ -1,3 +1,5 @@
+##gff-version 3
+##--- Gene with exons that require collapsing, negative strand transcripts for an extra test ---
 chr1	aegis	gene	1000	6000	.	+	.	ID=gene_ov1;Name=OverlapExonGene
 chr1	aegis	mRNA	500	6000	.	+	.	ID=mRNA_ov2;Parent=gene_ov1
 chr1	aegis	exon	500	800	.	+	.	ID=exon_1;Parent=mRNA_ov2

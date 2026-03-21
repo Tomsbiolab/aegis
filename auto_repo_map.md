@@ -397,7 +397,7 @@
       - `def no_subfeatures_gff3_file():`
       - `def noncoding_transcripts_gff3_file():`
       - `def pseudogene_gff3_file():`
-      - `def overlapping_exons_gff3_file():`
+      - `def exons_to_collapse_gff3_file():`
       - `def multi_cds_ids_gff3_file():`
       - `def transcript_no_parent_gff3_file():`
       - `def cds_no_parent_gff3_file():`
@@ -410,6 +410,7 @@
       - `def miRNA_arabidopsis_format_gff3_file():`
       - `def merge_gff3_file_1():`
       - `def merge_gff3_file_2():`
+      - `def self_overlapping_genes_gff3_file():`
       - `def sample_fasta_file():`
       - `def sample_feature():`
       - `def sample_gene():`
@@ -591,14 +592,14 @@
       - `def test_pseudotranscript_has_three_exons(self, pseudogene_gff3_file):`
       - `def test_pseudotranscript_not_coding(self, pseudogene_gff3_file):`
       - `def test_pseudotranscript_exon_coordinates(self, pseudogene_gff3_file):`
-      - `class TestOverlappingExonsGFF3:`
-      - `def test_exons_collapsed(self, overlapping_exons_gff3_file):`
-      - `def test_collapsed_exon_coordinates(self, overlapping_exons_gff3_file):`
-      - `def test_transcript_is_coding(self, overlapping_exons_gff3_file):`
-      - `def test_one_intron_after_collapse(self, overlapping_exons_gff3_file):`
-      - `def test_cds_segments_collapsed(self, overlapping_exons_gff3_file):`
-      - `def test_collapsed_cds_coordinates(self, overlapping_exons_gff3_file):`
-      - `def test_no_collapse_cds_flag(self, overlapping_exons_gff3_file):`
+      - `class TestExonsToCollapseGFF3:`
+      - `def test_exons_collapsed(self, exons_to_collapse_gff3_file):`
+      - `def test_collapsed_exon_coordinates(self, exons_to_collapse_gff3_file):`
+      - `def test_transcript_is_coding(self, exons_to_collapse_gff3_file):`
+      - `def test_one_intron_after_collapse(self, exons_to_collapse_gff3_file):`
+      - `def test_cds_segments_collapsed(self, exons_to_collapse_gff3_file):`
+      - `def test_collapsed_cds_coordinates(self, exons_to_collapse_gff3_file):`
+      - `def test_no_collapse_cds_flag(self, exons_to_collapse_gff3_file):`
       - `class TestMultiCDSIdsGFF3:`
       - `def test_cds_segments_combined(self, multi_cds_ids_gff3_file):`
       - `def test_two_exons(self, multi_cds_ids_gff3_file):`
@@ -635,7 +636,7 @@
       - `def test_exons_are_parsed(self, geneID_attribute_as_parent_gff3_file):`
       - `def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):`
       - `class TestAnnotationSharedExonParents:`
-      - `def test_shared_parents_are_detected_with_overlapping_exons(self, shared_parents_gff3_file):`
+      - `def test_shared_parents_are_detected_with_exons_to_collapse(self, shared_parents_gff3_file):`
       - `class TestAnnotationClashOfIDs:`
       - `def test_clash_of_ids_and_transcriptless_gene_removal(self, clash_of_ids_gff3_file):`
       - `class TestAnnotationMiRNAs:`
@@ -643,6 +644,8 @@
       - `def test_miRNA_arabidopsis_format(self, miRNA_arabidopsis_format_gff3_file):`
       - `class TestAnnotationMerge:`
       - `def test_merge_gff3(self, merge_gff3_file_1, merge_gff3_file_2):`
+      - `class TestAnnotationOverlaps:`
+      - `def test_self_overlaps(self, self_overlapping_genes_gff3_file):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py
@@ -810,8 +813,10 @@
       - `class MockFeature(Feature):`
       - `def __init__(self, start, end):`
       - `def test_overlapping_features(self):`
+      - `def test_overlapping_features_displaced(self):`
       - `def test_non_overlapping_features(self):`
       - `def test_adjacent_features(self):`
+      - `def test_small_overlap(self):`
       - `def test_contained_feature(self):`
       - `def test_identical_features(self):`
     - test_misc_features.py

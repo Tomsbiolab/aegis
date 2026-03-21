@@ -1,4 +1,29 @@
 class OverlapHit():
+    full_exon_overlaps: int
+    full_protein_overlaps: int
+    full_CDS_overlaps: int
+    full_UTR_overlaps: int
+    score: int
+    id: str
+    origin: str
+    extra_copy: bool
+    gene_query_percent: float
+    gene_target_percent: float
+    exon_query_percent: float
+    exon_target_percent: float
+    CDS_query_percent: float
+    CDS_target_percent: float
+    protein_query_percent: float
+    protein_target_percent: float
+    exons_in_both: bool
+    CDSs_in_both: bool
+    orientation: bool
+    min_gene_percent: float
+    min_exon_percent: float | None
+    min_CDS_percent: float | None
+    min_protein_percent: float
+    target_synteny_conserved: bool
+    
     def __init__(self, ID, origin, orientation, gene_query_percent,
                  gene_target_percent, exons_in_both, exon_query_percent,
                  exon_target_percent, CDSs_in_both, CDS_query_percent, 
@@ -85,39 +110,39 @@ class OverlapHit():
                     else:
                         self.score = 3
                 # Exons in both
-                elif isinstance(self.min_exon_percent, int):
+                else:
                     if self.min_exon_percent == 0:
                         self.score = 2
-                    elif self.min_exon_percent >= 100:
+                    elif self.min_exon_percent >= 100: # type: ignore
                         self.score = 10
-                    elif self.min_exon_percent >= 90:
+                    elif self.min_exon_percent >= 90: # type: ignore
                         self.score = 9
-                    elif self.min_exon_percent >= 70:
+                    elif self.min_exon_percent >= 70: # type: ignore
                         self.score = 8
-                    elif self.min_exon_percent >= 50:
+                    elif self.min_exon_percent >= 50: # type: ignore
                         self.score = 7                
-                    elif self.min_exon_percent >= 30:
+                    elif self.min_exon_percent >= 30: # type: ignore
                         self.score = 6    
-                    elif self.min_exon_percent >= 10:
+                    elif self.min_exon_percent >= 10: # type: ignore
                         self.score = 5                             
                     else:
                         self.score = 4
 
             # coding query vs coding target
-            elif isinstance(self.min_CDS_percent, int):
+            else:
                 if self.min_CDS_percent == 0:
                     self.score = 3
-                elif self.min_CDS_percent >= 100:
+                elif self.min_CDS_percent >= 100: # type: ignore
                     self.score = 11                        
-                elif self.min_CDS_percent >= 90:
+                elif self.min_CDS_percent >= 90: # type: ignore
                     self.score = 10
-                elif self.min_CDS_percent >= 70:
+                elif self.min_CDS_percent >= 70: # type: ignore
                     self.score = 9
-                elif self.min_CDS_percent >= 50:
+                elif self.min_CDS_percent >= 50: # type: ignore
                     self.score = 8                
-                elif self.min_CDS_percent >= 30:
+                elif self.min_CDS_percent >= 30: # type: ignore
                     self.score = 7          
-                elif self.min_CDS_percent >= 10:
+                elif self.min_CDS_percent >= 10: # type: ignore
                     self.score = 6
                 else:
                     self.score = 5
@@ -141,39 +166,39 @@ class OverlapHit():
                     else:
                         self.antiscore = 3
                 # Exons in both
-                elif isinstance(self.min_exon_percent, int):
+                else:
                     if self.min_exon_percent == 0:
                         self.antiscore = 2
-                    elif self.min_exon_percent >= 100:
+                    elif self.min_exon_percent >= 100: # type: ignore
                         self.antiscore = 10
-                    elif self.min_exon_percent >= 90:
+                    elif self.min_exon_percent >= 90: # type: ignore
                         self.antiscore = 9
-                    elif self.min_exon_percent >= 70:
+                    elif self.min_exon_percent >= 70: # type: ignore
                         self.antiscore = 8
-                    elif self.min_exon_percent >= 50:
+                    elif self.min_exon_percent >= 50: # type: ignore
                         self.antiscore = 7                
-                    elif self.min_exon_percent >= 30:
+                    elif self.min_exon_percent >= 30: # type: ignore
                         self.antiscore = 6    
-                    elif self.min_exon_percent >= 10:
+                    elif self.min_exon_percent >= 10: # type: ignore
                         self.antiscore = 5                             
                     else:
                         self.antiscore = 4
 
             # coding query vs coding target
-            elif isinstance(self.min_CDS_percent, int):
+            else:
                 if self.min_CDS_percent == 0:
                     self.antiscore = 3
-                elif self.min_CDS_percent >= 100:
+                elif self.min_CDS_percent >= 100: # type: ignore
                     self.antiscore = 11                        
-                elif self.min_CDS_percent >= 90:
+                elif self.min_CDS_percent >= 90: # type: ignore
                     self.antiscore = 10
-                elif self.min_CDS_percent >= 70:
+                elif self.min_CDS_percent >= 70: # type: ignore
                     self.antiscore = 9
-                elif self.min_CDS_percent >= 50:
+                elif self.min_CDS_percent >= 50: # type: ignore
                     self.antiscore = 8                
-                elif self.min_CDS_percent >= 30:
+                elif self.min_CDS_percent >= 30: # type: ignore
                     self.antiscore = 7          
-                elif self.min_CDS_percent >= 10:
+                elif self.min_CDS_percent >= 10: # type: ignore
                     self.antiscore = 6
                 else:
                     self.antiscore = 5

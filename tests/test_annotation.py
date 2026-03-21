@@ -1351,54 +1351,54 @@ class TestPseudogeneGFF3:
         assert coords == [(1000, 2000), (3000, 4000), (4500, 5000)]
 
 
-# ---- 6. Overlapping exons (collapse) ----
+# ---- 6. Overlapping, and adjacent exons (collapse) ----
 
-class TestOverlappingExonsGFF3:
-    """Gene with overlapping exons is collapsed into fewer exons"""
+class TestExonsToCollapseGFF3:
+    """Gene with overlapping and adjacent exons is collapsed into fewer exons"""
 
-    def test_exons_collapsed(self, overlapping_exons_gff3_file):
+    def test_exons_collapsed(self, exons_to_collapse_gff3_file):
         """4 overlapping/adjacent input exons -> 2 collapsed exons"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         assert len(t.exons) == 2
 
-    def test_collapsed_exon_coordinates(self, overlapping_exons_gff3_file):
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+    def test_collapsed_exon_coordinates(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         coords = [(e.start, e.end) for e in t.exons]
         # exons 1000-2500 + 2000-3500 + 3500-4000 overlap → merged into 1000-4000
         # exon 5000-6000 remains separate
         assert coords == [(1000, 4000), (5000, 6000)]
 
-    def test_transcript_is_coding(self, overlapping_exons_gff3_file):
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+    def test_transcript_is_coding(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         assert t.coding is True
 
-    def test_one_intron_after_collapse(self, overlapping_exons_gff3_file):
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+    def test_one_intron_after_collapse(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         annot.generate_introns()
         assert len(t.introns) == 1 # type: ignore
 
-    def test_cds_segments_collapsed(self, overlapping_exons_gff3_file):
+    def test_cds_segments_collapsed(self, exons_to_collapse_gff3_file):
         """3 CDS input segments (2 overlapping) -> 2 collapsed CDS segments"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         cds = list(t.CDSs.values())[0]
         assert len(cds.CDS_segments) == 2
 
-    def test_collapsed_cds_coordinates(self, overlapping_exons_gff3_file):
+    def test_collapsed_cds_coordinates(self, exons_to_collapse_gff3_file):
         """CDS 1200-2500 + 2000-3500 -> merged 1200-3500; CDS 5000-5800 stays"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         cds = list(t.CDSs.values())[0]
         coords = [(s.start, s.end) for s in cds.CDS_segments]
         assert coords == [(1200, 3500), (5000, 5800)]
 
-    def test_no_collapse_cds_flag(self, overlapping_exons_gff3_file):
+    def test_no_collapse_cds_flag(self, exons_to_collapse_gff3_file):
         """With collapse_CDSs=False the 3 original CDS segments are kept"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True, collapse_CDSs=False)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True, collapse_CDSs=False)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         cds = list(t.CDSs.values())[0]
         assert len(cds.CDS_segments) == 3
@@ -1614,11 +1614,11 @@ class TestNonStandardParentAttribute:
 
 
 # ============================================================
-# Shared Exon Parents with overlapping exons
+# Shared Exon Parents with multiple fw and rv transcripts also requiring collapse
 # ============================================================
 
 class TestAnnotationSharedExonParents:
-    def test_shared_parents_are_detected_with_overlapping_exons(self, shared_parents_gff3_file):
+    def test_shared_parents_are_detected_with_exons_to_collapse(self, shared_parents_gff3_file):
         annot = Annotation(shared_parents_gff3_file, quiet=True)
 
         assert len(annot.all_gene_ids) == 1
@@ -1807,3 +1807,71 @@ class TestAnnotationMerge:
         annot = Annotation(merge_gff3_file_1, quiet=True)
         annot.merge(annot2, max_gene_overlap=50, quiet=True)
         assert len(annot.all_gene_ids) == 8
+
+# ============================================================
+# Testing self overlapping genes detection
+# ============================================================
+
+class TestAnnotationOverlaps:
+    annot: Annotation
+    def test_self_overlaps(self, self_overlapping_genes_gff3_file):
+        annot = Annotation(self_overlapping_genes_gff3_file, quiet=True)
+        annot.overlaps.detect(quiet=True)
+
+        assert set(annot.overlaps.self) == {"g2", "g3", "g4", "g5"}
+        assert annot.overlaps.other == []
+        assert annot.chrs["chr1"]["g1"].overlaps == {"self" : [], "other" : []}
+
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].id == "g3"
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].orientation == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].score == 11
+
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].id == "g2"
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].orientation == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].score == 11
+
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].id == "g5"
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].gene_query_percent == 72.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].gene_target_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].exon_query_percent == 86.9
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].exon_target_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].CDS_query_percent == 57.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].score == 8
+
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].id == "g4"
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].gene_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].gene_target_percent == 72.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].exon_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].exon_target_percent == 86.9
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_target_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].score == 8

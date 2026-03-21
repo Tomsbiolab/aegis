@@ -131,11 +131,17 @@ class AnnotationOverlaps:
                                                     if overlap_temp:
                                                         overlap_exon_temp += overlap_bp
                                                         overlapping = True
-                                            if overlap_exon_temp > best_exon_overlap:
-                                                best_exon_overlap = overlap_exon_temp
-                                                exon_query_size = t1.size
-                                                exon_target_size = t2.size
-                                    
+                                            if overlap_exon_temp != 0:
+                                                if overlap_exon_temp > best_exon_overlap:
+                                                    best_exon_overlap = overlap_exon_temp
+                                                    exon_query_size = t1.size
+                                                    exon_target_size = t2.size
+                                                elif overlap_exon_temp == best_exon_overlap:
+                                                    if t1.size < exon_query_size:
+                                                        exon_query_size = t1.size
+                                                    if t2.size < exon_target_size:
+                                                        exon_target_size = t2.size
+
                                     if target_exons and query_exons:
                                         exons_in_both = True
                                         if gene_orientation != exon_orientation:
@@ -176,10 +182,16 @@ class AnnotationOverlaps:
                                                                 continue
                                                             overlap_CDS_temp += overlap_bp
                                                             overlapping = True
-                                                    if overlap_CDS_temp > best_CDS_overlap:
-                                                        best_CDS_overlap = overlap_CDS_temp
-                                                        CDS_query_size = CDS1.size
-                                                        CDS_target_size = CDS2.size
+                                                    if overlap_CDS_temp != 0:
+                                                        if overlap_CDS_temp > best_CDS_overlap:
+                                                            best_CDS_overlap = overlap_CDS_temp
+                                                            CDS_query_size = CDS1.size
+                                                            CDS_target_size = CDS2.size
+                                                        elif overlap_CDS_temp == best_CDS_overlap:
+                                                            if CDS1.size < CDS_query_size:
+                                                                CDS_query_size = CDS1.size
+                                                            if CDS2.size < CDS_target_size:
+                                                                CDS_target_size = CDS2.size
                                                 
                                     if target_CDS and query_CDS:
                                         CDSs_in_both = True
@@ -225,10 +237,16 @@ class AnnotationOverlaps:
                                                                     
                                                                     overlap_protein_temp += overlap_bp
                                                                     overlapping = True
-                                                            if overlap_protein_temp > best_protein_overlap:
-                                                                best_protein_overlap = overlap_protein_temp
-                                                                protein_query_size = CDS1.size
-                                                                protein_target_size = CDS2.size
+                                                            if overlap_protein_temp != 0:
+                                                                if overlap_protein_temp > best_protein_overlap:
+                                                                    best_protein_overlap = overlap_protein_temp
+                                                                    protein_query_size = CDS1.size
+                                                                    protein_target_size = CDS2.size
+                                                                elif overlap_protein_temp == best_protein_overlap:
+                                                                    if CDS1.size < protein_query_size:
+                                                                        protein_query_size = CDS1.size
+                                                                    if CDS2.size < protein_target_size:
+                                                                        protein_target_size = CDS2.size
                                                         
                                             if target_protein and query_protein:
                                                 if overlapping:
@@ -343,10 +361,16 @@ class AnnotationOverlaps:
                                             if overlap_temp:
                                                 overlap_exon_temp += overlap_bp
                                                 overlapping = True
-                                    if overlap_exon_temp > best_exon_overlap:
-                                        best_exon_overlap = overlap_exon_temp
-                                        exon_query_size = t1.size
-                                        exon_target_size = t2.size
+                                    if overlap_exon_temp != 0:
+                                        if overlap_exon_temp > best_exon_overlap:
+                                            best_exon_overlap = overlap_exon_temp
+                                            exon_query_size = t1.size
+                                            exon_target_size = t2.size
+                                        elif overlap_exon_temp == best_exon_overlap:
+                                            if t1.size < exon_query_size:
+                                                exon_query_size = t1.size
+                                            if t2.size < exon_target_size:
+                                                exon_target_size = t2.size
                             
                             if target_exons and query_exons:
                                 exons_in_both = True
@@ -387,10 +411,16 @@ class AnnotationOverlaps:
                                                         continue
                                                     overlap_CDS_temp += overlap_bp
                                                     overlapping = True
-                                            if overlap_CDS_temp > best_CDS_overlap:
-                                                best_CDS_overlap = overlap_CDS_temp
-                                                CDS_query_size = CDS1.size
-                                                CDS_target_size = CDS2.size
+                                            if overlap_CDS_temp != 0:
+                                                if overlap_CDS_temp > best_CDS_overlap:
+                                                    best_CDS_overlap = overlap_CDS_temp
+                                                    CDS_query_size = CDS1.size
+                                                    CDS_target_size = CDS2.size
+                                                elif overlap_CDS_temp == best_CDS_overlap:
+                                                    if CDS1.size < CDS_query_size:
+                                                        CDS_query_size = CDS1.size
+                                                    if CDS2.size < CDS_target_size:
+                                                        CDS_target_size = CDS2.size
                                         
                             if target_CDS and query_CDS:
                                 CDSs_in_both = True
@@ -436,10 +466,16 @@ class AnnotationOverlaps:
                                                                 
                                                                 overlap_protein_temp += overlap_bp
                                                                 overlapping = True
-                                                        if overlap_protein_temp > best_protein_overlap:
-                                                            best_protein_overlap = overlap_protein_temp
-                                                            protein_query_size = CDS1.size
-                                                            protein_target_size = CDS2.size
+                                                        if overlap_protein_temp != 0:
+                                                            if overlap_protein_temp > best_protein_overlap:
+                                                                best_protein_overlap = overlap_protein_temp
+                                                                protein_query_size = CDS1.size
+                                                                protein_target_size = CDS2.size
+                                                            elif overlap_protein_temp == best_protein_overlap:
+                                                                if CDS1.size < protein_query_size:
+                                                                    protein_query_size = CDS1.size
+                                                                if CDS2.size < protein_target_size:
+                                                                    protein_target_size = CDS2.size
                                                     
                                         if target_protein and query_protein:
                                             if overlapping:
