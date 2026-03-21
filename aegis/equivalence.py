@@ -48,9 +48,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
     print(f"\t\tRunning aegis overlap on liftoff result.")
 
     if synteny:
-        a_liftoff = Annotation(str(liftoff_gff), original_annotation=annot1, quiet=quiet)
+        a_liftoff = Annotation(str(liftoff_gff), genome=genome2, original_annotation=annot1, quiet=quiet)
     else:
-        a_liftoff = Annotation(str(liftoff_gff), quiet=quiet)
+        a_liftoff = Annotation(str(liftoff_gff), genome=genome2, quiet=quiet)
 
     a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
@@ -87,9 +87,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         print(f"\t\tRunning aegis overlap on lifton result.")
 
         if synteny:
-            a_lifton = Annotation(str(lifton_gff), original_annotation=annot1, quiet=quiet)
+            a_lifton = Annotation(str(lifton_gff), genome=genome2, original_annotation=annot1, quiet=quiet)
         else:
-            a_lifton = Annotation(str(lifton_gff), quiet=quiet)
+            a_lifton = Annotation(str(lifton_gff), genome=genome2, quiet=quiet)
 
         a_lifton.overlaps.detect(annot2, quiet=quiet)
 
