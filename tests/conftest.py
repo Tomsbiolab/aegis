@@ -78,9 +78,9 @@ def pseudogene_gff3_file():
 
 
 @pytest.fixture
-def overlapping_exons_gff3_file():
+def exons_to_collapse_gff3_file():
     """Gene with overlapping exons that need collapsing."""
-    return str(TEST_DATA_DIR / "input/annotation/overlapping_exons.gff3")
+    return str(TEST_DATA_DIR / "input/annotation/exons_to_collapse.gff3")
 
 
 @pytest.fixture
@@ -149,6 +149,20 @@ def merge_gff3_file_2():
     """GFF3 file with features that will merge differently depending on the parameters."""
     return str(TEST_DATA_DIR / "input/annotation/for_merge_2.gff3")
 
+@pytest.fixture
+def self_overlapping_genes_gff3_file():
+    """GFF3 file with self overlapping genes."""
+    return str(TEST_DATA_DIR / "input/annotation/self_overlapping_genes.gff3")
+
+@pytest.fixture
+def other_overlapping_genes_gff3_file_1():
+    """GFF3 file 1 with other overlapping genes."""
+    return str(TEST_DATA_DIR / "input/annotation/other_overlapping_genes_1.gff3")
+
+@pytest.fixture
+def other_overlapping_genes_gff3_file_2():
+    """GFF3 file 2 with other overlapping genes."""
+    return str(TEST_DATA_DIR / "input/annotation/other_overlapping_genes_2.gff3")
 
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
@@ -177,7 +191,6 @@ def sample_feature():
         start=100,
         end=500,
         score=".",
-        phase=".",
         attributes={"Name": ["TestFeature"], "Alias": ["TF1"]}
     )
 
@@ -197,6 +210,5 @@ def sample_gene():
         start=100,
         end=2000,
         score=".",
-        phase=".",
         attributes={"Name": ["TestGene"]}
     )

@@ -1,0 +1,20 @@
+##gff-version 3
+##--- Gene with self-overlapping genes ---
+chr2	aegis	gene	500	6000	.	+	.	ID=g2
+chr2	aegis	mRNA	500	6000	.	+	.	ID=g2_m1;Parent=g2
+chr2	aegis	exon	500	800	.	+	.	ID=e1;Parent=g2_m1
+chr2	aegis	exon	1000	1300	.	+	.	ID=e2;Parent=g2_m1,g2_m2
+chr2	aegis	exon	2000	6000	.	+	.	ID=e3;Parent=g2_m1
+chr2	aegis	CDS	1200	1300	.	+	0	ID=g2_cds1;Parent=g2_m1
+chr2	aegis	CDS	2000	5500	.	+	0	ID=g2_cds1;Parent=g2_m1
+chr2	aegis	mRNA	1000	5000	.	+	.	ID=g2_m2;Parent=g2
+chr2	aegis	exon	1000	1300	.	+	.	ID=e2;Parent=g2_m1,g2_m2
+chr2	aegis	exon	2000	5000	.	+	.	ID=e4;Parent=g2_m2
+chr2	aegis	CDS	1200	1300	.	+	0	ID=g2_cds2;Parent=g2_m2
+chr2	aegis	CDS	2000	4500	.	+	0	ID=g2_cds2;Parent=g2_m2
+#
+chr3	aegis	gene	2000	8000	.	+	.	ID=g5
+chr3	aegis	mRNA	2000	8000	.	+	.	ID=g5_m1;Parent=g5
+chr3	aegis	exon	2000	8000	.	+	.	ID=e1;Parent=g5_m1
+chr3	aegis	CDS	3000	4500	.	+	0	ID=g5_cds1;Parent=g5_m1
+#

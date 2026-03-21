@@ -37,7 +37,6 @@ class GffEntry:
     end: int
     score: str
     strand: str
-    phase: str
     attributes: dict[str, str]
     id: str
     parents: list[str]
@@ -51,7 +50,6 @@ def parse_gff_parts(parts):
     source = sys.intern(parts[1])
     feature = sys.intern(parts[2])
     strand = sys.intern(parts[6])
-    phase = sys.intern(parts[7])
 
     ch = sys.intern(parts[0].partition(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
 
@@ -90,7 +88,6 @@ def parse_gff_parts(parts):
         end=actual_end,
         score=parts[5],
         strand=strand,
-        phase=phase,
         attributes=attr_dict,
         id=entry_id,
         parents=parents,

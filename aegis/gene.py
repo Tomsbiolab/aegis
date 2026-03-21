@@ -35,11 +35,8 @@ class Gene(Feature):
     alternative_transcript_rescue:list
     overlaps:dict[str, list[OverlapHit]]|None
     
-    def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
-                 ch:str, source:str, feature:str, strand:str,
-                 start:int, end:int, score:str, phase:str, parents:list[str]=[], attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)
+    def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
         self.pseudogene = pseudogene
         self.transposable = transposable
         # transcripts will be added as {"transcript_id" : transcript_object}
@@ -232,7 +229,7 @@ class Gene(Feature):
                             overlapping, _ = tempft1.overlap(tempft2)
 
                             if overlapping:
-                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, ".", [self.id])
+                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, [self.id])
                                 add = True
                                 # this is to avoid adding a same overlap twice
                                 for f in features_to_add:
@@ -256,7 +253,7 @@ class Gene(Feature):
             temp_coding_feature = "mRNA"
             if not self.coding:
                 temp_coding_feature = "lncRNA"
-            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, ".", [self.id])
+            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, [self.id])
             self.transcripts[f"{self.id}_t001"].exons = temp_fts.copy()
             counter = 0
             for e in self.transcripts[f"{self.id}_t001"].exons:
@@ -270,17 +267,12 @@ class Gene(Feature):
             if respect_non_coding:
                 if not self.coding:
                     continue
-            t.generate_sequence(genome, low_memory)
-            t.generate_best_protein(genome)
+
+            t.generate_best_protein()
             t.generate_CDSs_based_on_ORF(low_memory)
-            for c in t.CDSs.values():
-                c.generate_sequence(genome, low_memory)
             if t.coding_ratio < 0.80:
-                t.generate_sequence(genome, low_memory)
-                t.generate_best_protein(genome, must_have_stop=False)
+                t.generate_best_protein(must_have_stop=False)
                 t.generate_CDSs_based_on_ORF(low_memory)
-                for c in t.CDSs.values():
-                    c.generate_sequence(genome, low_memory)
             t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
 
     def longer_CDS(self, other:Gene):
@@ -666,8 +658,8 @@ class Gene(Feature):
             temp_attributes.append(f"intron_UTR_nested={self.UTR_intron_nested}")
 
         attribute_string = ";".join(temp_attributes)
-
-        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
+        phase = self.phase if self.phase is not None else "."
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
 
     def __str__(self):

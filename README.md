@@ -5,8 +5,7 @@
 # AEGIS: Annotation Extraction Genomic Integration Suite
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python Version](https://img.shields.io/badge/python-3.12.3%2B-brightgreen.svg)](https://www.python.org/downloads/)
-
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aegis-bio)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/pypi/v/aegis-bio)](https://pypi.org/project/aegis-bio/)
 [![Docker Hub](https://img.shields.io/badge/docker-pull-blue)](https://hub.docker.com/r/tomsbiolab/aegis)
 [![GitHub license](https://img.shields.io/github/license/tomsbiolab/aegis)](https://github.com/tomsbiolab/aegis/blob/main/LICENSE.md)
@@ -15,20 +14,20 @@
 
 ## Key Features
 
-- **Object-Oriented Design**: AEGIS represents genomic features (genes, transcripts, exons, etc.) as a hierarchical system of Python classes, providing a clean and intuitive API for data manipulation.
+- **Object-Oriented Design**: AEGIS represents genomic features (genes, transcripts, exons, etc.) as a hierarchical system of custom Python classes, providing a clean and intuitive API for data manipulation.
 - **Comprehensive Annotation Handling**: Seamlessly parse, process, and export genomic annotations in GFF3 format.
-- **Sequence Extraction**: Easily extract sequences for any genomic feature, including genes, transcripts, CDS, proteins, and promoters.
-- **Comparative Genomics**: Perform comparative analyses, such as identifying orthologs and syntenic regions between different species.
 - **Extensible and Modular**: The modular design of AEGIS allows for easy extension and integration with other bioinformatics tools and pipelines.
+- **Command Line Interface**: Running "aegis --help" in the terminal will show an updated list of the available commands whilst individual command help can be found with "aegis {command} --help". There is a total of 14 commands and some of the key functionalities are: tidy up and/or reformat gff/fasta files, sequence extraction, summary annotation statistics, merging of annotations, and comparative genomic analyses such as orthology detection and synteny analysis between annotation files associated to different genomes.
 
 ## The AEGIS Class System
 
-The core of AEGIS is its sophisticated class system, which models the hierarchical nature of genomic annotations. This object-oriented approach provides several key advantages over traditional, line-by-line processing of annotation files:
+The core of AEGIS is its custom class system, which models the hierarchical nature of genomic annotations. This object-oriented approach provides several key advantages over traditional, line-by-line processing of annotation files:
 
 - **Intuitive Data Representation**: Genomic features are not just lines in a file; they are objects with properties and relationships. A `Gene` object contains `Transcript` objects, which in turn contain `Exon` and `CDS` objects. This makes the code more readable, maintainable, and less error-prone.
 - **Data Integrity**: The class system enforces data consistency. For example, when a `Gene` object is updated, all its associated `Transcript` and sub-feature objects are updated accordingly, ensuring that the annotation remains coherent.
 - **Complex Queries and Manipulations**: The object-oriented structure allows for complex queries and manipulations that would be difficult to perform with traditional text-based tools. For example, you can easily retrieve all coding transcripts for a specific gene, or calculate the total length of all exons in a given transcript.
 - **Code Reusability**: The class-based design promotes code reusability. Once you have defined a class for a specific genomic feature, you can reuse it in different parts of your analysis pipeline.
+- **Robust Maintenance**: Unit tests and continuous integration ensure that the code is reliable and maintainable.
 
 ### Core Classes
 
@@ -48,10 +47,16 @@ You can install and run AEGIS in several ways. Using a container (Docker or Sing
 
 If you have Docker installed, you can easily pull and run the pre-built AEGIS image from Docker Hub. This image includes AEGIS and all third-party software used for orthology analyses.
 
-**1. Pull the image from Docker Hub:**
+**1a. Pull the image from Docker Hub:**
 
 ```bash
 docker pull tomsbiolab/aegis
+```
+
+**1b. OR Pull the image from GHRC:**
+
+```bash
+docker pull ghcr.io/tomsbiolab/aegis
 ```
 
 **2. Run an AEGIS command:**
@@ -90,7 +95,7 @@ singularity run -B `pwd`:`pwd` aegis.sif aegis extract -f protein test_data/arab
 
 ### From PyPI (Python Package Index)
 
-Easiest way to install, however, some dependencies will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use aegis orthology you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. 
+Easiest way to install, however, some dependencies used in 'aegis orthology' will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use 'aegis orthology' you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. The latest version in pypi will always match the version of the latest release.
 
 ```bash
 pip3 install aegis-bio
@@ -103,8 +108,10 @@ Alternatively, you can install AEGIS directly from the source by cloning the rep
 ```bash
 git clone https://github.com/Tomsbiolab/aegis.git
 cd aegis
-pip3 install -r requirements.txt
-pip3 install -e .
+pip install .
+
+# Or for development (editable mode):
+pip install -e .
 ```
 
 ## Usage
@@ -141,6 +148,8 @@ All of the commands are called with aegis {subcommand} in a terminal:
 	- Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
 - Reformat:
 	- Converts between gtf and gff formats.
+- List:
+	- Lists gene ids or transcript ids from an annotation file, optionally selecting which types ofgenes/transcripts to include/exclude.
 
 ### As a Python library
 
@@ -152,20 +161,21 @@ from aegis.genome import Genome
 
 # Load the genome and annotation
 genome = Genome(name = "my_genome", genome_file_path = "path/to/genome.fasta")
-annotation = Annotation(name = "my_annotation", annot_file_path = "path/to/annotation.gff3", genome)
+annotation = Annotation(name = "my_annotation", annot_file_path = "path/to/annotation.gff3", genome=genome)
 
 # Generate and export gene sequences
-annotation.generate_sequences(genome)
-annotation.export_genes()
+annotation.export.genes()
+
 ```
 ## Documentation
 For further and more detailed information on how to use the **AEGIS** package, including **Jupyter Notebook examples**, please refer to the **GitHub Wiki**. The wiki provides comprehensive guides and tutorials to help you get the most out of the suite.
 
 **Link to Wiki:** https://github.com/Tomsbiolab/aegis/wiki
 
-## Contributing
+## Citation
 
-Contributions to AEGIS are welcome! Please feel free to submit a pull request or open an issue on the GitHub repository.
+If you use AEGIS in your research, please cite the following preprint:
+> Navarro-Payá, D., Santiago, A., Velt, A., Moretto, M., Rustenholz, C., & Matus, J. T. (2025). *AEGIS: an annotation extraction and genomic integration resource*. bioRxiv. doi: [10.64898/2025.12.04.692274v1](https://www.biorxiv.org/content/10.64898/2025.12.04.692274v1)
 
 ## License
 

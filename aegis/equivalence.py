@@ -5,7 +5,6 @@ if TYPE_CHECKING:
     from .genome import Genome
 
 import pandas as pd
-import re
 import time
 import os
 import shutil
@@ -14,7 +13,7 @@ from pathlib import Path
 
 from .annotation import Annotation
 from .utils.misc import run_command
-from .utils.evalue import parse_evalue, round_evalue
+from .utils.evalue import parse_evalue
 
 def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):
 
@@ -46,12 +45,12 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         if os.path.isfile(unmapped_file):
             os.remove(unmapped_file)
 
-    print(f"\t\tRunning aegis-overlaps on liftoff result.")
+    print(f"\t\tRunning aegis overlap on liftoff result.")
 
     if synteny:
-        a_liftoff = Annotation(str(liftoff_gff), original_annotation=annot1, quiet=quiet)
+        a_liftoff = Annotation(str(liftoff_gff), genome=genome2, original_annotation=annot1, quiet=quiet)
     else:
-        a_liftoff = Annotation(str(liftoff_gff), quiet=quiet)
+        a_liftoff = Annotation(str(liftoff_gff), genome=genome2, quiet=quiet)
 
     a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
@@ -85,12 +84,12 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             with open(lifton_gff, "w") as f:
                 f.write("##gff-version 3\n")
 
-        print(f"\t\tRunning aegis-overlaps on lifton result.")
+        print(f"\t\tRunning aegis overlap on lifton result.")
 
         if synteny:
-            a_lifton = Annotation(str(lifton_gff), original_annotation=annot1, quiet=quiet)
+            a_lifton = Annotation(str(lifton_gff), genome=genome2, original_annotation=annot1, quiet=quiet)
         else:
-            a_lifton = Annotation(str(lifton_gff), quiet=quiet)
+            a_lifton = Annotation(str(lifton_gff), genome=genome2, quiet=quiet)
 
         a_lifton.overlaps.detect(annot2, quiet=quiet)
 

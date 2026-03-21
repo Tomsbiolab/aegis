@@ -80,10 +80,10 @@ def main(
     genes = df.iloc[:, 0].tolist()
     genes = [gene for gene in genes if gene != ""]
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
     genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet)
 
-    annotation.generate_promoters(genome=genome, promoter_size=promoter_size, promoter_type=promoter_type, generate_sequence=True)
+    annotation.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
 
     annotation.motifs.find_and_plot(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_dir, quiet=quiet)
     

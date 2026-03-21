@@ -23,11 +23,12 @@ class Feature():
     __slots__ = (
         'id', 'original_id', 'ch', 'source', 'feature', 'start', 'end',
         'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id',
-        'size', 'seq', 'hard_seq', 'seqs', 'hard_seqs', 'parents', 'names',
-        'symbols', 'descriptors', 'processes', 'synonyms', 'gc_content',
+        'size', 'parents', 'names', 'symbols', 'descriptors', 'processes', 'synonyms', 'gc_content',
         'aliases', 'blast_hits', 'renamed', 'id_number', 'original_id_number',
         'misc_attributes', 'extra_copy', 'masked_fraction', 'coding'
     )
+    _ACTIVE_GENOME: Genome|None = None
+    _ACTIVE_HARD_GENOME: Genome | None = None
 
     gtf_attributes: list[str]|None
     size: int
@@ -35,8 +36,6 @@ class Feature():
     end: int
     parents:list[str]|None
     misc_attributes:None|list[str]
-    seqs: list[str]
-    hard_seqs: list[str]
     id_number: int|None
     original_id_number: int|None
     gene_id: str|None
@@ -47,10 +46,16 @@ class Feature():
     blast_hits:list|None
     names:list|None
     symbols:list|None
+    frame:None|int
+    phase:None|int
+    strand:str
+    feature_id:str
+    original_id:str
+    coding:bool
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[], attributes:dict={}):
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         
         self.id = feature_id
         self.original_id = feature_id
@@ -61,8 +66,8 @@ class Feature():
         self.end = end
         self.score = score
         self.strand = strand
-        self.phase = phase
-        self.frame = "."
+        self.phase = None
+        self.frame = None
         self.coding = False
         self.gene_id = None
         if parents:
@@ -72,8 +77,6 @@ class Feature():
        
         self.gtf_attributes = None
         self.size = (self.end - self.start) + 1
-        self.seq = ""
-        self.hard_seq = ""
         self.names = None
         self.symbols = None
         self.descriptors = None
@@ -132,35 +135,44 @@ class Feature():
     def calculate_masking(self):
         self.masked_fraction = round(((count_occurrences(self.hard_seq, "X") + (count_occurrences(self.hard_seq, "N"))) / self.size), 2)
 
-    def generate_sequence(self, genome:Genome):
-        if self.start != "NA" and self.end != "NA":
+    @property
+    def seq(self) -> str|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
             if self.strand == "+":
-                self.seq = genome.scaffolds[self.ch].seq[self.start-1:self.end]
+                return self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
             elif self.strand == "-":
-                self.seq = reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])
-            elif self.strand == ".":
-                self.seqs = [genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])]
+                return reverse_complement(self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
 
-    def clear_sequence(self, just_hard=False):
-        self.hard_seq = ""
-        if hasattr(self, "hard_seqs"):
-            del self.hard_seqs
-        if not just_hard:
-            self.seq = ""
-            if hasattr(self, "seqs"):
-                del self.seqs
-
-    def generate_hard_sequence(self, hard_masked_genome:Genome):
-        if self.start != "NA" and self.end != "NA":
+    @property
+    def hard_seq(self) -> str|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
             if self.strand == "+":
-                self.hard_seq = hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end]
+                return self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
             elif self.strand == "-":
-                self.hard_seq = reverse_complement(hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end])
-            elif self.strand == ".":
-                self.hard_seqs = [hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(hard_masked_genome.scaffolds[self.ch].seq[self.start-1:self.end])]
-            
+                return reverse_complement(self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+
+    @property
+    def seqs(self) -> list[str]|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
+            raw = self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            return [raw, reverse_complement(raw)]
+
+    @property
+    def hard_seqs(self) -> list[str]|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
+            raw = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            return [raw, reverse_complement(raw)]
+
     def calculate_gc_content(self):
-        if self.seq != "":
+        if self.seq:
             gc_count = self.seq.count('G') + self.seq.count('C')
             self.gc_content = round((gc_count / self.size), 2)
 
@@ -200,12 +212,14 @@ class Feature():
             temp_attributes.extend(self.misc_attributes)
 
         attribute_string = ";".join(temp_attributes)
+        phase = self.phase if self.phase is not None else "."
 
-        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
     def print_gtf(self):
         attribute_string = "; ".join(self.gtf_attributes) # type: ignore
-        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
+        phase = self.phase if self.phase is not None else "."
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
     
     def copy(self):
         return copy.deepcopy(self)
@@ -226,13 +240,11 @@ class Feature():
         return (self.start < other.start) or (self.start == other.start and self.end <= other.end)
 
     def longer(self, other:Feature):
-        if self.seq != "" and other.seq != "":
-            if len(self.seq) >= len(other.seq):
-                return True
-            else:
-                return False
+
+        if self.size > other.size:
+            return True
         else:
-            print(f"Error: Either {self.id} or {other.id} sequences are empty!")
+            return False
 
     def identical(self, other:Feature) -> bool:
         """
@@ -272,6 +284,9 @@ class Feature():
         if overlap_bp > 0:
             overlapping = True
 
+        elif overlap_bp < 0:
+            overlap_bp = 0
+
         return overlapping, overlap_bp
 
     def compare_blast_hits(self, other:Feature, source_priority:list):
@@ -284,6 +299,8 @@ class Feature():
                 target_evalue = float(2)
                 target_bitscore = float(-1)
                 
+                if self.blast_hits is None:
+                    self.blast_hits = []
                 for b in self.blast_hits:
                     if b.source == s:
                         if b.evalue < query_evalue:
@@ -291,6 +308,8 @@ class Feature():
                         if b.score > query_bitscore:
                             query_bitscore = b.score
 
+                if other.blast_hits is None:
+                    other.blast_hits = []
                 for b in other.blast_hits:
                     if b.source == s:
                         if b.evalue < target_evalue:
