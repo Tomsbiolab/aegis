@@ -5,7 +5,7 @@
 # AEGIS: Annotation Extraction Genomic Integration Suite
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aegis-bio)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.12.3%2B-brightgreen.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/pypi/v/aegis-bio)](https://pypi.org/project/aegis-bio/)
 [![Docker Hub](https://img.shields.io/badge/docker-pull-blue)](https://hub.docker.com/r/tomsbiolab/aegis)
 [![GitHub license](https://img.shields.io/github/license/tomsbiolab/aegis)](https://github.com/tomsbiolab/aegis/blob/main/LICENSE.md)
