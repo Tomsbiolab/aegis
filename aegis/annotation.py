@@ -64,6 +64,7 @@ class Annotation():
     chrs:dict[str, dict[str, Gene]]
     
     bar_colors = ["31", "32", "34", "33", "33", "33"]
+    overlapped_annotations: set[str] | None
 
     def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False):
         
@@ -88,6 +89,7 @@ class Annotation():
         self.gff_header = []
         self.target = target
         self.to_overlap = to_overlap
+        self.overlapped_annotations = None
         self.liftover = False
         self.merged = False
         self.sorted = False
@@ -303,6 +305,7 @@ class Annotation():
     def overlaps(self) -> AnnotationOverlaps:
         if not hasattr(self, '_overlaps'):
             self._overlaps = AnnotationOverlaps(self)
+            self.overlapped_annotations = set()
         return self._overlaps
 
     @property
@@ -1598,9 +1601,9 @@ class Annotation():
                             self.chrs[chr][temp_id].id = temp_id
                             self.all_gene_ids[temp_id] = chr
                     else:
-                        cds_scores = [0]
-                        exon_scores = [0]
-                        gene_scores = [0]
+                        cds_scores: list[float] = [0.0]
+                        exon_scores: list[float] = [0.0]
+                        gene_scores: list[float] = [0.0]
                         for o in g.overlaps["other"]:
                             if o.min_CDS_percent != None:
                                 cds_scores.append(o.min_CDS_percent)

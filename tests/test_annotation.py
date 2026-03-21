@@ -1818,8 +1818,10 @@ class TestAnnotationOverlaps:
         annot = Annotation(self_overlapping_genes_gff3_file, quiet=True)
         annot.overlaps.detect(quiet=True)
 
-        assert set(annot.overlaps.self) == {"g2", "g3", "g4", "g5"}
-        assert annot.overlaps.other == []
+        assert annot.overlapped_annotations == set()
+
+        assert set(annot.overlaps.self_genes) == {"g2", "g3", "g4", "g5"}
+        assert annot.overlaps.other_genes == set()
         assert annot.chrs["chr1"]["g1"].overlaps == {"self" : [], "other" : []}
 
         assert annot.chrs["chr2"]["g2"].overlaps["self"][0].id == "g3"
@@ -1875,3 +1877,76 @@ class TestAnnotationOverlaps:
         assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_target_percent == 57.7
         assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_CDS_percent == 57.7
         assert annot.chrs["chr3"]["g5"].overlaps["self"][0].score == 8
+
+    def test_other_overlaps(self, other_overlapping_genes_gff3_file_1, other_overlapping_genes_gff3_file_2):
+        annot = Annotation(other_overlapping_genes_gff3_file_1, quiet=True)
+        annot2 = Annotation(other_overlapping_genes_gff3_file_2, quiet=True)
+        annot.overlaps.detect(other=annot2, quiet=True)
+
+        assert annot.overlaps.self_genes == set()
+        assert annot2.overlaps.self_genes == set()
+
+        assert annot.overlapped_annotations == {"other_overlapping_genes_2"}
+        assert annot2.overlapped_annotations == {"other_overlapping_genes_1"}
+
+        assert set(annot.overlaps.other_genes) == {"g3", "g4"}
+        assert set(annot2.overlaps.other_genes) == {"g2", "g5"}
+
+        assert annot2.chrs["chr1"]["g1"].overlaps == {"self" : [], "other" : []}
+
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].id == "g3"
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].orientation == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].score == 11
+
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].id == "g2"
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDSs_in_both == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exons_in_both == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].orientation == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].gene_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].gene_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_gene_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exon_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exon_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_exon_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_CDS_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].score == 11
+
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].id == "g4"
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].gene_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].gene_target_percent == 72.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].exon_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].exon_target_percent == 86.9
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].CDS_target_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].score == 8
+
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].id == "g5"
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].gene_query_percent == 72.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].gene_target_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_gene_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].exon_query_percent == 86.9
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].exon_target_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_exon_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_query_percent == 57.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_CDS_percent == 57.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].score == 8
+
+        
+        

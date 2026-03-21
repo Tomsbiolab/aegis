@@ -411,6 +411,8 @@
       - `def merge_gff3_file_1():`
       - `def merge_gff3_file_2():`
       - `def self_overlapping_genes_gff3_file():`
+      - `def other_overlapping_genes_gff3_file_1():`
+      - `def other_overlapping_genes_gff3_file_2():`
       - `def sample_fasta_file():`
       - `def sample_feature():`
       - `def sample_gene():`
@@ -646,6 +648,7 @@
       - `def test_merge_gff3(self, merge_gff3_file_1, merge_gff3_file_2):`
       - `class TestAnnotationOverlaps:`
       - `def test_self_overlaps(self, self_overlapping_genes_gff3_file):`
+      - `def test_other_overlaps(self, other_overlapping_genes_gff3_file_1, other_overlapping_genes_gff3_file_2):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py

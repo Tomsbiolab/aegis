@@ -154,6 +154,15 @@ def self_overlapping_genes_gff3_file():
     """GFF3 file with self overlapping genes."""
     return str(TEST_DATA_DIR / "input/annotation/self_overlapping_genes.gff3")
 
+@pytest.fixture
+def other_overlapping_genes_gff3_file_1():
+    """GFF3 file 1 with other overlapping genes."""
+    return str(TEST_DATA_DIR / "input/annotation/other_overlapping_genes_1.gff3")
+
+@pytest.fixture
+def other_overlapping_genes_gff3_file_2():
+    """GFF3 file 2 with other overlapping genes."""
+    return str(TEST_DATA_DIR / "input/annotation/other_overlapping_genes_2.gff3")
 
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/

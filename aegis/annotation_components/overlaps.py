@@ -21,10 +21,13 @@ class AnnotationOverlaps:
     Accessed via 'annotation_object.overlaps'.
     """
     _annot: Annotation
+    self_genes: set[str]
+    other_genes: set[str]
+
     def __init__(self, annotation:Annotation):
         self._annot = annotation
-        self.self = []
-        self.other = []
+        self.self_genes = set()
+        self.other_genes = set()
     
     def detect(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
@@ -72,7 +75,7 @@ class AnnotationOverlaps:
                     if not quiet:
                         print(f"Note: Make sure that both annotations that are being compared are associated to the same genome version. Otherwise the resulting coordinate overlaps will not be correct.")
                 
-                if other.name in self.other or self._annot.name in other.overlaps.other:
+                if other.name in self._annot.overlapped_annotations or self._annot.name in other.overlapped_annotations: # type: ignore
                     print(f"Overlaps between {self._annot.id} and {other.id} "
                            "annotations have already been detected, please "
                            "run 'self.overlaps.clear()' and/or other.overlaps.clear() if you want to "
@@ -86,10 +89,11 @@ class AnnotationOverlaps:
                     f'\033[1;91m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-                    if other.name not in self.other:
-                        self.other.append(other.name)
-                    if self._annot.name not in other.overlaps.other:
-                        other.overlaps.other.append(self._annot.name)
+                    if other.name not in self._annot.overlapped_annotations: # type: ignore
+                        self._annot.overlapped_annotations.add(other.name)
+                    if self._annot.name not in other.overlapped_annotations: # type: ignore
+                        other.overlapped_annotations.add(self._annot.name)
+
                     for chr, genes in self._annot.chrs.items():
                         for g1 in genes.values():
                             progress_bar.update(1)
@@ -98,7 +102,10 @@ class AnnotationOverlaps:
                                 for g2 in other.chrs[chr].values():
                                     overlapping, overlap_bp = g1.overlap(g2)
                                     if overlapping:
+                                        self.other_genes.add(g2.id)
+                                        other.overlaps.other_genes.add(g1.id)
                                         found_overlap = True
+                                    
                                     elif found_overlap and g1.end < g2.start:
                                         break
                                     else:
@@ -299,7 +306,7 @@ class AnnotationOverlaps:
 
         else:
 
-            if self.self != []:
+            if self.self_genes != set():
                 print("There are already detected 'self' gene overlaps, please run 'self.clear()' if you want to recalculate them")
             else:
                 progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
@@ -311,7 +318,6 @@ class AnnotationOverlaps:
 
                 # making sure self overlaps are not added twice
                 start_time = time.time()
-                self.self = set(self.self)
                 for chr, genes in self._annot.chrs.items():
                     gl = list(genes.keys())[1:]
                     for g1 in genes.values():
@@ -324,8 +330,8 @@ class AnnotationOverlaps:
                             overlapping, overlap_bp = g1.overlap(g2)
 
                             if overlapping:
-                                self.self.add(g1.id)
-                                self.self.add(g2.id)
+                                self.self_genes.add(g1.id)
+                                self.self_genes.add(g2.id)
                                 found_overlap = True
 
                             elif found_overlap and g1.end < g2.start:
@@ -520,13 +526,12 @@ class AnnotationOverlaps:
                         except:
                             pass
 
-                self.self = list(self.self)
                 progress_bar.close()
                 now = time.time()
                 lapse = now - start_time
                 if not quiet:
                     print(f"\nDetecting gene overlaps within the {self._annot.id} annotation took {round(lapse/60, 1)} minutes\n")
-                    print(f"\nThere are {len(self.self)} genes overlapping with other genes in {self._annot.id} annotation\n")
+                    print(f"\nThere are {len(self.self_genes)} genes overlapping with other genes in {self._annot.id} annotation\n")
                 self.add_qualitative_info()
 
     def as_networks(self, self_mode:bool=True):
@@ -548,13 +553,14 @@ class AnnotationOverlaps:
 
     def clear(self, keep_self=False, keep_other=False):
         if not keep_self:
-            self.self = []
+            self.self_genes = set()
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     if g.overlaps is not None:
                         g.overlaps["self"] = []
         if not keep_other:
-            self.other = []
+            self.other_genes = set()
+            self._annot.overlapped_annotations = set()
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     if g.overlaps is not None:
@@ -703,7 +709,7 @@ class AnnotationOverlaps:
             if export == "self":
                 print(f"\nNo {self._annot.id} self overlaps were detected.")
             else:
-                print(f"\nNo {self._annot.id} overlaps to the following annotation(s) '{self.other}' were detected.")
+                print(f"\nNo {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' were detected.")
             cols = [
                 "gene_id_A",
                 "gene_id_B",
@@ -853,6 +859,6 @@ class AnnotationOverlaps:
                 if export == "self":
                     print(f"\nExporting {self._annot.id} self overlaps took {round(lapse/60, 1)} minutes")
                 else:
-                    print(f"\nExporting {self._annot.id} overlaps to the following annotation(s) '{self.other}' took {round(lapse/60, 1)} minutes")
+                    print(f"\nExporting {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' took {round(lapse/60, 1)} minutes")
         
         return eq_df
