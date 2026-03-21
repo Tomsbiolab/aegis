@@ -54,6 +54,7 @@ class Annotation():
     entry: GffEntry
     
     genome: Genome | None
+    original_annotation: Annotation | None
     all_gene_ids:dict[str, str]
     # the tuple values consist of transcript id keys consist of (chromosome, gene_id)
     all_transcript_ids:dict[str, tuple[str, str]]
@@ -90,7 +91,6 @@ class Annotation():
         self.target = target
         self.to_overlap = to_overlap
         self.overlapped_annotations = None
-        self.liftover = False
         self.merged = False
         self.sorted = False
 
@@ -104,6 +104,8 @@ class Annotation():
 
         if hard_masked_genome is not None:
             Feature._ACTIVE_HARD_GENOME = hard_masked_genome
+
+        self.original_annotation = original_annotation
 
         if not quiet:
             print(f"\nProcessing {self.id} annotation object\n")
@@ -184,8 +186,6 @@ class Annotation():
         self.contains_protein_sequences = False
 
         self.promoter_types = "standard"
-        if original_annotation != None:
-            self.liftover = True
 
         keys = [
             "repeated_gene_IDs", "1bp_gene", "1bp_transcript", "subfeature_to_gene",
@@ -288,11 +288,11 @@ class Annotation():
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-        self.update(original_annotation=original_annotation, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
+        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
-            self.update(original_annotation=original_annotation, sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
+            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
 
     @property
@@ -819,7 +819,7 @@ class Annotation():
                 # parent not found within created genes or transcripts or miRNAs
                 else:
                     
-                    if liftover_exception and self.liftover:
+                    if liftover_exception and self.original_annotation is not None:
                         if not quiet:
                             print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, possibly not transfered during liftover")
                         self.warnings["missing_subfeature_parent_liftover"].add(ID)
@@ -932,7 +932,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
+    def update(self, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -994,9 +994,9 @@ class Annotation():
         if not self.sorted:
             self.sort_genes(processes=sort_processes)
         if define_synteny:
-            self.define_synteny(original_annotation=original_annotation, sort_processes=sort_processes)
-        if self.liftover and original_annotation != None:
-            for g_id in original_annotation.all_gene_ids:
+            self.define_synteny(sort_processes=sort_processes)
+        if self.original_annotation is not None:
+            for g_id in self.original_annotation.all_gene_ids:
                 if g_id not in self.all_gene_ids:
                     self.unmapped.append(g_id)
 
@@ -1125,7 +1125,7 @@ class Annotation():
                         t.feature = "rRNA"
                         t.CDSs = {}
                         t.coding = False
-                        t.blast_hits = []
+                        t.quality._blast_hits = None
                         t.main = False
                         t.temp_CDSs = []
                         t.temp_UTRs = []
@@ -1332,7 +1332,7 @@ class Annotation():
         if not quiet:
             print(f"Sorted genes for {self.id}")
 
-    def define_synteny(self, original_annotation:Annotation|None=None, sort_processes:int=1, quiet:bool=True):
+    def define_synteny(self, sort_processes:int=1, quiet:bool=True):
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
         start_time = time.time()
@@ -1342,39 +1342,39 @@ class Annotation():
         for genes in self.chrs.values():
             gene_list = list(genes.values())
             for n, g in enumerate(gene_list):
-                g.synteny_order = n
+                g.synteny.order = n
                 # This works even if only a single gene has been annotated
                 # in a chromosome or scaffold
                 if len(genes) == 1:
-                    g.previous_gene = False
-                    g.next_gene = False
+                    g.synteny.previous = None
+                    g.synteny.next = None
                 elif n == 0:
-                    g.previous_gene = False
-                    g.next_gene = gene_list[n+1].id
+                    g.synteny.previous = None
+                    g.synteny.next = gene_list[n+1].id
                 elif n != (len(genes) - 1):
-                    g.previous_gene = gene_list[n-1].id
-                    g.next_gene = gene_list[n+1].id
+                    g.synteny.previous = gene_list[n-1].id
+                    g.synteny.next = gene_list[n+1].id
                 else:
-                    g.previous_gene = gene_list[n-1].id
-                    g.next_gene = False
+                    g.synteny.previous = gene_list[n-1].id
+                    g.synteny.next = None
 
-        if self.liftover and original_annotation:
+        if self.original_annotation is not None:
             for genes in self.chrs.values():
                 for g_id, g in genes.items():
                     # this extra bit is for extra liftover copies
-                    if g_id not in original_annotation.all_gene_ids:
+                    if g_id not in self.original_annotation.all_gene_ids:
                         g_id = "_".join(g_id.split("_")[:-1])
-                        if g_id not in original_annotation.all_gene_ids:
+                        if g_id not in self.original_annotation.all_gene_ids:
                             continue
 
-                    g.old_previous_gene = original_annotation.chrs[original_annotation.all_gene_ids[g_id]][g_id].previous_gene
-                    g.old_next_gene = original_annotation.chrs[original_annotation.all_gene_ids[g_id]][g_id].next_gene                
-                    g.old_synteny_order = original_annotation.chrs[original_annotation.all_gene_ids[g_id]][g_id].synteny_order
+                    g.synteny.old_previous = self.original_annotation.chrs[self.original_annotation.all_gene_ids[g_id]][g_id].synteny.previous
+                    g.synteny.old_next = self.original_annotation.chrs[self.original_annotation.all_gene_ids[g_id]][g_id].synteny.next                
+                    g.synteny.old_order = self.original_annotation.chrs[self.original_annotation.all_gene_ids[g_id]][g_id].synteny.order
 
-                    if g.old_previous_gene == g.previous_gene and g.old_next_gene == g.next_gene:
-                        g.conserved_synteny = True
+                    if g.synteny.old_previous == g.synteny.previous and g.synteny.old_next == g.synteny.next:
+                        g.synteny.liftover_conserved = True
                     else: 
-                        g.conserved_synteny = False
+                        g.synteny.liftover_conserved = False
         now = time.time()
         lapse = now - start_time
         if not quiet:
@@ -1447,15 +1447,14 @@ class Annotation():
     def add_aliases(self, overlap_threshold:int=6):
         for genes in self.chrs.values():
             for g in genes.values():
-                if g.overlaps is not None:
-                    for name, hits in g.overlaps.items():
-                        if name == "other":
-                            for hit in hits:
-                                if hit.score >= overlap_threshold:
-                                    if g.aliases is None:
-                                        g.aliases = []
-                                    if hit.id not in g.aliases:
-                                        g.aliases.append(hit.id)
+                for name, hits in g.overlaps.items():
+                    if name == "other":
+                        for hit in hits:
+                            if hit.score >= overlap_threshold:
+                                if g.aliases is None:
+                                    g.aliases = []
+                                if hit.id not in g.aliases:
+                                    g.aliases.append(hit.id)
     
     def clear_aliases(self):
         for genes in self.chrs.values():
@@ -2398,9 +2397,9 @@ class Annotation():
         for gene in to_remove:
             if gene in self.all_gene_ids:
                 chrom = self.all_gene_ids[gene]
-                self.chrs[chrom][gene].remove = True
+                self.chrs[chrom][gene].quality.remove = True
                 if override_rescue:
-                    self.chrs[chrom][gene].rescue = False
+                    self.chrs[chrom][gene].quality.rescue = False
             else:
                 warnings.warn(f"Gene {gene} is not present in annotation {self.id}.", category=UserWarning)
 
@@ -2408,7 +2407,7 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                if g.remove and not g.rescue:
+                if g.quality.remove and not g.quality.rescue:
                     genes_to_remove.add(g.id)
 
         for g_id in genes_to_remove:
@@ -2445,11 +2444,10 @@ class Annotation():
             for g in genes.values():
                 progress_bar.update(1)
                 new_overlaps = []
-                if g.overlaps is not None:
-                    for o in g.overlaps["self"]:
-                        if o.id in self.all_gene_ids:
-                            new_overlaps.append(o)
-                    g.overlaps["self"] = new_overlaps
+                for o in g.overlaps["self"]:
+                    if o.id in self.all_gene_ids:
+                        new_overlaps.append(o)
+                g.overlaps["self"] = new_overlaps
         progress_bar.close()              
 
     def remove_duplicate_transcripts(self, quiet:bool=False):
@@ -2493,7 +2491,7 @@ class Annotation():
         to_remove = []
         for chrom, genes in self.chrs.items():
             for g in genes.values():
-                if (not g.remove or g.rescue) and (g.id not in correspondence):
+                if (not g.quality.remove or g.quality.rescue) and (g.id not in correspondence):
                     if g.overlaps:
                         for o in g.overlaps["self"]:
                             if o.score >= 5:
@@ -2534,8 +2532,8 @@ class Annotation():
                                     remove = True
                                     removed_any = True
                 if remove:
-                    g.rescue = False
-                    g.remove = True
+                    g.quality.rescue = False
+                    g.quality.remove = True
         self.remove_genes(quiet=quiet)
 
         if removed_any:
@@ -2549,8 +2547,8 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 if g.transposable:
-                    g.rescue = False
-                    g.remove = True
+                    g.quality.rescue = False
+                    g.quality.remove = True
                     removed_any = True
 
         self.remove_genes(quiet=quiet)
@@ -2566,8 +2564,8 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 if not g.transposable:
-                    g.rescue = False
-                    g.remove = True
+                    g.quality.rescue = False
+                    g.quality.remove = True
                     removed_any = True
 
         self.remove_genes(quiet=quiet)
@@ -2584,8 +2582,8 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 if g.noncoding == True and g.coding == False:
-                    g.rescue = False
-                    g.remove = True
+                    g.quality.rescue = False
+                    g.quality.remove = True
                     removed_any = True
 
         self.remove_genes(quiet=quiet)
@@ -2604,8 +2602,8 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 if g.noncoding == False and g.coding == True:
-                    g.rescue = False
-                    g.remove = True
+                    g.quality.rescue = False
+                    g.quality.remove = True
                     removed_any = True
 
         self.remove_genes(quiet=quiet)
@@ -2681,7 +2679,7 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 if g.symbols == None or g.symbols == []:
-                    g.remove = True
+                    g.quality.remove = True
         self.remove_genes(quiet=quiet)
         self.update(quiet=quiet)
 

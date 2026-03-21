@@ -8,7 +8,7 @@ import copy
 import re
 
 from .utils.genefunctions import reverse_complement
-from .utils.misc import count_occurrences
+from .other_components import FeatureQuality
 
 from functools import total_ordering
 
@@ -20,13 +20,7 @@ class Feature():
     editing. Or used on its own for CDS segments.
     """
 
-    __slots__ = (
-        'id', 'original_id', 'ch', 'source', 'feature', 'start', 'end',
-        'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id',
-        'size', 'parents', 'names', 'symbols', 'descriptors', 'processes', 'synonyms', 'gc_content',
-        'aliases', 'blast_hits', 'renamed', 'id_number', 'original_id_number',
-        'misc_attributes', 'extra_copy', 'masked_fraction', 'coding'
-    )
+    __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'size', 'parents', 'names', 'symbols', 'descriptors', 'processes', 'synonyms', 'aliases', 'renamed', 'id_number', 'original_id_number', 'misc_attributes', 'extra_copy', 'coding', '_quality')
     _ACTIVE_GENOME: Genome|None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
 
@@ -43,7 +37,6 @@ class Feature():
     descriptors:list|None
     synonyms:list|None
     aliases:list|None
-    blast_hits:list|None
     names:list|None
     symbols:list|None
     frame:None|int
@@ -52,6 +45,7 @@ class Feature():
     feature_id:str
     original_id:str
     coding:bool
+    _quality: FeatureQuality | None
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
@@ -81,9 +75,9 @@ class Feature():
         self.symbols = None
         self.descriptors = None
         self.synonyms = None
-        self.gc_content = 0
+        
         self.aliases = None
-        self.blast_hits = None
+        
         self.renamed = False
         self.id_number = None
         self.original_id_number = None
@@ -91,6 +85,8 @@ class Feature():
         self.misc_attributes = None
 
         self.extra_copy = False
+
+        self._quality = None
 
         for key, value in attributes.items():
 
@@ -119,8 +115,6 @@ class Feature():
 
         self.update_numbering(original=True)
 
-        self.masked_fraction = 0
-
     def update_numbering(self, original:bool=False):
 
         match = re.search(r'(\d+)$', self.id)
@@ -131,50 +125,6 @@ class Feature():
 
     def update_size(self):
         self.size = (self.end - self.start) + 1
-
-    def calculate_masking(self):
-        self.masked_fraction = round(((count_occurrences(self.hard_seq, "X") + (count_occurrences(self.hard_seq, "N"))) / self.size), 2)
-
-    @property
-    def seq(self) -> str|None:
-        if not self._ACTIVE_GENOME:
-            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
-        else:
-            if self.strand == "+":
-                return self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
-            elif self.strand == "-":
-                return reverse_complement(self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
-
-    @property
-    def hard_seq(self) -> str|None:
-        if not self._ACTIVE_HARD_GENOME:
-            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
-        else:
-            if self.strand == "+":
-                return self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
-            elif self.strand == "-":
-                return reverse_complement(self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
-
-    @property
-    def seqs(self) -> list[str]|None:
-        if not self._ACTIVE_GENOME:
-            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
-        else:
-            raw = self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
-            return [raw, reverse_complement(raw)]
-
-    @property
-    def hard_seqs(self) -> list[str]|None:
-        if not self._ACTIVE_HARD_GENOME:
-            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
-        else:
-            raw = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
-            return [raw, reverse_complement(raw)]
-
-    def calculate_gc_content(self):
-        if self.seq:
-            gc_count = self.seq.count('G') + self.seq.count('C')
-            self.gc_content = round((gc_count / self.size), 2)
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):
 
@@ -299,18 +249,14 @@ class Feature():
                 target_evalue = float(2)
                 target_bitscore = float(-1)
                 
-                if self.blast_hits is None:
-                    self.blast_hits = []
-                for b in self.blast_hits:
+                for b in self.quality.blast_hits:
                     if b.source == s:
                         if b.evalue < query_evalue:
                             query_evalue = b.evalue
                         if b.score > query_bitscore:
                             query_bitscore = b.score
 
-                if other.blast_hits is None:
-                    other.blast_hits = []
-                for b in other.blast_hits:
+                for b in other.quality.blast_hits:
                     if b.source == s:
                         if b.evalue < target_evalue:
                             target_evalue = b.evalue
@@ -340,3 +286,45 @@ class Feature():
                     compared = True
 
         return query_best
+
+    @property
+    def quality(self) -> FeatureQuality:
+        if self._quality is None:
+            self._quality = FeatureQuality(self)
+        return self._quality
+
+    @property
+    def seq(self) -> str|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
+            if self.strand == "+":
+                return self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            elif self.strand == "-":
+                return reverse_complement(self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+
+    @property
+    def hard_seq(self) -> str|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
+            if self.strand == "+":
+                return self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            elif self.strand == "-":
+                return reverse_complement(self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+
+    @property
+    def seqs(self) -> list[str]|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
+            raw = self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            return [raw, reverse_complement(raw)]
+
+    @property
+    def hard_seqs(self) -> list[str]|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
+            raw = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            return [raw, reverse_complement(raw)]

@@ -13,8 +13,8 @@ from .utils.genefunctions import find_ORFs, longest_ORF, translate
 class Transcript(Feature):
 
     __slots__ = (
-        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'coding', 'main',
-        'miRNAs', 'overlaps', 'renamed_exons', 'renamed_utrs', 'polycistronic',
+        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'main',
+        'miRNAs', 'renamed_exons', 'renamed_utrs', 'polycistronic',
         'coding_ratio', 'promoter', 'protein_start', 'protein_end_stop',
         'protein_early_stop', 'protein_nucleotide_surplus', 'protein_gaps',
         'protein_seq', 'coding_start', 'coding_end', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
@@ -36,7 +36,6 @@ class Transcript(Feature):
         self.temp_UTRs = []
         self.main = False
         self.miRNAs = []
-        self.overlaps = {"self" : [], "other" : []}
         self.renamed_exons = False
         self.renamed_utrs = False
         self.polycistronic = "no"
@@ -323,7 +322,7 @@ class Transcript(Feature):
 
     def generate_best_protein(self, must_have_stop:bool=True):
         if self.strand == "+" or self.strand == "-":
-            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop)
+            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop) # type: ignore
         elif self.strand == ".":
             fw, rv = self.seqs #type: ignore
             plus_orfs = find_ORFs(fw, must_have_stop)
@@ -725,10 +724,10 @@ class Transcript(Feature):
             transcript_seq = ""
             if self.strand == "+":
                 for exon in self.exons:
-                    transcript_seq += exon.seq
+                    transcript_seq += exon.seq # type: ignore
             elif self.strand == "-":
                 for exon in reversed(self.exons):
-                    transcript_seq += exon.seq
+                    transcript_seq += exon.seq # type: ignore
             return transcript_seq
 
     @property
@@ -739,10 +738,10 @@ class Transcript(Feature):
             transcript_seq = ""
             if self.strand == "+":
                 for exon in self.exons:
-                    transcript_seq += exon.hard_seq
+                    transcript_seq += exon.hard_seq # type: ignore
             elif self.strand == "-":
                 for exon in reversed(self.exons):
-                    transcript_seq += exon.hard_seq
+                    transcript_seq += exon.hard_seq # type: ignore
             return transcript_seq
 
     @property
@@ -752,7 +751,7 @@ class Transcript(Feature):
         else:
             transcript_seqs = ["", ""]
             for exon in self.exons:
-                fw, rv = exon.seqs
+                fw, rv = exon.seqs # type: ignore
                 transcript_seqs[0] += fw
                 transcript_seqs[1] += rv
             return transcript_seqs
@@ -764,7 +763,7 @@ class Transcript(Feature):
         else:
             transcript_seqs = ["", ""]
             for exon in self.exons:
-                fw, rv = exon.hard_seqs
+                fw, rv = exon.hard_seqs # type: ignore
                 transcript_seqs[0] += fw
                 transcript_seqs[1] += rv
             return transcript_seqs

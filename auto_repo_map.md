@@ -30,7 +30,7 @@
       - `def _get_unique_transcript_id(self, t_id):`
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
-      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):`
+      - `def update(self, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):`
       - `def update_suffixes(self, quiet:bool=True):`
       - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
@@ -44,7 +44,7 @@
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
       - `def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
-      - `def define_synteny(self, original_annotation:Annotation|None=None, sort_processes:int=1, quiet:bool=True):`
+      - `def define_synteny(self, sort_processes:int=1, quiet:bool=True):`
       - `def homogenise_parents_for_shared_exons_utrs(self):`
       - `def single_parent_for_exons_utrs(self):`
       - `def add_aliases(self, overlap_threshold:int=6):`
@@ -116,12 +116,6 @@
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
       - `def update_size(self):`
-      - `def calculate_masking(self):`
-      - `def seq(self) -> str|None:`
-      - `def hard_seq(self) -> str|None:`
-      - `def seqs(self) -> list[str]|None:`
-      - `def hard_seqs(self) -> list[str]|None:`
-      - `def calculate_gc_content(self):`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):`
       - `def print_gtf(self):`
       - `def copy(self):`
@@ -134,6 +128,11 @@
       - `def identical(self, other:Feature) -> bool:`
       - `def overlap(self, other:Feature) -> tuple[bool, int]:`
       - `def compare_blast_hits(self, other:Feature, source_priority:list):`
+      - `def quality(self) -> FeatureQuality:`
+      - `def seq(self) -> str|None:`
+      - `def hard_seq(self) -> str|None:`
+      - `def seqs(self) -> list[str]|None:`
+      - `def hard_seqs(self) -> list[str]|None:`
     - gene.py
       - `class Gene(Feature):`
       - `def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
@@ -152,6 +151,8 @@
       - `def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True):`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):`
       - `def __str__(self):`
+      - `def overlaps(self) -> dict[str, list[OverlapHit]]:`
+      - `def synteny(self) -> GeneSynteny:`
     - genome.py
       - `class Scaffold():`
       - `def __init__(self, name, sequence, original_name:str=""):`
@@ -172,7 +173,7 @@
       - `def remove_features(self, features_to_remove:set):`
     - hits.py
       - `class OverlapHit():`
-      - `def __init__(self, ID, origin, orientation, gene_query_percent,`
+      - `def __init__(self, ID, origin, orientation, gene_query_percent, gene_target_percent, exons_in_both, exon_query_percent, exon_target_percent, CDSs_in_both, CDS_query_percent, CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):`
       - `class BlastHit():`
       - `def __init__(self, source, score, evalue):`
     - misc_features.py
@@ -180,8 +181,19 @@
       - `def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):`
       - `def copy(self):`
       - `def compare_blast_hits(self, other:Protein, source_priority:list):`
+      - `def blast_hits(self):`
       - `class Promoter(Feature):`
       - `def __init__(self, promoter_type, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
+    - other_components.py
+      - `class GeneSynteny():`
+      - `def __init__(self):`
+      - `class FeatureQuality():`
+      - `def __init__(self, feature:Gene|Feature|Transcript|CDS):`
+      - `def calculate_masking(self):`
+      - `def calculate_gc_content(self):`
+      - `def get_attributes(self) -> list[str]:`
+      - `def blast_hits(self):`
+      - `def alternative_transcript_rescue(self):`
     - subfeatures.py
       - `class CDS(Feature):`
       - `def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
@@ -294,7 +306,7 @@
         - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
         - `def remove_exon_overlaps(self, source_priority, blast:bool=False):`
         - `def remove_UTRs_from_exon_overlaps(self):`
-        - `def remove(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):`
+        - `def remove(self, source_priority:list, quiet:bool=False):`
         - `def remove_alternative(self):`
       - stats.py
         - `class AnnotationStats:`

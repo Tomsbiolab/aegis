@@ -52,22 +52,18 @@ class AnnotationOverlaps:
             if not other.sorted:
                 other.sort_genes(processes=sort_processes)
 
+        if self._annot.original_annotation is not None:
+            self._annot.define_synteny(sort_processes=sort_processes)
+
+        if other is not None and other.original_annotation is not None:
+            other.define_synteny(sort_processes=sort_processes)
+
         if clear:
             self.clear()
             if other != None:
                 other.overlaps.clear()
 
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                if not g.overlaps:
-                    g.overlaps = {"self" : [], "other" : []}
-
         if other != None:
-
-            for genes in other.chrs.values():
-                for g in genes.values():
-                    if not g.overlaps:
-                        g.overlaps = {"self" : [], "other" : []}
 
             if self._annot.genome == other.genome:
 
@@ -276,7 +272,7 @@ class AnnotationOverlaps:
                                                                     CDS_target_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                    g2.conserved_synteny,
+                                                                    g2.synteny.liftover_conserved,
                                                                     g2.extra_copy))
 
                                     g2.overlaps["other"].append(OverlapHit(g1.id,
@@ -292,7 +288,7 @@ class AnnotationOverlaps:
                                                                     CDS_query_percent,
                                                                     protein_query_percent,
                                                                     protein_target_percent,
-                                                                    g1.conserved_synteny,
+                                                                    g1.synteny.liftover_conserved,
                                                                     g1.extra_copy))
                     self._annot.add_aliases()
                     other.add_aliases()
@@ -504,7 +500,7 @@ class AnnotationOverlaps:
                                                                 CDS_target_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                                g2.conserved_synteny,
+                                                                g2.synteny.liftover_conserved,
                                                                 g2.extra_copy))
 
                             g2.overlaps["self"].append(OverlapHit(g1.id, self._annot.name,
@@ -519,7 +515,7 @@ class AnnotationOverlaps:
                                                                 CDS_query_percent,
                                                                 protein_query_percent,
                                                                 protein_target_percent,
-                                                                g1.conserved_synteny,
+                                                                g1.synteny.liftover_conserved,
                                                                 g1.extra_copy))
                         try:
                             gl.remove(g1.id)
@@ -541,30 +537,34 @@ class AnnotationOverlaps:
             for g in genes.values():
                 overlaps = []
                 if self_mode:
-                    if g.overlaps is not None:
-                        overlaps = g.overlaps["self"]
+                    overlaps = g.overlaps["self"]
                 else:
-                    if g.overlaps is not None:
-                        overlaps = g.overlaps["other"]
+                    overlaps = g.overlaps["other"]
                 for o in overlaps:
                     G.add_edge(g.id, o.id)
             self.networks[chr] = list(nx.connected_components(G))
 
 
     def clear(self, keep_self=False, keep_other=False):
-        if not keep_self:
+        if not keep_self and not keep_other:
             self.self_genes = set()
-            for genes in self._annot.chrs.values():
-                for g in genes.values():
-                    if g.overlaps is not None:
-                        g.overlaps["self"] = []
-        if not keep_other:
             self.other_genes = set()
             self._annot.overlapped_annotations = set()
             for genes in self._annot.chrs.values():
                 for g in genes.values():
-                    if g.overlaps is not None:
-                        g.overlaps["other"] = []
+                    g._overlaps = None
+            
+        elif not keep_self:
+            self.self_genes = set()
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.overlaps["self"] = []
+        elif keep_other:
+            self.other_genes = set()
+            self._annot.overlapped_annotations = set()
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.overlaps["other"] = []
 
     def add_qualitative_info(self, quiet:bool=True):
         """
@@ -590,8 +590,6 @@ class AnnotationOverlaps:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                if g.overlaps is None:
-                    continue
                 for o in g.overlaps["self"]:
                     if o.exon_query_percent > 0:
 
@@ -637,12 +635,12 @@ class AnnotationOverlaps:
     def clear_with_selected_CDSs(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                g.overlap_with_selected_CDS = False   
+                g.quality.overlap_with_selected_CDS = False   
 
     def clear_with_selected_exons(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                g.overlap_with_selected_exon = False
+                g.quality.overlap_with_selected_exon = False
 
     def export(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:
         start_time = time.time()
@@ -669,8 +667,6 @@ class AnnotationOverlaps:
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                if g.overlaps is None:
-                    continue
                 for name, hits in g.overlaps.items():
                     if name == export:
                         for hit in hits:
@@ -686,7 +682,7 @@ class AnnotationOverlaps:
                             }
 
                             if synteny:
-                                row["gene_id_A_synteny_conserved"] = g.conserved_synteny if self._annot.liftover else pd.NA
+                                row["gene_id_A_synteny_conserved"] = g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
                                 row["gene_id_B_synteny_conserved"] = hit.target_synteny_conserved
 
                             if verbose:
@@ -770,7 +766,7 @@ class AnnotationOverlaps:
                                 na_rows.append({
                                     "gene_id_A": g.id,
                                     "overlap_score": 0,
-                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
+                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
                                 })
 
                 else:
@@ -782,7 +778,7 @@ class AnnotationOverlaps:
                                     "gene_id_A": g.id,
                                     "gene_id_A_origin": self._annot.name,
                                     "overlap_score": 0,
-                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
+                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
                                 })
 
                 if synteny:
@@ -803,7 +799,7 @@ class AnnotationOverlaps:
                                     "gene_id_A": g.id,
                                     "gene_id_A_copy": g.extra_copy,
                                     "overlap_score": 0,
-                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
+                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
                                 })
 
                 else:
@@ -816,7 +812,7 @@ class AnnotationOverlaps:
                                     "gene_id_A_origin": self._annot.name,
                                     "overlap_score": 0,
                                     "gene_id_A_copy": g.extra_copy,
-                                    "gene_id_A_synteny_conserved": g.conserved_synteny if self._annot.liftover else pd.NA
+                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
                                 })
 
                 if synteny:

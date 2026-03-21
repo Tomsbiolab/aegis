@@ -28,28 +28,27 @@ class AnnotationStats:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
-                    t.calculate_masking()
+                    t.quality.calculate_masking()
                     for c in t.CDSs.values():
-                        c.calculate_masking()
+                        c.quality.calculate_masking()
         self._annot.update()
     
     def calculate_gc_content(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                g.calculate_gc_content()
+                g.quality.calculate_gc_content()
                 for t in g.transcripts.values():
-                    t.calculate_gc_content()
+                    t.quality.calculate_gc_content()
                     for c in t.CDSs.values():
-                        c.calculate_gc_content()
+                        c.quality.calculate_gc_content()
     def gene_count(self):
         gene_objects = 0
         unique_gene_ids_in_overlaps = set()
         for genes in self._annot.chrs.values():
             gene_objects += len(genes)
             for g in genes.values():
-                if g.overlaps is not None:
-                    for o in g.overlaps["self"]:
-                        unique_gene_ids_in_overlaps.add(o.id)
+                for o in g.overlaps["self"]:
+                    unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
     def update(self, custom_path:str="", export:bool=False, max_x:int|None=None, quiet:bool=True):
