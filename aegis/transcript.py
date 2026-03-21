@@ -715,6 +715,11 @@ class Transcript(Feature):
                         if i.end < c.end and i.start > c.start:
                             i.intra_coding = True
 
+    def clear_sequence(self):
+        self.protein_seq = ""
+
+    def clear_promoter(self):
+        self.promoter = None
 
     @property
     def seq(self) -> str|None:
@@ -767,10 +772,3 @@ class Transcript(Feature):
                 transcript_seqs[0] += fw
                 transcript_seqs[1] += rv
             return transcript_seqs
-
-    def clear_sequence(self):
-        self.protein_seq = ""
-
-    def clear_promoter(self):
-        self.promoter = None
-        

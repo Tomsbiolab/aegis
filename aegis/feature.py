@@ -21,8 +21,11 @@ class Feature():
     """
 
     __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'size', 'parents', 'names', 'symbols', 'descriptors', 'processes', 'synonyms', 'aliases', 'renamed', 'id_number', 'original_id_number', 'misc_attributes', 'extra_copy', 'coding', '_quality')
+    
     _ACTIVE_GENOME: Genome|None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
+
+    _ID_NUMBER_RE = re.compile(r'(\d+)$')
 
     gtf_attributes: list[str]|None
     size: int
@@ -117,7 +120,7 @@ class Feature():
 
     def update_numbering(self, original:bool=False):
 
-        match = re.search(r'(\d+)$', self.id)
+        match = Feature._ID_NUMBER_RE.search(self.id)
         if match:
             if original:
                 self.original_id_number = int(match.group(1))

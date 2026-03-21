@@ -224,6 +224,7 @@ class CDS(Feature):
         return same
 
 class Exon(Feature):
+    __slots__ = ()
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
@@ -236,7 +237,7 @@ class UTR(Feature):
         self.prime = "3'"
 
 class Intron(Feature):
-    __slots__ = ('intra_coding')
+    __slots__ = ('intra_coding',)
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):

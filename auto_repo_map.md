@@ -244,12 +244,12 @@
       - `def update_UTRs(self):`
       - `def generate_exons(self):`
       - `def generate_introns(self):`
+      - `def clear_sequence(self):`
+      - `def clear_promoter(self):`
       - `def seq(self) -> str|None:`
       - `def hard_seq(self) -> str|None:`
       - `def seqs(self) -> list[str]|None:`
       - `def hard_seqs(self) -> list[str]|None:`
-      - `def clear_sequence(self):`
-      - `def clear_promoter(self):`
     - __init__.py
     - __main__.py
     - **annotation_components/**
@@ -382,7 +382,7 @@
         - `def find_all_occurrences(pattern, text):`
         - `def run_command(working_directory: Path, command: list):`
         - `def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:`
-        - `def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):`
+        - `def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):`
       - plots.py
         - `def hex_to_rgb(hex_string):`
         - `def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):`

@@ -947,7 +947,7 @@ class Annotation():
         batch_size = 1000
         count = 0
 
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
                                 bar_format=(
                     f'\033[1;62mUpdating {self.id} genes:\033[0m '
                     '{percentage:3.0f}%|'
@@ -1299,7 +1299,7 @@ class Annotation():
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
                         bar_format=(
             f'\033[38;2;210;180;140m\033[1mSorting {self.id} genes:\033[0m '
             '{percentage:3.0f}%|'
@@ -1544,7 +1544,7 @@ class Annotation():
         else:
             disable = False
 
-        progress_bar = tqdm(total=len(other.all_gene_ids.keys()), disable=disable,
+        progress_bar = tqdm(total=len(other.all_gene_ids), disable=disable,
                                 bar_format=(
                     f'\033[38;2;46;204;113m\033[1mMerging {other.id} and {self.id} annotations:\033[0m '
                     '{percentage:3.0f}%|'
@@ -1817,7 +1817,7 @@ class Annotation():
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
                                 bar_format=(
                     f'\033[1;91mReworking {self.id} CDSs:\033[0m '
                     '{percentage:3.0f}%|'
@@ -1858,7 +1858,7 @@ class Annotation():
 
         total = 0
         for genes in self.chrs.values():
-            total += len(genes.keys())
+            total += len(genes)
 
         progress_bar = tqdm(total=total, disable=disable,
                                 bar_format=(
@@ -1951,7 +1951,7 @@ class Annotation():
         else:
             disable = False
         changed_features = set()
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
                                 bar_format=(
                     f'\033[38;2;156;42;42m\033[1mRenaming {self.id} Gene Ids:\033[0m '
                     '{percentage:3.0f}%|'
@@ -2460,7 +2460,7 @@ class Annotation():
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids.keys()), disable=disable,
+        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
                                 bar_format=(
                     f'\033[1;91mRemoving repeat transcripts per gene of {self.id}:\033[0m '
                     '{percentage:3.0f}%|'
