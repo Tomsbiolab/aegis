@@ -8,7 +8,7 @@ import copy
 import re
 
 from .utils.genefunctions import reverse_complement
-from .other_components import FeatureQuality
+from .other_components import FeatureQuality, FeatureAttributes
 
 from functools import total_ordering
 
@@ -20,7 +20,7 @@ class Feature():
     editing. Or used on its own for CDS segments.
     """
 
-    __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'size', 'parents', 'names', 'symbols', 'descriptors', 'processes', 'synonyms', 'aliases', 'renamed', 'id_number', 'original_id_number', 'misc_attributes', 'extra_copy', 'coding', '_quality')
+    __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'parents', 'renamed', 'id_number', 'original_id_number', 'extra_copy', 'coding', '_quality', '_attributes')
     
     _ACTIVE_GENOME: Genome|None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
@@ -28,20 +28,13 @@ class Feature():
     _ID_NUMBER_RE = re.compile(r'(\d+)$')
 
     gtf_attributes: list[str]|None
-    size: int
     start: int
     end: int
     parents:list[str]|None
-    misc_attributes:None|list[str]
     id_number: int|None
     original_id_number: int|None
     gene_id: str|None
     temp_attributes: list[str]
-    descriptors:list|None
-    synonyms:list|None
-    aliases:list|None
-    names:list|None
-    symbols:list|None
     frame:None|int
     phase:None|int
     strand:str
@@ -49,6 +42,8 @@ class Feature():
     original_id:str
     coding:bool
     _quality: FeatureQuality | None
+    _attributes: FeatureAttributes | None
+    ch:str
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
@@ -73,19 +68,12 @@ class Feature():
             self.parents = None
        
         self.gtf_attributes = None
-        self.size = (self.end - self.start) + 1
-        self.names = None
-        self.symbols = None
-        self.descriptors = None
-        self.synonyms = None
-        
-        self.aliases = None
         
         self.renamed = False
         self.id_number = None
         self.original_id_number = None
 
-        self.misc_attributes = None
+        self._attributes = None
 
         self.extra_copy = False
 
@@ -94,27 +82,39 @@ class Feature():
         for key, value in attributes.items():
 
             if key == "Alias":
-                self.aliases = value[:]
+                if self._attributes is None:
+                    self._attributes = FeatureAttributes()
+                self._attributes.aliases = value[:]
 
             elif key == "Name":
-                self.names = value[:]
+                if self._attributes is None:
+                    self._attributes = FeatureAttributes()
+                self._attributes.names = value[:]
         
             elif key == "Symbol":
-                self.symbols = value[:]
+                if self._attributes is None:
+                    self._attributes = FeatureAttributes()
+                self._attributes.symbols = value[:]
 
             elif "extra_copy_number" in key:
                 value = int(value.strip())
                 if value > 0:
                     self.extra_copy = True
-                if self.misc_attributes is None:
-                    self.misc_attributes = []
-                self.misc_attributes.append(f"{key}={value}")
+                if self._attributes is None:
+                    self._attributes = FeatureAttributes()
+                    self._attributes.misc = []
+                elif self._attributes.misc is None:
+                    self._attributes.misc = []
+                self._attributes.misc.append(f"{key}={value}")
             elif key.lower() in Feature.attributes_to_ignore_when_reading_gff:
                 continue
             else:
-                if self.misc_attributes is None:
-                    self.misc_attributes = []
-                self.misc_attributes.append(f"{key}={value}")
+                if self._attributes is None:
+                    self._attributes = FeatureAttributes()
+                    self._attributes.misc = []
+                elif self._attributes.misc is None:
+                    self._attributes.misc = []
+                self._attributes.misc.append(f"{key}={value}")
 
         self.update_numbering(original=True)
 
@@ -126,8 +126,69 @@ class Feature():
                 self.original_id_number = int(match.group(1))
             self.id_number = int(match.group(1))
 
-    def update_size(self):
-        self.size = (self.end - self.start) + 1
+    @property
+    def size(self) -> int:
+        return (self.end - self.start) + 1
+
+    @property
+    def names(self) -> list[str] | None:
+        return self._attributes.names if self._attributes else None
+
+    @names.setter
+    def names(self, value: list[str] | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.names = value
+
+    @property
+    def symbols(self) -> list[str] | None:
+        return self._attributes.symbols if self._attributes else None
+
+    @symbols.setter
+    def symbols(self, value: list[str] | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.symbols = value
+
+    @property
+    def aliases(self) -> list[str] | None:
+        return self._attributes.aliases if self._attributes else None
+
+    @aliases.setter
+    def aliases(self, value: list[str] | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.aliases = value
+
+    @property
+    def descriptors(self) -> list[str] | None:
+        return self._attributes.descriptors if self._attributes else None
+
+    @descriptors.setter
+    def descriptors(self, value: list[str] | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.descriptors = value
+
+    @property
+    def synonyms(self) -> list[str] | None:
+        return self._attributes.synonyms if self._attributes else None
+
+    @synonyms.setter
+    def synonyms(self, value: list[str] | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.synonyms = value
+
+    @property
+    def misc_attributes(self) -> list[str] | None:
+        return self._attributes.misc if self._attributes else None
+
+    @misc_attributes.setter
+    def misc_attributes(self, value: list[str] | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.misc = value
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):
 

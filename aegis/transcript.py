@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .genome import Genome
-
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
@@ -15,7 +10,7 @@ class Transcript(Feature):
     __slots__ = (
         'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'main',
         'miRNAs', 'renamed_exons', 'renamed_utrs', 'polycistronic',
-        'coding_ratio', 'promoter', 'protein_start', 'protein_end_stop',
+        'promoter', 'protein_start', 'protein_end_stop',
         'protein_early_stop', 'protein_nucleotide_surplus', 'protein_gaps',
         'protein_seq', 'coding_start', 'coding_end', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
     )
@@ -26,7 +21,7 @@ class Transcript(Feature):
     UTRs: list[UTR]
     temp_CDSs: list[CDS|Feature]|None
     temp_UTRs: list[UTR]|None
-    size: int
+    promoter: Promoter | None
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
@@ -40,15 +35,11 @@ class Transcript(Feature):
         self.renamed_utrs = False
         self.polycistronic = "no"
         self.introns = None
+        self.promoter = None
 
         self.collapsed_exons = False
         self.collapsed_CDS_segments = False
         self.generated_exons = False
-    
-    def update_size(self):
-        self.size = 0
-        for exon in self.exons:
-            self.size += exon.size
 
     def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
         if self.exons == []:
@@ -59,13 +50,7 @@ class Transcript(Feature):
             self.exons.sort()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
 
-        self.update_size()
-
-        CDS_size = 0
-
         for i, c in enumerate(self.CDSs.values()):
-            if c.main:
-                CDS_size = c.size
             if i == 0:
                 c_start = c.start
                 c_end = c.end
@@ -75,12 +60,7 @@ class Transcript(Feature):
                 if c.end > c_end:
                     c_end = c.end
 
-        if CDS_size != 0:
-            self.coding_ratio = round((CDS_size / self.size), 2)
-        else:
-            self.coding_ratio = 0
-        
-        if len(self.CDSs) > 0:
+        if self.CDSs:
             if self.strand == "+":
                 for e in self.exons:
                     if e.end > c_start and e.start < c_end:
@@ -781,3 +761,26 @@ class Transcript(Feature):
                 transcript_seqs[0] += fw
                 transcript_seqs[1] += rv
             return transcript_seqs
+    
+    @property
+    def size(self):
+        size = 0
+        for exon in self.exons:
+            size += exon.size
+        return size
+
+    @property
+    def CDS_size(self):
+        size = 0
+        for c in self.CDSs.values():
+            if c.main:
+                size = c.size
+                break
+        return size
+
+    @property
+    def coding_ratio(self):
+        if self.CDS_size != 0:
+            return round((self.CDS_size / self.size), 2)
+        else:
+            return 0

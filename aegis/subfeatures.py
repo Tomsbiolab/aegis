@@ -28,14 +28,15 @@ class CDS(Feature):
         self.update()
 
     def update(self):
-        self.update_size()
         self.update_phase()
         self.update_frame()
 
-    def update_size(self):
-        self.size = 0
+    @property
+    def size(self):
+        size = 0
         for segment in self.CDS_segments:
-            self.size += segment.size
+            size += segment.size
+        return size
 
     def update_phase(self):
         leftover = 0

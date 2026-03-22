@@ -12,7 +12,7 @@ def test_gff3_gz_support(tmp_path):
     gz_path = tmp_path / "minimal.gff3.gz"
     with open(gff3_path, 'rb') as f_in:
         with gzip.open(gz_path, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
+            shutil.copyfileobj(f_in, f_out) # type: ignore
             
     # Load Annotation from the .gz file
     annot = Annotation(str(gz_path), quiet=True)
@@ -28,7 +28,7 @@ def test_gtf_gz_support(tmp_path):
     gz_path = tmp_path / "convert_basic.gtf.gz"
     with open(gtf_path, 'rb') as f_in:
         with gzip.open(gz_path, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
+            shutil.copyfileobj(f_in, f_out) # type: ignore
             
     # Load Annotation from the .gtf.gz file
     annot = Annotation(str(gz_path), quiet=True)
@@ -43,7 +43,7 @@ def test_fasta_gz_support(tmp_path):
     gz_path = tmp_path / "minimal.fasta.gz"
     with open(fasta_path, 'rb') as f_in:
         with gzip.open(gz_path, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
+            shutil.copyfileobj(f_in, f_out) # type: ignore
             
     # Load Genome from the .fasta.gz file
     genome = Genome("minimal", str(gz_path), quiet=True)

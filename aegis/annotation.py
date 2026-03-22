@@ -1168,13 +1168,11 @@ class Annotation():
                                 if not quiet:
                                     print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                 t.exons[0].start = c.start
-                                t.exons[0].update_size()
                                 self.sorted = False
                             if c.end > t.exons[-1].end:
                                 if not quiet:
                                     print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                 t.exons[-1].end = c.end
-                                t.exons[-1].update_size()
                                 self.sorted = False
 
                         if t.exons[0].start < t.start:
@@ -1192,7 +1190,6 @@ class Annotation():
                         if t.start != t.exons[0].start or t.end != t.exons[-1].end:
                             t.start = t.exons[0].start
                             t.end = t.exons[-1].end
-                            t.update_size()
                             self.sorted = False
 
                     if t.start < g.start:
@@ -1220,7 +1217,6 @@ class Annotation():
                             print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
                         g.start = earliest_start
                         g.end = latest_end
-                        g.update_size()
                         self.sorted = False
         if not quiet:
             print(f"Corrected feature coordinates for {self.id}")

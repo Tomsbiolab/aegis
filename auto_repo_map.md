@@ -115,7 +115,19 @@
       - `class Feature():`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
-      - `def update_size(self):`
+      - `def size(self) -> int:`
+      - `def names(self) -> list[str] | None:`
+      - `def names(self, value: list[str] | None):`
+      - `def symbols(self) -> list[str] | None:`
+      - `def symbols(self, value: list[str] | None):`
+      - `def aliases(self) -> list[str] | None:`
+      - `def aliases(self, value: list[str] | None):`
+      - `def descriptors(self) -> list[str] | None:`
+      - `def descriptors(self, value: list[str] | None):`
+      - `def synonyms(self) -> list[str] | None:`
+      - `def synonyms(self, value: list[str] | None):`
+      - `def misc_attributes(self) -> list[str] | None:`
+      - `def misc_attributes(self, value: list[str] | None):`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):`
       - `def print_gtf(self):`
       - `def copy(self):`
@@ -185,6 +197,8 @@
       - `class Promoter(Feature):`
       - `def __init__(self, promoter_type, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
     - other_components.py
+      - `class FeatureAttributes():`
+      - `def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, synonyms=None, misc=None):`
       - `class GeneSynteny():`
       - `def __init__(self):`
       - `class FeatureQuality():`
@@ -198,7 +212,7 @@
       - `class CDS(Feature):`
       - `def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update(self):`
-      - `def update_size(self):`
+      - `def size(self):`
       - `def update_phase(self):`
       - `def update_frame(self):`
       - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):`
@@ -225,7 +239,6 @@
     - transcript.py
       - `class Transcript(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
-      - `def update_size(self):`
       - `def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):`
       - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
       - `def rename_exons(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
@@ -250,6 +263,9 @@
       - `def hard_seq(self) -> str|None:`
       - `def seqs(self) -> list[str]|None:`
       - `def hard_seqs(self) -> list[str]|None:`
+      - `def size(self):`
+      - `def CDS_size(self):`
+      - `def coding_ratio(self):`
     - __init__.py
     - __main__.py
     - **annotation_components/**

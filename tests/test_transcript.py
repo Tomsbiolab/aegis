@@ -63,8 +63,6 @@ class TestTranscriptInit:
 
     def test_inherits_feature(self):
         t = make_transcript()
-        # Feature size is (end - start) + 1, but Transcript.update_size
-        # resets size to sum of exon sizes (0 when no exons)
         assert isinstance(t, Transcript)
 
     def test_exons_initially_empty_list(self):
@@ -88,16 +86,13 @@ class TestTranscriptInit:
 
 class TestTranscriptUpdateSize:
     def test_update_size_no_exons_is_zero(self):
-        """With no exons, update_size sets size to 0 (sum of exon sizes)."""
         t = make_transcript(start=1000, end=5000)
-        t.update_size()
         assert t.size == 0
 
     def test_update_size_with_exons(self):
         t = make_transcript(start=1000, end=5000)
         t.exons.append(make_exon("e1", 1000, 2000))
         t.exons.append(make_exon("e2", 3000, 5000))
-        t.update_size()
         # Size = sum of exon sizes: 1001 + 2001 = 3002
         assert t.size == 3002
 
@@ -210,7 +205,6 @@ class TestTranscriptExonUpdate:
         t = make_transcript(start=1000, end=5000)
         t.exons.append(make_exon("e1", 1000, 2000))
         t.exons.append(make_exon("e2", 3000, 5000))
-        t.update_size()
         t.update()
         # After exon_update, coding_ratio should be set
         assert hasattr(t, 'coding_ratio')
@@ -280,7 +274,6 @@ class TestTranscriptProteinAndCDS:
         t.coding_start = 100
         t.coding_end = 200
         e = make_exon("e1", 1000, 2000)
-        e.size = 1001
         t.exons.append(e)
         t.generate_CDSs_based_on_ORF(low_memory=False)
         assert len(t.CDSs) == 1
@@ -296,7 +289,6 @@ class TestTranscriptProteinAndCDS:
         t.coding_start = 100
         t.coding_end = 200
         e = make_exon("e1", 1000, 2000)
-        e.size = 1001
         t.exons.append(e)
         t.generate_CDSs_based_on_ORF(low_memory=False)
         assert len(t.CDSs) == 1
@@ -310,9 +302,7 @@ class TestTranscriptProteinAndCDS:
         t = make_transcript(strand="+", start=1000, end=4000)
         t.protein_seq = "M"
         e1 = make_exon("e1", 1000, 2000)
-        e1.size = 1001
         e2 = make_exon("e2", 3000, 4000)
-        e2.size = 1001
         t.exons.extend([e1, e2])
         t.coding_start = 500
         t.coding_end = 1500
@@ -329,9 +319,7 @@ class TestTranscriptProteinAndCDS:
         t = make_transcript(strand="-", start=1000, end=4000)
         t.protein_seq = "M"
         e1 = make_exon("e1", 1000, 2000)
-        e1.size = 1001
         e2 = make_exon("e2", 3000, 4000)
-        e2.size = 1001
         t.exons.extend([e1, e2])
         t.coding_start = 500
         t.coding_end = 1500

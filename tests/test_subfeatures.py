@@ -63,7 +63,6 @@ class TestCDS:
 
     def test_update_size(self):
         cds = make_cds()
-        cds.update_size()
         # Size should be sum of segment sizes
         expected = (2000 - 1200 + 1) + (4500 - 3000 + 1)
         assert cds.size == expected

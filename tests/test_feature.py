@@ -91,7 +91,6 @@ class TestFeatureMethods:
     def test_update_size(self):
         f = make_feature(start=100, end=500)
         f.end = 600
-        f.update_size()
         assert f.size == 501
 
     def test_print_gff_format(self):

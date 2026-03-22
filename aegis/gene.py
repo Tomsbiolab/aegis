@@ -40,7 +40,6 @@ class Gene(Feature):
 
 
     def update(self, quiet:bool=False):
-        self.update_size()
         self.sort_transcripts()
         self.coding = False
         self.noncoding = False

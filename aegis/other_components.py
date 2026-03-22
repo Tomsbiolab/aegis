@@ -10,6 +10,24 @@ if TYPE_CHECKING:
 
 from .utils.misc import count_occurrences
 
+class FeatureAttributes():
+    __slots__ = ('names', 'symbols', 'aliases', 'descriptors', 'synonyms', 'misc')
+
+    names: list[str] | None
+    symbols: list[str] | None
+    aliases: list[str] | None
+    descriptors: list[str] | None
+    synonyms: list[str] | None
+    misc: list[str] | None
+
+    def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, synonyms=None, misc=None):
+        self.names = names
+        self.symbols = symbols
+        self.aliases = aliases
+        self.descriptors = descriptors
+        self.synonyms = synonyms
+        self.misc = misc
+
 class GeneSynteny():
     __slots__ = ('previous', 'next', 'order', 'old_previous', 'old_next', 'old_order', 'liftover_conserved')
 
