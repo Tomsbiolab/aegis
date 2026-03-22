@@ -275,57 +275,53 @@ class TestTranslate:
 # ============================================================
 
 class TestOverlap:
-    """Test the overlap function using simple mock objects."""
+    """Test the overlap function using simple features."""
 
-    class MockFeature(Feature):
-        def __init__(self, start, end):
-            super().__init__(feature_id="mock", ch="mock", source="mock", feature="mock", strand="mock", start=start, end=end, score=".", parents=[], attributes={})
-
-    def test_overlapping_features(self):
-        f1 = self.MockFeature(100, 300)
-        f2 = self.MockFeature(200, 400)
+    def test_overlapping_features(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t100\t300\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t200\t400\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 101  # 200..300 inclusive
 
-    def test_overlapping_features_displaced(self):
-        f1 = self.MockFeature(500, 6000)
-        f2 = self.MockFeature(2000, 8000)
+    def test_overlapping_features_displaced(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t500\t6000\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t2000\t8000\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 4001
 
-    def test_non_overlapping_features(self):
-        f1 = self.MockFeature(100, 200)
-        f2 = self.MockFeature(300, 400)
+    def test_non_overlapping_features(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t100\t200\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t300\t400\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is False
         assert bp == 0
 
-    def test_adjacent_features(self):
-        f1 = self.MockFeature(100, 200)
-        f2 = self.MockFeature(201, 300)
+    def test_adjacent_features(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t100\t200\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t201\t300\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is False
         assert bp == 0
 
-    def test_small_overlap(self):
-        f1 = self.MockFeature(100, 200)
-        f2 = self.MockFeature(200, 300)
+    def test_small_overlap(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t100\t200\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t200\t300\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 1
 
-    def test_contained_feature(self):
-        f1 = self.MockFeature(100, 500)
-        f2 = self.MockFeature(200, 300)
+    def test_contained_feature(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t100\t500\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t200\t300\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 101
 
-    def test_identical_features(self):
-        f1 = self.MockFeature(100, 200)
-        f2 = self.MockFeature(100, 200)
+    def test_identical_features(self, create_test_feature):
+        f1 = create_test_feature("mock\tmock\tmock\t100\t200\t.\tmock\t.\tID=f1")
+        f2 = create_test_feature("mock\tmock\tmock\t100\t200\t.\tmock\t.\tID=f2")
         is_overlapping, bp = f1.overlap(f2)
         assert is_overlapping is True
         assert bp == 101

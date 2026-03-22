@@ -7,53 +7,14 @@ import pytest
 from aegis.annotation import Annotation
 from aegis.genome import Genome
 from aegis.transcript import Transcript
-from aegis.subfeatures import Exon, CDS, UTR, Intron
-from aegis.misc_features import Promoter
-from aegis.feature import Feature
-
-
-# ============================================================
-# Helpers
-# ============================================================
-
-def make_transcript(**overrides):
-    defaults = dict(
-        feature_id="mRNA1",
-        ch="chr1",
-        source="aegis",
-        feature="mRNA",
-        strand="+",
-        start=1000,
-        end=5000,
-        score=".",
-        parents=["gene1"]
-    )
-    defaults.update(overrides)
-    return Transcript(**defaults) # type: ignore
-
-
-def make_exon(feature_id, start, end, **overrides):
-    defaults = dict(
-        feature_id=feature_id,
-        ch="chr1",
-        source="aegis",
-        feature="exon",
-        strand="+",
-        start=start,
-        end=end,
-        score=".",
-        parents=["mRNA1"]
-    )
-    defaults.update(overrides)
-    return Exon(**defaults) # type: ignore
-
+from aegis.subfeatures import CDS, UTR
 
 # ============================================================
 # __init__
 # ============================================================
 
 class TestTranscriptInit:
-    def test_basic_properties(self):
+    def test_basic_properties(self, make_transcript):
         t = make_transcript()
         assert t.id == "mRNA1"
         assert t.ch == "chr1"
@@ -61,23 +22,21 @@ class TestTranscriptInit:
         assert t.start == 1000
         assert t.end == 5000
 
-    def test_inherits_feature(self):
+    def test_inherits_feature(self, make_transcript):
         t = make_transcript()
-        # Feature size is (end - start) + 1, but Transcript.update_size
-        # resets size to sum of exon sizes (0 when no exons)
         assert isinstance(t, Transcript)
 
-    def test_exons_initially_empty_list(self):
+    def test_exons_initially_empty_list(self, make_transcript):
         """Transcript.exons is a list, not a dict."""
         t = make_transcript()
         assert isinstance(t.exons, list)
         assert len(t.exons) == 0
 
-    def test_coding_flag_default(self):
+    def test_coding_flag_default(self, make_transcript):
         t = make_transcript()
         assert t.coding is False
 
-    def test_noncoding_transcript(self):
+    def test_noncoding_transcript(self, make_transcript):
         t = make_transcript(feature="lnc_RNA")
         assert t.id == "mRNA1"
 
@@ -87,17 +46,14 @@ class TestTranscriptInit:
 # ============================================================
 
 class TestTranscriptUpdateSize:
-    def test_update_size_no_exons_is_zero(self):
-        """With no exons, update_size sets size to 0 (sum of exon sizes)."""
-        t = make_transcript(start=1000, end=5000)
-        t.update_size()
+    def test_update_size_no_exons_is_zero(self, make_transcript):
+        t = make_transcript()
         assert t.size == 0
 
-    def test_update_size_with_exons(self):
-        t = make_transcript(start=1000, end=5000)
+    def test_update_size_with_exons(self, make_transcript, make_exon):
+        t = make_transcript()
         t.exons.append(make_exon("e1", 1000, 2000))
         t.exons.append(make_exon("e2", 3000, 5000))
-        t.update_size()
         # Size = sum of exon sizes: 1001 + 2001 = 3002
         assert t.size == 3002
 
@@ -107,13 +63,13 @@ class TestTranscriptUpdateSize:
 # ============================================================
 
 class TestTranscriptRename:
-    def test_rename_basic(self):
+    def test_rename_basic(self, make_transcript):
         t = make_transcript()
         t.rename(base_id="transcript001", count=1)
         assert "transcript001" in t.id
         assert t.renamed is True
 
-    def test_rename_custom_sep_digits(self):
+    def test_rename_custom_sep_digits(self, make_transcript):
         t = make_transcript()
         t.rename(base_id="VIT01g001", count=2, sep=".", digits=2)
         assert "VIT01g001" in t.id
@@ -124,14 +80,14 @@ class TestTranscriptRename:
 # ============================================================
 
 class TestTranscriptAlmostEqual:
-    def test_same_transcript_no_exons(self):
+    def test_same_transcript_no_exons(self, make_transcript):
         """Two transcripts with no exons are almost_equal."""
         t1 = make_transcript()
         t2 = make_transcript()
         result = t1.almost_equal(t2)
         assert result is True
 
-    def test_same_exons(self):
+    def test_same_exons(self, make_transcript, make_exon):
         """Two transcripts with identical exons are almost_equal."""
         t1 = make_transcript()
         t1.exons.append(make_exon("e1", 1000, 2000))
@@ -141,7 +97,7 @@ class TestTranscriptAlmostEqual:
         t2.exons.append(make_exon("e2", 3000, 5000))
         assert t1.almost_equal(t2) is True
 
-    def test_different_exon_count(self):
+    def test_different_exon_count(self, make_transcript, make_exon):
         """Transcripts with different number of exons are not almost_equal."""
         t1 = make_transcript()
         t1.exons.append(make_exon("e1", 1000, 2000))
@@ -150,7 +106,7 @@ class TestTranscriptAlmostEqual:
         t2.exons.append(make_exon("e2", 3000, 5000))
         assert t1.almost_equal(t2) is False
 
-    def test_different_exon_coordinates(self):
+    def test_different_exon_coordinates(self, make_transcript, make_exon):
         """Transcripts with same count but different exon coords are not almost_equal."""
         t1 = make_transcript()
         t1.exons.append(make_exon("e1", 1000, 2000))
@@ -164,26 +120,26 @@ class TestTranscriptAlmostEqual:
 # ============================================================
 
 class TestTranscriptGeneratePromoter:
-    def test_standard_promoter_plus_strand(self):
+    def test_standard_promoter_plus_strand(self, make_transcript):
         t = make_transcript(start=5000, end=10000, strand="+")
         t.generate_promoter(promoter_size=2000, ch_size=100000)
         assert t.promoter is not None
         assert t.promoter.end == t.start - 1
         assert t.promoter.start == t.start - 2000
 
-    def test_standard_promoter_minus_strand(self):
+    def test_standard_promoter_minus_strand(self, make_transcript):
         t = make_transcript(start=5000, end=10000, strand="-")
         t.generate_promoter(promoter_size=2000, ch_size=100000)
         assert t.promoter is not None
         assert t.promoter.start == t.end + 1
 
-    def test_promoter_clip_at_chromosome_start(self):
+    def test_promoter_clip_at_chromosome_start(self, make_transcript):
         t = make_transcript(start=500, end=5000, strand="+")
         t.generate_promoter(promoter_size=2000, ch_size=100000)
         assert t.promoter is not None
         assert t.promoter.start >= 1  # clipped to chromosome start
 
-    def test_promoter_clip_at_chromosome_end(self):
+    def test_promoter_clip_at_chromosome_end(self, make_transcript):
         t = make_transcript(start=5000, end=99800, strand="-")
         t.generate_promoter(promoter_size=2000, ch_size=100000)
         assert t.promoter is not None
@@ -195,10 +151,11 @@ class TestTranscriptGeneratePromoter:
 # ============================================================
 
 class TestTranscriptClearUTRs:
-    def test_clear_utrs(self):
+    def test_clear_utrs(self, make_transcript):
         t = make_transcript()
         # Smoke test - should not raise
         t.clear_UTRs()
+        assert t.temp_UTRs is None
 
 
 # ============================================================
@@ -206,11 +163,10 @@ class TestTranscriptClearUTRs:
 # ============================================================
 
 class TestTranscriptExonUpdate:
-    def test_exon_update_with_exons(self):
+    def test_exon_update_with_exons(self, make_transcript, make_exon):
         t = make_transcript(start=1000, end=5000)
         t.exons.append(make_exon("e1", 1000, 2000))
         t.exons.append(make_exon("e2", 3000, 5000))
-        t.update_size()
         t.update()
         # After exon_update, coding_ratio should be set
         assert hasattr(t, 'coding_ratio')
@@ -221,7 +177,7 @@ class TestTranscriptExonUpdate:
 # ============================================================
 
 class TestTranscriptRenameExons:
-    def test_rename_exons_basic(self):
+    def test_rename_exons_basic(self, make_transcript, make_exon):
         t = make_transcript()
         t.exons.append(make_exon("exon_a", 1000, 2000))
         t.exons.append(make_exon("exon_b", 3000, 5000))
@@ -236,7 +192,7 @@ class TestTranscriptRenameExons:
 # ============================================================
 
 class TestTranscriptRenameUTRs:
-    def test_rename_utrs_basic(self):
+    def test_rename_utrs_basic(self, make_transcript, make_exon):
         t = make_transcript()
         c = CDS([], "cds1", "chr1", "aegis", "CDS", "+", 1000, 2000, ".")
         u1 = UTR("utr1", "chr1", "aegis", "UTR", "+", 1000, 1500, ".")
@@ -273,14 +229,13 @@ class TestTranscriptSequences:
 
 class TestTranscriptProteinAndCDS:
         
-    def test_generate_CDSs_based_on_ORF_plus_single(self):
+    def test_generate_CDSs_based_on_ORF_plus_single(self, make_transcript, make_exon):
         # Create a transcript with a single exon
         t = make_transcript(strand="+", start=1000, end=2000)
         t.protein_seq = "M"
         t.coding_start = 100
         t.coding_end = 200
         e = make_exon("e1", 1000, 2000)
-        e.size = 1001
         t.exons.append(e)
         t.generate_CDSs_based_on_ORF(low_memory=False)
         assert len(t.CDSs) == 1
@@ -289,14 +244,13 @@ class TestTranscriptProteinAndCDS:
         assert cds.CDS_segments[0].start == 1100
         assert cds.CDS_segments[0].end == 1200
 
-    def test_generate_CDSs_based_on_ORF_minus_single(self):
+    def test_generate_CDSs_based_on_ORF_minus_single(self, make_transcript, make_exon):
         # Create a transcript with a single exon
         t = make_transcript(strand="-", start=1000, end=2000)
         t.protein_seq = "M"
         t.coding_start = 100
         t.coding_end = 200
         e = make_exon("e1", 1000, 2000)
-        e.size = 1001
         t.exons.append(e)
         t.generate_CDSs_based_on_ORF(low_memory=False)
         assert len(t.CDSs) == 1
@@ -305,14 +259,12 @@ class TestTranscriptProteinAndCDS:
         assert cds.CDS_segments[0].start == 1800
         assert cds.CDS_segments[0].end == 1900
 
-    def test_generate_CDSs_based_on_ORF_plus_multiple(self):
+    def test_generate_CDSs_based_on_ORF_plus_multiple(self, make_transcript, make_exon):
         # Create a transcript with multiple exons
         t = make_transcript(strand="+", start=1000, end=4000)
         t.protein_seq = "M"
         e1 = make_exon("e1", 1000, 2000)
-        e1.size = 1001
         e2 = make_exon("e2", 3000, 4000)
-        e2.size = 1001
         t.exons.extend([e1, e2])
         t.coding_start = 500
         t.coding_end = 1500
@@ -324,14 +276,12 @@ class TestTranscriptProteinAndCDS:
         segs = sorted([(s.start, s.end) for s in cds.CDS_segments])
         assert segs == [(1500, 2000), (3000, 3499)]
 
-    def test_generate_CDSs_based_on_ORF_minus_multiple(self):
+    def test_generate_CDSs_based_on_ORF_minus_multiple(self, make_transcript, make_exon):
         # Create a transcript with multiple exons
         t = make_transcript(strand="-", start=1000, end=4000)
         t.protein_seq = "M"
         e1 = make_exon("e1", 1000, 2000)
-        e1.size = 1001
         e2 = make_exon("e2", 3000, 4000)
-        e2.size = 1001
         t.exons.extend([e1, e2])
         t.coding_start = 500
         t.coding_end = 1500

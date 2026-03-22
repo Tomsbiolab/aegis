@@ -30,7 +30,7 @@
       - `def _get_unique_transcript_id(self, t_id):`
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
-      - `def update(self, original_annotation:Annotation|None=None, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):`
+      - `def update(self, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):`
       - `def update_suffixes(self, quiet:bool=True):`
       - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
@@ -44,7 +44,7 @@
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
       - `def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
-      - `def define_synteny(self, original_annotation:Annotation|None=None, sort_processes:int=1, quiet:bool=True):`
+      - `def define_synteny(self, sort_processes:int=1, quiet:bool=True):`
       - `def homogenise_parents_for_shared_exons_utrs(self):`
       - `def single_parent_for_exons_utrs(self):`
       - `def add_aliases(self, overlap_threshold:int=6):`
@@ -115,13 +115,19 @@
       - `class Feature():`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
-      - `def update_size(self):`
-      - `def calculate_masking(self):`
-      - `def seq(self) -> str|None:`
-      - `def hard_seq(self) -> str|None:`
-      - `def seqs(self) -> list[str]|None:`
-      - `def hard_seqs(self) -> list[str]|None:`
-      - `def calculate_gc_content(self):`
+      - `def size(self) -> int:`
+      - `def names(self) -> list[str] | None:`
+      - `def names(self, value: list[str] | None):`
+      - `def symbols(self) -> list[str] | None:`
+      - `def symbols(self, value: list[str] | None):`
+      - `def aliases(self) -> list[str] | None:`
+      - `def aliases(self, value: list[str] | None):`
+      - `def descriptors(self) -> list[str] | None:`
+      - `def descriptors(self, value: list[str] | None):`
+      - `def synonyms(self) -> list[str] | None:`
+      - `def synonyms(self, value: list[str] | None):`
+      - `def misc_attributes(self) -> list[str] | None:`
+      - `def misc_attributes(self, value: list[str] | None):`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):`
       - `def print_gtf(self):`
       - `def copy(self):`
@@ -134,6 +140,11 @@
       - `def identical(self, other:Feature) -> bool:`
       - `def overlap(self, other:Feature) -> tuple[bool, int]:`
       - `def compare_blast_hits(self, other:Feature, source_priority:list):`
+      - `def quality(self) -> FeatureQuality:`
+      - `def seq(self) -> str|None:`
+      - `def hard_seq(self) -> str|None:`
+      - `def seqs(self) -> list[str]|None:`
+      - `def hard_seqs(self) -> list[str]|None:`
     - gene.py
       - `class Gene(Feature):`
       - `def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
@@ -152,6 +163,8 @@
       - `def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True):`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):`
       - `def __str__(self):`
+      - `def overlaps(self) -> dict[str, list[OverlapHit]]:`
+      - `def synteny(self) -> GeneSynteny:`
     - genome.py
       - `class Scaffold():`
       - `def __init__(self, name, sequence, original_name:str=""):`
@@ -172,7 +185,7 @@
       - `def remove_features(self, features_to_remove:set):`
     - hits.py
       - `class OverlapHit():`
-      - `def __init__(self, ID, origin, orientation, gene_query_percent,`
+      - `def __init__(self, ID, origin, orientation, gene_query_percent, gene_target_percent, exons_in_both, exon_query_percent, exon_target_percent, CDSs_in_both, CDS_query_percent, CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):`
       - `class BlastHit():`
       - `def __init__(self, source, score, evalue):`
     - misc_features.py
@@ -180,13 +193,27 @@
       - `def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):`
       - `def copy(self):`
       - `def compare_blast_hits(self, other:Protein, source_priority:list):`
+      - `def blast_hits(self):`
       - `class Promoter(Feature):`
       - `def __init__(self, promoter_type, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
+    - other_components.py
+      - `class FeatureAttributes():`
+      - `def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, synonyms=None, misc=None):`
+      - `def __eq__(self, other):`
+      - `class GeneSynteny():`
+      - `def __init__(self):`
+      - `class FeatureQuality():`
+      - `def __init__(self, feature:Gene|Feature|Transcript|CDS):`
+      - `def calculate_masking(self):`
+      - `def calculate_gc_content(self):`
+      - `def get_attributes(self) -> list[str]:`
+      - `def blast_hits(self):`
+      - `def alternative_transcript_rescue(self):`
     - subfeatures.py
       - `class CDS(Feature):`
       - `def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update(self):`
-      - `def update_size(self):`
+      - `def size(self):`
       - `def update_phase(self):`
       - `def update_frame(self):`
       - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):`
@@ -213,7 +240,6 @@
     - transcript.py
       - `class Transcript(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
-      - `def update_size(self):`
       - `def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):`
       - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
       - `def rename_exons(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
@@ -232,12 +258,15 @@
       - `def update_UTRs(self):`
       - `def generate_exons(self):`
       - `def generate_introns(self):`
+      - `def clear_sequence(self):`
+      - `def clear_promoter(self):`
       - `def seq(self) -> str|None:`
       - `def hard_seq(self) -> str|None:`
       - `def seqs(self) -> list[str]|None:`
       - `def hard_seqs(self) -> list[str]|None:`
-      - `def clear_sequence(self):`
-      - `def clear_promoter(self):`
+      - `def size(self):`
+      - `def CDS_size(self):`
+      - `def coding_ratio(self):`
     - __init__.py
     - __main__.py
     - **annotation_components/**
@@ -294,7 +323,7 @@
         - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
         - `def remove_exon_overlaps(self, source_priority, blast:bool=False):`
         - `def remove_UTRs_from_exon_overlaps(self):`
-        - `def remove(self, source_priority:list, hard_masked_genome:Genome, quiet:bool=False):`
+        - `def remove(self, source_priority:list, quiet:bool=False):`
         - `def remove_alternative(self):`
       - stats.py
         - `class AnnotationStats:`
@@ -357,7 +386,7 @@
         - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
         - `class GffEntry:`
-        - `def parse_gff_parts(parts):`
+        - `def parse_gff_parts(parts) -> GffEntry:`
         - `def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):`
         - `def parse_gtf_attributes(attr_string):`
         - `def format_gff3_attributes(attrs, feature_type):`
@@ -370,7 +399,7 @@
         - `def find_all_occurrences(pattern, text):`
         - `def run_command(working_directory: Path, command: list):`
         - `def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:`
-        - `def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):`
+        - `def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):`
       - plots.py
         - `def hex_to_rgb(hex_string):`
         - `def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):`
@@ -414,8 +443,20 @@
       - `def other_overlapping_genes_gff3_file_1():`
       - `def other_overlapping_genes_gff3_file_2():`
       - `def sample_fasta_file():`
-      - `def sample_feature():`
-      - `def sample_gene():`
+      - `def make_feature():`
+      - `def _make(feature_id="feat001", ch="chr1", source="aegis", feature="gene", strand="+", start=100, end=500, score=".", parents=None, attributes=None) -> Feature:`
+      - `def make_gene():`
+      - `def _make(pseudogene=False, transposable=False, feature_id="gene001", ch="chr1", source="aegis", feature="gene", strand="+", start=100, end=2000, score=".", parents=None, attributes=None) -> Gene:`
+      - `def make_transcript():`
+      - `def _make(feature_id="mRNA1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=1000, end=5000, score=".", parents=None, attributes=None) -> Transcript:`
+      - `def make_CDS_segment():`
+      - `def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None):`
+      - `def make_CDS(make_CDS_segment):`
+      - `def _make(segments=None, feature_id="cds1", source="aegis", ch="chr1", strand="+", score=".", parents=None, attributes=None, feature="CDS"):`
+      - `def make_exon():`
+      - `def _make(feature_id="e1", start=1000, end=2000, strand="+", parents=None, score=".", source="aegis", ch="chr1", feature="exon", attributes=None):`
+      - `def create_test_feature():`
+      - `def _make(line: str) -> Feature|Gene|Transcript|Intron|UTR|Exon:`
     - test_annotation.py
       - `class TestReadFileWithFallback:`
       - `def test_utf8_file(self, tmp_path):`
@@ -674,61 +715,58 @@
       - `def test_split_on_to(self):`
       - `def test_combined_liftoff_and_from(self):`
     - test_feature.py
-      - `def make_feature(**overrides):`
       - `class TestFeatureInit:`
-      - `def test_basic_properties(self):`
-      - `def test_size_calculation(self):`
-      - `def test_names_parsed(self):`
-      - `def test_aliases_parsed(self):`
-      - `def test_symbols_parsed(self):`
-      - `def test_id_number_extraction(self):`
-      - `def test_id_number_no_digits(self):`
-      - `def test_dict_and_list_attributes(self):`
-      - `def test_misc_attributes_collected(self):`
+      - `def test_basic_properties(self, make_feature):`
+      - `def test_size_calculation(self, make_feature):`
+      - `def test_names_parsed(self, make_feature):`
+      - `def test_aliases_parsed(self, make_feature):`
+      - `def test_symbols_parsed(self, make_feature):`
+      - `def test_id_number_extraction(self, make_feature):`
+      - `def test_id_number_no_digits(self, make_feature):`
+      - `def test_dict_and_list_attributes(self, make_feature):`
+      - `def test_misc_attributes_collected(self, make_feature):`
       - `class TestFeatureMethods:`
-      - `def test_update_size(self):`
-      - `def test_print_gff_format(self):`
-      - `def test_copy_is_independent(self):`
-      - `def test_str(self):`
+      - `def test_update_size(self, make_feature):`
+      - `def test_print_gff_format(self, make_feature):`
+      - `def test_copy_is_independent(self, make_feature):`
+      - `def test_str(self, make_feature):`
       - `class TestFeatureComparisons:`
-      - `def test_equal_features(self):`
-      - `def test_not_equal_different_id(self):`
-      - `def test_lt_by_start(self):`
-      - `def test_lt_same_start_different_end(self):`
-      - `def test_le(self):`
-      - `def test_equal_coordinates(self):`
-      - `def test_not_equal_coordinates_different_chr(self):`
-      - `def test_equal_sequence_location(self):`
-      - `def test_not_equal_sequence_different_strand(self):`
+      - `def test_equal_features(self, make_feature):`
+      - `def test_not_equal_different_id(self, make_feature):`
+      - `def test_lt_by_start(self, make_feature):`
+      - `def test_lt_same_start_different_end(self, make_feature):`
+      - `def test_le(self, make_feature):`
+      - `def test_equal_coordinates(self, make_feature):`
+      - `def test_not_equal_coordinates_different_chr(self, make_feature):`
+      - `def test_equal_sequence_location(self, make_feature):`
+      - `def test_not_equal_sequence_different_strand(self, make_feature):`
     - test_gene.py
-      - `def make_gene(**overrides):`
-      - `def make_transcript(feature_id="mRNA1", start=100, end=2000, **overrides):`
       - `class TestGeneInit:`
-      - `def test_inherits_feature_properties(self):`
-      - `def test_pseudogene_flag(self):`
-      - `def test_transposable_flag(self):`
-      - `def test_transcripts_dict_initially_empty(self):`
-      - `def test_coding_defaults(self):`
+      - `def test_inherits_feature_properties(self, make_gene):`
+      - `def test_pseudogene_flag(self, make_gene):`
+      - `def test_transposable_flag(self, make_gene):`
+      - `def test_transcripts_dict_initially_empty(self, make_gene):`
+      - `def test_coding_defaults(self, make_gene):`
       - `class TestGeneRename:`
-      - `def test_rename_with_prefix(self):`
-      - `def test_rename_with_prefix_and_suffix(self):`
-      - `def test_rename_custom_digits(self):`
-      - `def test_rename_no_prefix_does_not_change_id(self):`
-      - `def test_rename_remove_point_suffix(self):`
+      - `def test_rename_with_prefix(self, make_gene):`
+      - `def test_rename_with_prefix_and_suffix(self, make_gene):`
+      - `def test_rename_custom_digits(self, make_gene):`
+      - `def test_rename_no_prefix_does_not_change_id(self, make_gene):`
+      - `def test_rename_remove_point_suffix(self, make_gene):`
       - `class TestGeneObtainBaseId:`
-      - `def test_base_id_strips_gene_prefix(self):`
-      - `def test_base_id_with_gene_suffix(self):`
-      - `def test_base_id_no_gene_in_name(self):`
-      - `def test_base_id_original_flag(self):`
+      - `def test_base_id_strips_gene_prefix(self, make_gene):`
+      - `def test_base_id_with_gene_suffix(self, make_gene):`
+      - `def test_base_id_no_gene_in_name(self, make_gene):`
+      - `def test_base_id_original_flag(self, make_gene):`
       - `class TestGeneSortTranscripts:`
-      - `def test_sort_by_start(self):`
+      - `def test_sort_by_start(self, make_gene, make_transcript):`
       - `class TestGeneClearUTRs:`
-      - `def test_clear_utrs_delegates_to_transcripts(self):`
+      - `def test_clear_utrs_delegates_to_transcripts(self, make_gene, make_transcript):`
       - `class TestGeneStr:`
-      - `def test_str_with_names(self):`
-      - `def test_str_no_names_or_symbols(self):`
+      - `def test_str_with_names(self, make_gene):`
+      - `def test_str_no_names_or_symbols(self, make_gene):`
       - `class TestGeneLongerCDS:`
-      - `def test_longer_cds_returns_none_without_main_transcripts(self):`
+      - `def test_longer_cds_returns_none_without_main_transcripts(self, make_gene, make_transcript):`
     - test_genome.py
       - `class TestScaffold:`
       - `def test_basic_init(self):`
@@ -813,15 +851,13 @@
       - `def test_translate_none_readthrough_with_orfs(self):`
       - `def test_translate_ambiguous_codons(self):`
       - `class TestOverlap:`
-      - `class MockFeature(Feature):`
-      - `def __init__(self, start, end):`
-      - `def test_overlapping_features(self):`
-      - `def test_overlapping_features_displaced(self):`
-      - `def test_non_overlapping_features(self):`
-      - `def test_adjacent_features(self):`
-      - `def test_small_overlap(self):`
-      - `def test_contained_feature(self):`
-      - `def test_identical_features(self):`
+      - `def test_overlapping_features(self, create_test_feature):`
+      - `def test_overlapping_features_displaced(self, create_test_feature):`
+      - `def test_non_overlapping_features(self, create_test_feature):`
+      - `def test_adjacent_features(self, create_test_feature):`
+      - `def test_small_overlap(self, create_test_feature):`
+      - `def test_contained_feature(self, create_test_feature):`
+      - `def test_identical_features(self, create_test_feature):`
     - test_misc_features.py
       - `class TestProtein:`
       - `def test_standard_protein(self):`
@@ -833,15 +869,13 @@
       - `def test_init(self):`
       - `def test_promoter_atg_type(self):`
     - test_subfeatures.py
-      - `def make_feature_segment(feature_id="seg1", start=100, end=300):`
-      - `def make_cds(segments=None, feature_id="cds1"):`
       - `class TestCDS:`
-      - `def test_init(self):`
-      - `def test_update_size(self):`
-      - `def test_update_phase(self):`
-      - `def test_equal_segments_same(self):`
-      - `def test_equal_segments_different(self):`
-      - `def test_clear_utrs(self):`
+      - `def test_init(self, make_CDS):`
+      - `def test_update_size(self, make_CDS):`
+      - `def test_update_phase(self, make_CDS, make_CDS_segment):`
+      - `def test_equal_segments_same(self, make_CDS):`
+      - `def test_equal_segments_different(self, make_CDS, make_CDS_segment):`
+      - `def test_clear_utrs(self, make_CDS):`
       - `class TestExon:`
       - `def test_inherits_from_feature(self):`
       - `class TestUTR:`
@@ -852,45 +886,43 @@
       - `def test_size(self):`
       - `def test_inherits_from_feature(self):`
     - test_transcript.py
-      - `def make_transcript(**overrides):`
-      - `def make_exon(feature_id, start, end, **overrides):`
       - `class TestTranscriptInit:`
-      - `def test_basic_properties(self):`
-      - `def test_inherits_feature(self):`
-      - `def test_exons_initially_empty_list(self):`
-      - `def test_coding_flag_default(self):`
-      - `def test_noncoding_transcript(self):`
+      - `def test_basic_properties(self, make_transcript):`
+      - `def test_inherits_feature(self, make_transcript):`
+      - `def test_exons_initially_empty_list(self, make_transcript):`
+      - `def test_coding_flag_default(self, make_transcript):`
+      - `def test_noncoding_transcript(self, make_transcript):`
       - `class TestTranscriptUpdateSize:`
-      - `def test_update_size_no_exons_is_zero(self):`
-      - `def test_update_size_with_exons(self):`
+      - `def test_update_size_no_exons_is_zero(self, make_transcript):`
+      - `def test_update_size_with_exons(self, make_transcript, make_exon):`
       - `class TestTranscriptRename:`
-      - `def test_rename_basic(self):`
-      - `def test_rename_custom_sep_digits(self):`
+      - `def test_rename_basic(self, make_transcript):`
+      - `def test_rename_custom_sep_digits(self, make_transcript):`
       - `class TestTranscriptAlmostEqual:`
-      - `def test_same_transcript_no_exons(self):`
-      - `def test_same_exons(self):`
-      - `def test_different_exon_count(self):`
-      - `def test_different_exon_coordinates(self):`
+      - `def test_same_transcript_no_exons(self, make_transcript):`
+      - `def test_same_exons(self, make_transcript, make_exon):`
+      - `def test_different_exon_count(self, make_transcript, make_exon):`
+      - `def test_different_exon_coordinates(self, make_transcript, make_exon):`
       - `class TestTranscriptGeneratePromoter:`
-      - `def test_standard_promoter_plus_strand(self):`
-      - `def test_standard_promoter_minus_strand(self):`
-      - `def test_promoter_clip_at_chromosome_start(self):`
-      - `def test_promoter_clip_at_chromosome_end(self):`
+      - `def test_standard_promoter_plus_strand(self, make_transcript):`
+      - `def test_standard_promoter_minus_strand(self, make_transcript):`
+      - `def test_promoter_clip_at_chromosome_start(self, make_transcript):`
+      - `def test_promoter_clip_at_chromosome_end(self, make_transcript):`
       - `class TestTranscriptClearUTRs:`
-      - `def test_clear_utrs(self):`
+      - `def test_clear_utrs(self, make_transcript):`
       - `class TestTranscriptExonUpdate:`
-      - `def test_exon_update_with_exons(self):`
+      - `def test_exon_update_with_exons(self, make_transcript, make_exon):`
       - `class TestTranscriptRenameExons:`
-      - `def test_rename_exons_basic(self):`
+      - `def test_rename_exons_basic(self, make_transcript, make_exon):`
       - `class TestTranscriptRenameUTRs:`
-      - `def test_rename_utrs_basic(self):`
+      - `def test_rename_utrs_basic(self, make_transcript, make_exon):`
       - `class TestTranscriptSequences:`
       - `def setup(self, sample_gff3_file, sample_fasta_file):`
       - `class TestTranscriptProteinAndCDS:`
-      - `def test_generate_CDSs_based_on_ORF_plus_single(self):`
-      - `def test_generate_CDSs_based_on_ORF_minus_single(self):`
-      - `def test_generate_CDSs_based_on_ORF_plus_multiple(self):`
-      - `def test_generate_CDSs_based_on_ORF_minus_multiple(self):`
+      - `def test_generate_CDSs_based_on_ORF_plus_single(self, make_transcript, make_exon):`
+      - `def test_generate_CDSs_based_on_ORF_minus_single(self, make_transcript, make_exon):`
+      - `def test_generate_CDSs_based_on_ORF_plus_multiple(self, make_transcript, make_exon):`
+      - `def test_generate_CDSs_based_on_ORF_minus_multiple(self, make_transcript, make_exon):`
     - __init__.py
     - **htmlcov/**
       - coverage_html_cb_dd2e7eb5.js

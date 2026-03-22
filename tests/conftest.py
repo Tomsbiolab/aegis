@@ -2,9 +2,15 @@
 Shared Pytest fixtures for the Aegis test suite.
 """
 
-import os
 import pytest
 from pathlib import Path
+
+from aegis.utils.gtf_gff import parse_gff_parts
+from aegis.feature import Feature
+from aegis.gene import Gene
+from aegis.transcript import Transcript
+from aegis.subfeatures import CDS, Exon, UTR, Intron
+from aegis.conf import default_features, default_introns
 
 
 # ---------------------------------------------------------------------------
@@ -175,40 +181,97 @@ def sample_fasta_file():
 
 
 # ---------------------------------------------------------------------------
-# Ready-made class instances
+# Ready-made class instances and creation helpers
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def sample_feature():
-    """A simple Feature instance for quick tests."""
-    from aegis.feature import Feature
-    return Feature(
-        feature_id="feat001",
-        ch="chr1",
-        source="aegis",
-        feature="gene",
-        strand="+",
-        start=100,
-        end=500,
-        score=".",
-        attributes={"Name": ["TestFeature"], "Alias": ["TF1"]}
-    )
-
+def make_feature():
+    def _make(feature_id="feat001", ch="chr1", source="aegis", feature="gene", strand="+", start=100, end=500, score=".", parents=None, attributes=None) -> Feature:
+        if parents is None: parents = []
+        if attributes is None: attributes = {"Name": "TestFeature", "Alias": ["TF1", "TF2"], "Symbol": "TFS"}
+        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+    return _make
 
 @pytest.fixture
-def sample_gene():
-    """A simple Gene instance for quick tests."""
-    from aegis.gene import Gene
-    return Gene(
-        pseudogene=False,
-        transposable=False,
-        feature_id="gene001",
-        ch="chr1",
-        source="aegis",
-        feature="gene",
-        strand="+",
-        start=100,
-        end=2000,
-        score=".",
-        attributes={"Name": ["TestGene"]}
-    )
+def make_gene():
+    def _make(pseudogene=False, transposable=False, feature_id="gene001", ch="chr1", source="aegis", feature="gene", strand="+", start=100, end=2000, score=".", parents=None, attributes=None) -> Gene:
+        if parents is None: parents = []
+        if attributes is None: attributes = {"Name": "TestGene"}
+        return Gene(pseudogene, transposable, feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+    return _make
+
+@pytest.fixture
+def make_transcript():
+    def _make(feature_id="mRNA1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=1000, end=5000, score=".", parents=None, attributes=None) -> Transcript:
+        if parents is None: parents = ["gene1"]
+        if attributes is None: attributes = {}
+        return Transcript(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+    return _make
+
+@pytest.fixture
+def make_CDS_segment():
+    """Create a Feature segment to use as a CDS segment."""
+    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None):
+        if parents is None: parents = ["mRNA1"]
+        if attributes is None: attributes = {}
+        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+    return _make
+
+@pytest.fixture
+def make_CDS(make_CDS_segment):
+    def _make(segments=None, feature_id="cds1", source="aegis", ch="chr1", strand="+", score=".", parents=None, attributes=None, feature="CDS"):
+        if parents is None: parents = ["mRNA1"]
+        if attributes is None: attributes = {}
+        if segments is None:
+            segments = [
+                make_CDS_segment("seg1", start=1200, end=2000), 
+                make_CDS_segment("seg2", start=3000, end=4500),
+            ]
+        first = segments[0]
+        last = segments[-1]
+        return CDS(CDS_segments=segments, feature_id=feature_id, ch=ch, source=source, feature=feature, strand=strand, start=first.start, end=last.end, score=score, parents=parents[:], attributes=attributes.copy())
+    return _make
+
+@pytest.fixture
+def make_exon():
+    def _make(feature_id="e1", start=1000, end=2000, strand="+", parents=None, score=".", source="aegis", ch="chr1", feature="exon", attributes=None):
+        if parents is None: parents = ["mRNA1"]
+        if attributes is None: attributes = {}
+        return Exon(feature_id=feature_id, ch=ch, source=source, feature=feature, strand=strand, start=start, end=end, score=score, parents=parents[:], attributes=attributes.copy())
+    return _make
+
+@pytest.fixture
+def create_test_feature():
+    def _make(line: str) -> Feature|Gene|Transcript|Intron|UTR|Exon:
+        parts = line.strip().split("\t")
+        if len(parts) != 9:
+            raise ValueError(f"GFF line must have 9 columns, got {len(parts)}")
+        
+        entry = parse_gff_parts(parts)
+        
+        args = {
+            "feature_id": entry.id,
+            "ch": entry.ch,
+            "source": entry.source,
+            "feature": entry.feature,
+            "strand": entry.strand,
+            "start": entry.start,
+            "end": entry.end,
+            "score": entry.score,
+            "parents": entry.parents,
+            "attributes": entry.attributes
+        }
+
+        if entry.feature in default_features["gene"]:
+            return Gene(pseudogene=entry.pseudogene, transposable=entry.transposable, **args)
+        elif entry.feature in default_features["transcript"]:
+            return Transcript(**args)
+        elif entry.feature in default_features["exon"]:
+            return Exon(**args)
+        elif entry.feature in default_features["UTR"]:
+            return UTR(**args)
+        elif entry.feature in default_introns:
+            return Intron(**args)
+        else:
+            return Feature(**args)
+    return _make

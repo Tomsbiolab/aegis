@@ -11,9 +11,9 @@ from .feature import Feature
 
 class Protein():
 
-    __slots__ = ("id", "ch", "summary_tag", "readthrough", "blast_hits", "start", "end_stop", "early_stop", "nucleotide_surplus", "gaps", "seq", "coding_start", "coding_end", "partial", "truncated", "size")
+    __slots__ = ("id", "ch", "summary_tag", "readthrough", "_blast_hits", "start", "end_stop", "early_stop", "nucleotide_surplus", "gaps", "seq", "coding_start", "coding_end", "partial", "truncated", "size")
 
-    blast_hits: list[BlastHit]
+    _blast_hits: list[BlastHit] | None
     size: int
 
     def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):
@@ -21,7 +21,7 @@ class Protein():
         self.ch = chrom
         self.summary_tag = ""
         self.readthrough = readthrough
-        self.blast_hits = []
+        self._blast_hits = None
         # readthrough can be start, end, both or none 
         self.start, self.end_stop, self.early_stop, self.nucleotide_surplus, self.gaps, self.seq, self.coding_start, self.coding_end = translate(nucleotides, readthrough)
         if self.start == "late" or self.start == "absent" or self.end_stop == False or self.nucleotide_surplus or self.gaps:
@@ -84,6 +84,12 @@ class Protein():
                     compared = True
 
         return query_best
+
+    @property
+    def blast_hits(self):
+        if self._blast_hits is None:
+            self._blast_hits = []
+        return self._blast_hits
 
 class Promoter(Feature):
     __slots__ = ('type',)

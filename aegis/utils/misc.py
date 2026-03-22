@@ -71,14 +71,14 @@ def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:
     return open(file_path, mode, encoding=encoding) # type: ignore
 
 
-def read_file_with_fallback(file_path, encodings=['utf-8', 'latin-1', 'ascii']):
+def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):
     """
     Tries several encodings to find the suitable one.
     """
     for enc in encodings:
         try:
             with open_file(file_path, 'r', encoding=enc) as f:
-                f.readlines()
+                f.read(sample_size)
                 return enc
         except UnicodeDecodeError:
             continue

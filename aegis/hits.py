@@ -23,11 +23,18 @@ class OverlapHit():
     min_CDS_percent: float | None
     min_protein_percent: float
     target_synteny_conserved: bool
+
+    __slots__ = (
+        'full_exon_overlaps', 'full_protein_overlaps', 'full_CDS_overlaps', 
+        'full_UTR_overlaps', 'score', 'antiscore', 'id', 'origin', 'extra_copy', 
+        'gene_query_percent', 'gene_target_percent', 'exon_query_percent', 
+        'exon_target_percent', 'CDS_query_percent', 'CDS_target_percent', 
+        'protein_query_percent', 'protein_target_percent', 'exons_in_both', 
+        'CDSs_in_both', 'orientation', 'min_gene_percent', 'min_exon_percent', 
+        'min_CDS_percent', 'min_protein_percent', 'target_synteny_conserved'
+    )
     
-    def __init__(self, ID, origin, orientation, gene_query_percent,
-                 gene_target_percent, exons_in_both, exon_query_percent,
-                 exon_target_percent, CDSs_in_both, CDS_query_percent, 
-                 CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):
+    def __init__(self, ID, origin, orientation, gene_query_percent, gene_target_percent, exons_in_both, exon_query_percent, exon_target_percent, CDSs_in_both, CDS_query_percent, CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):
         self.full_exon_overlaps = 0
         self.full_protein_overlaps = 0
         self.full_CDS_overlaps = 0
@@ -204,6 +211,9 @@ class OverlapHit():
                     self.antiscore = 5
 
 class BlastHit():
+
+    __slots__ = ('source', 'score', 'evalue')
+
     def __init__(self, source, score, evalue):
         self.source = source
         self.score = score

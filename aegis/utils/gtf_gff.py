@@ -44,12 +44,13 @@ class GffEntry:
     transposable: bool
     decreasing_coordinates: bool
 
-def parse_gff_parts(parts):
+def parse_gff_parts(parts) -> GffEntry:
 
     # Interning high-frequency strings
     source = sys.intern(parts[1])
     feature = sys.intern(parts[2])
     strand = sys.intern(parts[6])
+    score = sys.intern(parts[5])
 
     ch = sys.intern(parts[0].partition(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
 
@@ -86,7 +87,7 @@ def parse_gff_parts(parts):
         feature=feature,
         start=actual_start,
         end=actual_end,
-        score=parts[5],
+        score=score,
         strand=strand,
         attributes=attr_dict,
         id=entry_id,

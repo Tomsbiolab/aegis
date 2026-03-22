@@ -28,14 +28,15 @@ class CDS(Feature):
         self.update()
 
     def update(self):
-        self.update_size()
         self.update_phase()
         self.update_frame()
 
-    def update_size(self):
-        self.size = 0
+    @property
+    def size(self):
+        size = 0
         for segment in self.CDS_segments:
-            self.size += segment.size
+            size += segment.size
+        return size
 
     def update_phase(self):
         leftover = 0
@@ -134,10 +135,10 @@ class CDS(Feature):
             cds_seq = ""
             if self.strand == "+":
                 for cs in self.CDS_segments:
-                    cds_seq += cs.seq
+                    cds_seq += cs.seq # type: ignore
             elif self.strand == "-":
                 for cs in reversed(self.CDS_segments):
-                    cds_seq += cs.seq
+                    cds_seq += cs.seq # type: ignore
             return cds_seq
 
     @property
@@ -148,10 +149,10 @@ class CDS(Feature):
             cds_seq = ""
             if self.strand == "+":
                 for cs in self.CDS_segments:
-                    cds_seq += cs.hard_seq
+                    cds_seq += cs.hard_seq # type: ignore
             elif self.strand == "-":
                 for cs in reversed(self.CDS_segments):
-                    cds_seq += cs.hard_seq
+                    cds_seq += cs.hard_seq # type: ignore
             return cds_seq
 
     @property
@@ -161,7 +162,7 @@ class CDS(Feature):
         else:
             cds_seqs = ["", ""]
             for cs in self.CDS_segments:
-                fw, rv = cs.seqs
+                fw, rv = cs.seqs # type: ignore
                 cds_seqs[0] += fw
                 cds_seqs[1] += rv
             return cds_seqs
@@ -173,7 +174,7 @@ class CDS(Feature):
         else:
             cds_seqs = ["", ""]
             for cs in self.CDS_segments:
-                fw, rv = cs.hard_seqs
+                fw, rv = cs.hard_seqs # type: ignore
                 cds_seqs[0] += fw
                 cds_seqs[1] += rv
             return cds_seqs
@@ -184,11 +185,11 @@ class CDS(Feature):
         if self.strand == "+":
             for u in self.UTRs:
                 if u.prime == "5'":
-                    five_prime_UTR_seq += u.seq
+                    five_prime_UTR_seq += u.seq # type: ignore
         elif self.strand == "-":
             for u in reversed(self.UTRs):
                 if u.prime == "5'":
-                    five_prime_UTR_seq += u.seq
+                    five_prime_UTR_seq += u.seq # type: ignore
         return five_prime_UTR_seq
     
     @property
@@ -197,15 +198,15 @@ class CDS(Feature):
         if self.strand == "+":
             for u in self.UTRs:
                 if u.prime == "3'":
-                    three_prime_UTR_seq += u.seq
+                    three_prime_UTR_seq += u.seq # type: ignore
         elif self.strand == "-":
             for u in reversed(self.UTRs):
                 if u.prime == "3'":
-                    three_prime_UTR_seq += u.seq
+                    three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
     def generate_protein(self, readthrough:str="both"):
-        self.protein = Protein(f"{self.id}.prot", self.seq, self.ch, readthrough)
+        self.protein = Protein(f"{self.id}.prot", self.seq, self.ch, readthrough) # type: ignore
 
     def clear_protein(self):
         self.protein = None
@@ -224,6 +225,7 @@ class CDS(Feature):
         return same
 
 class Exon(Feature):
+    __slots__ = ()
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
@@ -236,7 +238,7 @@ class UTR(Feature):
         self.prime = "3'"
 
 class Intron(Feature):
-    __slots__ = ('intra_coding')
+    __slots__ = ('intra_coding',)
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
