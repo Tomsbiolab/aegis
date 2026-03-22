@@ -28,6 +28,14 @@ class FeatureAttributes():
         self.synonyms = synonyms
         self.misc = misc
 
+    def __eq__(self, other):
+        if not isinstance(other, FeatureAttributes):
+            return False
+        for slot in self.__slots__:
+            if getattr(self, slot) != getattr(other, slot):
+                return False
+        return True
+
 class GeneSynteny():
     __slots__ = ('previous', 'next', 'order', 'old_previous', 'old_next', 'old_order', 'liftover_conserved')
 

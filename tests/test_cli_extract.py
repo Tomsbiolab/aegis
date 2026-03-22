@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from typer.testing import CliRunner
 
 from aegis.cli.extract import app

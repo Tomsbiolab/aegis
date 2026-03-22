@@ -2693,15 +2693,14 @@ class Annotation():
                 g.ch = chrom
                 for t in g.transcripts.values():
                     t.ch = chrom
-                    if hasattr(t, "promoter"):
+                    if t.promoter is not None:
                         t.promoter.ch = chrom
                     for c in t.CDSs.values():
                         c.ch = chrom
                         for cs in c.CDS_segments:
                             cs.ch = chrom
-                        if hasattr(c, "protein"):
-                            if c.protein != None:
-                                c.protein.ch = chrom
+                        if c.protein is not None:
+                            c.protein.ch = chrom
                         for u in c.UTRs:
                             u.ch = chrom
                     for e in t.exons:

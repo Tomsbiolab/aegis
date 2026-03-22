@@ -44,7 +44,7 @@ class GffEntry:
     transposable: bool
     decreasing_coordinates: bool
 
-def parse_gff_parts(parts):
+def parse_gff_parts(parts) -> GffEntry:
 
     # Interning high-frequency strings
     source = sys.intern(parts[1])

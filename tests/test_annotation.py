@@ -6,6 +6,7 @@ import os
 import warnings
 import pytest
 from pathlib import Path
+import pytest
 from aegis.gene import Gene
 
 from aegis.transcript import Transcript

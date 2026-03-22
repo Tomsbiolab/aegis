@@ -1,6 +1,6 @@
 import gzip
 import shutil
-from pathlib import Path
+import pytest
 
 from aegis.annotation import Annotation
 from aegis.genome import Genome
