@@ -41,6 +41,11 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
+
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     if output_file == "{annotation-name}.{ext}":
@@ -71,7 +76,7 @@ def main(
         annotation.remove_transcripts(input_ids, remove_genes_accordingly=True, quiet=quiet)
 
     output_file += ".gff3"
-    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet, subfolder=subfolder)
 
 
 if __name__ == "__main__":

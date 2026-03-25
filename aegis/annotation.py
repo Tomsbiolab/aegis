@@ -1282,14 +1282,13 @@ class Annotation():
 
         return random_ids
 
-    def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):
+    def combine_transcripts(self, respect_non_coding:bool=False):
         for genes in self.chrs.values():
             for g in genes.values():
-                g.combine_transcripts(genome, respect_non_coding=respect_non_coding)
+                g.combine_transcripts(respect_non_coding=respect_non_coding)
         self.sorted = False
         self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
         self.tags.add("combined")
-
 
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:

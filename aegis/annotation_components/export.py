@@ -886,7 +886,7 @@ class AnnotationExport:
                             continue
                         f_out.write("###\n")
 
-    def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):
+    def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):
 
         self._annot.create_gtf_attributes()
 
@@ -907,7 +907,10 @@ class AnnotationExport:
                     f'\033[38;2;46;204;113m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-        export_folder = Path(custom_path or self._annot.path) / "out_gtfs"
+        if subfolder:
+            export_folder = Path(custom_path or self._annot.path) / "out_gtfs"
+        else:
+            export_folder = Path(custom_path or self._annot.path)
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 

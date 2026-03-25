@@ -131,6 +131,11 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
+
     for feature in features:
         if feature not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid feature: {feature}. Choose from: {RNA_CLASSES}")
@@ -154,7 +159,7 @@ def main(
         annotation.filter_by_rna_class(rna_classes=features)
         clean_features = True
 
-    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()

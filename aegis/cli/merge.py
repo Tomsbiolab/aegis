@@ -55,6 +55,11 @@ def main(
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs
 
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
+
     if skip_renaming:
         features = []
     else:
@@ -78,7 +83,7 @@ def main(
         )
 
     print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export.gff(output_dir, quiet=quiet)
+    base_annotation.export.gff(output_dir, quiet=quiet, subfolder=subfolder)
 
     print("Done.")
 
