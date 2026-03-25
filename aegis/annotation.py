@@ -2174,6 +2174,7 @@ class Annotation():
     def create_featurecounts_ids(self):
         for genes in self.chrs.values():
             for g in genes.values():
+                g.gene_id = g.id
                 for t in g.transcripts.values():
                     t.gene_id = g.id
                     for c in t.CDSs.values():
@@ -2181,6 +2182,8 @@ class Annotation():
                             cs.gene_id = g.id
                         for u in c.UTRs:
                             u.gene_id = g.id
+                    for e in t.exons:
+                        e.gene_id = g.id
 
     def create_gtf_attributes(self):
 
