@@ -742,6 +742,8 @@ class AnnotationExport:
         if featurecountsID:
             self._annot.create_featurecounts_ids()
             self._annot.tags.add("fcounts")
+        else:
+            self._annot.tags.discard("fcounts")
         
         if clean_attributes:
             self._annot.tags.add("clean")
