@@ -1037,7 +1037,7 @@ class AnnotationExport:
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):
+    def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):
         if not custom_path:
             export_folder = Path(self._annot.path) / "lists"
         else:
@@ -1058,7 +1058,7 @@ class AnnotationExport:
 
             header = ["transcript_id"]
             if chromosomes or coordinates:
-                header.append("scaffold")
+                header.append("chromosome")
             if coordinates:
                 header.append("transcript_start")
                 header.append("transcript_end")
@@ -1068,7 +1068,8 @@ class AnnotationExport:
                 header.append("coding")
             if gene_symbols:
                 header.append("gene_symbol")
-            f_out.write(sep.join(header) + "\n")
+            if include_header:
+                f_out.write(sep.join(header) + "\n")
 
             for chrom, genes in self._annot.chrs.items():
                 for g in genes.values():
