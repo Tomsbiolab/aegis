@@ -62,10 +62,15 @@ class Annotation():
     _transcript_info:dict[str, set[str]]
     _miRNA_info:set[str]
 
+    tags:set[str]
+
     chrs:dict[str, dict[str, Gene]]
     
     bar_colors = ["31", "32", "34", "33", "33", "33"]
     overlapped_annotations: set[str] | None
+
+    tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
+    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
     def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False):
         
@@ -125,61 +130,18 @@ class Annotation():
         # Here we insert any recognisable feature that was impossible to fit into the current structure
         self.orphaned_features = []
 
-        self.feature_suffix = ""
-        self.suffix = ""
+        # optional default tag system for output gffs/gtfs
+        self.tags = set()
+        for tag in self.tags_to_detect:
+            if f"_{tag}" in annot_file_path:
+                self.tags.add(tag)
 
-        self.coding_removed = False
-        if "_minus_coding" in annot_file_path:
-            self.coding_removed = True
-
-        self.non_coding_removed = False
-        if "_minus_non_coding" in annot_file_path:
-            self.non_coding_removed = True
-
-        self.transposable_removed = False
-        if "_minus_TE" in annot_file_path:
-            self.transposable_removed = True
-
-        self.non_transposable_removed = False
-        if "_minus_non_TE" in annot_file_path:
-            self.non_transposable_removed = True
-
-        self.featurecounts = False
-        if "_fcounts" in annot_file_path:
-            self.featurecounts = True
-
-        self.combined = False
-        if "_combined" in annot_file_path:
-            self.combined = True
-
-        self.clean = False
-        if "_clean" in annot_file_path:
-            self.clean = True
-
-        self.dapmod = False
-        if "_dapmod" in annot_file_path:
-            self.dapmod = True
-
-        self.confrenamed = False
-        if "_confrenamed" in annot_file_path:
-            self.confrenamed = True
-
-        self.full_renamed_ids = False
-        if "_full_renamed_ids" in annot_file_path:
-            self.confrenamed = True
-
-        if genome is not None:
-            self.dapfit = genome.dapfit
-        else:
-            self.dapfit = None
-
-        self.symbols_added = False
+        self.feature_tags = set()
+        for tag in self.feature_tags_to_detect:
+            if f"_{tag}" in annot_file_path:
+                self.feature_tags.add(tag)
 
         self.renamed_features = []
-
-        self.small_cds_removed = False
-        if "_minus_small_CDSs" in annot_file_path:
-            self.small_cds_removed = True
 
         self.promoter_size = 3000
 
@@ -285,13 +247,74 @@ class Annotation():
         now = time.time()
         lapse = now - start_time
 
+        if genome is not None:
+            if genome.dapfit:
+                self.tags.add("dapfit")
+            else:
+                rogue_chromosome_format = False
+                for chrom in self.chrs:
+                    if chrom.startswith("chr"):
+                        number_str = chrom[3:]
+                        if not number_str.isdigit():
+                            rogue_chromosome_format = True
+                            break
+                    else:
+                        rogue_chromosome_format = True
+                        break
+                if not rogue_chromosome_format:
+                    self.tags.add("dapfit")
+
+        misc_attributes = False
+        for genes in self.chrs.values():
+            for g in genes.values():
+                if g.misc_attributes:
+                    misc_attributes = True
+                    break
+                for t in g.transcripts.values():
+                    if t.misc_attributes:
+                        misc_attributes = True
+                        break
+                    for e in t.exons:
+                        if e.misc_attributes:
+                            misc_attributes = True
+                            break
+                    for c in t.CDSs.values():
+                        if c.misc_attributes:
+                            misc_attributes = True
+                            break
+                        for u in c.UTRs:
+                            if u.misc_attributes:
+                                misc_attributes = True
+                                break
+                    for ft in t.miRNAs:
+                        if ft.misc_attributes:
+                            misc_attributes = True
+                            break
+                    if misc_attributes:
+                        break
+                if misc_attributes:
+                    break
+            if misc_attributes:
+                break
+        for ft in self.atypical_features:
+            if ft.misc_attributes:
+                misc_attributes = True
+                break
+        for ft in self.orphaned_features:
+            if ft.misc_attributes:
+                misc_attributes = True
+                break
+
+        if not misc_attributes:
+            self.tags.add("clean")
+
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
         self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            self.rework_CDSs(genome, override=rework_all_CDSs, quiet=quiet)
+            self.rework_CDSs(override=rework_all_CDSs, quiet=quiet)
             self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
 
@@ -329,6 +352,23 @@ class Annotation():
     @property
     def summary(self) -> dict:
         return self.stats.data
+
+    @property
+    def feature_suffix(self) -> str:
+        sorted_suffixes = sorted(list(self.feature_tags))
+        sorted_suffixes = "_".join(sorted_suffixes)
+        if sorted_suffixes:
+            sorted_suffixes = "_" + sorted_suffixes
+        return sorted_suffixes
+
+    @property
+    def all_suffixes(self) -> str:
+        combined_suffixes = list(self.feature_tags) + list(self.tags)
+        combined_suffixes = sorted(list(set(combined_suffixes)))
+        combined_suffixes = "_".join(combined_suffixes)
+        if combined_suffixes:
+            combined_suffixes = "_" + combined_suffixes
+        return combined_suffixes
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):
         
@@ -1000,53 +1040,12 @@ class Annotation():
                 if g_id not in self.all_gene_ids:
                     self.unmapped.append(g_id)
 
-        self.update_suffixes()
-
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"\nWhole update process for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-    def update_suffixes(self, quiet:bool=True):
-        if not quiet:
-            print(f"\nUpdating suffixes for {self.id}")
-        self.feature_suffix = ""
-        self.suffix = ""
-
-        if self.combined:
-            self.feature_suffix += "_combined"
-        if self.small_cds_removed:
-            self.feature_suffix += "_minus_small_CDSs"
-        if self.coding_removed:
-            self.feature_suffix += "_minus_coding"
-        if self.non_coding_removed:
-            self.feature_suffix += "_minus_non_coding"
-        if self.transposable_removed:
-            self.feature_suffix += "_minus_TE"
-        if self.non_transposable_removed:
-            self.feature_suffix += "_minus_non_TE"
-
-        if self.full_renamed_ids:
-            self.feature_suffix += "_full_renamed_ids"
-
-        self.suffix = self.feature_suffix
-
-        if self.confrenamed:
-            self.suffix += "_confrenamed"
-        if self.featurecounts:
-            self.suffix += "_fcounts"
-        if self.dapmod:
-            self.suffix += "_dapmod"
-        elif self.dapfit:
-            self.suffix += "_dapfit"
-        if self.symbols_added:
-            self.suffix += "_plus_symbols"
-        if not quiet:
-            print(f"\nUpdated suffixes for {self.id}")
-
     def update_features(self, standardise=False, quiet:bool=True):
-        if not quiet:
-            print(f"\nUpdating features for {self.id}")
 
         self.features = {}
         for genes in self.chrs.values():
@@ -1060,14 +1059,18 @@ class Annotation():
                 for t in g.transcripts.values():
                     if standardise:
                         if t.feature not in default_noncoding_transcripts:
-                            t.feature = "mRNA"
+                            if t.feature != "mRNA":
+                                self.tags.add("standardised_features")
+                                t.feature = "mRNA"
                     if t.feature not in self.features:
                         self.features[t.feature] = 1
                     else:
                         self.features[t.feature] += 1
                     for e in t.exons:
                         if standardise:
-                            e.feature = "exon"
+                            if e.feature != "exon":
+                                self.tags.add("standardised_features")
+                                e.feature = "exon"
                         if e.feature not in self.features:
                             self.features[e.feature] = 1
                         else:
@@ -1076,7 +1079,9 @@ class Annotation():
                         if standardise:
                             c.feature = "CDS"
                             for cs in c.CDS_segments:
-                                cs.feature = "CDS"
+                                if cs.feature != "CDS":
+                                    self.tags.add("standardised_features")
+                                    cs.feature = "CDS"
                         if c.feature not in self.features:
                             self.features[c.feature] = 1
                         else:
@@ -1094,7 +1099,10 @@ class Annotation():
                 self.features[ft.feature] += 1
 
         if not quiet:
-            print(f"\nUpdated features for {self.id}")
+            if standardise:
+                print(f"\nUpdated standardised features for {self.id}")
+            else:
+                print(f"\nUpdated features for {self.id}")
 
     def mark_transposable_element_genes(self, TE_genes_file):
         TE_genes = set()
@@ -1280,8 +1288,8 @@ class Annotation():
                 g.combine_transcripts(genome, respect_non_coding=respect_non_coding)
         self.sorted = False
         self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
-        self.combined = True
-        self.update_suffixes()
+        self.tags.add("combined")
+
 
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:
@@ -1802,7 +1810,7 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+    def rework_CDSs(self, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -2101,7 +2109,7 @@ class Annotation():
         self.renamed_features = changed_features
 
         if features == ["gene", "transcript", "CDS", "exon", "UTR"]:
-            self.full_renamed_ids = True
+            self.feature_tags.add("full_renamed_ids")
 
         if correspondences:
 
@@ -2533,7 +2541,7 @@ class Annotation():
         self.remove_genes(quiet=quiet)
 
         if removed_any:
-            self.small_cds_removed = True
+            self.feature_tags.add("minus_small_CDS")
         self.update(quiet=quiet)
 
     def remove_TE_genes(self, quiet:bool=False):
@@ -2550,7 +2558,7 @@ class Annotation():
         self.remove_genes(quiet=quiet)
 
         if removed_any:
-            self.transposable_removed = True
+            self.feature_tags.add("minus_TE")
         self.update(quiet=quiet)
 
     def remove_non_TE_genes(self, quiet:bool=False):
@@ -2567,7 +2575,7 @@ class Annotation():
         self.remove_genes(quiet=quiet)
         
         if removed_any:
-            self.non_transposable_removed = True
+            self.feature_tags.add("minus_non_TE")
 
         self.update(quiet=quiet)
 
@@ -2587,7 +2595,7 @@ class Annotation():
         removed_any = self.remove_non_coding_transcripts_from_coding_genes(removed_any, False, quiet=quiet)
 
         if removed_any:
-            self.non_coding_removed = True
+            self.feature_tags.add("minus_non_coding")
 
         self.update(quiet=quiet)
 
@@ -2607,7 +2615,7 @@ class Annotation():
         removed_any = self.remove_coding_transcripts_from_non_coding_genes(removed_any, False, quiet=quiet)
 
         if removed_any:
-            self.coding_removed = True
+            self.feature_tags.add("minus_coding")
 
         self.update(quiet=quiet)
 
@@ -2628,7 +2636,7 @@ class Annotation():
             removed_any = True
 
         if removed_any:
-            self.coding_removed = True
+            self.feature_tags.add("minus_coding")
         
         self.overlaps.clear()
 
@@ -2654,7 +2662,7 @@ class Annotation():
             removed_any = True
 
         if removed_any:
-            self.non_coding_removed = True
+            self.feature_tags.add("minus_non_coding")
 
         self.overlaps.clear()
 
@@ -2670,6 +2678,7 @@ class Annotation():
                 g.symbols = None
                 g.synonyms = None
         self.update(quiet=quiet)
+        self.tags.discard("plus_symbols")
 
     def remove_genes_without_symbols(self, quiet:bool=False):
         for genes in self.chrs.values():
@@ -2679,7 +2688,7 @@ class Annotation():
         self.remove_genes(quiet=quiet)
         self.update(quiet=quiet)
 
-    def rename_chromosomes(self, equivalences, dap:bool=False, quiet:bool=False):
+    def rename_chromosomes(self, equivalences, dap:bool=False):
 
         renamed_scaffolds = False
         for old, new in equivalences.items():
@@ -2716,15 +2725,13 @@ class Annotation():
         for o in self.orphaned_features:
             if o.ch in equivalences:
                 o.ch = equivalences[o.ch]
-
         if dap:
-            self.dapfit = True
+            self.tags.add("dapfit")
             if renamed_scaffolds:
-                self.dapmod = True
+                self.tags.add("dapmod")
+                self.tags.discard("dapfit")
         elif renamed_scaffolds:
-            self.confrenamed = True
-
-        self.update_suffixes(quiet=quiet)
+            self.tags.add("confrenamed")
 
     def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
         if clear:
@@ -2772,7 +2779,7 @@ class Annotation():
                     elif pseudogene == "gene" or pseudogene == "Gene":
                         self.chrs[ch][gene_id].pseudogene = False
 
-        self.symbols_added = True
+        self.tags.add("plus_symbols")
 
     def add_gene_symbols(self, file_path:str, clear:bool=True, header:bool=False, sep:str="\t"):
 
@@ -2800,7 +2807,7 @@ class Annotation():
                 self.chrs[ch][gene_id].symbols = []
             self.chrs[ch][gene_id].symbols.append(gene_name)
 
-        self.symbols_added = True
+        self.tags.add("plus_symbols")
 
     def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):
         if clear_aliases:

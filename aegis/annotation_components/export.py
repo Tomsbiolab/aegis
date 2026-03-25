@@ -705,7 +705,7 @@ class AnnotationExport:
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True):
+    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -735,27 +735,29 @@ class AnnotationExport:
 
         if just_genes:
             output_suffix += "_just_genes"
-        if no_1bp_features:
-            output_suffix += "_for_lifton"
+
+        if repeat_exons_utrs:
+            self._annot.single_parent_for_exons_utrs()
+
+        if featurecountsID:
+            self._annot.create_featurecounts_ids()
+            self._annot.tags.add("fcounts")
+        
+        if clean_attributes:
+            self._annot.tags.add("clean")
 
         if tag == ".gff3":
-            tag = f"{self._annot.id}{self._annot.suffix}{output_suffix}{tag}"
-            if not quiet:
-                print(f"Exporting {self._annot.id} gff with tag='{tag}' which is dapfit={self._annot.dapfit} and dapmod={self._annot.dapmod} and combined={self._annot.combined}.")
-        elif not quiet:
+            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gff3"
+
+        if not quiet:
             print(f"Exporting {self._annot.id} gff to {export_folder}{tag}.")
 
         with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
-            if self._annot.clean or self._annot.dapmod:
+            if clean_header or "dapmod" in self._annot.tags:
                 f_out.write("##gff-version 3\n")
             else:
                 f_out.write("\n".join(self._annot.gff_header) + "\n")
 
-            if repeat_exons_utrs:
-                self._annot.single_parent_for_exons_utrs()
-
-            if featurecountsID:
-                self._annot.create_featurecounts_ids()
 
             for x1, genes in enumerate(self._annot.chrs.values()):
                 progress_bar.update(len(genes))
@@ -911,14 +913,11 @@ class AnnotationExport:
 
         if just_genes:
             output_suffix += "_just_genes"
-        if no_1bp_features:
-            output_suffix += "_for_lifton"
 
         if tag == ".gtf":
-            tag = f"{self._annot.id}{self._annot.suffix}{output_suffix}{tag}"
-            if not quiet:
-                print(f"Exporting {self._annot.id} gtf with tag='{tag}' which is dapfit={self._annot.dapfit} and dapmod={self._annot.dapmod} and combined={self._annot.combined}.")
-        elif not quiet:
+            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gtf"
+
+        if not quiet:
             print(f"Exporting {self._annot.id} gtf to {export_folder}{tag}.")
 
         with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:

@@ -456,7 +456,7 @@ class Genome():
                 feature = row['feature']
                 peak_str = row['peak']
 
-                peak_position = int(peak_str.split(':')[1])
+                peak_position = int(peak_str.split(':')[1]) # type: ignore
 
                 scaffold_seq = self.scaffolds[seq_name].seq
                 scaffold_len = len(scaffold_seq)

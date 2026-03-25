@@ -456,7 +456,7 @@ class TestAnnotationMarkingFunctions:
 
 
 # ============================================================
-# Annotation — update, update_features, update_suffixes
+# Annotation — update, update_features
 # ============================================================
 
 class TestAnnotationUpdate:
@@ -468,27 +468,6 @@ class TestAnnotationUpdate:
         assert "gene" in annot.features
         assert "mRNA" in annot.features
         assert annot.features["gene"] == old_features["gene"]
-
-    def test_update_suffixes_combined(self, sample_gff3_file):
-        annot = Annotation(sample_gff3_file, quiet=True)
-        annot.combined = True
-        annot.update_suffixes(quiet=True)
-        assert "_combined" in annot.feature_suffix
-        assert "_combined" in annot.suffix
-
-    def test_update_suffixes_empty_by_default(self, sample_gff3_file):
-        annot = Annotation(sample_gff3_file, quiet=True)
-        annot.update_suffixes(quiet=True)
-        assert annot.feature_suffix == ""
-        assert annot.suffix == ""
-
-    def test_update_suffixes_multiple_flags(self, sample_gff3_file):
-        annot = Annotation(sample_gff3_file, quiet=True)
-        annot.combined = True
-        annot.full_renamed_ids   = True
-        annot.update_suffixes(quiet=True)
-        assert "_combined" in annot.suffix
-        assert "_full_renamed_ids" in annot.suffix
 
     def test_update_features_counts(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
@@ -752,7 +731,7 @@ class TestAnnotationGeneList:
         annot.export.gene_list(custom_path=str(tmp_path), coordinates=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
-        assert "scaffold" in content
+        assert "chromosome" in content
         assert "gene_start" in content
         assert "gene_end" in content
 
@@ -880,7 +859,7 @@ class TestAnnotationRenameChromosomes:
     def test_rename_chromosome(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         equivalences = {"chr1": "scaffold_1", "chr2": "scaffold_2"}
-        annot.rename_chromosomes(equivalences, quiet=True)
+        annot.rename_chromosomes(equivalences)
         assert "scaffold_1" in annot.chrs
         assert "scaffold_2" in annot.chrs
         assert "chr1" not in annot.chrs
@@ -892,7 +871,7 @@ class TestAnnotationRenameChromosomes:
     def test_rename_updates_transcript_chromosome(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         equivalences = {"chr1": "sc1"}
-        annot.rename_chromosomes(equivalences, quiet=True)
+        annot.rename_chromosomes(equivalences)
         gene = annot.chrs["sc1"]["geneA"]
         t = list(gene.transcripts.values())[0]
         assert t.ch == "sc1"
@@ -900,7 +879,7 @@ class TestAnnotationRenameChromosomes:
     def test_rename_nonexistent_chrom_is_noop(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         equivalences = {"chrX": "scaffoldX"}
-        annot.rename_chromosomes(equivalences, quiet=True)
+        annot.rename_chromosomes(equivalences)
         # Original chromosomes should be untouched
         assert "chr1" in annot.chrs
         assert "chr2" in annot.chrs
@@ -908,16 +887,8 @@ class TestAnnotationRenameChromosomes:
     def test_rename_sets_confrenamed(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         equivalences = {"chr1": "scaffold_1"}
-        annot.rename_chromosomes(equivalences, quiet=True)
-        assert annot.confrenamed is True
-
-    def test_rename_dap_mode(self, multi_gene_gff3_file):
-        annot = Annotation(multi_gene_gff3_file, quiet=True)
-        equivalences = {"chr1": "scaffold_1"}
-        annot.rename_chromosomes(equivalences, dap=True, quiet=True)
-        assert annot.dapfit is True
-        assert annot.dapmod is True
-
+        annot.rename_chromosomes(equivalences)
+        assert "confrenamed" in annot.tags
 
 # ============================================================
 # Annotation — clear_gene_names_and_symbols
@@ -950,14 +921,14 @@ class TestAnnotationRemoveTEGenes:
         annot.remove_TE_genes(quiet=True)
         assert "geneA" not in annot.all_gene_ids
         assert "geneB" in annot.all_gene_ids
-        assert annot.transposable_removed is True
+        assert "minus_TE" in annot.feature_tags
 
     def test_remove_te_genes_none_marked(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         annot.remove_TE_genes(quiet=True)
         # Nothing marked, so nothing removed
         assert len(annot.all_gene_ids) == 2
-        assert annot.transposable_removed is False
+        assert "minus_TE" not in annot.feature_tags
 
 
 # ============================================================
@@ -1095,7 +1066,7 @@ class TestAnnotationReworkCDSs:
             quiet=True,
             genome=genome,
         )
-        annot.rework_CDSs(genome, quiet=True)
+        annot.rework_CDSs(quiet=True)
         return annot
 
     def test_all_transcripts_have_cds(self, reworked_annotation):
