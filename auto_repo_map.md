@@ -23,6 +23,8 @@
       - `def stats(self) -> AnnotationStats:`
       - `def export(self) -> AnnotationExport:`
       - `def summary(self) -> dict:`
+      - `def feature_suffix(self) -> str:`
+      - `def all_suffixes(self) -> str:`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):`
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
@@ -31,7 +33,6 @@
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
       - `def update(self, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):`
-      - `def update_suffixes(self, quiet:bool=True):`
       - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
       - `def mark_rRNA_transcripts(self, rRNA_transcripts_file, clean:bool=True):`
@@ -42,7 +43,7 @@
       - `def generate_proteins(self, readthrough:str="both"):`
       - `def clear_proteins(self):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
-      - `def combine_transcripts(self, genome:Genome, respect_non_coding:bool=False):`
+      - `def combine_transcripts(self, respect_non_coding:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
       - `def define_synteny(self, sort_processes:int=1, quiet:bool=True):`
       - `def homogenise_parents_for_shared_exons_utrs(self):`
@@ -57,7 +58,7 @@
       - `def remove_transcripts(self, to_remove:set, remove_genes_accordingly:bool=False,quiet:bool=False):`
       - `def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False):`
       - `def remove_missing_transcript_parent_references(self, quiet:bool=True):`
-      - `def rework_CDSs(self, genome:Genome, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
+      - `def rework_CDSs(self, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
       - `def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):`
@@ -82,7 +83,7 @@
       - `def remove_non_coding_transcripts_from_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):`
       - `def clear_gene_names_and_symbols(self, quiet:bool=False):`
       - `def remove_genes_without_symbols(self, quiet:bool=False):`
-      - `def rename_chromosomes(self, equivalences, dap:bool=False, quiet:bool=False):`
+      - `def rename_chromosomes(self, equivalences, dap:bool=False):`
       - `def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):`
       - `def add_gene_symbols(self, file_path:str, clear:bool=True, header:bool=False, sep:str="\t"):`
       - `def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):`
@@ -154,7 +155,7 @@
       - `def sort_transcripts(self):`
       - `def homogenise_exon_scores(self):`
       - `def clear_UTRs(self):`
-      - `def combine_transcripts(self, genome:Genome, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):`
+      - `def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):`
       - `def longer_CDS(self, other:Gene):`
       - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
       - `def get_main_CDS_range(self):`
@@ -283,10 +284,10 @@
         - `def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False):`
         - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False):`
         - `def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):`
-        - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True):`
-        - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):`
-        - `def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):`
-        - `def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):`
+        - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):`
+        - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):`
+        - `def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False):`
+        - `def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):`
       - motifs.py
         - `class AnnotationMotifs:`
         - `def __init__(self, annotation: Annotation):`
@@ -522,9 +523,6 @@
       - `def test_mark_te_file_with_missing_genes(self, multi_gene_gff3_file, tmp_path):`
       - `class TestAnnotationUpdate:`
       - `def test_update_refreshes_features(self, sample_gff3_file):`
-      - `def test_update_suffixes_combined(self, sample_gff3_file):`
-      - `def test_update_suffixes_empty_by_default(self, sample_gff3_file):`
-      - `def test_update_suffixes_multiple_flags(self, sample_gff3_file):`
       - `def test_update_features_counts(self, rich_gff3_file):`
       - `class TestAnnotationSortGenes:`
       - `def test_sort_sets_sorted_flag(self, multi_gene_gff3_file):`
@@ -578,7 +576,6 @@
       - `def test_rename_updates_transcript_chromosome(self, multi_gene_gff3_file):`
       - `def test_rename_nonexistent_chrom_is_noop(self, multi_gene_gff3_file):`
       - `def test_rename_sets_confrenamed(self, multi_gene_gff3_file):`
-      - `def test_rename_dap_mode(self, multi_gene_gff3_file):`
       - `class TestAnnotationClearGeneNamesAndSymbols:`
       - `def test_clear_names_and_symbols(self, multi_gene_gff3_file):`
       - `class TestAnnotationRemoveTEGenes:`
