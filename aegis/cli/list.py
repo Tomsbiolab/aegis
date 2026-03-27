@@ -24,6 +24,9 @@ def genes(
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output."
     )] = False,
+    transcript_length: Annotated[bool, typer.Option(
+        "--transcript-length", help="Include main transcript lengths instead of gene lengths in the output. Useful for example when 'gene length' is required for count normalisation purposes, where actually the length of the main transcript is what matters."
+    )] = False,
     coordinates: Annotated[bool, typer.Option(
         "-c", "--coordinates", help="Include feature coordinates in the output."
     )] = False,
@@ -80,7 +83,8 @@ def genes(
         sep=sep,
         skip_pseudogenes=skip_pseudogenes,
         skip_transposables=skip_transposables,
-        gene_symbols=gene_symbols
+        gene_symbols=gene_symbols,
+        main_transcript_length_instead_of_gene_length=transcript_length
     )
 
 @app.command()
