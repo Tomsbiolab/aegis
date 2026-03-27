@@ -55,10 +55,10 @@ docker pull tomsbiolab/aegis
 ```
 
 **2. Run an AEGIS command:**
-The following command runs `aegis-extract` on a test dataset. The `-v` flag is crucial as it makes your current directory accessible inside the container.
+The following command runs `aegis extract` on a test dataset. The `-v` flag is crucial as it makes your current directory accessible inside the container.
 
 ```bash
-docker run --rm -ti -v `pwd`:`pwd` -w `pwd` tomsbiolab/aegis aegis-extract -f protein test_data/arabidopsis_araport11.gff3 test_data/arabidopsis_tair10.fasta
+docker run --rm -ti -v `pwd`:`pwd` -w `pwd` tomsbiolab/aegis aegis extract -f protein test_data/arabidopsis_araport11.gff3 test_data/arabidopsis_tair10.fasta
 ```
 
 **3. (Optional) Build the image locally:**
@@ -85,12 +85,12 @@ This will create a single `aegis.sif` file in your current directory.
 Use the `singularity run` command to execute AEGIS. The `-B` flag mounts your current directory into the container.
 
 ```bash
-singularity run -B `pwd`:`pwd` aegis.sif aegis-extract -f protein test_data/arabidopsis_tair10.gff3 test_data/arabidopsis_tair10.fasta
+singularity run -B `pwd`:`pwd` aegis.sif aegis extract -f protein test_data/arabidopsis_tair10.gff3 test_data/arabidopsis_tair10.fasta
 ```
 
 ### From PyPI (Python Package Index)
 
-Easiest way to install, however, some dependencies will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use aegis-orthology you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. 
+Easiest way to install, however, some dependencies will be missing (such as Liftoff, LiftOn, MCScan, Orthofinder, Diamond...). If you are planning to use aegis orthology you will require these, so to avoid having to install the dependencies yourself see docker and singularity options above. 
 
 ```bash
 pip3 install aegis-bio
@@ -109,38 +109,39 @@ pip3 install -e .
 
 ## Usage
 
-Aegis is designed to be used as a library in your Python scripts or directly through the CLI
+AEGIS is designed to be used as a library in your Python scripts or directly through the CLI
 
 ### CLI commands
 
-All of the commands are called with aegis-{subcommand} in a terminal:
-
-- Extract
-	- Extracts all kinds of fasta features from an annotation.
-- Overlap
-	- Overlap quantification of gene models (and their subfeatures) between any number of gffs associated to same genome
-- Rename
-	- Rename gff feature ids.
-- Orthology
-	- Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level.
-- Summary
-	- Outputs tabular annotation stats as well as a series of plots.
-- Tidy
-	- Cleans annotation files, fixes errors, issues warnings, and provides custom formatting options for extra flexibility/compatibility with third party tools.
-- Tidy-genome
-	- Allows removal and/or renaming of genome features.
-- Merge
-	- Custom merge of any number of gffs, prevent id clashes and control redundancy in same loci.
-- Symbols
-	- Allows to add gene symbols into an annotation file based on tabular input
-- Motifs
-	- Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
-- Subset
-	- Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
-- Prune
-	- Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
-- Reformat:
-	- Converts between gtf and gff formats.
+All of the commands are called with aegis {subcommand} in a terminal:
+- Native Tools (included in pip install):
+    - Extract
+        - Extracts all kinds of fasta features from an annotation.
+    - Overlap
+        - Overlap quantification of gene models (and their subfeatures) between any number of gffs associated to same genome
+    - Rename
+        - Rename gff feature ids.
+    - Summary
+        - Outputs tabular annotation stats as well as a series of plots.
+    - Tidy
+        - Cleans annotation files, fixes errors, issues warnings, and provides custom formatting options for extra flexibility/compatibility with third party tools.
+    - Tidy-genome
+        - Allows removal and/or renaming of genome features.
+    - Merge
+        - Custom merge of any number of gffs, prevent id clashes and control redundancy in same loci.
+    - Symbols
+        - Allows to add gene symbols into an annotation file based on tabular input
+    - Motifs
+        - Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
+    - Subset
+        - Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
+    - Prune
+        - Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
+    - Reformat:
+        - Converts between gtf and gff formats.
+- Integrative Pipelines (require Docker/Singularity or manual install):
+    - Orthology
+        - Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level.
 
 ### As a Python library
 
