@@ -116,40 +116,43 @@ pip install -e .
 
 ## Usage
 
-Aegis is designed to be used as a library in your Python scripts or directly through the CLI
+AEGIS is designed to be used as a library in your Python scripts or directly through the CLI
 
 ### CLI commands
 
 All of the commands are called with aegis {subcommand} in a terminal:
 
-- Extract
-	- Extracts all kinds of fasta features from an annotation.
-- Overlap
-	- Overlap quantification of gene models (and their subfeatures) between any number of gffs associated to same genome
-- Rename
-	- Rename gff feature ids.
-- Orthology
-	- Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level.
-- Summary
-	- Outputs tabular annotation stats as well as a series of plots.
-- Tidy
-	- Cleans annotation files, fixes errors, issues warnings, and provides custom formatting options for extra flexibility/compatibility with third party tools.
-- Tidy-genome
-	- Allows removal and/or renaming of genome features.
-- Merge
-	- Custom merge of any number of gffs, prevent id clashes and control redundancy in same loci.
-- Symbols
-	- Allows to add gene symbols into an annotation file based on tabular input
-- Motifs
-	- Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
-- Subset
-	- Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
-- Prune
-	- Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
-- Reformat:
-	- Converts between gtf and gff formats.
-- List:
-	- Lists gene ids or transcript ids from an annotation file, optionally selecting which types ofgenes/transcripts to include/exclude.
+- Native Tools (included in pip install):
+    - Extract
+        - Extracts all kinds of fasta features from an annotation.
+    - Overlap
+        - Overlap quantification of gene models (and their subfeatures) between any number of gffs associated to same genome
+    - Rename
+        - Rename gff feature ids.
+    - Summary
+        - Outputs tabular annotation stats as well as a series of plots.
+    - Tidy
+        - Cleans annotation files, fixes errors, issues warnings, and provides custom formatting options for extra flexibility/compatibility with third party tools.
+    - Tidy-genome
+        - Allows removal and/or renaming of genome features.
+    - Merge
+        - Custom merge of any number of gffs, prevent id clashes and control redundancy in same loci.
+    - Symbols
+        - Allows to add gene symbols into an annotation file based on tabular input
+    - Motifs
+        - Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
+    - Subset
+        - Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
+    - Prune
+        - Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
+    - Reformat:
+        - Converts between gtf and gff formats.
+    - List:
+        - Lists gene ids or transcript ids from an annotation file, optionally selecting which types ofgenes/transcripts to include/exclude.
+- Integrative Pipelines (require Docker/Singularity or manual install):
+    - Orthology
+        - Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level.
+
 
 ### As a Python library
 
