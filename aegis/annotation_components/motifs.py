@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..annotation import Annotation
-    from ..genome import Genome
+    from ..misc_features import Promoter
 
 import matplotlib.pyplot as plt
 from scipy.stats import fisher_exact
@@ -20,6 +20,8 @@ class AnnotationMotifs:
     Component for handling motif methods for the Annotation class.
     Accessed via 'annotation_object.motifs'.
     """
+    _annot: Annotation
+
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 
@@ -75,9 +77,9 @@ class AnnotationMotifs:
             for g in genes.values():
                 for t in g.transcripts.values():
                     if t.main:
-                        if hasattr(t, "promoter"):
+                        if t.promoter:
                             if t.promoter.seq != "":
-                                promoter_length = len(t.promoter.seq)
+                                promoter_length = t.promoter.size
                                 break
                 break
             break

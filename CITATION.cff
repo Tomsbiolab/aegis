@@ -1,0 +1,24 @@
+references:
+  - title: "AEGIS: an annotation extraction and genomic integration resource"
+    type: journal-article
+    journal: "bioRxiv"
+    languages: 
+      - en
+    url: https://doi.org/10.64898/2025.12.04.692274
+    authors: 
+      - family-names: Navarro-Payá
+        given-names: David
+      - family-names: Santiago
+        given-names: Antonio
+      - family-names: Velt
+        given-names: Amandine
+      - family-names: Moretto
+        given-names: Marco
+      - family-names: Rustenholz
+        given-names: Camille
+      - family-names: Matus
+        given-names: José Tomás
+    date-published: 2025-12-08
+    identifiers: 
+      - type: doi
+        value: https://doi.org/10.64898/2025.12.04.692274

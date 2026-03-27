@@ -1,8 +1,40 @@
 class OverlapHit():
-    def __init__(self, ID, origin, orientation, gene_query_percent,
-                 gene_target_percent, exons_in_both, exon_query_percent,
-                 exon_target_percent, CDSs_in_both, CDS_query_percent, 
-                 CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):
+    full_exon_overlaps: int
+    full_protein_overlaps: int
+    full_CDS_overlaps: int
+    full_UTR_overlaps: int
+    score: int
+    id: str
+    origin: str
+    extra_copy: bool
+    gene_query_percent: float
+    gene_target_percent: float
+    exon_query_percent: float
+    exon_target_percent: float
+    CDS_query_percent: float
+    CDS_target_percent: float
+    protein_query_percent: float
+    protein_target_percent: float
+    exons_in_both: bool
+    CDSs_in_both: bool
+    orientation: bool
+    min_gene_percent: float
+    min_exon_percent: float | None
+    min_CDS_percent: float | None
+    min_protein_percent: float
+    target_synteny_conserved: bool
+
+    __slots__ = (
+        'full_exon_overlaps', 'full_protein_overlaps', 'full_CDS_overlaps', 
+        'full_UTR_overlaps', 'score', 'antiscore', 'id', 'origin', 'extra_copy', 
+        'gene_query_percent', 'gene_target_percent', 'exon_query_percent', 
+        'exon_target_percent', 'CDS_query_percent', 'CDS_target_percent', 
+        'protein_query_percent', 'protein_target_percent', 'exons_in_both', 
+        'CDSs_in_both', 'orientation', 'min_gene_percent', 'min_exon_percent', 
+        'min_CDS_percent', 'min_protein_percent', 'target_synteny_conserved'
+    )
+    
+    def __init__(self, ID, origin, orientation, gene_query_percent, gene_target_percent, exons_in_both, exon_query_percent, exon_target_percent, CDSs_in_both, CDS_query_percent, CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):
         self.full_exon_overlaps = 0
         self.full_protein_overlaps = 0
         self.full_CDS_overlaps = 0
@@ -85,39 +117,39 @@ class OverlapHit():
                     else:
                         self.score = 3
                 # Exons in both
-                elif isinstance(self.min_exon_percent, int):
+                else:
                     if self.min_exon_percent == 0:
                         self.score = 2
-                    elif self.min_exon_percent >= 100:
+                    elif self.min_exon_percent >= 100: # type: ignore
                         self.score = 10
-                    elif self.min_exon_percent >= 90:
+                    elif self.min_exon_percent >= 90: # type: ignore
                         self.score = 9
-                    elif self.min_exon_percent >= 70:
+                    elif self.min_exon_percent >= 70: # type: ignore
                         self.score = 8
-                    elif self.min_exon_percent >= 50:
+                    elif self.min_exon_percent >= 50: # type: ignore
                         self.score = 7                
-                    elif self.min_exon_percent >= 30:
+                    elif self.min_exon_percent >= 30: # type: ignore
                         self.score = 6    
-                    elif self.min_exon_percent >= 10:
+                    elif self.min_exon_percent >= 10: # type: ignore
                         self.score = 5                             
                     else:
                         self.score = 4
 
             # coding query vs coding target
-            elif isinstance(self.min_CDS_percent, int):
+            else:
                 if self.min_CDS_percent == 0:
                     self.score = 3
-                elif self.min_CDS_percent >= 100:
+                elif self.min_CDS_percent >= 100: # type: ignore
                     self.score = 11                        
-                elif self.min_CDS_percent >= 90:
+                elif self.min_CDS_percent >= 90: # type: ignore
                     self.score = 10
-                elif self.min_CDS_percent >= 70:
+                elif self.min_CDS_percent >= 70: # type: ignore
                     self.score = 9
-                elif self.min_CDS_percent >= 50:
+                elif self.min_CDS_percent >= 50: # type: ignore
                     self.score = 8                
-                elif self.min_CDS_percent >= 30:
+                elif self.min_CDS_percent >= 30: # type: ignore
                     self.score = 7          
-                elif self.min_CDS_percent >= 10:
+                elif self.min_CDS_percent >= 10: # type: ignore
                     self.score = 6
                 else:
                     self.score = 5
@@ -141,44 +173,47 @@ class OverlapHit():
                     else:
                         self.antiscore = 3
                 # Exons in both
-                elif isinstance(self.min_exon_percent, int):
+                else:
                     if self.min_exon_percent == 0:
                         self.antiscore = 2
-                    elif self.min_exon_percent >= 100:
+                    elif self.min_exon_percent >= 100: # type: ignore
                         self.antiscore = 10
-                    elif self.min_exon_percent >= 90:
+                    elif self.min_exon_percent >= 90: # type: ignore
                         self.antiscore = 9
-                    elif self.min_exon_percent >= 70:
+                    elif self.min_exon_percent >= 70: # type: ignore
                         self.antiscore = 8
-                    elif self.min_exon_percent >= 50:
+                    elif self.min_exon_percent >= 50: # type: ignore
                         self.antiscore = 7                
-                    elif self.min_exon_percent >= 30:
+                    elif self.min_exon_percent >= 30: # type: ignore
                         self.antiscore = 6    
-                    elif self.min_exon_percent >= 10:
+                    elif self.min_exon_percent >= 10: # type: ignore
                         self.antiscore = 5                             
                     else:
                         self.antiscore = 4
 
             # coding query vs coding target
-            elif isinstance(self.min_CDS_percent, int):
+            else:
                 if self.min_CDS_percent == 0:
                     self.antiscore = 3
-                elif self.min_CDS_percent >= 100:
+                elif self.min_CDS_percent >= 100: # type: ignore
                     self.antiscore = 11                        
-                elif self.min_CDS_percent >= 90:
+                elif self.min_CDS_percent >= 90: # type: ignore
                     self.antiscore = 10
-                elif self.min_CDS_percent >= 70:
+                elif self.min_CDS_percent >= 70: # type: ignore
                     self.antiscore = 9
-                elif self.min_CDS_percent >= 50:
+                elif self.min_CDS_percent >= 50: # type: ignore
                     self.antiscore = 8                
-                elif self.min_CDS_percent >= 30:
+                elif self.min_CDS_percent >= 30: # type: ignore
                     self.antiscore = 7          
-                elif self.min_CDS_percent >= 10:
+                elif self.min_CDS_percent >= 10: # type: ignore
                     self.antiscore = 6
                 else:
                     self.antiscore = 5
 
 class BlastHit():
+
+    __slots__ = ('source', 'score', 'evalue')
+
     def __init__(self, source, score, evalue):
         self.source = source
         self.score = score

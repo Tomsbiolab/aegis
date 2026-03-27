@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .genome import Genome
-
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
@@ -13,45 +8,38 @@ from .utils.genefunctions import find_ORFs, longest_ORF, translate
 class Transcript(Feature):
 
     __slots__ = (
-        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'coding', 'main',
-        'miRNAs', 'overlaps', 'renamed_exons', 'renamed_utrs', 'polycistronic',
-        'coding_ratio', 'promoter', 'protein_start', 'protein_end_stop',
+        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'main',
+        'miRNAs', 'renamed_exons', 'renamed_utrs', 'polycistronic',
+        'promoter', 'protein_start', 'protein_end_stop',
         'protein_early_stop', 'protein_nucleotide_surplus', 'protein_gaps',
         'protein_seq', 'coding_start', 'coding_end', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
     )
 
     CDSs: dict[str, CDS]
     exons: list[Exon]
-    introns: list[Intron]
+    introns: list[Intron]| None
     UTRs: list[UTR]
-    temp_CDSs: list[CDS|Feature]
-    temp_UTRs: list[UTR]
-    size: int
+    temp_CDSs: list[CDS|Feature]|None
+    temp_UTRs: list[UTR]|None
+    promoter: Promoter | None
 
-    def __init__(self, feature_id:str, ch:str, source:str, 
-                 feature:str, strand:str, start:int, end:int, score:str, 
-                 phase:str, parents:list[str]=[], attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
         self.exons = []
         self.CDSs = {}
         self.temp_CDSs = []
         self.temp_UTRs = []
         self.main = False
         self.miRNAs = []
-        self.overlaps = {"self" : [], "other" : []}
         self.renamed_exons = False
         self.renamed_utrs = False
         self.polycistronic = "no"
+        self.introns = None
+        self.promoter = None
 
         self.collapsed_exons = False
         self.collapsed_CDS_segments = False
         self.generated_exons = False
-    
-    def update_size(self):
-        self.size = 0
-        for exon in self.exons:
-            self.size += exon.size
 
     def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
         if self.exons == []:
@@ -62,14 +50,7 @@ class Transcript(Feature):
             self.exons.sort()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
 
-        self.update_size()
-        self.generate_introns()
-
-        CDS_size = 0
-
         for i, c in enumerate(self.CDSs.values()):
-            if c.main:
-                CDS_size = c.size
             if i == 0:
                 c_start = c.start
                 c_end = c.end
@@ -79,12 +60,7 @@ class Transcript(Feature):
                 if c.end > c_end:
                     c_end = c.end
 
-        if CDS_size != 0:
-            self.coding_ratio = round((CDS_size / self.size), 2)
-        else:
-            self.coding_ratio = 0
-        
-        if len(self.CDSs) > 0:
+        if self.CDSs:
             if self.strand == "+":
                 for e in self.exons:
                     if e.end > c_start and e.start < c_end:
@@ -206,17 +182,18 @@ class Transcript(Feature):
             merged = []
             cur_start = self.exons[0].start
             cur_end = self.exons[0].end
+            parents = [self.id]
             for x, e in enumerate(self.exons[1:]):
                 if e.start <= cur_end + 1:
                     if e.end > cur_end:
                         
                         cur_end = e.end
                 else:
-                    merged.append(Exon("combined", self.exons[x].ch, self.exons[x].source, "exon", self.exons[x].strand, cur_start, cur_end, self.exons[x].score, ".", [self.id]))
+                    merged.append(Exon("combined", self.exons[x].ch, self.exons[x].source, "exon", self.exons[x].strand, cur_start, cur_end, self.exons[x].score, parents))
                     cur_start = e.start
                     cur_end = e.end
 
-            merged.append(Exon("combined", self.exons[-1].ch, self.exons[-1].source, "exon", self.exons[-1].strand, cur_start, cur_end, self.exons[-1].score, ".", [self.id]))
+            merged.append(Exon("combined", self.exons[-1].ch, self.exons[-1].source, "exon", self.exons[-1].strand, cur_start, cur_end, self.exons[-1].score, parents))
 
             if len(merged) < len(self.exons):
                 self.collapsed_exons = True
@@ -227,6 +204,7 @@ class Transcript(Feature):
         """
         Merges overlapping or directly adjacent CDS segments into single segments
         """
+        parents = [self.id]
         for cds in self.CDSs.values():
 
             if len(cds.CDS_segments) > 1:
@@ -239,11 +217,11 @@ class Transcript(Feature):
                         if seg.end > cur_end:
                             cur_end = seg.end
                     else:
-                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, ".", [self.id]))
+                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, parents))
                         cur_start = seg.start
                         cur_end = seg.end
 
-                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, ".", [self.id]))
+                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, parents))
 
                 if len(merged) < len(cds.CDS_segments):
                     cds.CDS_segments = merged
@@ -256,9 +234,7 @@ class Transcript(Feature):
     def clear_UTRs(self):
         for c in self.CDSs.values():
             c.clear_UTRs()
-        self.temp_UTRs = []
-        self.exons = []
-        self.update()
+        self.temp_UTRs = None
 
     def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):
         """
@@ -324,14 +300,15 @@ class Transcript(Feature):
                 temp_start = 1
                 temp_end = 0
 
-            self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, ".", [self.id])
+            self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, [self.id])
 
-    def generate_best_protein(self, genome:Genome|None=None, must_have_stop:bool=True):
-        if (self.strand == "+") or (self.strand == "-"):
-            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop)
+    def generate_best_protein(self, must_have_stop:bool=True):
+        if self.strand == "+" or self.strand == "-":
+            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop) # type: ignore
         elif self.strand == ".":
-            plus_orfs = find_ORFs(self.seqs[0], must_have_stop)
-            neg_orfs = find_ORFs(self.seqs[1], must_have_stop)
+            fw, rv = self.seqs #type: ignore
+            plus_orfs = find_ORFs(fw, must_have_stop)
+            neg_orfs = find_ORFs(rv, must_have_stop)
             plus_long_orf, _, _ = longest_ORF(plus_orfs)
             neg_long_orf, _, _ = longest_ORF(neg_orfs)
 
@@ -340,33 +317,23 @@ class Transcript(Feature):
                     self.strand = "+"
                     for e in self.exons:
                         e.strand = "+"
-                        if genome is not None:
-                            e.generate_sequence(genome)
-                    if genome is not None:
-                        self.generate_sequence(genome)
-                        self.generate_best_protein(genome, must_have_stop)
-                    else:
-                        self.generate_best_protein(must_have_stop=must_have_stop)
+                    self.generate_best_protein(must_have_stop=must_have_stop)
 
                 else:
                     self.strand = "-"
                     for e in self.exons:
                         e.strand = "-"
-                        if genome is not None:
-                            e.generate_sequence(genome)
-                    if genome is not None:
-                        self.generate_sequence(genome)
-                        self.generate_best_protein(genome, must_have_stop)
-                    else:
-                        self.generate_best_protein(must_have_stop=must_have_stop)
+                    self.generate_best_protein(must_have_stop=must_have_stop)
 
     def generate_CDSs_based_on_ORF(self, low_memory:bool=True):
-        if not hasattr(self, "temp_CDSs"):
+        if self.temp_CDSs is None:
             self.temp_CDSs = []
-        if not hasattr(self, "temp_UTRs"):
+        if self.temp_UTRs is None:
             self.temp_UTRs = []
         if self.temp_CDSs == []:
             if self.protein_seq != "":
+
+                parents = [self.id]
                 start_exon = ""
                 end_exon = ""
                 surplus_start = ""
@@ -397,15 +364,15 @@ class Transcript(Feature):
                             if (index == start_exon) and (index == end_exon):
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
                                                             e.start+surplus_start, e.start+surplus_end,
-                                                            e.score, e.phase, [self.id]))
+                                                            e.score, parents))
                             elif index == start_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start+surplus_start, e.end, e.score, e.phase, [self.id]))
+                                                            e.start+surplus_start, e.end, e.score, parents))
                             elif (index > start_exon) and (index < end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, [self.id]))
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, parents))
                             elif index == end_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start, e.start+surplus_end, e.score, e.phase, [self.id]))
+                                                            e.start, e.start+surplus_end, e.score, parents))
 
                 elif self.strand == "-":
                     temp_size = 0
@@ -433,15 +400,15 @@ class Transcript(Feature):
                             if (index == start_exon) and (index == end_exon):
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
                                                             e.end-surplus_end, e.end-surplus_start,
-                                                            e.score, e.phase, [self.id]))
+                                                            e.score, parents))
                             elif index == start_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start, e.end-surplus_start, e.score, e.phase, [self.id]))
+                                                            e.start, e.end-surplus_start, e.score, parents))
                             elif (index > start_exon) and (index < end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, e.phase, [self.id]))
+                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, parents))
                             elif index == end_exon:
                                 self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.end-surplus_end, e.end, e.score, e.phase, [self.id]))
+                                                            e.end-surplus_end, e.end, e.score, parents))
 
                 elif self.strand == ".":
                     pass
@@ -474,99 +441,49 @@ class Transcript(Feature):
             transcripts
         """
 
-        if hasattr(self, "temp_CDSs"):
-            if self.temp_CDSs != []:
-                self.coding = True
-                if consider_polycistronic:
-                    grant_ids = True
-                    for segment in self.temp_CDSs:
-                        if segment.id != "":
-                            grant_ids = False
+        if self.temp_CDSs:
 
-                    if grant_ids:
-                        for n, _ in enumerate(self.temp_CDSs):
-                            self.temp_CDSs[n].id = f"{self.id}_CDS1"
+            parents = [self.id]
+        
+            self.coding = True
+            if consider_polycistronic:
+                grant_ids = True
+                for segment in self.temp_CDSs:
+                    if segment.id != "":
+                        grant_ids = False
 
-                    more_than_1_CDS = False
-                    more_than_1_segment_with_same_ID = False
-                    more_than_1_segment_with_different_ID = False
-                    self.temp_CDSs.sort()
-                    # more than 1 CDS is determined by overlaps
-                    if len(self.temp_CDSs) > 1:
-                        seen_ids = {self.temp_CDSs[0].id}
-                        for sn in range(1, len(self.temp_CDSs)):
-                            prev = self.temp_CDSs[sn - 1]
-                            curr = self.temp_CDSs[sn]
-                            if curr.start < prev.end:
-                                more_than_1_CDS = True
-                            seg_id = curr.id
-                            if seg_id in seen_ids:
-                                more_than_1_segment_with_same_ID = True
-                            else:
-                                more_than_1_segment_with_different_ID = True
-                                seen_ids.add(seg_id)
-                        if len(seen_ids) > 1:
-                            more_than_1_segment_with_different_ID = True
-                        if len(seen_ids) < len(self.temp_CDSs):
+                if grant_ids:
+                    for n, _ in enumerate(self.temp_CDSs):
+                        self.temp_CDSs[n].id = f"{self.id}_CDS1"
+
+                more_than_1_CDS = False
+                more_than_1_segment_with_same_ID = False
+                more_than_1_segment_with_different_ID = False
+                self.temp_CDSs.sort()
+                # more than 1 CDS is determined by overlaps
+                if len(self.temp_CDSs) > 1:
+                    seen_ids = {self.temp_CDSs[0].id}
+                    for sn in range(1, len(self.temp_CDSs)):
+                        prev = self.temp_CDSs[sn - 1]
+                        curr = self.temp_CDSs[sn]
+                        if curr.start < prev.end:
+                            more_than_1_CDS = True
+                        seg_id = curr.id
+                        if seg_id in seen_ids:
                             more_than_1_segment_with_same_ID = True
-                    if not more_than_1_CDS and self.temp_CDSs != []:
-                        if self.strand == "+":
-                            temp_id = self.temp_CDSs[0].id
                         else:
-                            temp_id = self.temp_CDSs[-1].id
-                        self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
-                                                self.temp_CDSs[0].ch, 
-                                                self.temp_CDSs[0].source, 
-                                                self.temp_CDSs[0].feature,
-                                                self.temp_CDSs[0].strand, 
-                                                self.temp_CDSs[0].start,
-                                                self.temp_CDSs[-1].end,
-                                                self.temp_CDSs[0].score,
-                                                ".", [self.id])
-                        if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
-                            if not quiet:
-                                print(f"Warning: Transcript {self.id} may be "
-                                    "polycistronic although CDS segments were all "
-                                    "combined into the same CDS since the most likely "
-                                    "scenario is that some mistake has been made in the"
-                                    " gff, please check")   
-                            self.polycistronic = "maybe"
-                    elif more_than_1_CDS and more_than_1_segment_with_different_ID:
-                        CDS_temp = {}
-                        for c in self.temp_CDSs:
-                            if c.id not in CDS_temp:
-                                CDS_temp[c.id] = [c]
-                            else:
-                                CDS_temp[c.id].append(c)
-                        for c_id, segments in CDS_temp.items():
-                            self.CDSs[c_id] = CDS(segments.copy(), c_id, segments[0].ch,
-                                            segments[0].source, segments[0].feature,
-                                            segments[0].strand, segments[0].start,
-                                            segments[-1].end, segments[0].score,
-                                            ".", [self.id])
-                        if not quiet:
-                            print(f"Warning: Transcript {self.id} is likely to be "
-                                "polycistronic since CDS segments overlap and they "
-                                "have different IDs, the CDS segments have been "
-                                "separated into their corresponding CDS ids, however, "
-                                "please check that it truly is a polycistronic gene "
-                                "and not a gff mistake")
-                        self.polycistronic = "yes" 
-                    elif more_than_1_CDS:
-                        if not quiet:
-                            print(f"Error: Transcript {self.id} is likely to have a "
-                                "problem in the annotation of CDS segments (it could "
-                                "also be a consequence of liftoff) as the segments "
-                                "overlap but they share the same id, please fix the gff.")
-                        self.polycistronic = "maybe"
-                    
-
-                else:
+                            more_than_1_segment_with_different_ID = True
+                            seen_ids.add(seg_id)
+                    if len(seen_ids) > 1:
+                        more_than_1_segment_with_different_ID = True
+                    if len(seen_ids) < len(self.temp_CDSs):
+                        more_than_1_segment_with_same_ID = True
+                if not more_than_1_CDS and self.temp_CDSs != []:
                     if self.strand == "+":
                         temp_id = self.temp_CDSs[0].id
                     else:
                         temp_id = self.temp_CDSs[-1].id
-                    self.CDSs[temp_id] = CDS(self.temp_CDSs.copy(), temp_id, 
+                    self.CDSs[temp_id] = CDS(self.temp_CDSs, temp_id, 
                                             self.temp_CDSs[0].ch, 
                                             self.temp_CDSs[0].source, 
                                             self.temp_CDSs[0].feature,
@@ -574,9 +491,61 @@ class Transcript(Feature):
                                             self.temp_CDSs[0].start,
                                             self.temp_CDSs[-1].end,
                                             self.temp_CDSs[0].score,
-                                            ".", [self.id])
+                                            parents)
+                    if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
+                        if not quiet:
+                            print(f"Warning: Transcript {self.id} may be "
+                                "polycistronic although CDS segments were all "
+                                "combined into the same CDS since the most likely "
+                                "scenario is that some mistake has been made in the"
+                                " gff, please check")   
+                        self.polycistronic = "maybe"
+                elif more_than_1_CDS and more_than_1_segment_with_different_ID:
+                    CDS_temp = {}
+                    for c in self.temp_CDSs:
+                        if c.id not in CDS_temp:
+                            CDS_temp[c.id] = [c]
+                        else:
+                            CDS_temp[c.id].append(c)
+                    for c_id, segments in CDS_temp.items():
+                        self.CDSs[c_id] = CDS(segments, c_id, segments[0].ch,
+                                        segments[0].source, segments[0].feature,
+                                        segments[0].strand, segments[0].start,
+                                        segments[-1].end, segments[0].score,
+                                        parents)
+                    if not quiet:
+                        print(f"Warning: Transcript {self.id} is likely to be "
+                            "polycistronic since CDS segments overlap and they "
+                            "have different IDs, the CDS segments have been "
+                            "separated into their corresponding CDS ids, however, "
+                            "please check that it truly is a polycistronic gene "
+                            "and not a gff mistake")
+                    self.polycistronic = "yes" 
+                elif more_than_1_CDS:
+                    if not quiet:
+                        print(f"Error: Transcript {self.id} is likely to have a "
+                            "problem in the annotation of CDS segments (it could "
+                            "also be a consequence of liftoff) as the segments "
+                            "overlap but they share the same id, please fix the gff.")
+                    self.polycistronic = "maybe"
+                
 
-            del self.temp_CDSs
+            else:
+                if self.strand == "+":
+                    temp_id = self.temp_CDSs[0].id
+                else:
+                    temp_id = self.temp_CDSs[-1].id
+                self.CDSs[temp_id] = CDS(self.temp_CDSs, temp_id, 
+                                        self.temp_CDSs[0].ch, 
+                                        self.temp_CDSs[0].source, 
+                                        self.temp_CDSs[0].feature,
+                                        self.temp_CDSs[0].strand, 
+                                        self.temp_CDSs[0].start,
+                                        self.temp_CDSs[-1].end,
+                                        self.temp_CDSs[0].score,
+                                        parents)
+
+            self.temp_CDSs = None
 
         self.determine_main_CDS()
 
@@ -584,7 +553,7 @@ class Transcript(Feature):
             self.generate_UTRs()
         else:
             # consider_read_utrs is True
-            if not hasattr(self, "temp_UTRs") or self.temp_UTRs == [] or self.polycistronic == "yes":
+            if not self.temp_UTRs or self.polycistronic == "yes":
                 self.generate_UTRs()
             else:
                 self.assign_UTRs()
@@ -618,17 +587,18 @@ class Transcript(Feature):
                 self.CDSs[main].main = True
 
     def assign_UTRs(self):
-        if hasattr(self, "temp_UTRs"):
+        if self.temp_UTRs:
             self.temp_UTRs.sort()
             for c in self.CDSs.values():
-                c.UTRs = self.temp_UTRs.copy()
-            del self.temp_UTRs
+                c.UTRs = self.temp_UTRs
+            self.temp_UTRs = None
 
     def generate_UTRs(self):
-        if hasattr(self, "temp_UTRs"):
-            del self.temp_UTRs
+        if self.temp_UTRs:
+            self.temp_UTRs = None
         for c in self.CDSs.values():
             c.UTRs = []
+            parents = [self.id]
             for exon in self.exons:
                 if c.strand != exon.strand:
                     continue
@@ -637,35 +607,35 @@ class Transcript(Feature):
                 if exon.end < c.CDS_segments[0].start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
-                                      exon.score, ".", [self.id]))
+                                      exon.score, parents))
                 elif exon.start < c.CDS_segments[0].start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, c.CDS_segments[0].start-1,
-                                      exon.score, ".", [self.id]))
+                                      exon.score, parents))
                 if exon.start > c.CDS_segments[-1].end:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
-                                      exon.score, ".", [self.id]))
+                                      exon.score, parents))
                 elif exon.end > c.CDS_segments[-1].end:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, c.CDS_segments[-1].end+1, exon.end,
-                                      exon.score, ".", [self.id]))
+                                      exon.score, parents))
             c.UTRs.sort()
             if c.strand == "+" or c.strand == ".":
                 for n, u in enumerate(c.UTRs):
                     u.id = f"{c.id}_u{n+1}"
-                    u.parents = [self.id]
+                    u.parents = parents
             elif c.strand == "-":
                 counter = len(c.UTRs)
                 for n, u in enumerate(c.UTRs):
                     u.id = f"{c.id}_u{counter}"      
-                    u.parents = [self.id]  
+                    u.parents = parents 
                     counter -= 1
         self.update_UTRs()
 
     def update_UTRs(self):
         for c in self.CDSs.values():
-            if hasattr(c, "UTRs"):
+            if c.UTRs:
                 c.UTRs.sort()
                 if c.strand == "+":
                     for u in c.UTRs:
@@ -692,18 +662,19 @@ class Transcript(Feature):
         for c in self.CDSs.values():
             if c.main:
                 for cs in c.CDS_segments:
-                    temp_fts.append(cs.copy())
+                    temp_fts.append(cs)
                 for u in c.UTRs:
-                    temp_fts.append(u.copy())
+                    temp_fts.append(u)
 
+        parents = [self.id]
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
-            self.exons = [ Exon("temp", ft.ch, ft.source, "exon", ft.strand, ft.start, ft.end, ft.score, ".", [self.id]) for ft in temp_fts ]
+            self.exons = [ Exon("temp", ft.ch, ft.source, "exon", ft.strand, ft.start, ft.end, ft.score, parents) for ft in temp_fts ]
             self.collapse_exons()
 
         # Exons rebuilt from the transcript
         else:
-            self.exons = [Exon(f"temp", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, ".", [self.id])]
+            self.exons = [Exon(f"temp", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, parents)]
 
         self.rename_exons(base_id=self.id)
         self.generated_exons = True
@@ -711,6 +682,7 @@ class Transcript(Feature):
     def generate_introns(self):
         self.introns = []
         counter = 0
+        parents = [self.id]
         for n, exon in enumerate(self.exons):
             counter += 1
             if n == (len(self.exons) - 1):
@@ -718,7 +690,7 @@ class Transcript(Feature):
             self.introns.append(Intron(f"{self.id}_intron_{counter}", self.ch,
                                        self.source, "intron", self.strand,
                                        exon.end + 1, self.exons[n+1].start - 1,
-                                       self.score, ".", [self.id]))
+                                       self.score, parents))
         if self.strand == "+":
             for i in self.introns:
                 for c in self.CDSs.values():
@@ -732,62 +704,83 @@ class Transcript(Feature):
                         if i.end < c.end and i.start > c.start:
                             i.intra_coding = True
 
-    def generate_sequence(self, genome:Genome, low_memory:bool=False):
-        for exon in self.exons:
-            exon.generate_sequence(genome)
-        if not low_memory:
-            for intron in self.introns:
-                intron.generate_sequence(genome)
-            if hasattr(self, "promoter"):
-                self.promoter.generate_sequence(genome)
-        self.seq = ""
-        if self.strand == "+":
-            for segment in self.exons:
-                self.seq += segment.seq
-        elif self.strand == "-":
-            for segment in reversed(self.exons):
-                self.seq += segment.seq
-        elif self.strand == ".":
-            self.seqs = ["", ""]
-            for segment in self.exons:
-                self.seqs[0] += segment.seqs[0]
-            for segment in reversed(self.exons):
-                self.seqs[1] += segment.seqs[1]
-            
-    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
-        for exon in self.exons:
-            exon.generate_hard_sequence(hard_masked_genome)
-        if not low_memory:
-            for intron in self.introns:
-                intron.generate_hard_sequence(hard_masked_genome)
-            if hasattr(self, "promoter"):
-                self.promoter.generate_hard_sequence(hard_masked_genome)
-        self.hard_seq = ""
-        if self.strand == "+":
-            for segment in self.exons:
-                self.hard_seq += segment.hard_seq
-        elif self.strand == "-":
-            for segment in reversed(self.exons):
-                self.hard_seq += segment.hard_seq
-        elif self.strand == ".":
-            self.hard_seqs = ["", ""]
-            for segment in self.exons:
-                self.hard_seqs[0] += segment.hard_seqs[0]
-            for segment in reversed(self.exons):
-                self.hard_seqs[1] += segment.hard_seqs[1]
+    def clear_sequence(self):
+        self.protein_seq = ""
 
-    def clear_sequence(self, just_hard:bool=False):
-        self.hard_seq = ""
-        if hasattr(self, "promoter"):
-            self.promoter.hard_seq = ""
-        for exon in self.exons:
-            exon.clear_sequence(just_hard=just_hard)
-        if hasattr(self, "introns"):
-            for intron in self.introns:
-                intron.clear_sequence(just_hard=just_hard)        
+    def clear_promoter(self):
+        self.promoter = None
 
-        if not just_hard:
-            self.seq = ""
-            self.protein_seq = ""
-            if hasattr(self, "promoter"):
-                self.promoter.seq = ""
+    @property
+    def seq(self) -> str|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
+            transcript_seq = ""
+            if self.strand == "+":
+                for exon in self.exons:
+                    transcript_seq += exon.seq # type: ignore
+            elif self.strand == "-":
+                for exon in reversed(self.exons):
+                    transcript_seq += exon.seq # type: ignore
+            return transcript_seq
+
+    @property
+    def hard_seq(self) -> str|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
+            transcript_seq = ""
+            if self.strand == "+":
+                for exon in self.exons:
+                    transcript_seq += exon.hard_seq # type: ignore
+            elif self.strand == "-":
+                for exon in reversed(self.exons):
+                    transcript_seq += exon.hard_seq # type: ignore
+            return transcript_seq
+
+    @property
+    def seqs(self) -> list[str]|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
+            transcript_seqs = ["", ""]
+            for exon in self.exons:
+                fw, rv = exon.seqs # type: ignore
+                transcript_seqs[0] += fw
+                transcript_seqs[1] += rv
+            return transcript_seqs
+
+    @property
+    def hard_seqs(self) -> list[str]|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
+            transcript_seqs = ["", ""]
+            for exon in self.exons:
+                fw, rv = exon.hard_seqs # type: ignore
+                transcript_seqs[0] += fw
+                transcript_seqs[1] += rv
+            return transcript_seqs
+    
+    @property
+    def size(self):
+        size = 0
+        for exon in self.exons:
+            size += exon.size
+        return size
+
+    @property
+    def CDS_size(self):
+        size = 0
+        for c in self.CDSs.values():
+            if c.main:
+                size = c.size
+                break
+        return size
+
+    @property
+    def coding_ratio(self):
+        if self.CDS_size != 0:
+            return round((self.CDS_size / self.size), 2)
+        else:
+            return 0

@@ -9,6 +9,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
+from ..feature import Feature
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -156,7 +157,7 @@ def main(
         raise typer.BadParameter("A single genome file must be provided for each annotation file.")
     
     if len(genome_files) != len(set(genome_files)):
-        raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis-overlap' may be more appropriate.")
+        raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis overlap' may be more appropriate.")
     
     if group_names != []:
         if len(annotation_files) != len(group_names):
@@ -174,13 +175,13 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
-    genomes = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g, quiet=quiet) for n, g in enumerate(genome_files) ]
+    genomes:list[Genome] = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g, quiet=quiet) for n, g in enumerate(genome_files) ]
 
-    annotations = []
+    annotations:list[Annotation] = []
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, quiet=quiet))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[n], annot_file_path=annotation_file, quiet=quiet))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
@@ -232,30 +233,31 @@ def main(
         f_in.write(f"{ft}\n")
     f_in.close()
 
-    
 
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
 
-        a.update_attributes(clean=True, symbols=False, symbols_as_descriptors=False, quiet=quiet)
+
         a.export.gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=quiet)
 
         if not skip_lifton:
 
             a_lifton = a.copy()
-            a_lifton.CDS_to_CDS_segment_ids(quiet=quiet, clean=True)
+            a_lifton.CDS_to_CDS_segment_ids(override=True)
             a_lifton.export.gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=quiet)
 
             del a_lifton
 
-        a.generate_sequences(genomes[n], quiet=quiet)
-        a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False)
-        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False)
-        a.clear_sequences(quiet=quiet)
+        Feature._ACTIVE_GENOME = a.genome
 
+        a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False, use_name_not_id=True)
+        a.clear_proteins()
+        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, use_name_not_id=True)
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
         diamond_db_file = diamond_path / f"{a.name}_diamond_db"
+
+
         makedb_cmd = [
             "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
         ]
@@ -472,14 +474,14 @@ def main(
         if os.path.exists(str(results_directory)):
             shutil.rmtree(str(results_directory))
 
-    print(f"aegis-orthology run complete.")
+    print(f"aegis orthology run complete.")
 
 if __name__ == "__main__":
     try:
         app()
     except Exception as e:
         import traceback
-        typer.echo("aegis-orthology crashed with an unexpected error:", err=True)
+        typer.echo("aegis orthology crashed with an unexpected error:", err=True)
         typer.echo(str(e), err=True)
         typer.echo(traceback.format_exc(), err=True)
         raise

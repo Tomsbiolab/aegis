@@ -1,0 +1,3 @@
+Chr4	Araport11	gene	1023912	1024149	.	+	.	ID=AT4G04095;Name=MIR5635d;locus_type=mirna
+Chr4	Araport11	miRNA_primary_transcript	1023912	1024149	.	+	.	ID=AT4G04095.1;Parent=AT4G04095;Name=ath-MIR5635d;symbol=ath-MIR5635d;Note=None;computational_description=microRNA ath-MIR5635d precursor
+Chr4	Araport11	miRNA	1024077	1024097	.	+	.	ID=ath-miR5635d;Name=ath-miR5635d;Derives_from=AT4G04095.1;Note=None;computational_description=microRNA ath-MIR5635d precursor

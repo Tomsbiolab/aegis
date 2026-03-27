@@ -11,39 +11,32 @@ from .utils.genefunctions import reverse_complement
 
 class CDS(Feature):
 
-    __slots__ = (
-        'main', 'CDS_segments', 'five_prime_UTR_seq', 'three_prime_UTR_seq',
-        'full_UTR_exons', 'protein', 'UTRs'
-    )
+    __slots__ = ('main', 'CDS_segments', 'full_UTR_exons', 'protein', 'UTRs')
 
     protein: Protein|None
-    size: int
+    CDS_segments: list[Feature]
+    UTRs: list[UTR]
+    full_UTR_exons: int
+    main:bool
 
-    def __init__(self, CDS_segments:list, feature_id:str, 
-                 ch:str, source:str, feature:str, strand:str, start:int, 
-                 end:int, score:str, phase:str, parents:list[str]=[], attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)    
+    def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)    
         self.main = False
         self.CDS_segments = CDS_segments
-        #self.kozak = ""
-        #self.codon_usage = {}
-        self.five_prime_UTR_seq = ""
-        self.three_prime_UTR_seq = ""
         self.full_UTR_exons = 0
-        self.frame = "."
         self.protein = None
         self.update()
 
     def update(self):
-        self.update_size()
         self.update_phase()
         self.update_frame()
 
-    def update_size(self):
-        self.size = 0
+    @property
+    def size(self):
+        size = 0
         for segment in self.CDS_segments:
-            self.size += segment.size
+            size += segment.size
+        return size
 
     def update_phase(self):
         leftover = 0
@@ -65,19 +58,18 @@ class CDS(Feature):
     def update_frame(self):
         if self.strand == "+":
             for cs in self.CDS_segments:
-                frame = (cs.start + cs.phase) % 3
+                frame = (cs.start + cs.phase) % 3 #type: ignore
                 if frame == 0:
                     frame = 3
                 cs.frame = frame
 
         if self.strand == "-":
             for cs in reversed(self.CDS_segments):
-                frame = (cs.start + cs.phase) % 3
+                frame = (cs.start + cs.phase) % 3 #type: ignore
                 if frame == 0:
                     frame = 3
                 frame = 7 - frame
                 cs.frame = frame
-
 
     def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):
 
@@ -111,7 +103,8 @@ class CDS(Feature):
             if self.original_id != self.id:
                 self.renamed = True
                 self.update_numbering()
-                self.generate_protein()
+                if self.protein is not None:
+                    self.generate_protein()
 
         cs_count = 0
         for cs in self.CDS_segments:
@@ -130,94 +123,93 @@ class CDS(Feature):
                     self.renamed = True
                     cs.update_numbering()
 
-
     def clear_UTRs(self):
-        self.five_prime_UTR_seq = ""
-        self.three_prime_UTR_seq = ""
         self.full_UTR_exons = 0
-        del self.UTRs
+        self.UTRs = []
 
-    def generate_sequence(self, genome:Genome, low_memory:bool=False):
-        self.seq = ""
-        for segment in self.CDS_segments:
-            segment.generate_sequence(genome)
-        if self.strand == "+":
-            for segment in self.CDS_segments:
-                self.seq += segment.seq
-        elif self.strand == "-":
-            for segment in reversed(self.CDS_segments):
-                self.seq += segment.seq
-        elif self.strand == ".":
-            self.seqs = ["", ""]
-            for segment in self.CDS_segments:
-                self.seqs[0] += segment.seqs[0]
-            for segment in reversed(self.CDS_segments):
-                self.seqs[1] += segment.seqs[1]
-
-        if low_memory:
-            for segment in self.CDS_segments:
-                segment.clear_sequence()
+    @property
+    def seq(self) -> str|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            if hasattr(self, "UTRs"):
-                for u in self.UTRs:
-                    u.generate_sequence(genome)
-                if self.strand == "+":
-                    for u in self.UTRs:
-                        if u.prime == "5'":
-                            self.five_prime_UTR_seq += u.seq
-                        else:
-                            self.three_prime_UTR_seq += u.seq
-                elif self.strand == "-":
-                    for u in reversed(self.UTRs):
-                        if u.prime == "5'":
-                            self.five_prime_UTR_seq += u.seq
-                        else:
-                            self.three_prime_UTR_seq += u.seq
-        self.generate_protein(low_memory=low_memory)
+            cds_seq = ""
+            if self.strand == "+":
+                for cs in self.CDS_segments:
+                    cds_seq += cs.seq # type: ignore
+            elif self.strand == "-":
+                for cs in reversed(self.CDS_segments):
+                    cds_seq += cs.seq # type: ignore
+            return cds_seq
 
-    def generate_hard_sequence(self, hard_masked_genome:Genome, low_memory:bool=False):
-        self.hard_seq = ""
-        for segment in self.CDS_segments:
-            segment.generate_hard_sequence(hard_masked_genome)
-        if self.strand == "+":
-            for segment in self.CDS_segments:
-                self.hard_seq += segment.hard_seq
-        elif self.strand == "-":
-            for segment in reversed(self.CDS_segments):
-                self.hard_seq += segment.hard_seq
-        elif self.strand == ".":
-            self.hard_seqs = ["", ""]
-            for segment in self.CDS_segments:
-                self.hard_seqs[0] += segment.hard_seqs[0]
-            for segment in reversed(self.CDS_segments):
-                self.hard_seqs[1] += segment.hard_seqs[1]
-
-        if low_memory:
-            for segment in self.CDS_segments:
-                segment.clear_sequence(just_hard=False)
+    @property
+    def hard_seq(self) -> str|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            if hasattr(self, "UTRs"):
-                for u in self.UTRs:
-                    u.generate_hard_sequence(hard_masked_genome)
+            cds_seq = ""
+            if self.strand == "+":
+                for cs in self.CDS_segments:
+                    cds_seq += cs.hard_seq # type: ignore
+            elif self.strand == "-":
+                for cs in reversed(self.CDS_segments):
+                    cds_seq += cs.hard_seq # type: ignore
+            return cds_seq
 
-    def clear_sequence(self, just_hard:bool=False, keep_proteins:bool=False):
-        self.hard_seq = ""
-        for segment in self.CDS_segments:
-            segment.clear_sequence(just_hard=just_hard)
-        if hasattr(self, "UTRs"):
-            for u in self.UTRs:    
-                u.clear_sequence(just_hard=just_hard)
-        if not just_hard:
-            self.seq = ""
-            self.five_prime_UTR_seq = ""
-            self.three_prime_UTR_seq = ""
-            if not keep_proteins:
-                self.protein = None
+    @property
+    def seqs(self) -> list[str]|None:
+        if not self._ACTIVE_GENOME:
+            raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
+        else:
+            cds_seqs = ["", ""]
+            for cs in self.CDS_segments:
+                fw, rv = cs.seqs # type: ignore
+                cds_seqs[0] += fw
+                cds_seqs[1] += rv
+            return cds_seqs
 
-    def generate_protein(self, readthrough:str="both", low_memory:bool=False):
-        self.protein = Protein(f"{self.id}.prot", self.seq, self.ch, readthrough)
-        if low_memory:
-            self.seq = ""
+    @property
+    def hard_seqs(self) -> list[str]|None:
+        if not self._ACTIVE_HARD_GENOME:
+            raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
+        else:
+            cds_seqs = ["", ""]
+            for cs in self.CDS_segments:
+                fw, rv = cs.hard_seqs # type: ignore
+                cds_seqs[0] += fw
+                cds_seqs[1] += rv
+            return cds_seqs
+
+    @property
+    def five_prime_UTR_seq(self) -> str:
+        five_prime_UTR_seq = ""
+        if self.strand == "+":
+            for u in self.UTRs:
+                if u.prime == "5'":
+                    five_prime_UTR_seq += u.seq # type: ignore
+        elif self.strand == "-":
+            for u in reversed(self.UTRs):
+                if u.prime == "5'":
+                    five_prime_UTR_seq += u.seq # type: ignore
+        return five_prime_UTR_seq
+    
+    @property
+    def three_prime_UTR_seq(self) -> str:
+        three_prime_UTR_seq = ""
+        if self.strand == "+":
+            for u in self.UTRs:
+                if u.prime == "3'":
+                    three_prime_UTR_seq += u.seq # type: ignore
+        elif self.strand == "-":
+            for u in reversed(self.UTRs):
+                if u.prime == "3'":
+                    three_prime_UTR_seq += u.seq # type: ignore
+        return three_prime_UTR_seq
+
+    def generate_protein(self, readthrough:str="both"):
+        self.protein = Protein(f"{self.id}.prot", self.seq, self.ch, readthrough) # type: ignore
+
+    def clear_protein(self):
+        self.protein = None
 
     def equal_segments(self, other:CDS):
         self.CDS_segments.sort()
@@ -233,58 +225,41 @@ class CDS(Feature):
         return same
 
 class Exon(Feature):
+    __slots__ = ()
 
-
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str,
-                 strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[], 
-                 attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
 
 class UTR(Feature):
 
     __slots__ = ('prime',)
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str,
-                 strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[],
-                 attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
         self.prime = "3'"
 
 class Intron(Feature):
-    __slots__ = (
-        'intra_coding', 'boundary', 'canonical',
-        'splice_site_donor', 'splice_site_acceptor'
-    )
+    __slots__ = ('intra_coding',)
     canonical_seqs = ["GT-AG", "GC-AG", "AT-AC"]
 
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str,
-                 strand:str, start:int, end:int, score:str, phase:str, parents:list[str]=[],
-                 attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
         self.intra_coding = False
-        self.boundary = ""
-        self.canonical = False
-        self.splice_site_donor = ""
-        self.splice_site_acceptor = ""
 
-    def generate_sequence(self, genome:Genome):
-        if self.strand == "+":
-            self.seq = genome.scaffolds[self.ch].seq[self.start-1:self.end]
-        elif self.strand == "-":
-            self.seq = reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])
-        elif self.strand == ".":
-            self.seqs = [genome.scaffolds[self.ch].seq[self.start-1:self.end], reverse_complement(genome.scaffolds[self.ch].seq[self.start-1:self.end])]
-        self.splice_site_donor = self.seq[0:2]
-        self.splice_site_acceptor = self.seq[-2:]
-        self.boundary = f"{self.splice_site_donor}-{self.splice_site_acceptor}"
+    @property
+    def boundary(self):
+        return f"{self.splice_site_donor}-{self.splice_site_acceptor}"
+    
+    @property
+    def splice_site_donor(self):
+        return self.seq[0:2]
+    
+    @property
+    def splice_site_acceptor(self):
+        return self.seq[-2:]
+
+    @property
+    def canonical(self):
         if self.boundary in Intron.canonical_seqs:
-            self.canonical = True
+            return True
         else:
-            self.canonical = False
-
-    def clear_sequence(self, just_hard:bool=False):
-        self.hard_seq = ""
-        if not just_hard:
-            self.seq = ""
+            return False

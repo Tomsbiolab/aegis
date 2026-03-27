@@ -20,6 +20,8 @@ class AnnotationExport:
     Component for handling export methods for the Annotation class.
     Accessed via 'annotation_object.export'.
     """
+    _annot: Annotation
+    
     def __init__(self, annotation: Annotation):
         self._annot = annotation
 
@@ -85,7 +87,7 @@ class AnnotationExport:
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True):
+    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, readthrough:str = "both", use_name_not_id: bool = False):
         """
         Main proteins means only proteins obtained from the main CDSs of the
         main transcripts. This equates to one protein per gene.
@@ -106,12 +108,15 @@ class AnnotationExport:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_proteins"
 
-        out = ""
+        if not self._annot.contains_protein_sequences:
+            self._annot.generate_proteins(readthrough=readthrough)
 
         if unique_proteins_per_gene:
             only_main = False
@@ -151,13 +156,22 @@ class AnnotationExport:
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
         
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                temp_cs = []
+        with open(output_file, "w", encoding="utf-8") as f_out:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    temp_cs = []
 
-                for t in g.transcripts.values():
-                    if only_main:
-                        if t.main:
+                    for t in g.transcripts.values():
+                        if only_main:
+                            if t.main:
+                                for c in t.CDSs.values():
+                                    if c.seq != "":
+                                        if only_cds_main:
+                                            if c.main:
+                                                temp_cs.append(c)
+                                        else:
+                                            temp_cs.append(c)
+                        else:
                             for c in t.CDSs.values():
                                 if c.seq != "":
                                     if only_cds_main:
@@ -165,260 +179,216 @@ class AnnotationExport:
                                             temp_cs.append(c)
                                     else:
                                         temp_cs.append(c)
+
+                    if not unique_proteins_per_gene:
+                        final_cs = temp_cs.copy()
+
                     else:
+                        final_cs = []
+                        if len(temp_cs) > 0:
+                            final_cs.append(temp_cs[0])
+
+                        for i, c1 in enumerate(temp_cs):
+                            if i > 0:
+                                add = True
+                                for c2 in final_cs:
+                                    if c1.equal_segments(c2):
+                                        add = False
+                                if add:
+                                    final_cs.append(c1)
+
+                    for c in final_cs:
+
+                        if used_id == "protein":
+                            f_out.write(f">{c.protein.id}")
+                        elif used_id == "CDS":
+                            f_out.write(f">{c.id}")
+                        elif used_id == "transcript":
+                            f_out.write(f">{c.parents[0]}")
+                        elif used_id == "gene":
+                            f_out.write(f">{g.id}")
+
+                        if c.protein.summary_tag and verbose:
+                            f_out.write(f"|{c.protein.summary_tag}")
+                        if verbose:
+                            f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.ch}|{c.start}:{c.end}")
+
+                        f_out.write(f"\n{c.protein.seq}\n")
+
+    def unique_proteins(self, custom_path: str = "", quiet: bool = False, readthrough:str = "both"):
+        start_time = time.time()
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected or quiet:
+            disable = True
+        else:
+            disable = False
+
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self._annot.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
+        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_proteins.fasta"
+
+        if not self._annot.contains_protein_sequences:
+            self._annot.generate_proteins(readthrough=readthrough)
+
+        all_protein_seqs = {}
+        self._annot.all_protein_ids = {}
+        for chrom, genes in self._annot.chrs.items():
+            for g in genes.values():
+                if g.coding:
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if c.protein is not None:
+                                if c.protein.seq != "":
+                                    all_protein_seqs[c.protein.id] = c.protein.seq
+                                    self._annot.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
+
+        progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
+                        bar_format=(
+            f'\033[1;91mDetermining and exporting unique {self._annot.id} proteins:\033[0m '
+            '{percentage:3.0f}%|'
+            f'\033[1;91m{{bar}}\033[0m| '
+            '{n}/{total} [{elapsed}<{remaining}]'))
+
+        unique_sequences = {}
+        self._annot.protein_equivalences = {}
+
+        for protein_id, sequence in all_protein_seqs.items():
+            progress_bar.update(1)
+            if sequence not in unique_sequences:
+                unique_sequences[sequence] = protein_id
+                self._annot.protein_equivalences[protein_id] = []
+            else:
+                first_protein_id = unique_sequences[sequence]
+                self._annot.protein_equivalences[first_protein_id].append(protein_id)
+
+        with open(output_file, "w", encoding="utf-8") as f_out:
+            for sequence, protein_id in unique_sequences.items():
+                f_out.write(f">{protein_id}\n{sequence}\n")
+
+        progress_bar.close()
+
+        now = time.time()
+        lapse = now - start_time
+        if not quiet:
+            print(f"\nExporting unique {self._annot.id} proteins took {round(lapse/60, 1)} minutes")
+
+    def unique_transcripts(self, custom_path: str = "", quiet: bool = False, rna_classes: list = []):
+        start_time = time.time()
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected or quiet:
+            disable = True
+        else:
+            disable = False
+
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self._annot.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
+        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_transcripts.fasta"
+        
+        all_transcript_seqs = {}
+        for genes in self._annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    if (t.feature in rna_classes) or (not rna_classes):
+                        if t.seq != "":
+                            all_transcript_seqs[t.id] = t.seq
+
+        progress_bar = tqdm(total=len(all_transcript_seqs.keys()), disable=disable,
+                        bar_format=(
+            f'\033[1;91mDetermining and exporting unique {self._annot.id} transcripts:\033[0m '
+            '{percentage:3.0f}%|'
+            f'\033[1;91m{{bar}}\033[0m| '
+            '{n}/{total} [{elapsed}<{remaining}]'))
+        
+        
+        unique_sequences = {}
+
+        for transcript_id, sequence in all_transcript_seqs.items():
+            progress_bar.update(1)
+            if sequence not in unique_sequences:
+                unique_sequences[sequence] = transcript_id
+
+        with open(output_file, "w", encoding="utf-8") as f_out:
+            for sequence, transcript_id in unique_sequences.items():
+                f_out.write(f">{transcript_id}\n{sequence}\n")
+
+        progress_bar.close()
+
+        now = time.time()
+        lapse = now - start_time
+        if not quiet:
+            print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
+
+    def unique_CDSs(self, custom_path: str = "", quiet: bool = False):
+        start_time = time.time()
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected or quiet:
+            disable = True
+        else:
+            disable = False
+
+        if custom_path:
+            output_file = Path(custom_path)
+        else:
+            output_file = Path(self._annot.path) / "features"
+        output_file.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_file) + "/"
+        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_CDSs.fasta"
+        all_CDS_seqs = {}
+        for genes in self._annot.chrs.values():
+            for g in genes.values():
+                if g.coding:
+                    for t in g.transcripts.values():
                         for c in t.CDSs.values():
                             if c.seq != "":
-                                if only_cds_main:
-                                    if c.main:
-                                        temp_cs.append(c)
-                                else:
-                                    temp_cs.append(c)
+                                all_CDS_seqs[c.id] = c.seq
 
-                if not unique_proteins_per_gene:
-                    final_cs = temp_cs.copy()
-
-                else:
-                    final_cs = []
-                    if len(temp_cs) > 0:
-                        final_cs.append(temp_cs[0])
-
-                    for i, c1 in enumerate(temp_cs):
-                        if i > 0:
-                            add = True
-                            for c2 in final_cs:
-                                if c1.equal_segments(c2):
-                                    add = False
-                            if add:
-                                final_cs.append(c1)
-
-                for c in final_cs:
-
-                    if used_id == "protein":
-                        out += f">{c.protein.id}"
-                    elif used_id == "CDS":
-                        out += f">{c.id}"
-                    elif used_id == "transcript":
-                        out += f">{c.parents[0]}"
-                    elif used_id == "gene":
-                        out += f">{g.id}"
-
-                    if c.protein.summary_tag and verbose:
-                        out += f"|{c.protein.summary_tag}"
-                    if verbose:
-                        out += f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.ch}|{c.start}:{c.end}"
-
-                    out += f"\n{c.protein.seq}\n"        
-                     
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self._annot.id}")
-
-    def unique_proteins(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):
-        start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
+        progress_bar = tqdm(total=len(all_CDS_seqs.keys()), disable=disable,
+                        bar_format=(
+            f'\033[1;91mDetermining and exporting unique {self._annot.id} CDSs:\033[0m '
+            '{percentage:3.0f}%|'
+            f'\033[1;91m{{bar}}\033[0m| '
+            '{n}/{total} [{elapsed}<{remaining}]'))
         
-        if not self._annot.contains_protein_sequences:
-            if genome == None:
-                print(f"You forgot to provide the genome for {self._annot.id} and no sequences exist for CDSs")
-            else:
-                self._annot.generate_sequences(genome, quiet=quiet)
-                self.unique_proteins(custom_path=custom_path)
-        else:
-            if custom_path:
-                output_file = Path(custom_path)
-            else:
-                output_file = Path(self._annot.path) / "features"
-            output_file.mkdir(parents=True, exist_ok=True)
-            output_file = str(output_file) + "/"
-            output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_proteins.fasta"
-            out = ""
-            all_protein_seqs = {}
-            self._annot.all_protein_ids = {}
-            for chrom, genes in self._annot.chrs.items():
-                for g in genes.values():
-                    if g.coding:
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                if c.protein is not None:
-                                    if c.protein.seq != "":
-                                        all_protein_seqs[c.protein.id] = c.protein.seq
-                                        self._annot.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
-
-            progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mDetermining and exporting unique {self._annot.id} proteins:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
-            
-            
-            unique_sequences = {}
-            self._annot.protein_equivalences = {}
-
-            for protein_id, sequence in all_protein_seqs.items():
-                progress_bar.update(1)
-                if sequence not in unique_sequences:
-                    unique_sequences[sequence] = protein_id
-                    self._annot.protein_equivalences[protein_id] = []
-                else:
-                    first_protein_id = unique_sequences[sequence]
-                    self._annot.protein_equivalences[first_protein_id].append(protein_id)
-
-            for sequence, protein_id in unique_sequences.items():
-                out += f">{protein_id}\n{sequence}\n"
-
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-
-            progress_bar.close()
-
-            now = time.time()
-            lapse = now - start_time
-            if not quiet:
-                print(f"\nExporting unique {self._annot.id} proteins took {round(lapse/60, 1)} minutes")
-
-    def unique_transcripts(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False, rna_classes: list = []):
-        start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
         
-        if not self._annot.contains_all_sequences:
-            if genome == None:
-                print(f"You forgot to provide the genome for {self._annot.id} and no sequences exist for transcripts")
-            else:
-                self._annot.generate_sequences(genome, quiet=quiet)
-                self.unique_transcripts(custom_path=custom_path, rna_classes=rna_classes)
-        else:
-            if custom_path:
-                output_file = Path(custom_path)
-            else:
-                output_file = Path(self._annot.path) / "features"
-            output_file.mkdir(parents=True, exist_ok=True)
-            output_file = str(output_file) + "/"
-            output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_transcripts.fasta"
-            out = ""
-            all_transcript_seqs = {}
-            for chrom, genes in self._annot.chrs.items():
-                for g in genes.values():
-                    for t in g.transcripts.values():
-                        if (t.feature in rna_classes) or (not rna_classes):
-                            if t.seq != "":
-                                all_transcript_seqs[t.id] = t.seq
+        unique_sequences = {}
 
-            progress_bar = tqdm(total=len(all_transcript_seqs.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mDetermining and exporting unique {self._annot.id} transcripts:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
-            
-            
-            unique_sequences = {}
+        for CDS_id, sequence in all_CDS_seqs.items():
+            progress_bar.update(1)
+            if sequence not in unique_sequences:
+                unique_sequences[sequence] = CDS_id
 
-            for transcript_id, sequence in all_transcript_seqs.items():
-                progress_bar.update(1)
-                if sequence not in unique_sequences:
-                    unique_sequences[sequence] = transcript_id
-
-            for sequence, transcript_id in unique_sequences.items():
-                out += f">{transcript_id}\n{sequence}\n"
-
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-
-            progress_bar.close()
-
-            now = time.time()
-            lapse = now - start_time
-            if not quiet:
-                print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
-
-    def unique_CDSs(self, genome: Genome | None = None, custom_path: str = "", quiet: bool = False):
-        start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        
-        if not self._annot.contains_CDS_sequences:
-            if genome == None:
-                print(f"You forgot to provide the genome for {self._annot.id} and no sequences exist for CDSs")
-            else:
-                self._annot.generate_sequences(genome, quiet=quiet)
-                self.unique_CDSs(custom_path=custom_path)
-        else:
-            if custom_path:
-                output_file = Path(custom_path)
-            else:
-                output_file = Path(self._annot.path) / "features"
-            output_file.mkdir(parents=True, exist_ok=True)
-            output_file = str(output_file) + "/"
-            output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_CDSs.fasta"
-            out = ""
-            all_CDS_seqs = {}
-            for chrom, genes in self._annot.chrs.items():
-                for g in genes.values():
-                    if g.coding:
-                        for t in g.transcripts.values():
-                            for c in t.CDSs.values():
-                                if c.seq != "":
-                                    all_CDS_seqs[c.id] = c.seq
-
-            progress_bar = tqdm(total=len(all_CDS_seqs.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mDetermining and exporting unique {self._annot.id} CDSs:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
-            
-            
-            unique_sequences = {}
-
-            for CDS_id, sequence in all_CDS_seqs.items():
-                progress_bar.update(1)
-                if sequence not in unique_sequences:
-                    unique_sequences[sequence] = CDS_id
-
+        with open(output_file, "w", encoding="utf-8") as f_out:
             for sequence, CDS_id in unique_sequences.items():
-                out += f">{CDS_id}\n{sequence}\n"
+                f_out.write(f">{CDS_id}\n{sequence}\n")
 
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
+        progress_bar.close()
 
-            progress_bar.close()
+        now = time.time()
+        lapse = now - start_time
+        if not quiet:
+            print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
 
-            now = time.time()
-            lapse = now - start_time
-            if not quiet:
-                print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
-
-    def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True):
+    def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -440,11 +410,12 @@ class AnnotationExport:
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
 
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_CDSs"
-
-        out = ""
 
         if unique_CDSs_per_gene:
             only_main = False
@@ -482,12 +453,22 @@ class AnnotationExport:
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export CDSs.")
 
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                temp_cs = []
-                for t in g.transcripts.values():
-                    if only_main:
-                        if t.main:
+        
+        with open(output_file, "w", encoding="utf-8") as f_out:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    temp_cs = []
+                    for t in g.transcripts.values():
+                        if only_main:
+                            if t.main:
+                                for c in t.CDSs.values():
+                                    if c.seq != "":
+                                        if only_cds_main:
+                                            if c.main:
+                                                temp_cs.append(c)
+                                        else:
+                                            temp_cs.append(c)
+                        else:
                             for c in t.CDSs.values():
                                 if c.seq != "":
                                     if only_cds_main:
@@ -495,54 +476,40 @@ class AnnotationExport:
                                             temp_cs.append(c)
                                     else:
                                         temp_cs.append(c)
+
+                    if not unique_CDSs_per_gene:
+                        final_cs = temp_cs.copy()
                     else:
-                        for c in t.CDSs.values():
-                            if c.seq != "":
-                                if only_cds_main:
-                                    if c.main:
-                                        temp_cs.append(c)
-                                else:
-                                    temp_cs.append(c)
+                        final_cs = []
 
-                if not unique_CDSs_per_gene:
-                    final_cs = temp_cs.copy()
-                else:
-                    final_cs = []
+                        if len(temp_cs) > 0:
+                            final_cs.append(temp_cs[0])
 
-                    if len(temp_cs) > 0:
-                        final_cs.append(temp_cs[0])
+                        for i, c1 in enumerate(temp_cs):
+                            if i > 0:
+                                add = True
+                                for c2 in final_cs:
+                                    if c1.equal_segments(c2):
+                                        add = False
+                                if add:
+                                    final_cs.append(c1)
 
-                    for i, c1 in enumerate(temp_cs):
-                        if i > 0:
-                            add = True
-                            for c2 in final_cs:
-                                if c1.equal_segments(c2):
-                                    add = False
-                            if add:
-                                final_cs.append(c1)
+                    for c in final_cs:
 
-                for c in final_cs:
+                        if used_id == "CDS":
+                            f_out.write(f">{c.id}")
+                        elif used_id == "transcript":
+                            f_out.write(f">{c.parents[0]}")
+                        elif used_id == "gene":
+                            f_out.write(f">{g.id}")
 
-                    if used_id == "CDS":
-                        out += f">{c.id}"
-                    elif used_id == "transcript":
-                        out += f">{c.parents[0]}"
-                    elif used_id == "gene":
-                        out += f">{g.id}"
+                        if verbose:
+                            f_out.write(f"|{c.strand}|{c.ch}|{c.start}:{c.end}")
 
-                    if verbose:
-                        out += f"|{c.strand}|{c.ch}|{c.start}:{c.end}"
+                        f_out.write(f"\n{c.seq}\n")
 
-                    out += f"\n{c.seq}\n"
-                     
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self._annot.id}")
 
-    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False):
+    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False):
         """
         Main means only main transcript sequences are exported.
 
@@ -561,11 +528,12 @@ class AnnotationExport:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_transcripts"
-
-        out = ""
 
         if unique_transcripts_per_gene:
             only_main = False
@@ -594,83 +562,74 @@ class AnnotationExport:
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export transcripts.")
         
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                temp_ts = []
-                for t in g.transcripts.values():
-                    if (t.feature in rna_classes) or (not rna_classes):
-                        if t.seq != "":
-                            if only_main:
-                                if t.main:
+        with open(output_file, "w", encoding="utf-8") as f_out:
+
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    temp_ts = []
+                    for t in g.transcripts.values():
+                        if (t.feature in rna_classes) or (not rna_classes):
+                            if t.seq != "":
+                                if only_main:
+                                    if t.main:
+                                        temp_ts.append(t)
+                                else:
                                     temp_ts.append(t)
-                            else:
-                                temp_ts.append(t)
 
-                if not unique_transcripts_per_gene:
-                    final_ts = temp_ts.copy()
-                else:
-                    final_ts = []
-                    if len(temp_ts) > 0:
-                        final_ts.append(temp_ts[0])
+                    if not unique_transcripts_per_gene:
+                        final_ts = temp_ts.copy()
+                    else:
+                        final_ts = []
+                        if len(temp_ts) > 0:
+                            final_ts.append(temp_ts[0])
 
-                    for i, t1 in enumerate(temp_ts):
-                        if i > 0:
-                            add = True
-                            for t2 in final_ts:
-                                if t1.seq == t2.seq:
-                                    add = False
-                            if add:
-                                final_ts.append(t1)
+                        for i, t1 in enumerate(temp_ts):
+                            if i > 0:
+                                add = True
+                                for t2 in final_ts:
+                                    if t1.seq == t2.seq:
+                                        add = False
+                                if add:
+                                    final_ts.append(t1)
 
-                for t in final_ts:
-                    if used_id == "transcript":    
-                        out += f">{t.id}"
-                    elif used_id == "gene":
-                        out += f">{g.id}"
+                    for t in final_ts:
+                        if used_id == "transcript":    
+                            f_out.write(f">{t.id}")
+                        elif used_id == "gene":
+                            f_out.write(f">{g.id}")
 
-                    if verbose:
-                        out += f"|{t.strand}|{t.ch}|{t.start}:{t.end}"
-                    out += f"\n{t.seq}\n"
+                        if verbose:
+                            f_out.write(f"|{t.strand}|{t.ch}|{t.start}:{t.end}")
+                        f_out.write(f"\n{t.seq}\n")
 
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self._annot.id}")
-
-    def genes(self, verbose: bool = True, custom_path: str = ""):
+    def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False):
         if custom_path:
             output_file = Path(custom_path)
         else:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_genes"
-
 
         if verbose:
             output_file += "_coordinates"
         output_file += ".fasta"
-        out = ""
 
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                if g.seq != "":
-                    out += f">{g.id}"
-                    if verbose:
-                        out += f"|{g.strand}|{g.ch}|{g.start}:{g.end}"
-                    out += f"\n{g.seq}\n"
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_sequences(genome) on {self._annot.id}")
+        with open(output_file, "w", encoding="utf-8") as f_out:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    if g.seq != "":
+                        f_out.write(f">{g.id}")
+                        if verbose:
+                            f_out.write(f"|{g.strand}|{g.ch}|{g.start}:{g.end}")
+                        f_out.write(f"\n{g.seq}\n")
 
-    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter"):
+    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False):
         """
 
         Verbose will include promoter type, strand, chromosome, and coordinates.
@@ -682,11 +641,12 @@ class AnnotationExport:
             output_file = Path(self._annot.path) / "features"
         output_file.mkdir(parents=True, exist_ok=True)
         output_file = str(output_file) + "/"
-        output_file += self._annot.id
+        if use_name_not_id:
+            output_file += self._annot.name
+        else:
+            output_file += self._annot.id
         output_file += self._annot.feature_suffix
         output_file += "_promoters"
-
-        out = ""
 
         if used_id == "gene":
             only_main = True
@@ -711,44 +671,41 @@ class AnnotationExport:
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
 
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    if only_main and not t.main:
-                        continue
+        if not self._annot.contains_promoters:
+            self._annot.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
 
-                    if hasattr(t, "promoter"):
-                        if t.promoter.seq != "":
+        with open(output_file, "w", encoding="utf-8") as f_out:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        if only_main and not t.main:
+                            continue
 
-                            if used_id == "promoter":
-                                out += f">{t.promoter.id}"
-                            elif used_id == "transcript":
-                                out += f">{t.id}"
-                            elif used_id == "gene":
-                                out += f">{g.id}"
+                        if hasattr(t, "promoter"):
+                            if t.promoter.seq != "":
 
-                            if verbose:
-                                out += f"|{t.promoter.type}|{t.strand}|{t.ch}|{t.promoter.start}:{t.promoter.end}"
+                                if used_id == "promoter":
+                                    f_out.write(f">{t.promoter.id}")
+                                elif used_id == "transcript":
+                                    f_out.write(f">{t.id}")
+                                elif used_id == "gene":
+                                    f_out.write(f">{g.id}")
 
-                            out += f"\n{t.promoter.seq}\n"
+                                if verbose:
+                                    f_out.write(f"|{t.promoter.type}|{t.strand}|{t.ch}|{t.promoter.start}:{t.promoter.end}")
+
+                                f_out.write(f"\n{t.promoter.seq}\n")
+                            else:
+                                print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter sequence.\n")
                         else:
-                            print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter sequence.\n")
-                    else:
-                        print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter.\n")
-
-        if out != "":
-            f_out = open(output_file, "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: Run self.generate_promoters(genome) and self.generate_sequences(genome) on {self._annot.id}")
+                            print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter.\n")
 
     def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):
         equivalences = genome.rename_features_dap(output_folder=genome_out_folder, return_equivalences=True, export=True)
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False):
+    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -821,7 +778,7 @@ class AnnotationExport:
                         if gene_1bp_feature:
                             continue
 
-                    f_out.write(g.print_gff(extra_attributes=extra_attributes, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                    f_out.write(g.print_gff(extra_attributes=extra_attributes, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                     if just_genes:
                         continue
@@ -831,29 +788,30 @@ class AnnotationExport:
                             if main_only:
                                 if not t.main:
                                     continue
-                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                             for e in t.exons:
-                                f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
-                            for m in t.miRNAs:
-                                f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            if miRNAs:
+                                for m in t.miRNAs:
+                                    f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                             for c in t.CDSs.values():
                                 if main_only:
                                     if not c.main:
                                         continue
                                 for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                                 if UTRs:
                                     if hasattr(c, "UTRs"):
                                         for u in c.UTRs:
-                                            f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                            f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                     else:
                                 
                         for t in g.transcripts.values():                                
-                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                         exons = []
                         for t in g.transcripts.values():
@@ -869,15 +827,18 @@ class AnnotationExport:
                                     unique_exons.append(exons[i])
 
                         for e in unique_exons:
-                            f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                            f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
-                        for m in t.miRNAs:
-                            f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
 
                         for t in g.transcripts.values():
+
                             for c in t.CDSs.values():
                                 for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description))
+                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+
+                            if miRNAs:
+                                for m in t.miRNAs:
+                                    f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if UTRs:
                             utrs = []
                             for t in g.transcripts.values():
@@ -894,7 +855,7 @@ class AnnotationExport:
                                         unique_utrs.append(utrs[i])
 
                             for u in unique_utrs:
-                                f_out.write(u.print_gff(featurecountsID=featurecountsID))
+                                f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                     if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
                         continue
@@ -907,7 +868,7 @@ class AnnotationExport:
                     for x, ft in enumerate(self._annot.atypical_features):
                         if x == 0:
                             f_out.write("###\n")
-                        f_out.write(ft.print_gff())
+                        f_out.write(ft.print_gff(clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if x == (len(self._annot.atypical_features) - 1):
                             continue
                         f_out.write("###\n")
@@ -916,7 +877,7 @@ class AnnotationExport:
                     for x, ft in enumerate(self._annot.orphaned_features):
                         if x == 0:
                             f_out.write("###\n")
-                        f_out.write(ft.print_gff())
+                        f_out.write(ft.print_gff(clean=clean_attributes, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                         if x == (len(self._annot.orphaned_features) - 1):
                             continue
                         f_out.write("###\n")
@@ -1071,7 +1032,7 @@ class AnnotationExport:
                         out.append(str(g.size))
                     if coding_info:
                         out.append(str(g.coding))
-                    if gene_symbols:
+                    if gene_symbols and g.symbols:
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
@@ -1131,7 +1092,7 @@ class AnnotationExport:
                             out.append(str(t.size))
                         if coding_info:
                             out.append(str(t.coding))
-                        if gene_symbols:
+                        if gene_symbols and g.symbols:
                             out.append("|".join(g.symbols))
                         f_out.write(sep.join(out) + "\n")
 

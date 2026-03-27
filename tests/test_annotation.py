@@ -6,6 +6,7 @@ import os
 import warnings
 import pytest
 from pathlib import Path
+import pytest
 from aegis.gene import Gene
 
 from aegis.transcript import Transcript
@@ -158,8 +159,8 @@ class TestFormatGff3Attributes:
 
 class TestSortAndUpdateGenes:
     def test_sort_genes(self):
-        g1 = Gene(False, False, "gB", "chr1", "aegis", "gene", "+", 500, 1000, ".", ".")
-        g2 = Gene(False, False, "gA", "chr1", "aegis", "gene", "+", 100, 400, ".", ".")
+        g1 = Gene(False, False, "gB", "chr1", "aegis", "gene", "+", 500, 1000, ".")
+        g2 = Gene(False, False, "gA", "chr1", "aegis", "gene", "+", 100, 400, ".")
         genes_dict = {"gB": g1, "gA": g2}
         ch, sorted_dict = sort_and_update_genes("chr1", genes_dict)
         assert ch == "chr1"
@@ -168,14 +169,14 @@ class TestSortAndUpdateGenes:
         assert starts == sorted(starts)
 
     def test_sort_single_gene(self):
-        g = Gene(False, False, "gX", "chr1", "aegis", "gene", "+", 100, 500, ".", ".")
+        g = Gene(False, False, "gX", "chr1", "aegis", "gene", "+", 100, 500, ".")
         ch, sorted_dict = sort_and_update_genes("chr1", {"gX": g})
         assert ch == "chr1"
         assert list(sorted_dict.keys()) == ["gX"]
 
     def test_sort_already_sorted(self):
-        g1 = Gene(False, False, "g1", "chr1", "aegis", "gene", "+", 100, 300, ".", ".")
-        g2 = Gene(False, False, "g2", "chr1", "aegis", "gene", "+", 400, 600, ".", ".")
+        g1 = Gene(False, False, "g1", "chr1", "aegis", "gene", "+", 100, 300, ".")
+        g2 = Gene(False, False, "g2", "chr1", "aegis", "gene", "+", 400, 600, ".")
         ch, sorted_dict = sort_and_update_genes("chr1", {"g1": g1, "g2": g2})
         assert list(sorted_dict.keys()) == ["g1", "g2"]
 
@@ -206,7 +207,7 @@ class TestAnnotationSmallGFF3:
         gene = annot.chrs["chr1"]["gene1"]
         assert len(gene.transcripts) >= 1
         t = list(gene.transcripts.values())[0]
-        assert "gene1" in t.parents
+        assert "gene1" in t.parents # type: ignore
 
     def test_multi_gene_gff3(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
@@ -437,7 +438,7 @@ class TestAnnotationMarkingFunctions:
         annot = Annotation(sample_gff3_file, quiet=True)
         gene1 = annot.chrs["chr1"]["gene1"]
         gene1.feature = "rRNA_gene"
-        rrna_t = Transcript("rRNA1", "chr1", "aegis", "rRNA", "+", 10, 50, ".", ".", ["gene1"])
+        rrna_t = Transcript("rRNA1", "chr1", "aegis", "rRNA", "+", 10, 50, ".", ["gene1"])
         gene1.transcripts["rRNA1"] = rrna_t
 
         assert len(gene1.transcripts) == 2
@@ -596,7 +597,7 @@ class TestAnnotationRemoveTranscripts:
     def test_remove_transcript_by_id(self, multi_gene_gff3_file):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         assert "mRNA_A" in annot.all_transcript_ids
-        annot.remove_transcripts(to_remove={"mRNA_A"}, quiet=True)
+        annot.remove_transcripts(to_remove={"mRNA_A"}, remove_genes_accordingly=True, quiet=True)
         # Removing the only transcript should also remove the parent gene
         assert "geneA" not in annot.all_gene_ids
 
@@ -604,7 +605,7 @@ class TestAnnotationRemoveTranscripts:
         annot = Annotation(multi_gene_gff3_file, quiet=True)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            annot.remove_transcripts(to_remove={"fake_transcript"}, quiet=False)
+            annot.remove_transcripts(to_remove={"fake_transcript"}, remove_genes_accordingly=True, quiet=False)
             assert any("fake_transcript" in str(warning.message) for warning in w)
 
 
@@ -617,13 +618,13 @@ class TestAnnotationRemoveTranscriptsWithNoExons:
         annot = Annotation(sample_gff3_file, quiet=True)
         gene = annot.chrs["chr1"]["gene1"]
         # Add a bogus transcript with no exons
-        empty_t = Transcript("emptyT", "chr1", "aegis", "mRNA", "+", 100, 200, ".", ".", ["gene1"])
+        empty_t = Transcript("emptyT", "chr1", "aegis", "mRNA", "+", 100, 200, ".", ["gene1"])
         empty_t.exons = []
         gene.transcripts["emptyT"] = empty_t
         original_t_count = len(gene.transcripts)
         assert original_t_count >= 2
 
-        annot.remove_transcripts_with_no_exons(quiet=True)
+        annot.detect_transcripts_with_no_exons(remove_transcripts=True, remove_genes_accordingly=True, quiet=True)
         gene = annot.chrs["chr1"]["gene1"]
         assert "emptyT" not in gene.transcripts
         assert "transcript_with_no_exons" in annot.warnings
@@ -643,7 +644,7 @@ class TestAnnotationRemoveExonsWithUnmatchedStrand:
         assert t.strand == "+"
 
         # Add an exon on the wrong strand
-        wrong_exon = Exon("wrongE", "chr1", "aegis", "exon", "-", 100, 200, ".", ".", ["mRNA1"])
+        wrong_exon = Exon("wrongE", "chr1", "aegis", "exon", "-", 100, 200, ".", ["mRNA1"])
         t.exons.append(wrong_exon)
         original_count = len(t.exons)
 
@@ -681,7 +682,7 @@ class TestAnnotationFilterByRnaClass:
     def test_keep_only_mrna(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
         # geneR1 has mRNA + lnc_RNA; geneR3 has lnc_RNA only
-        annot.filter_by_rna_class(rna_classes=["mRNA"], quiet=True)
+        annot.filter_by_rna_class(rna_classes=["mRNA"], remove_genes_accordingly=True, quiet=True)
         # geneR3 (lnc_RNA only) should have been removed
         assert "geneR3" not in annot.all_gene_ids
         # geneR1 should keep only the mRNA transcript
@@ -691,7 +692,7 @@ class TestAnnotationFilterByRnaClass:
 
     def test_keep_lnc_rna(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
-        annot.filter_by_rna_class(rna_classes=["lnc_RNA"], quiet=True)
+        annot.filter_by_rna_class(rna_classes=["lnc_RNA"], remove_genes_accordingly=True, quiet=True)
         # geneR2 (mRNA only) should have been removed
         assert "geneR2" not in annot.all_gene_ids
         # geneR3 should still exist
@@ -932,9 +933,9 @@ class TestAnnotationClearGeneNamesAndSymbols:
         gene.synonyms = ["Syn1"]
 
         annot.clear_gene_names_and_symbols(quiet=True)
-        assert gene.names == []
-        assert gene.symbols == []
-        assert gene.synonyms == []
+        assert gene.names is None
+        assert gene.symbols is None
+        assert gene.synonyms is None
 
 
 # ============================================================
@@ -993,24 +994,17 @@ class TestAnnotationRemoveCodingGenes:
 # ============================================================
 
 class TestAnnotationClearSequences:
-    def test_clear_sequences_flags(self, sample_gff3_file):
+    def test_contains_no_proteins_initially(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.contains_protein_sequences = True
-        annot.contains_CDS_sequences = True
-        annot.contains_all_sequences = True
 
-        annot.clear_sequences(quiet=True)
         assert annot.contains_protein_sequences is False
-        assert annot.contains_CDS_sequences is False
-        assert annot.contains_all_sequences is False
 
-    def test_clear_sequences_keep_proteins(self, sample_gff3_file):
+    def test_clear_protein_flag(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         annot.contains_protein_sequences = True
-        annot.clear_sequences(keep_proteins=True, quiet=True)
-        assert annot.contains_protein_sequences is True
-        assert annot.contains_CDS_sequences is False
+        annot.clear_proteins()
 
+        assert annot.contains_protein_sequences is False
 
 # ============================================================
 # Annotation — copy (deeper tests)
@@ -1044,18 +1038,18 @@ class TestAnnotationRemoveGenesWithNoTranscripts:
         from aegis.gene import Gene
         annot = Annotation(sample_gff3_file, quiet=True)
         # Add a gene with no transcripts
-        empty_gene = Gene(False, False, "emptyG", "chr1", "aegis", "gene", "+", 100, 200, ".", ".")
+        empty_gene = Gene(False, False, "emptyG", "chr1", "aegis", "gene", "+", 100, 200, ".")
         annot.chrs["chr1"]["emptyG"] = empty_gene
         annot.all_gene_ids["emptyG"] = "chr1"
 
-        annot.remove_genes_with_no_transcripts(quiet=True)
+        annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
         assert "emptyG" not in annot.chrs["chr1"]
         assert "gene_with_no_transcripts" in annot.warnings
         assert "emptyG" in annot.warnings["gene_with_no_transcripts"]
 
     def test_keeps_gene_with_transcripts(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.remove_genes_with_no_transcripts(quiet=True)
+        annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
         # gene1 has transcripts, so it should remain
         assert "gene1" in annot.chrs["chr1"]
 
@@ -1225,7 +1219,8 @@ class TestCDSOnlyGFF3:
     def test_two_introns_generated(self, cds_only_gff3_file):
         annot = Annotation(cds_only_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
-        assert len(t.introns) == 2
+        annot.generate_introns()
+        assert len(t.introns) == 2 # type: ignore
 
     def test_gene_coordinates_corrected(self, cds_only_gff3_file):
         """Gene coordinates are corrected to match the actual subfeature span"""
@@ -1262,7 +1257,8 @@ class TestNoSubfeaturesGFF3:
     def test_no_introns(self, no_subfeatures_gff3_file):
         annot = Annotation(no_subfeatures_gff3_file, quiet=True)
         t1 = annot.chrs["chr1"]["gene_ns1"].transcripts["mRNA_ns1"]
-        assert len(t1.introns) == 0
+        annot.generate_introns()
+        assert len(t1.introns) == 0 # type: ignore
 
     def test_minus_strand_transcript(self, no_subfeatures_gff3_file):
         annot = Annotation(no_subfeatures_gff3_file, quiet=True)
@@ -1356,53 +1352,54 @@ class TestPseudogeneGFF3:
         assert coords == [(1000, 2000), (3000, 4000), (4500, 5000)]
 
 
-# ---- 6. Overlapping exons (collapse) ----
+# ---- 6. Overlapping, and adjacent exons (collapse) ----
 
-class TestOverlappingExonsGFF3:
-    """Gene with overlapping exons is collapsed into fewer exons"""
+class TestExonsToCollapseGFF3:
+    """Gene with overlapping and adjacent exons is collapsed into fewer exons"""
 
-    def test_exons_collapsed(self, overlapping_exons_gff3_file):
+    def test_exons_collapsed(self, exons_to_collapse_gff3_file):
         """4 overlapping/adjacent input exons -> 2 collapsed exons"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         assert len(t.exons) == 2
 
-    def test_collapsed_exon_coordinates(self, overlapping_exons_gff3_file):
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+    def test_collapsed_exon_coordinates(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         coords = [(e.start, e.end) for e in t.exons]
         # exons 1000-2500 + 2000-3500 + 3500-4000 overlap → merged into 1000-4000
         # exon 5000-6000 remains separate
         assert coords == [(1000, 4000), (5000, 6000)]
 
-    def test_transcript_is_coding(self, overlapping_exons_gff3_file):
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+    def test_transcript_is_coding(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         assert t.coding is True
 
-    def test_one_intron_after_collapse(self, overlapping_exons_gff3_file):
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+    def test_one_intron_after_collapse(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
-        assert len(t.introns) == 1
+        annot.generate_introns()
+        assert len(t.introns) == 1 # type: ignore
 
-    def test_cds_segments_collapsed(self, overlapping_exons_gff3_file):
+    def test_cds_segments_collapsed(self, exons_to_collapse_gff3_file):
         """3 CDS input segments (2 overlapping) -> 2 collapsed CDS segments"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         cds = list(t.CDSs.values())[0]
         assert len(cds.CDS_segments) == 2
 
-    def test_collapsed_cds_coordinates(self, overlapping_exons_gff3_file):
+    def test_collapsed_cds_coordinates(self, exons_to_collapse_gff3_file):
         """CDS 1200-2500 + 2000-3500 -> merged 1200-3500; CDS 5000-5800 stays"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         cds = list(t.CDSs.values())[0]
         coords = [(s.start, s.end) for s in cds.CDS_segments]
         assert coords == [(1200, 3500), (5000, 5800)]
 
-    def test_no_collapse_cds_flag(self, overlapping_exons_gff3_file):
+    def test_no_collapse_cds_flag(self, exons_to_collapse_gff3_file):
         """With collapse_CDSs=False the 3 original CDS segments are kept"""
-        annot = Annotation(overlapping_exons_gff3_file, quiet=True, collapse_CDSs=False)
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True, collapse_CDSs=False)
         t = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"]
         cds = list(t.CDSs.values())[0]
         assert len(cds.CDS_segments) == 3
@@ -1615,3 +1612,342 @@ class TestNonStandardParentAttribute:
         g1 = annot.chrs["chr01"]["g1"]
         assert g1.start == 100
         assert g1.end == 500
+
+
+# ============================================================
+# Shared Exon Parents with multiple fw and rv transcripts also requiring collapse
+# ============================================================
+
+class TestAnnotationSharedExonParents:
+    def test_shared_parents_are_detected_with_exons_to_collapse(self, shared_parents_gff3_file):
+        annot = Annotation(shared_parents_gff3_file, quiet=True)
+
+        assert len(annot.all_gene_ids) == 1
+
+        assert len(annot.chrs["chr1"]["gene_ov1"].transcripts) == 5
+
+        assert len(annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons) == 2
+
+        assert len(annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons) == 3
+
+        assert len(annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons) == 3
+
+        assert len(annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA2"].exons) == 4
+        
+        assert len(annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons) == 4
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].start == 500
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].end == 800
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].parents == ["mRNA_ov2"]
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].start == 1000
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].end == 1300
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].id == "ov1_e001"
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].id == "ov1_e002"
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].parents == ["mRNA_ov1", "mRNA_ov2"]
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].id == "ov1_e008"
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].parents == ["ncRNA1", "ncRNA2", "ncRNA3"]
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].id == "ov1_e004"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].parents == ["ncRNA1", "ncRNA2"]
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].id == "ov1_e005"
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].start == 4500
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].end == 6000
+
+
+# ============================================================
+# Clash of IDs and removal of genes with no transcripts, pseudogene or not, also some checks on shared parents of renamed transcripts
+# ============================================================
+
+class TestAnnotationClashOfIDs:
+    annot: Annotation
+    def test_clash_of_ids_and_transcriptless_gene_removal(self, clash_of_ids_gff3_file):
+        annot = Annotation(clash_of_ids_gff3_file, quiet=True)
+
+        assert len(annot.all_gene_ids) == 7
+
+        assert "g1_1" not in annot.chrs["chr8"]
+        assert "g1_1_1" in annot.chrs["chr8"]
+        assert "g1" in annot.chrs["chr1"]
+        assert "g1" not in annot.chrs["chr2"]
+        assert "g1_1" in annot.chrs["chr2"]
+
+        assert "g1.t1" in annot.chrs["chr1"]["g1"].transcripts
+        assert "g1.t1_1" in annot.chrs["chr2"]["g1_1"].transcripts
+
+        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].id == "exon_1"
+        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].parents == ["g1.t1_1"]
+        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].start == 500
+        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].end == 2000
+
+        assert "g1.t1" not in annot.chrs["chr2"]["g1_1"].transcripts
+
+        assert "g1.t1" not in annot.chrs["chr3"]["g2"].transcripts
+        assert "g1.t1_1" not in annot.chrs["chr3"]["g2"].transcripts
+        assert "g1.t1_2" in annot.chrs["chr3"]["g2"].transcripts
+
+        assert len(annot.chrs["chr3"]["g3"].transcripts) == 2
+        assert "g3.t1" in annot.chrs["chr3"]["g3"].transcripts
+        assert "g3.t1_1" in annot.chrs["chr3"]["g3"].transcripts
+
+        assert len(annot.chrs["chr3"]["g3"].transcripts["g3.t1"].exons) == 2
+
+        assert len(annot.chrs["chr3"]["g3"].transcripts["g3.t1_1"].exons) == 1
+
+        assert annot.chrs["chr3"]["g3"].transcripts["g3.t1"].exons[0].parents == ["g3.t1"]
+        assert annot.chrs["chr3"]["g3"].transcripts["g3.t1"].exons[1].parents == ["g3.t1", "g3.t1_1"]
+
+        assert annot.chrs["chr3"]["g3"].transcripts["g3.t1_1"].exons[0].parents == ["g3.t1", "g3.t1_1"]
+        
+
+        annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
+
+        assert len(annot.all_gene_ids) == 5
+
+        annot.detect_genes_with_no_transcripts(remove=True, remove_pseudogene=True, quiet=True)
+
+        assert len(annot.all_gene_ids) == 4
+
+
+
+# ============================================================
+# MicroRNA GFF3 files in human and Arabidopsis format
+# ============================================================
+
+class TestAnnotationMiRNAs:
+    annot: Annotation
+    def test_miRNA_human_format(self, miRNA_human_format_gff3_file):
+        annot = Annotation(miRNA_human_format_gff3_file, quiet=True)
+
+        assert len(annot.orphaned_features) == 0
+
+        assert "rna-NR_039937.1" in annot.all_transcript_ids
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].exons[0].id == "exon-NR_039937.1-1"
+
+        assert len(annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs) == 2
+
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs[0].id == "rna-MIR4777"
+
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs[0].start == 231362723
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs[0].end == 231362744
+
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs[1].id == "rna-MIR4777-2"
+
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs[1].start == 231362764
+        assert annot.chrs["NC_000002.12"]["gene-MIR4777"].transcripts["rna-NR_039937.1"].miRNAs[1].end == 231362785
+
+        annot = Annotation(miRNA_human_format_gff3_file, skip_orphaned_features=False, quiet=True)
+
+        assert len(annot.orphaned_features) == 2
+
+        assert annot.orphaned_features[0].id == "exon-MIR4777-1"
+        assert annot.orphaned_features[0].start == 231362723
+        assert annot.orphaned_features[0].end == 231362744
+        assert annot.orphaned_features[1].id == "exon-MIR4777-2-1"
+        assert annot.orphaned_features[1].start == 231362764
+        assert annot.orphaned_features[1].end == 231362785
+
+    def test_miRNA_arabidopsis_format(self, miRNA_arabidopsis_format_gff3_file):
+        annot = Annotation(miRNA_arabidopsis_format_gff3_file, quiet=True)
+
+        assert len(annot.orphaned_features) == 0
+
+        assert "AT4G04095.1" in annot.all_transcript_ids
+        assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].exons[0].start == 1023912
+        assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].exons[0].end == 1024149
+
+        
+        assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].miRNAs[0].id == "ath-miR5635d"
+        assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].miRNAs[0].parents == ["AT4G04095.1"]
+        assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].miRNAs[0].start == 1024077
+        assert annot.chrs["Chr4"]["AT4G04095"].transcripts["AT4G04095.1"].miRNAs[0].end == 1024097
+        
+
+# ============================================================
+# Testing different merging styles
+# ============================================================
+
+class TestAnnotationMerge:
+    annot: Annotation
+    def test_merge_gff3(self, merge_gff3_file_1, merge_gff3_file_2):
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        assert len(annot.all_gene_ids) == 5
+        annot2 = Annotation(merge_gff3_file_2, quiet=True)
+        assert len(annot2.all_gene_ids) == 6
+
+        annot.merge(annot2, quiet=True)
+        assert len(annot.all_gene_ids) == 11
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, rename_clashing_ids=False, quiet=True)
+        assert len(annot.all_gene_ids) == 6
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_cds_overlap=0, max_exon_overlap=0, max_gene_overlap=0, quiet=True)
+        assert len(annot.all_gene_ids) == 7
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_cds_overlap=0, quiet=True)
+        assert len(annot.all_gene_ids) == 9
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_exon_overlap=50, quiet=True)
+        assert len(annot.all_gene_ids) == 9
+
+        annot = Annotation(merge_gff3_file_1, quiet=True)
+        annot.merge(annot2, max_gene_overlap=50, quiet=True)
+        assert len(annot.all_gene_ids) == 8
+
+# ============================================================
+# Testing self overlapping genes detection
+# ============================================================
+
+class TestAnnotationOverlaps:
+    annot: Annotation
+    def test_self_overlaps(self, self_overlapping_genes_gff3_file):
+        annot = Annotation(self_overlapping_genes_gff3_file, quiet=True)
+        annot.overlaps.detect(quiet=True)
+
+        assert annot.overlapped_annotations == set()
+
+        assert set(annot.overlaps.self_genes) == {"g2", "g3", "g4", "g5"}
+        assert annot.overlaps.other_genes == set()
+        assert annot.chrs["chr1"]["g1"].overlaps == {"self" : [], "other" : []}
+
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].id == "g3"
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].orientation == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].score == 11
+
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].id == "g2"
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].orientation == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].score == 11
+
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].id == "g5"
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].gene_query_percent == 72.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].gene_target_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].exon_query_percent == 86.9
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].exon_target_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].CDS_query_percent == 57.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].score == 8
+
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].id == "g4"
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].gene_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].gene_target_percent == 72.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].exon_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].exon_target_percent == 86.9
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_target_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].score == 8
+
+    def test_other_overlaps(self, other_overlapping_genes_gff3_file_1, other_overlapping_genes_gff3_file_2):
+        annot = Annotation(other_overlapping_genes_gff3_file_1, quiet=True)
+        annot2 = Annotation(other_overlapping_genes_gff3_file_2, quiet=True)
+        annot.overlaps.detect(other=annot2, quiet=True)
+
+        assert annot.overlaps.self_genes == set()
+        assert annot2.overlaps.self_genes == set()
+
+        assert annot.overlapped_annotations == {"other_overlapping_genes_2"}
+        assert annot2.overlapped_annotations == {"other_overlapping_genes_1"}
+
+        assert set(annot.overlaps.other_genes) == {"g3", "g4"}
+        assert set(annot2.overlaps.other_genes) == {"g2", "g5"}
+
+        assert annot2.chrs["chr1"]["g1"].overlaps == {"self" : [], "other" : []}
+
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].id == "g3"
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].orientation == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].score == 11
+
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].id == "g2"
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDSs_in_both == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exons_in_both == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].orientation == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].gene_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].gene_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_gene_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exon_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exon_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_exon_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_CDS_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].score == 11
+
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].id == "g4"
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].gene_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].gene_target_percent == 72.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].exon_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].exon_target_percent == 86.9
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].CDS_target_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].score == 8
+
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].id == "g5"
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].gene_query_percent == 72.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].gene_target_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_gene_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].exon_query_percent == 86.9
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].exon_target_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_exon_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_query_percent == 57.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_CDS_percent == 57.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].score == 8
+
+        
+        

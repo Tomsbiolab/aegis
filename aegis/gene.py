@@ -9,82 +9,37 @@ if TYPE_CHECKING:
 
 from .feature import Feature
 from .subfeatures import Exon
+from .other_components import GeneSynteny
 
 class Gene(Feature):
 
-    __slots__ = (
-        'pseudogene', 'transposable', 'transcripts', 'previous_gene',
-        'next_gene', 'synteny_order', 'old_previous_gene', 'old_next_gene',
-        'old_synteny_order', 'conserved_synteny', 'coding', 'noncoding',
-        'overlaps', 'remove', 'rescue', 'reliable', 'reliable_score',
-        'overlap_reliable', 'unrescuable', 'overlap_with_selected_CDS',
-        'overlap_with_selected_exon', 'alternative_transcript_rescue',
-        'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single',
-        'UTR_intron_nested', 'transcriptomic_evidence', 'abinitio_evidence',
-        'base_id', 'original_base_id', 'renamed_exons', 'renamed_utrs'
-    )
+    __slots__ = ('pseudogene', 'transposable', 'transcripts', 'noncoding', '_overlaps', '_synteny', '_quality', 'base_id', 'original_base_id', 'renamed_exons', 'renamed_utrs')
 
     transcripts:dict[str, Transcript]
-    synteny_order:int|None
-    old_synteny_order:int|None
-    previous_gene:str|None|bool
-    next_gene:str|None|bool
-    old_previous_gene:str|None|bool
-    old_next_gene:str|None|bool
-    conserved_synteny:bool|None
     alternative_transcript_rescue:list
-    overlaps:dict[str, list[OverlapHit]]
+    _overlaps:dict[str, list[OverlapHit]]|None
+    _synteny: GeneSynteny | None
     
-    def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, 
-                 ch:str, source:str, feature:str, strand:str,
-                 start:int, end:int, score:str, phase:str, parents:list[str]=[], attributes:dict={}):
-        super().__init__(feature_id, ch, source, feature, strand, start, end,
-                         score, phase, parents, attributes)
+    def __init__(self, pseudogene:bool, transposable:bool, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+        super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
         self.pseudogene = pseudogene
         self.transposable = transposable
         # transcripts will be added as {"transcript_id" : transcript_object}
         self.transcripts = {}
-        # order within the chromosome
-        self.previous_gene = None
-        self.next_gene = None
-        self.synteny_order = None
-        self.old_previous_gene = None
-        self.old_next_gene = None
-        self.old_synteny_order = None
-        self.conserved_synteny = None
-        # A gene can have both coding and noncoding transcripts
-        self.coding = False
+        # A gene can have both coding and noncoding transcripts -> coding attribute is present in Feature already
         self.noncoding = False
 
-        self.overlaps = {"self" : [], "other" : []}
-
-        self.remove = False
-        self.rescue = False
-        self.reliable = False
-        self.reliable_score = 0
-        self.overlap_reliable = False
-        self.unrescuable = False
-
-        self.overlap_with_selected_CDS = False
-        self.overlap_with_selected_exon = False
-        self.alternative_transcript_rescue = []
-
-        self.intron_nested = False
-        self.intron_nested_fully_contained = False
-        self.intron_nested_single = False
-        self.UTR_intron_nested = False
-
-        self.transcriptomic_evidence = False
-        self.abinitio_evidence = False
+        self._overlaps = None
 
         self.renamed_exons = False
         self.renamed_utrs = False
 
         self.obtain_base_id(original=True)
 
+        self._synteny = None
 
-    def update(self):
-        self.update_size()
+
+    def update(self, quiet:bool=False):
         self.sort_transcripts()
         self.coding = False
         self.noncoding = False
@@ -132,8 +87,8 @@ class Gene(Feature):
                     best_id = t.id
             if best_id:
                 self.transcripts[best_id].main = True
-        else:
-            print(f"Error: gene {self.id} has no transcripts annotated")
+        elif not quiet and not self.pseudogene:
+            print(f"Warning: gene {self.id} has no transcripts annotated")
 
         self.homogenise_exon_scores()
 
@@ -146,8 +101,6 @@ class Gene(Feature):
             self.base_id = self.id[:-4]
         elif self.id.startswith("gene"):
             self.base_id = self.id[4:]
-        elif self.id.startswith("g"):
-            self.base_id = self.id[1:]
         else:
             self.base_id = self.id
 
@@ -234,7 +187,7 @@ class Gene(Feature):
                             overlapping, _ = tempft1.overlap(tempft2)
 
                             if overlapping:
-                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, ".", [self.id])
+                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, [self.id])
                                 add = True
                                 # this is to avoid adding a same overlap twice
                                 for f in features_to_add:
@@ -258,7 +211,7 @@ class Gene(Feature):
             temp_coding_feature = "mRNA"
             if not self.coding:
                 temp_coding_feature = "lncRNA"
-            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, ".", [self.id])
+            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, [self.id])
             self.transcripts[f"{self.id}_t001"].exons = temp_fts.copy()
             counter = 0
             for e in self.transcripts[f"{self.id}_t001"].exons:
@@ -272,17 +225,12 @@ class Gene(Feature):
             if respect_non_coding:
                 if not self.coding:
                     continue
-            t.generate_sequence(genome, low_memory)
-            t.generate_best_protein(genome)
+
+            t.generate_best_protein()
             t.generate_CDSs_based_on_ORF(low_memory)
-            for c in t.CDSs.values():
-                c.generate_sequence(genome, low_memory)
             if t.coding_ratio < 0.80:
-                t.generate_sequence(genome, low_memory)
-                t.generate_best_protein(genome, must_have_stop=False)
+                t.generate_best_protein(must_have_stop=False)
                 t.generate_CDSs_based_on_ORF(low_memory)
-                for c in t.CDSs.values():
-                    c.generate_sequence(genome, low_memory)
             t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
 
     def longer_CDS(self, other:Gene):
@@ -575,28 +523,40 @@ class Gene(Feature):
                 self.rename_utrs()
             self.update()
 
-    def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False):
+    def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 
-        parent_string = ",".join(self.parents)
-        temp_attributes = [f"ID={self.id}", f"Parent={parent_string}"]
+        temp_attributes = [f"ID={self.id}"]
+        if print_empty_attributes:
+            if self.symbols is None:
+                self.symbols = []
+            if self.names is None:
+                self.names = []
+            if self.aliases is None:
+                self.aliases = []
+            if self.misc_attributes is None:
+                self.misc_attributes = []
 
-        if symbols:
+        if symbols and self.symbols is not None:
             symbol_string = ",".join(self.symbols)
-            temp_attributes.append(f"Symbol={symbol_string}")
+            if symbol_string or print_empty_attributes:
+                temp_attributes.append(f"Symbol={symbol_string}")
 
-        if symbols_as_description:
+        if symbols_as_description and self.symbols is not None:
             symbol_string = ",".join(self.symbols)
-            temp_attributes.append(f"Description={symbol_string}")
+            if symbol_string or print_empty_attributes:
+                temp_attributes.append(f"Description={symbol_string}")
 
-        if names:
+        if names and self.names is not None:
             name_string = ",".join(self.names)
-            temp_attributes.append(f"Name={name_string}")
+            if name_string or print_empty_attributes:
+                temp_attributes.append(f"Name={name_string}")
 
-        if aliases:
+        if aliases and self.aliases is not None:
             alias_string = ",".join(self.aliases)
-            temp_attributes.append(f"Alias={alias_string}")
+            if alias_string or print_empty_attributes:
+                temp_attributes.append(f"Alias={alias_string}")
 
-        if not clean:
+        if not clean and self.misc_attributes is not None:
             temp_attributes.extend(self.misc_attributes)
 
         if self.pseudogene:
@@ -605,63 +565,30 @@ class Gene(Feature):
             temp_attributes.append(f"Transposable={self.transposable}")
 
         if extra_attributes:
-
-            temp_attributes.append(f"reliable_score={self.reliable_score}")
-            temp_attributes.append(f"remove={self.remove}")
-            temp_attributes.append(f"rescue={self.rescue}")
-            blasts = []
-            for b in self.blast_hits:
-                blasts.append(f"{b.source}_{b.score}")
-            blasts = ",".join(blasts)
-            if blasts:
-                temp_attributes.append(f"blasts={blasts}")
-            alternative_transcript_rescue = ",".join(self.alternative_transcript_rescue)
-            if alternative_transcript_rescue:
-                temp_attributes.append(f"alternative_transcript_rescue={alternative_transcript_rescue}")
-            overlaps = []
-            for o in self.overlaps["self"]:
-                if o.score >= 5:
-                    overlaps.append(o.id)
-            overlaps = ",".join(overlaps)
-            if overlaps:
-                temp_attributes.append(f"CDS_orientated_overlaps={overlaps}")
-
-            gene_masked_fraction = self.masked_fraction
-            transcript_masked_fraction = 0
-            CDS_masked_fraction = 0
-            gene_GC_content = self.gc_content
-            transcript_GC_content = 0
-            CDS_GC_content = 0
-
-            for t in self.transcripts.values():
-                if t.main:
-                    transcript_masked_fraction = t.masked_fraction
-                    transcript_GC_content = t.gc_content
-                    for c in t.CDSs.values():
-                        if c.main:
-                            CDS_masked_fraction = c.masked_fraction
-                            CDS_GC_content = c.gc_content
-
-            temp_attributes.append(f"gene_masked_fraction={gene_masked_fraction}")
-            temp_attributes.append(f"transcript_masked_fraction={transcript_masked_fraction}")
-            temp_attributes.append(f"CDS_masked_fraction={CDS_masked_fraction}")
-            temp_attributes.append(f"gene_GC_content={gene_GC_content}")
-            temp_attributes.append(f"transcript_GC_content={transcript_GC_content}")
-            temp_attributes.append(f"CDS_GC_content={CDS_GC_content}")
-            temp_attributes.append(f"intron_nested={self.intron_nested}")
-            temp_attributes.append(f"intron_nested_fully_contained={self.intron_nested_fully_contained}")
-            temp_attributes.append(f"intron_nested_single={self.intron_nested_single}")
-            temp_attributes.append(f"intron_UTR_nested={self.UTR_intron_nested}")
+            extra = self.quality.get_attributes()
+            temp_attributes.extend(extra)
 
         attribute_string = ";".join(temp_attributes)
-
-        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{self.phase}\t{attribute_string}\n")
-
+        phase = self.phase if self.phase is not None else "."
+        return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
     def __str__(self):
-        if self.symbols != []:
+        if self.symbols:
             return f"{self.id}: {self.symbols}"
-        elif self.names != []:
+        elif self.names:
             return f"{self.id}: {self.names}"
         else:
             return f"{self.id}"
+
+    # all of these gene properties are cached-like -> compatible with slots
+    @property
+    def overlaps(self) -> dict[str, list[OverlapHit]]:
+        if self._overlaps is None:
+            self._overlaps = {"self": [], "other":[]}
+        return self._overlaps
+
+    @property
+    def synteny(self) -> GeneSynteny:
+        if self._synteny is None:
+            self._synteny = GeneSynteny()
+        return self._synteny
