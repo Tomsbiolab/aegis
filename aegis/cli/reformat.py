@@ -37,6 +37,11 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
+
     encoding = read_file_with_fallback(annotation_file)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
@@ -60,9 +65,9 @@ def main(
             output_file += ".gff3"
 
     if input_format == "gff3":
-        annotation.export.gtf(custom_path=output_dir, tag=output_file, UTRs=True, quiet=quiet)
+        annotation.export.gtf(custom_path=output_dir, tag=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
     elif input_format == "gtf":
-        annotation.export.gff(custom_path=output_dir, tag=output_file, UTRs=True, quiet=quiet)
+        annotation.export.gff(custom_path=output_dir, tag=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()

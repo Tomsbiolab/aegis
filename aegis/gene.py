@@ -2,14 +2,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .genome import Genome
-    from .transcript import Transcript
     from .hits import OverlapHit
     from .subfeatures import UTR
 
 from .feature import Feature
 from .subfeatures import Exon
 from .other_components import GeneSynteny
+from .transcript import Transcript
 
 class Gene(Feature):
 
@@ -164,7 +163,7 @@ class Gene(Feature):
             t.clear_UTRs()
         self.update()
 
-    def combine_transcripts(self, genome:Genome, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
+    def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
         """
         Useful for RNA-Seq read counting for transcript variants as "one" gene.
         """

@@ -98,7 +98,7 @@ class AnnotationMotifs:
                 if t.main:
                     p = t.promoter
                     occurrences_t = find_all_occurrences(motif, p.seq)
-                    occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
+                    occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq)) #type: ignore
                     occurrence_count_total = len(occurrences_t) + len(occurrences_a)
                     if occurrence_count_total != 0:
                         avg_motifs_interest.append(occurrence_count_total)
@@ -153,7 +153,7 @@ class AnnotationMotifs:
                 if t.main:
                     p = t.promoter
                     occurrences_t = find_all_occurrences(motif, p.seq)
-                    occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
+                    occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq)) #type: ignore
                     occurrence_count_total = len(occurrences_t) + len(occurrences_a)
                     if occurrence_count_total != 0:
                         avg_motifs_random.append(occurrence_count_total)
@@ -208,7 +208,7 @@ class AnnotationMotifs:
                     if t.main:
                         p = t.promoter
                         occurrences_t = find_all_occurrences(motif, p.seq)
-                        occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
+                        occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq)) #type: ignore
                         occurrence_count_total = len(occurrences_t) + len(occurrences_a)
                         if occurrence_count_total != 0:
                             avg_motifs_genomic.append(occurrence_count_total)
@@ -250,7 +250,7 @@ class AnnotationMotifs:
                     if t.main:
                         p = t.promoter
                         occurrences_t = find_all_occurrences(motif, p.seq)
-                        occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq))
+                        occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq)) #type: ignore
                         occurrence_count_total = len(occurrences_t) + len(occurrences_a)
                         if occurrence_count_total != 0:
                             avg_motifs_genomic.append(occurrence_count_total)

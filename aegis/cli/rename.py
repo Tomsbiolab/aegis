@@ -89,6 +89,11 @@ def main(
     for feature in rename_features:
         if feature not in VALID_FEATURES:
             raise typer.BadParameter(f"Invalid feature level: {feature}. Choose from: {VALID_FEATURES}")
+
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
         
     if (remove_point_suffix or strip_gene_tag) and "gene" not in rename_features:
         typer.echo(f"'gene' was not included in features={rename_features} but --remove_point_suffix or --strip_gene_tag flags were used, therefore, 'gene' was added to the list of modified features.", err=True)
@@ -108,7 +113,7 @@ def main(
         output_file = f"{annotation_name}_renamed.gff3"
 
     annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, quiet=quiet)
-    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet)
+    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()

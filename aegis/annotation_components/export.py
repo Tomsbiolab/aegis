@@ -705,7 +705,7 @@ class AnnotationExport:
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True):
+    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -735,27 +735,31 @@ class AnnotationExport:
 
         if just_genes:
             output_suffix += "_just_genes"
-        if no_1bp_features:
-            output_suffix += "_for_lifton"
+
+        if repeat_exons_utrs:
+            self._annot.single_parent_for_exons_utrs()
+
+        if featurecountsID:
+            self._annot.create_featurecounts_ids()
+            self._annot.tags.add("fcounts")
+        else:
+            self._annot.tags.discard("fcounts")
+        
+        if clean_attributes:
+            self._annot.tags.add("clean")
 
         if tag == ".gff3":
-            tag = f"{self._annot.id}{self._annot.suffix}{output_suffix}{tag}"
-            if not quiet:
-                print(f"Exporting {self._annot.id} gff with tag='{tag}' which is dapfit={self._annot.dapfit} and dapmod={self._annot.dapmod} and combined={self._annot.combined}.")
-        elif not quiet:
+            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gff3"
+
+        if not quiet:
             print(f"Exporting {self._annot.id} gff to {export_folder}{tag}.")
 
         with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
-            if self._annot.clean or self._annot.dapmod:
+            if clean_header or "dapmod" in self._annot.tags:
                 f_out.write("##gff-version 3\n")
             else:
                 f_out.write("\n".join(self._annot.gff_header) + "\n")
 
-            if repeat_exons_utrs:
-                self._annot.single_parent_for_exons_utrs()
-
-            if featurecountsID:
-                self._annot.create_featurecounts_ids()
 
             for x1, genes in enumerate(self._annot.chrs.values()):
                 progress_bar.update(len(genes))
@@ -882,7 +886,7 @@ class AnnotationExport:
                             continue
                         f_out.write("###\n")
 
-    def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False):
+    def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):
 
         self._annot.create_gtf_attributes()
 
@@ -903,7 +907,10 @@ class AnnotationExport:
                     f'\033[38;2;46;204;113m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-        export_folder = Path(custom_path or self._annot.path) / "out_gtfs"
+        if subfolder:
+            export_folder = Path(custom_path or self._annot.path) / "out_gtfs"
+        else:
+            export_folder = Path(custom_path or self._annot.path)
         export_folder.mkdir(parents=True, exist_ok=True)
         export_folder = str(export_folder) + "/"
 
@@ -911,14 +918,11 @@ class AnnotationExport:
 
         if just_genes:
             output_suffix += "_just_genes"
-        if no_1bp_features:
-            output_suffix += "_for_lifton"
 
         if tag == ".gtf":
-            tag = f"{self._annot.id}{self._annot.suffix}{output_suffix}{tag}"
-            if not quiet:
-                print(f"Exporting {self._annot.id} gtf with tag='{tag}' which is dapfit={self._annot.dapfit} and dapmod={self._annot.dapmod} and combined={self._annot.combined}.")
-        elif not quiet:
+            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gtf"
+
+        if not quiet:
             print(f"Exporting {self._annot.id} gtf to {export_folder}{tag}.")
 
         with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
@@ -977,7 +981,7 @@ class AnnotationExport:
 
             progress_bar.close()
 
-    def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):
+    def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False):
 
         if not custom_path:
             export_folder = Path(self._annot.path) / "lists"
@@ -999,7 +1003,7 @@ class AnnotationExport:
 
             header = ["gene_id"]
             if chromosomes or coordinates:
-                header.append("scaffold")
+                header.append("chromosome")
             if coordinates:
                 header.append("gene_start")
                 header.append("gene_end")
@@ -1009,7 +1013,8 @@ class AnnotationExport:
                 header.append("coding")
             if gene_symbols:
                 header.append("gene_symbol")
-            f_out.write(sep.join(header) + "\n")
+            if include_header:
+                f_out.write(sep.join(header) + "\n")
 
             for chrom, genes in self._annot.chrs.items():
                 for g in genes.values():
@@ -1029,14 +1034,20 @@ class AnnotationExport:
                         out.append(str(g.start))
                         out.append(str(g.end))
                     if lengths:
-                        out.append(str(g.size))
+                        if main_transcript_length_instead_of_gene_length:
+                            for t in g.transcripts.values():
+                                if t.main:
+                                    out.append(str(t.size))
+                                    break
+                        else:
+                            out.append(str(g.size))
                     if coding_info:
                         out.append(str(g.coding))
                     if gene_symbols and g.symbols:
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False):
+    def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):
         if not custom_path:
             export_folder = Path(self._annot.path) / "lists"
         else:
@@ -1057,7 +1068,7 @@ class AnnotationExport:
 
             header = ["transcript_id"]
             if chromosomes or coordinates:
-                header.append("scaffold")
+                header.append("chromosome")
             if coordinates:
                 header.append("transcript_start")
                 header.append("transcript_end")
@@ -1067,7 +1078,8 @@ class AnnotationExport:
                 header.append("coding")
             if gene_symbols:
                 header.append("gene_symbol")
-            f_out.write(sep.join(header) + "\n")
+            if include_header:
+                f_out.write(sep.join(header) + "\n")
 
             for chrom, genes in self._annot.chrs.items():
                 for g in genes.values():

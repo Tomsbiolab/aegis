@@ -53,6 +53,11 @@ def main(
     if (annotation_name == "{annotation-file}") and (annotation_file != ""):
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
+        
     genome = Genome(name = genome_name, genome_file_path = genome_file)
 
     if annotation_file:
@@ -74,7 +79,7 @@ def main(
 
     if annotation_file and rename_map != "":
         annotation.rename_chromosomes(equivalences=chromosome_equivalences)
-        annotation.export.gff(custom_path=output_dir)
+        annotation.export.gff(custom_path=output_dir, subfolder=subfolder)
 
 
 if __name__ == "__main__":
