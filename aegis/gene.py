@@ -163,74 +163,62 @@ class Gene(Feature):
             t.clear_UTRs()
         self.update()
 
-    def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):
+    def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=False, quiet:bool=False):
         """
         Useful for RNA-Seq read counting for transcript variants as "one" gene.
         """
-        temp_fts = []
-        for t in self.transcripts.values():
-            for e in t.exons:
-                temp_fts.append(e.copy())
-        self.transcripts = {}
-        if temp_fts != []:
-            still_overlapping_fts = True
-            while still_overlapping_fts:
-                features_to_remove = []
-                features_to_add = []
-                for i, tempft1 in enumerate(temp_fts):
-                    for j, tempft2 in enumerate(temp_fts):
-                        if i != j:
-                            small = min(tempft1.start, tempft2.start)
-                            large = max(tempft1.end, tempft2.end)
+        if len(self.transcripts) > 1:
 
-                            overlapping, _ = tempft1.overlap(tempft2)
+            temp_fts = []
+            coordinate_tuples = set()
+            for t in self.transcripts.values():
+                for e in t.exons:
+                    if (e.start, e.end) not in coordinate_tuples:
+                        temp_fts.append(e)
+                        coordinate_tuples.add((e.start, e.end))
 
-                            if overlapping:
-                                temp = Exon("combined", self.ch, self.source, "exon", self.strand, small, large, self.score, [self.id])
-                                add = True
-                                # this is to avoid adding a same overlap twice
-                                for f in features_to_add:
-                                    if temp.equal_coordinates(f):
-                                        add = False
-                                        break
-                                if add:
-                                    features_to_add.append(temp)
-                                if tempft1 not in features_to_remove:
-                                    features_to_remove.append(tempft1)
-                                if tempft2 not in features_to_remove:
-                                    features_to_remove.append(tempft2)
-                for sub_to_add in features_to_add:
-                    temp_fts.append(sub_to_add)
-                for sub_to_rem in features_to_remove:
-                    temp_fts.remove(sub_to_rem)
-                if features_to_remove == [] and features_to_add == []:
-                    still_overlapping_fts = False
-            temp_fts.sort()
+            collapsed_exons = False
+            if temp_fts != []:
 
-            temp_coding_feature = "mRNA"
-            if not self.coding:
-                temp_coding_feature = "lncRNA"
-            self.transcripts[f"{self.id}_t001"] = Transcript(f"{self.id}_t001", self.ch, self.source, temp_coding_feature, self.strand, temp_fts[0].start, temp_fts[-1].end, self.score, [self.id])
-            self.transcripts[f"{self.id}_t001"].exons = temp_fts.copy()
-            counter = 0
-            for e in self.transcripts[f"{self.id}_t001"].exons:
-                counter += 1
-                e.feature = "exon"
-                e.id = f"{self.id}_generated_exon_{counter}"
-                e.parents = [f"{self.id}_t001"]
+                temp_fts.sort()
 
-        for t in self.transcripts.values():
-            t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
-            if respect_non_coding:
-                if not self.coding:
+                for t in self.transcripts.values():
+                    if t.main:
+                        new_transcript = t
+
+                new_transcript.id = f"{self.id}_t001"
+                new_transcript.exons = temp_fts
+
+                self.transcripts = {new_transcript.id: new_transcript}
+
+                new_transcript.collapse_exons()
+                if new_transcript.collapsed_exons == True:
+                    collapsed_exons = True
+
+                if collapsed_exons:
+                    self.rename_exons()
+
+                self.update(quiet=quiet)
+
+            for t in self.transcripts.values():
+
+                if not redetect_CDS:
                     continue
 
-            t.generate_best_protein()
-            t.generate_CDSs_based_on_ORF(low_memory)
-            if t.coding_ratio < 0.80:
-                t.generate_best_protein(must_have_stop=False)
+                if respect_non_combined:
+                    if not collapsed_exons:
+                        continue
+
+                if respect_non_coding:
+                    if not self.coding:
+                        continue
+
+                t.generate_best_protein()
                 t.generate_CDSs_based_on_ORF(low_memory)
-            t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
+                if t.coding_ratio < 0.80:
+                    t.generate_best_protein(must_have_stop=False)
+                    t.generate_CDSs_based_on_ORF(low_memory)
+                t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
 
     def longer_CDS(self, other:Gene):
         for t1 in self.transcripts.values():
@@ -501,7 +489,7 @@ class Gene(Feature):
                                 t.renamed_utrs = True
                                 u.update_numbering()
 
-    def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True):
+    def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True, quiet:bool=False):
 
         collapsed_exons = False
         collapsed_CDS_segments = False
@@ -520,7 +508,7 @@ class Gene(Feature):
                 self.rename_exons()
             if collapsed_CDS_segments:
                 self.rename_utrs()
-            self.update()
+            self.update(quiet=quiet)
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 

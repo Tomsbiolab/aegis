@@ -12,6 +12,7 @@ from aegis.gene import Gene
 from aegis.transcript import Transcript
 
 from aegis.annotation import Annotation
+from aegis.genome import Genome
 from aegis.utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3, detect_file_format
 from aegis.utils.misc import read_file_with_fallback
 from aegis.utils.genefunctions import sort_and_update_genes
@@ -1921,4 +1922,147 @@ class TestAnnotationOverlaps:
         assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].score == 8
 
         
-        
+# ============================================================
+# Testing transcript combining
+# ============================================================
+
+class TestTranscriptCombining:
+    def test_transcripts_to_combine(self, transcripts_to_combine_gff3_file, transcripts_to_combine_fasta_file):
+        g = Genome("transcripts_to_combine", transcripts_to_combine_fasta_file, quiet=True)
+        annot = Annotation(transcripts_to_combine_gff3_file, genome=g, quiet=True)
+        assert len(annot.chrs["chr1"]["g1"].transcripts) == 1
+        assert len(annot.chrs["chr2"]["g2"].transcripts) == 3
+        assert len(annot.chrs["chr7"]["g3"].transcripts) == 4
+        assert len(annot.chrs["chr17"]["g4"].transcripts) == 2
+
+        assert annot.chrs["chr17"]["g4"].start == 200
+        assert annot.chrs["chr17"]["g4"].end == 1800
+        assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].start == 200
+        assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].end == 1600
+
+        annot.combine_transcripts(quiet=True, redetect_CDS=False)
+        assert len(annot.chrs["chr1"]["g1"].transcripts) == 1
+        assert len(annot.chrs["chr2"]["g2"].transcripts) == 1
+        assert len(annot.chrs["chr7"]["g3"].transcripts) == 1
+        assert len(annot.chrs["chr17"]["g4"].transcripts) == 1
+
+        assert "g1_t001" in annot.chrs["chr1"]["g1"].transcripts
+        assert "g2_t001" in annot.chrs["chr2"]["g2"].transcripts
+        assert "g3_t001" in annot.chrs["chr7"]["g3"].transcripts
+        assert "g4_t001" in annot.chrs["chr17"]["g4"].transcripts
+
+        assert len(annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons) == 2
+        assert len(annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons) == 3
+        assert len(annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons) == 3
+        assert len(annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons) == 2
+
+        assert len(annot.chrs["chr1"]["g1"].transcripts["g1_t001"].CDSs) == 1
+        assert len(annot.chrs["chr2"]["g2"].transcripts["g2_t001"].CDSs) == 0
+        assert len(annot.chrs["chr7"]["g3"].transcripts["g3_t001"].CDSs) == 0
+        assert len(annot.chrs["chr17"]["g4"].transcripts["g4_t001"].CDSs) == 1
+
+        assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[0].start == 1000
+        assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[0].end == 4000
+        assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[1].start == 5000
+        assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[1].end == 8000
+
+        assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[0].start == 700
+        assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[0].end == 2000
+        assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[1].start == 2600
+        assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[1].end == 2800
+        assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[2].start == 3000
+        assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[2].end == 3200
+
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[0].start == 100
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[0].end == 600
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].start == 1000
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].end == 1800
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[2].start == 2000
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[2].end == 2400
+
+        assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[0].start == 200
+        assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[0].end == 1000
+        assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[1].start == 1200
+        assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[1].end == 1800
+
+        assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].parents == ["g3_t001"]
+
+    # def test_transcripts_to_combine_redetect_CDS(self, transcripts_to_combine_gff3_file, transcripts_to_combine_fasta_file):
+    #     g = Genome("transcripts_to_combine", transcripts_to_combine_fasta_file, quiet=True)
+    #     annot = Annotation(transcripts_to_combine_gff3_file, genome=g, quiet=True)
+    #     assert len(annot.chrs["chr1"]["g1"].transcripts) == 1
+    #     assert len(annot.chrs["chr2"]["g2"].transcripts) == 3
+    #     assert len(annot.chrs["chr7"]["g3"].transcripts) == 4
+    #     assert len(annot.chrs["chr17"]["g4"].transcripts) == 2
+
+    #     assert annot.chrs["chr17"]["g4"].start == 200
+    #     assert annot.chrs["chr17"]["g4"].end == 1800
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].start == 200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].end == 1600
+
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_mRNA1"].CDSs["g1_CDS1"].CDS_segments[0].start == 1200
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_mRNA1"].CDSs["g1_CDS1"].CDS_segments[0].end == 4000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_mRNA1"].CDSs["g1_CDS1"].CDS_segments[1].start == 5000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_mRNA1"].CDSs["g1_CDS1"].CDS_segments[1].end == 6000
+
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].CDSs["g4_CDS1"].CDS_segments[0].start == 200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].CDSs["g4_CDS1"].CDS_segments[0].end == 1000
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].CDSs["g4_CDS1"].CDS_segments[1].start == 1200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_mRNA1"].CDSs["g4_CDS1"].CDS_segments[1].end == 1600
+
+    #     annot.combine_transcripts(quiet=True, redetect_CDS=True, respect_non_coding=True, respect_non_combined=True)
+    #     assert len(annot.chrs["chr1"]["g1"].transcripts) == 1
+    #     assert len(annot.chrs["chr2"]["g2"].transcripts) == 1
+    #     assert len(annot.chrs["chr7"]["g3"].transcripts) == 1
+    #     assert len(annot.chrs["chr17"]["g4"].transcripts) == 1
+
+    #     assert "g1_t001" in annot.chrs["chr1"]["g1"].transcripts
+    #     assert "g2_t001" in annot.chrs["chr2"]["g2"].transcripts
+    #     assert "g3_t001" in annot.chrs["chr7"]["g3"].transcripts
+    #     assert "g4_t001" in annot.chrs["chr17"]["g4"].transcripts
+
+    #     assert len(annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons) == 2
+    #     assert len(annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons) == 3
+    #     assert len(annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons) == 3
+    #     assert len(annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons) == 2
+
+    #     assert len(annot.chrs["chr1"]["g1"].transcripts["g1_t001"].CDSs) == 1
+    #     assert len(annot.chrs["chr2"]["g2"].transcripts["g2_t001"].CDSs) == 0
+    #     assert len(annot.chrs["chr7"]["g3"].transcripts["g3_t001"].CDSs) == 0
+    #     assert len(annot.chrs["chr17"]["g4"].transcripts["g4_t001"].CDSs) == 1
+
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].CDSs["g1_CDS1"].CDS_segments[0].start == 1200
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].CDSs["g1_CDS1"].CDS_segments[0].end == 4000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].CDSs["g1_CDS1"].CDS_segments[1].start == 5000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].CDSs["g1_CDS1"].CDS_segments[1].end == 6000
+
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].CDSs["g4_CDS1"].CDS_segments[0].start != 200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].CDSs["g4_CDS1"].CDS_segments[0].end != 1000
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].CDSs["g4_CDS1"].CDS_segments[1].start != 1200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].CDSs["g4_CDS1"].CDS_segments[1].end != 1600
+
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[0].start == 1000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[0].end == 4000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[1].start == 5000
+    #     assert annot.chrs["chr1"]["g1"].transcripts["g1_t001"].exons[1].end == 8000
+
+    #     assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[0].start == 700
+    #     assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[0].end == 2000
+    #     assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[1].start == 2600
+    #     assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[1].end == 2800
+    #     assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[2].start == 3000
+    #     assert annot.chrs["chr2"]["g2"].transcripts["g2_t001"].exons[2].end == 3200
+
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[0].start == 100
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[0].end == 600
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].start == 1000
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].end == 1800
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[2].start == 2000
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[2].end == 2400
+
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[0].start == 200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[0].end == 1000
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[1].start == 1200
+    #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[1].end == 1800
+
+    #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].parents == ["g3_t001"]

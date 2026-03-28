@@ -43,7 +43,7 @@
       - `def generate_proteins(self, readthrough:str="both"):`
       - `def clear_proteins(self):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
-      - `def combine_transcripts(self, respect_non_coding:bool=False):`
+      - `def combine_transcripts(self, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=True, quiet:bool=False):`
       - `def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):`
       - `def define_synteny(self, sort_processes:int=1, quiet:bool=True):`
       - `def homogenise_parents_for_shared_exons_utrs(self):`
@@ -155,13 +155,13 @@
       - `def sort_transcripts(self):`
       - `def homogenise_exon_scores(self):`
       - `def clear_UTRs(self):`
-      - `def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, quiet:bool=False):`
+      - `def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=False, quiet:bool=False):`
       - `def longer_CDS(self, other:Gene):`
       - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
       - `def get_main_CDS_range(self):`
       - `def rename_exons(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
       - `def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
-      - `def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True):`
+      - `def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True, quiet:bool=False):`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):`
       - `def __str__(self):`
       - `def overlaps(self) -> dict[str, list[OverlapHit]]:`
@@ -443,7 +443,9 @@
       - `def self_overlapping_genes_gff3_file():`
       - `def other_overlapping_genes_gff3_file_1():`
       - `def other_overlapping_genes_gff3_file_2():`
+      - `def transcripts_to_combine_gff3_file():`
       - `def sample_fasta_file():`
+      - `def transcripts_to_combine_fasta_file():`
       - `def make_feature():`
       - `def _make(feature_id="feat001", ch="chr1", source="aegis", feature="gene", strand="+", start=100, end=500, score=".", parents=None, attributes=None) -> Feature:`
       - `def make_gene():`
@@ -687,6 +689,8 @@
       - `class TestAnnotationOverlaps:`
       - `def test_self_overlaps(self, self_overlapping_genes_gff3_file):`
       - `def test_other_overlaps(self, other_overlapping_genes_gff3_file_1, other_overlapping_genes_gff3_file_2):`
+      - `class TestTranscriptCombining:`
+      - `def test_transcripts_to_combine(self, transcripts_to_combine_gff3_file, transcripts_to_combine_fasta_file):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py

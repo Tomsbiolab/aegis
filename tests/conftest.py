@@ -58,66 +58,55 @@ def exon_only_gff3_file():
     """Gene with only exons (no CDS/UTR) — non-coding mRNA."""
     return str(TEST_DATA_DIR / "input/annotation/exon_only.gff3")
 
-
 @pytest.fixture
 def cds_only_gff3_file():
     """Gene with only CDS segments (no explicit exons or UTRs)."""
     return str(TEST_DATA_DIR / "input/annotation/cds_only.gff3")
-
 
 @pytest.fixture
 def no_subfeatures_gff3_file():
     """Gene with mRNA but zero subfeatures."""
     return str(TEST_DATA_DIR / "input/annotation/no_subfeatures.gff3")
 
-
 @pytest.fixture
 def noncoding_transcripts_gff3_file():
     """Several non-coding transcript types (lnc_RNA, tRNA, rRNA, snoRNA)."""
     return str(TEST_DATA_DIR / "input/annotation/noncoding_transcripts.gff3")
-
 
 @pytest.fixture
 def pseudogene_gff3_file():
     """Pseudogene with exons pointing directly at the gene (no transcript)."""
     return str(TEST_DATA_DIR / "input/annotation/pseudogene.gff3")
 
-
 @pytest.fixture
 def exons_to_collapse_gff3_file():
     """Gene with overlapping exons that need collapsing."""
     return str(TEST_DATA_DIR / "input/annotation/exons_to_collapse.gff3")
-
 
 @pytest.fixture
 def multi_cds_ids_gff3_file():
     """Transcript with CDS segments having different IDs (polycistronic)."""
     return str(TEST_DATA_DIR / "input/annotation/multi_cds_ids.gff3")
 
-
 @pytest.fixture
 def transcript_no_parent_gff3_file():
     """Transcript without a Parent attribute (gene inferred)."""
     return str(TEST_DATA_DIR / "input/annotation/transcript_no_parent.gff3")
-
 
 @pytest.fixture
 def cds_no_parent_gff3_file():
     """CDS subfeatures with no Parent attribute (gene+transcript inferred)."""
     return str(TEST_DATA_DIR / "input/annotation/cds_no_parent.gff3")
 
-
 @pytest.fixture
 def multiple_isoforms_gff3_file():
     """Gene with 3 mRNA isoforms sharing exon regions but different CDS."""
     return str(TEST_DATA_DIR / "input/annotation/multiple_isoforms.gff3")
 
-
 @pytest.fixture
 def subfeature_parent_is_gene_gff3_file():
     """Exons and CDSs reference a gene ID as Parent (no mRNA/transcript line)."""
     return str(TEST_DATA_DIR / "input/annotation/subfeature_parent_is_gene.gff3")
-
 
 @pytest.fixture
 def geneID_attribute_as_parent_gff3_file():
@@ -128,7 +117,6 @@ def geneID_attribute_as_parent_gff3_file():
 def shared_parents_gff3_file():
     """GFF3 with exons that should share parents but are neither named uniformly nor sharing any parents."""
     return str(TEST_DATA_DIR / "input/annotation/shared_parents_plus_negative_strand.gff3")
-
 
 @pytest.fixture
 def clash_of_ids_gff3_file():
@@ -170,6 +158,11 @@ def other_overlapping_genes_gff3_file_2():
     """GFF3 file 2 with other overlapping genes."""
     return str(TEST_DATA_DIR / "input/annotation/other_overlapping_genes_2.gff3")
 
+@pytest.fixture
+def transcripts_to_combine_gff3_file():
+    """GFF3 file with transcripts that should be combined."""
+    return str(TEST_DATA_DIR / "input/annotation/transcripts_to_combine.gff3")
+
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
 # ---------------------------------------------------------------------------
@@ -179,6 +172,10 @@ def sample_fasta_file():
     """Return path to the minimal FASTA test file."""
     return str(TEST_DATA_DIR / "input/fasta/minimal.fasta")
 
+@pytest.fixture
+def transcripts_to_combine_fasta_file():
+    """Return path to the FASTA file for the transcripts_to_combine GFF3 file."""
+    return str(TEST_DATA_DIR / "input/fasta/transcripts_to_combine.fasta")
 
 # ---------------------------------------------------------------------------
 # Ready-made class instances and creation helpers
