@@ -1469,7 +1469,7 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
-                    for j, c in enumerate(t.CDSs.values()):
+                    for c in t.CDSs.values():
                         for x1, cs1 in enumerate(c.CDS_segments):
                             for x2, cs2 in enumerate(c.CDS_segments):
                                 if x1 == x2:
@@ -1483,7 +1483,7 @@ class Annotation():
                 for g in genes.values():
                     for t in g.transcripts.values():
                         count = 1
-                        for j, c in enumerate(t.CDSs.values()):
+                        for c in t.CDSs.values():
                             if not c.main:
                                 count += 1
                                 c.id = f"{t.id}_CDS{count}"
@@ -1491,6 +1491,8 @@ class Annotation():
                                 c.id = f"{t.id}_CDS1"
                             for x, cs in enumerate(c.CDS_segments):
                                 cs.id = f"{c.id}_{x+1}"
+
+        self.update_keys(CDS_keys=True, gene_keys=False, transcript_keys=False)
 
     def CDS_segment_to_CDS_ids(self, override:bool=False):
         common_protein_CDS_ids = True
@@ -1520,6 +1522,8 @@ class Annotation():
                                 c.id = f"{t.id}_CDS1"
                             for cs in c.CDS_segments:
                                 cs.id = c.id
+        
+        self.update_keys(CDS_keys=True, gene_keys=False, transcript_keys=False)
 
     def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], rename_clashing_ids:bool=True, quiet:bool=False):
         """
@@ -2101,7 +2105,7 @@ class Annotation():
         progress_bar.close()
 
         self.homogenise_parents_for_shared_exons_utrs()
-        self.update_keys(quiet=quiet)
+        self.update_keys()
         self.update_gene_and_transcript_list(quiet=quiet)
 
         self.renamed_features = changed_features
@@ -2132,22 +2136,10 @@ class Annotation():
         if not quiet:
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
-    def update_keys(self, quiet:bool=True):
+    def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;95mUpdating {self.id} dictionary keys:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
 
         for chrom, genes_dict in self.chrs.items():
             new_genes = {}
@@ -2156,19 +2148,19 @@ class Annotation():
                 new_transcripts = {}
                 for transcript in gene.transcripts.values():
                     new_cdss = {cds.id: cds for cds in transcript.CDSs.values()}
-                    transcript.CDSs = new_cdss
-                    
+                    if CDS_keys:
+                        transcript.CDSs = new_cdss
                     new_transcripts[transcript.id] = transcript
                 
-                gene.transcripts = new_transcripts
+                if transcript_keys:
+                    gene.transcripts = new_transcripts
 
                 new_genes[gene.id] = gene
-                progress_bar.update(1)
                 
             # Replace the chromosome's gene dict with the updated version
-            self.chrs[chrom] = new_genes
+            if gene_keys:
+                self.chrs[chrom] = new_genes
 
-        progress_bar.close()
 
     def create_featurecounts_ids(self):
         for genes in self.chrs.values():
@@ -2265,7 +2257,7 @@ class Annotation():
 
         self.gff_header = new_header
 
-    def subset(self, chosen_features:set[str], gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
+    def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
 
         initial_chosen_features = chosen_features.copy()
 

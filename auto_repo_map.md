@@ -62,12 +62,12 @@
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
       - `def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):`
-      - `def update_keys(self, quiet:bool=True):`
+      - `def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):`
       - `def create_featurecounts_ids(self):`
       - `def create_gtf_attributes(self):`
       - `def add_blast_hits(self, source, blastfile, mode:str="protein"):`
       - `def remove_chromosomes_from_header(self):`
-      - `def subset(self, chosen_features:set[str], gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
+      - `def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
       - `def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=False, quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
       - `def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):`
@@ -444,6 +444,9 @@
       - `def other_overlapping_genes_gff3_file_1():`
       - `def other_overlapping_genes_gff3_file_2():`
       - `def transcripts_to_combine_gff3_file():`
+      - `def synteny_before_liftover_gff3_file():`
+      - `def synteny_after_liftover_gff3_file():`
+      - `def arabidopsis_araport11_gff3_file():`
       - `def sample_fasta_file():`
       - `def transcripts_to_combine_fasta_file():`
       - `def make_feature():`
@@ -496,6 +499,8 @@
       - `def test_features_counted(self, sample_gff3_file):`
       - `def test_transcript_has_parent(self, sample_gff3_file):`
       - `def test_multi_gene_gff3(self, multi_gene_gff3_file):`
+      - `def test_create_gene_id(self, multi_gene_gff3_file):`
+      - `def test_print_gff(self, multi_gene_gff3_file):`
       - `def test_copy(self, sample_gff3_file):`
       - `def test_feature_counts_include_subfeatures(self, sample_gff3_file):`
       - `def test_transcript_has_exons(self, sample_gff3_file):`
@@ -679,6 +684,7 @@
       - `def test_gene_boundaries(self, geneID_attribute_as_parent_gff3_file):`
       - `class TestAnnotationSharedExonParents:`
       - `def test_shared_parents_are_detected_with_exons_to_collapse(self, shared_parents_gff3_file):`
+      - `def test_shared_parents_reformatting(self, shared_parents_gff3_file):`
       - `class TestAnnotationClashOfIDs:`
       - `def test_clash_of_ids_and_transcriptless_gene_removal(self, clash_of_ids_gff3_file):`
       - `class TestAnnotationMiRNAs:`
@@ -691,6 +697,12 @@
       - `def test_other_overlaps(self, other_overlapping_genes_gff3_file_1, other_overlapping_genes_gff3_file_2):`
       - `class TestTranscriptCombining:`
       - `def test_transcripts_to_combine(self, transcripts_to_combine_gff3_file, transcripts_to_combine_fasta_file):`
+      - `class TestCDSReformatting:`
+      - `def test_cds_reformatting(self, multiple_isoforms_gff3_file):`
+      - `class TestSynteny:`
+      - `def test_synteny(self, synteny_before_liftover_gff3_file, synteny_after_liftover_gff3_file):`
+      - `class TestSubset:`
+      - `def test_subset(self, arabidopsis_araport11_gff3_file):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py
