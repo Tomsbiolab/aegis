@@ -26,28 +26,66 @@ _BYTES_COMP_TABLE = bytes.maketrans(_STR_FROM.encode(), _STR_TO.encode())
 def reverse_complement(in_seq: str) -> str:
     return in_seq.encode('ascii').translate(_BYTES_COMP_TABLE)[::-1].decode('ascii')
 
-def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:
-    orfs = []
-    start_codon = "ATG"
-    stop_codons = ["TAA", "TAG", "TGA"]
-    for frame in range(3):
-        for i in range(frame, len(in_seq)-2, 3):
-            codon = in_seq[i:i+3]
-            if codon == start_codon:
-                for j in range(i+3, len(in_seq), 3):
-                    codon2 = in_seq[j:j+3]
-                    orf = in_seq[i:j+3], i, j + 2
-                    if must_have_stop:
-                        if codon2 in stop_codons:
-                            if len(orf[0]) % 3 == 0:
-                                orfs.append(orf)
-                    else:
-                        if len(orf[0]) % 3 == 0:
-                            orfs.append(orf)
-                    if codon2 in stop_codons:
-                        if not readthrough_stop:
-                            break
-    return orfs
+def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool = False, min_codon_len: int = 2, start_codon: str = "ATG", stop_codons=["TAA", "TAG", "TGA"]) -> list[tuple[str, int, int]]:
+    
+    stop_set = frozenset(stop_codons) if not isinstance(stop_codons, (set, frozenset)) else stop_codons
+    seq_len = len(in_seq)
+    min_seq_len = min_codon_len * 3
+    
+    f0, f1, f2 = [], [],[]
+    appends = (f0.append, f1.append, f2.append)
+
+    starts =[]
+    starts_append = starts.append
+    i = in_seq.find(start_codon)
+    limit_start = seq_len - 3
+    
+    while i != -1:
+        if i <= limit_start:
+            starts_append(i)
+        i = in_seq.find(start_codon, i + 1)
+
+    append_start = (not must_have_stop) and (3 >= min_seq_len)
+    limit_stop = seq_len - 2
+
+    if must_have_stop and not readthrough_stop:
+        for i in starts:
+            append_func = appends[i % 3]
+            for j in range(i + 3, limit_stop, 3):
+                if in_seq[j:j+3] in stop_set:
+                    if j + 3 - i >= min_seq_len:
+                        append_func((in_seq[i:j+3], i, j + 2))
+                    break
+                    
+    elif must_have_stop and readthrough_stop:
+        for i in starts:
+            append_func = appends[i % 3]
+            for j in range(i + 3, limit_stop, 3):
+                if in_seq[j:j+3] in stop_set:
+                    if j + 3 - i >= min_seq_len:
+                        append_func((in_seq[i:j+3], i, j + 2))
+                        
+    elif not must_have_stop and not readthrough_stop:
+        for i in starts:
+            append_func = appends[i % 3]
+            if append_start:
+                append_func((in_seq[i:i+3], i, i + 2))
+            for j in range(i + 3, limit_stop, 3):
+                if j + 3 - i >= min_seq_len:
+                    append_func((in_seq[i:j+3], i, j + 2))
+                if in_seq[j:j+3] in stop_set:
+                    break
+                    
+    else:
+        for i in starts:
+            append_func = appends[i % 3]
+            if append_start:
+                append_func((in_seq[i:i+3], i, i + 2))
+            for j in range(i + 3, limit_stop, 3):
+                if j + 3 - i >= min_seq_len:
+                    append_func((in_seq[i:j+3], i, j + 2))
+
+    return f0 + f1 + f2
 
 def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:
     longest = ("", 0, 0)
