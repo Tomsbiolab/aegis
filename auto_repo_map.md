@@ -379,7 +379,7 @@
         - `def round_evalue(e):`
       - genefunctions.py
         - `def reverse_complement(in_seq: str) -> str:`
-        - `def find_ORFs(in_seq:str, must_have_stop:bool=True, readthrough_stop:bool=False) -> list[tuple[str, int, int]]:`
+        - `def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool = False, min_codon_len: int = 2, start_codon: str = "ATG", stop_codons=["TAA", "TAG", "TGA"]) -> list[tuple[str, int, int]]:`
         - `def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:`
         - `def trim_surplus(in_seq:str) -> tuple[str, bool]:`
         - `def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codon_table=CodonTable.unambiguous_dna_by_id[1]):`
@@ -835,9 +835,8 @@
       - `def test_palindrome(self):`
       - `def test_longer_sequence(self):`
       - `class TestFindORFs:`
-      - `def test_simple_orf(self):`
+      - `def test_orfs(self):`
       - `def test_no_start_codon(self):`
-      - `def test_no_stop_codon_with_must_have_stop(self):`
       - `def test_no_stop_codon_without_must_have_stop(self):`
       - `class TestLongestORF:`
       - `def test_single_orf(self):`
@@ -846,6 +845,7 @@
       - `class TestTrimSurplus:`
       - `def test_divisible_by_3(self):`
       - `def test_surplus_trimmed(self):`
+      - `def test_surplus_other(self):`
       - `class TestTranslate:`
       - `def test_translate_both_readthrough(self):`
       - `def test_translate_no_start(self):`

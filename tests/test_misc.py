@@ -170,24 +170,104 @@ class TestReverseComplement:
 # ============================================================
 
 class TestFindORFs:
-    def test_simple_orf(self):
+
+    def test_orfs(self):
         # ATG + 6 codons + TAA  = 24 nt
-        seq = "ATGAAACCCGGGTTTTTTAACTAA"
-        orfs = find_ORFs(seq)
-        assert len(orfs) >= 1
+        seq = "AGATATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGA"
+        orfs = find_ORFs(seq, must_have_stop=True, readthrough_stop=False)
+        assert len(orfs) == 1
         # the ORF should start with ATG and end with a stop codon
         orf_seq = orfs[0][0]
         assert orf_seq.startswith("ATG")
-        assert orf_seq[-3:] in ("TAA", "TAG", "TGA")
+        assert orf_seq[-3:] == "TAA"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 27
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAA"
+
+        orfs = find_ORFs(seq, must_have_stop=True, readthrough_stop=True)
+        assert len(orfs) == 2
+        # the ORF should start with ATG and end with a stop codon
+        orf_seq = orfs[0][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "TAA"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 27
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAA"
+
+        orf_seq = orfs[1][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "TAG"
+        assert orfs[1][1] == 4
+        assert orfs[1][2] == 36
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAG"
+
+        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=False)
+        assert len(orfs) == 7
+        
+        orf_seq = orfs[0][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "AAA"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 9
+        assert orf_seq == "ATGAAA"
+
+        orf_seq = orfs[-1][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "TAA"
+        assert orfs[-1][1] == 4
+        assert orfs[-1][2] == 27
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAA"
+
+        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=True)
+        assert len(orfs) == 11
+        
+        orf_seq = orfs[0][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "AAA"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 9
+        assert orf_seq == "ATGAAA"
+
+        orf_seq = orfs[-1][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "AAG"
+        assert orfs[-1][1] == 4
+        assert orfs[-1][2] == 39
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAG"
+
+        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=False, min_codon_len=1)
+        assert len(orfs) == 8
+        
+        orf_seq = orfs[0][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "ATG"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 6
+        assert orf_seq == "ATG"
+
+        seq = "AGATATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGAA"
+
+        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=True)
+        orf_seq = orfs[-1][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "AAG"
+        assert orfs[-1][1] == 4
+        assert orfs[-1][2] == 39
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAG"
+
+        seq = "AGATATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGAAA"
+
+        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=True)
+        orf_seq = orfs[-1][0]
+        assert orf_seq.startswith("ATG")
+        assert orf_seq[-3:] == "AAA"
+        assert orfs[-1][1] == 4
+        assert orfs[-1][2] == 42
+        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGAAA"
 
     def test_no_start_codon(self):
         seq = "AAACCCGGGTTTTTTTAA"
         orfs = find_ORFs(seq)
-        assert orfs == []
-
-    def test_no_stop_codon_with_must_have_stop(self):
-        seq = "ATGAAACCCGGG"  # no stop codon
-        orfs = find_ORFs(seq, must_have_stop=True)
         assert orfs == []
 
     def test_no_stop_codon_without_must_have_stop(self):
@@ -232,6 +312,44 @@ class TestTrimSurplus:
         out, surplus = trim_surplus(seq)
         assert surplus is True
         assert len(out) % 3 == 0
+    
+    def test_surplus_other(self):
+
+        seq = "AGGAGATGTAAGATGAT"
+        out, surplus = trim_surplus(seq)
+        assert surplus is True
+        assert len(out) % 3 == 0
+        assert out == "AGGAGATGTAAGATG"
+
+        seq = "AAATGTAA"
+        out, surplus = trim_surplus(seq)
+        assert surplus is True
+        assert len(out) % 3 == 0
+        assert out == "ATGTAA"
+
+        seq = "AATGTAA"
+        out, surplus = trim_surplus(seq)
+        assert surplus is True
+        assert len(out) % 3 == 0
+        assert out == "ATGTAA"
+
+        seq = "AAATGTAAAA"
+        out, surplus = trim_surplus(seq)
+        assert surplus is True
+        assert len(out) % 3 == 0
+        assert out == "ATGTAA"
+
+        seq = "AAATGTAAAAA"
+        out, surplus = trim_surplus(seq)
+        assert surplus is True
+        assert len(out) % 3 == 0
+        assert out == "ATGTAA"
+
+        seq = "AAAATGTAAAA"
+        out, surplus = trim_surplus(seq)
+        assert surplus is True
+        assert len(out) % 3 == 0
+        assert out == "ATGTAA"
 
 
 # ============================================================
