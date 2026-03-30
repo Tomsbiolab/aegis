@@ -154,7 +154,7 @@ def main(
         raise typer.BadParameter("Avoid repeated annotation filename(s).")
 
     if len(genome_files) != len(annotation_files):
-        raise typer.BadParameter("A single genome file must be provided for each annotation file.")
+        raise typer.BadParameter(f"A single genome file must be provided for each annotation file. Genome files: {genome_files}. Annotation files: {annotation_files}")
     
     if len(genome_files) != len(set(genome_files)):
         raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis overlap' may be more appropriate.")
@@ -250,9 +250,9 @@ def main(
 
         Feature._ACTIVE_GENOME = a.genome
 
-        a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False, use_name_not_id=True)
+        a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False, custom_filename=f"{a.name}_proteins_g_id_main.fasta")
         a.clear_proteins()
-        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, use_name_not_id=True)
+        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, custom_filename=f"{a.name}_CDSs_g_id_main.fasta")
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
         diamond_db_file = diamond_path / f"{a.name}_diamond_db"

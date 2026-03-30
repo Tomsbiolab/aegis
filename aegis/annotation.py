@@ -67,7 +67,7 @@ class Annotation():
     chrs:dict[str, dict[str, Gene]]
     
     bar_colors = ["31", "32", "34", "33", "33", "33"]
-    overlapped_annotations: set[str] | None
+    overlapped_annotations: set[str]
 
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
@@ -95,7 +95,7 @@ class Annotation():
         self.gff_header = []
         self.target = target
         self.to_overlap = to_overlap
-        self.overlapped_annotations = None
+        self.overlapped_annotations = set()
         self.merged = False
         self.sorted = False
 
@@ -328,7 +328,6 @@ class Annotation():
     def overlaps(self) -> AnnotationOverlaps:
         if not hasattr(self, '_overlaps'):
             self._overlaps = AnnotationOverlaps(self)
-            self.overlapped_annotations = set()
         return self._overlaps
 
     @property
