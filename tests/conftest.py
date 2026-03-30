@@ -163,6 +163,21 @@ def transcripts_to_combine_gff3_file():
     """GFF3 file with transcripts that should be combined."""
     return str(TEST_DATA_DIR / "input/annotation/transcripts_to_combine.gff3")
 
+@pytest.fixture
+def synteny_before_liftover_gff3_file():
+    """GFF3 file with features that should be combined."""
+    return str(TEST_DATA_DIR / "input/annotation/synteny_before_liftover.gff3")
+
+@pytest.fixture
+def synteny_after_liftover_gff3_file():
+    """GFF3 file with features that should be combined."""
+    return str(TEST_DATA_DIR / "input/annotation/synteny_after_liftover.gff3")
+
+@pytest.fixture
+def arabidopsis_araport11_gff3_file():
+    """GFF3 file with features that should be combined."""
+    return str(TEST_DATA_DIR / "input/annotation/arabidopsis_araport11.gff3")
+
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
 # ---------------------------------------------------------------------------

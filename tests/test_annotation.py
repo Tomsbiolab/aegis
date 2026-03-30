@@ -218,6 +218,30 @@ class TestAnnotationSmallGFF3:
         assert "chr1" in annot.chrs
         assert "chr2" in annot.chrs
 
+    def test_create_gene_id(self, multi_gene_gff3_file):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        assert len(annot.all_gene_ids) == 2
+        assert "geneA" in annot.all_gene_ids
+        assert "geneB" in annot.all_gene_ids
+        assert "chr1" in annot.chrs
+        assert "chr2" in annot.chrs
+        assert annot.chrs["chr2"]["geneB"].gene_id == None
+
+        annot.create_featurecounts_ids()
+
+        assert annot.chrs["chr2"]["geneB"].gene_id == "geneB"
+        assert annot.chrs["chr2"]["geneB"].transcripts["mRNA_B"].gene_id == "geneB"
+        assert annot.chrs["chr2"]["geneB"].transcripts["mRNA_B"].exons[0].gene_id == "geneB"
+
+    def test_print_gff(self, multi_gene_gff3_file):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        output = annot.chrs["chr1"]["geneA"].print_gff()
+        assert "geneA" in output
+        assert "TF1" not in output
+        output = annot.chrs["chr1"]["geneA"].print_gff(aliases=True, names=True, print_empty_attributes=True)
+        assert "TF1" in output
+        assert "TF2" in output
+
     def test_copy(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         annot2 = annot.copy()
@@ -908,6 +932,12 @@ class TestAnnotationClearGeneNamesAndSymbols:
         assert gene.names is None
         assert gene.symbols is None
         assert gene.synonyms is None
+
+        assert gene.aliases == ["TF1", "TF2"]
+
+        annot.clear_aliases()
+
+        assert gene.aliases is None        
 
 
 # ============================================================
@@ -1637,6 +1667,15 @@ class TestAnnotationSharedExonParents:
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].end == 6000
 
+    def test_shared_parents_reformatting(self, shared_parents_gff3_file):
+        annot = Annotation(shared_parents_gff3_file, quiet=True)
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].parents == ["mRNA_ov1", "mRNA_ov2"]
+
+        annot.single_parent_for_exons_utrs()
+
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].parents == ["mRNA_ov1"]
+
 
 # ============================================================
 # Clash of IDs and removal of genes with no transcripts, pseudogene or not, also some checks on shared parents of renamed transcripts
@@ -1851,6 +1890,67 @@ class TestAnnotationOverlaps:
         assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_CDS_percent == 57.7
         assert annot.chrs["chr3"]["g5"].overlaps["self"][0].score == 8
 
+        annot.overlaps.clear(keep_self=True)
+
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].id == "g3"
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].orientation == True
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["self"][0].score == 11
+
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].id == "g2"
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].orientation == True
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g3"].overlaps["self"][0].score == 11
+
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].id == "g5"
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].gene_query_percent == 72.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].gene_target_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].exon_query_percent == 86.9
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].exon_target_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].CDS_query_percent == 57.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g4"].overlaps["self"][0].score == 8
+
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].id == "g4"
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].gene_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].gene_target_percent == 72.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].exon_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].exon_target_percent == 86.9
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].CDS_target_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["self"][0].score == 8
+
+        annot.overlaps.clear(keep_self=False)
+
+        assert annot.chrs["chr2"]["g2"].overlaps["self"] == []
+        
+
     def test_other_overlaps(self, other_overlapping_genes_gff3_file_1, other_overlapping_genes_gff3_file_2):
         annot = Annotation(other_overlapping_genes_gff3_file_1, quiet=True)
         annot2 = Annotation(other_overlapping_genes_gff3_file_2, quiet=True)
@@ -1920,6 +2020,66 @@ class TestAnnotationOverlaps:
         assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_target_percent == 100.0
         assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_CDS_percent == 57.7
         assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].score == 8
+
+        annot.overlaps.clear(keep_other=True)
+
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].id == "g3"
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDSs_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exons_in_both == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].orientation == True
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].gene_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].gene_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_gene_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exon_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].exon_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_exon_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].min_CDS_percent == 100.0
+        assert annot.chrs["chr2"]["g2"].overlaps["other"][0].score == 11
+
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].id == "g2"
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDSs_in_both == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exons_in_both == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].orientation == True
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].gene_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].gene_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_gene_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exon_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].exon_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_exon_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].min_CDS_percent == 100.0
+        assert annot2.chrs["chr2"]["g3"].overlaps["other"][0].score == 11
+
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].id == "g4"
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].gene_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].gene_target_percent == 72.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_gene_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].exon_query_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].exon_target_percent == 86.9
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_exon_percent == 66.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].CDS_query_percent == 100.0
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].CDS_target_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].min_CDS_percent == 57.7
+        assert annot.chrs["chr3"]["g5"].overlaps["other"][0].score == 8
+
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].id == "g5"
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].gene_query_percent == 72.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].gene_target_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_gene_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].exon_query_percent == 86.9
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].exon_target_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_exon_percent == 66.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_query_percent == 57.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].CDS_target_percent == 100.0
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].min_CDS_percent == 57.7
+        assert annot2.chrs["chr3"]["g4"].overlaps["other"][0].score == 8
+
+        annot.overlaps.clear(keep_other=False)
+
+        assert annot.chrs["chr2"]["g2"].overlaps["other"] == []
 
         
 # ============================================================
@@ -2066,3 +2226,194 @@ class TestTranscriptCombining:
     #     assert annot.chrs["chr17"]["g4"].transcripts["g4_t001"].exons[1].end == 1800
 
     #     assert annot.chrs["chr7"]["g3"].transcripts["g3_t001"].exons[1].parents == ["g3_t001"]
+
+# ============================================================
+# Testing CDS reformatting
+# ============================================================
+
+class TestCDSReformatting:
+    def test_cds_reformatting(self, multiple_isoforms_gff3_file):
+        annot = Annotation(multiple_isoforms_gff3_file, quiet=True)
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["CDS_iso1a"].id == "CDS_iso1a"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["CDS_iso1b"].id == "CDS_iso1b"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["CDS_iso1c"].id == "CDS_iso1c"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["CDS_iso1a"].CDS_segments[0].id == "CDS_iso1a"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["CDS_iso1a"].CDS_segments[1].id == "CDS_iso1a"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["CDS_iso1a"].CDS_segments[2].id == "CDS_iso1a"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["CDS_iso1b"].CDS_segments[0].id == "CDS_iso1b"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["CDS_iso1b"].CDS_segments[1].id == "CDS_iso1b"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["CDS_iso1c"].CDS_segments[0].id == "CDS_iso1c"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["CDS_iso1c"].CDS_segments[1].id == "CDS_iso1c"
+
+        annot.CDS_to_CDS_segment_ids()
+
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs) == 1
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs) == 1
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs) == 1
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].id == "mRNA_iso1a_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].id == "mRNA_iso1b_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].id == "mRNA_iso1c_CDS1"
+
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments) == 3
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].CDS_segments) == 2
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments) == 2
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments[0].id == "mRNA_iso1a_CDS1_1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments[1].id == "mRNA_iso1a_CDS1_2"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments[2].id == "mRNA_iso1a_CDS1_3"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].CDS_segments[0].id == "mRNA_iso1b_CDS1_1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].CDS_segments[1].id == "mRNA_iso1b_CDS1_2"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[0].id == "mRNA_iso1c_CDS1_1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[1].id == "mRNA_iso1c_CDS1_2"
+
+        annot.CDS_segment_to_CDS_ids()
+
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs) == 1
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs) == 1
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs) == 1
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].id == "mRNA_iso1a_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].id == "mRNA_iso1b_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].id == "mRNA_iso1c_CDS1"
+
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments) == 3
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].CDS_segments) == 2
+        assert len(annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments) == 2
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments[0].id == "mRNA_iso1a_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments[1].id == "mRNA_iso1a_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1a"].CDSs["mRNA_iso1a_CDS1"].CDS_segments[2].id == "mRNA_iso1a_CDS1"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].CDS_segments[0].id == "mRNA_iso1b_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1b"].CDSs["mRNA_iso1b_CDS1"].CDS_segments[1].id == "mRNA_iso1b_CDS1"
+
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[0].id == "mRNA_iso1c_CDS1"
+        assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[1].id == "mRNA_iso1c_CDS1"
+
+# ============================================================
+# Testing synteny
+# ============================================================
+
+class TestSynteny:
+    def test_synteny(self, synteny_before_liftover_gff3_file, synteny_after_liftover_gff3_file):
+
+        annot_before = Annotation(synteny_before_liftover_gff3_file, quiet=True, define_synteny=True)
+
+        assert annot_before.chrs["chr1"]["g1"].synteny.previous == None
+        assert annot_before.chrs["chr1"]["g2"].synteny.previous == "g1"
+        assert annot_before.chrs["chr1"]["g3"].synteny.previous == "g2"
+        assert annot_before.chrs["chr1"]["g4"].synteny.previous == "g3"
+        assert annot_before.chrs["chr1"]["g5"].synteny.previous == "g4"
+        assert annot_before.chrs["chr1"]["g6"].synteny.previous == "g5"
+        assert annot_before.chrs["chr1"]["g7"].synteny.previous == "g6"
+        assert annot_before.chrs["chr1"]["g8"].synteny.previous == "g7"
+        assert annot_before.chrs["chr1"]["g9"].synteny.previous == "g8"
+
+        assert annot_before.chrs["chr1"]["g1"].synteny.next == "g2"
+        assert annot_before.chrs["chr1"]["g2"].synteny.next == "g3"
+        assert annot_before.chrs["chr1"]["g3"].synteny.next == "g4"
+        assert annot_before.chrs["chr1"]["g4"].synteny.next == "g5"
+        assert annot_before.chrs["chr1"]["g5"].synteny.next == "g6"
+        assert annot_before.chrs["chr1"]["g6"].synteny.next == "g7"
+        assert annot_before.chrs["chr1"]["g7"].synteny.next == "g8"
+        assert annot_before.chrs["chr1"]["g8"].synteny.next == "g9"
+        assert annot_before.chrs["chr1"]["g9"].synteny.next == None
+
+        assert annot_before.chrs["chr1"]["g1"].synteny.order == 0
+        assert annot_before.chrs["chr1"]["g2"].synteny.order == 1
+        assert annot_before.chrs["chr1"]["g3"].synteny.order == 2
+        assert annot_before.chrs["chr1"]["g4"].synteny.order == 3
+        assert annot_before.chrs["chr1"]["g5"].synteny.order == 4
+        assert annot_before.chrs["chr1"]["g6"].synteny.order == 5
+        assert annot_before.chrs["chr1"]["g7"].synteny.order == 6
+        assert annot_before.chrs["chr1"]["g8"].synteny.order == 7
+        assert annot_before.chrs["chr1"]["g9"].synteny.order == 8
+
+        annot_after = Annotation(synteny_after_liftover_gff3_file, quiet=True, original_annotation=annot_before, define_synteny=True)
+        
+        assert annot_after.unmapped == ["g6"]
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.old_previous == None
+        assert annot_after.chrs["chr1"]["g2"].synteny.old_previous == "g1"
+        assert annot_after.chrs["chr1"]["g3"].synteny.old_previous == "g2"
+        assert annot_after.chrs["chr1"]["g4"].synteny.old_previous == "g3"
+        assert annot_after.chrs["chr1"]["g5"].synteny.old_previous == "g4"
+        assert annot_after.chrs["chr1"]["g7"].synteny.old_previous == "g6"
+        assert annot_after.chrs["chr1"]["g8"].synteny.old_previous == "g7"
+        assert annot_after.chrs["chr1"]["g9"].synteny.old_previous == "g8"
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.old_next == "g2"
+        assert annot_after.chrs["chr1"]["g2"].synteny.old_next == "g3"
+        assert annot_after.chrs["chr1"]["g3"].synteny.old_next == "g4"
+        assert annot_after.chrs["chr1"]["g4"].synteny.old_next == "g5"
+        assert annot_after.chrs["chr1"]["g5"].synteny.old_next == "g6"
+        assert annot_after.chrs["chr1"]["g7"].synteny.old_next == "g8"
+        assert annot_after.chrs["chr1"]["g8"].synteny.old_next == "g9"
+        assert annot_after.chrs["chr1"]["g9"].synteny.old_next == None
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.old_order == 0
+        assert annot_after.chrs["chr1"]["g2"].synteny.old_order == 1
+        assert annot_after.chrs["chr1"]["g3"].synteny.old_order == 2
+        assert annot_after.chrs["chr1"]["g4"].synteny.old_order == 3
+        assert annot_after.chrs["chr1"]["g5"].synteny.old_order == 4
+        assert annot_after.chrs["chr1"]["g7"].synteny.old_order == 6
+        assert annot_after.chrs["chr1"]["g8"].synteny.old_order == 7
+        assert annot_after.chrs["chr1"]["g9"].synteny.old_order == 8
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.previous == None
+        assert annot_after.chrs["chr1"]["g2"].synteny.previous == "g4"
+        assert annot_after.chrs["chr1"]["g3"].synteny.previous == "g5"
+        assert annot_after.chrs["chr1"]["g4"].synteny.previous == "g3"
+        assert annot_after.chrs["chr1"]["g5"].synteny.previous == "g1"
+        assert annot_after.chrs["chr1"]["g7"].synteny.previous == "g2"
+        assert annot_after.chrs["chr1"]["g8"].synteny.previous == "g7"
+        assert annot_after.chrs["chr1"]["g9"].synteny.previous == "g8"
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.next == "g5"
+        assert annot_after.chrs["chr1"]["g2"].synteny.next == "g7"
+        assert annot_after.chrs["chr1"]["g3"].synteny.next == "g4"
+        assert annot_after.chrs["chr1"]["g4"].synteny.next == "g2"
+        assert annot_after.chrs["chr1"]["g5"].synteny.next == "g3"
+        assert annot_after.chrs["chr1"]["g7"].synteny.next == "g8"
+        assert annot_after.chrs["chr1"]["g8"].synteny.next == "g9"
+        assert annot_after.chrs["chr1"]["g9"].synteny.next == None
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.order == 0
+        assert annot_after.chrs["chr1"]["g2"].synteny.order == 4
+        assert annot_after.chrs["chr1"]["g3"].synteny.order == 2
+        assert annot_after.chrs["chr1"]["g4"].synteny.order == 3
+        assert annot_after.chrs["chr1"]["g5"].synteny.order == 1
+        assert annot_after.chrs["chr1"]["g7"].synteny.order == 5
+        assert annot_after.chrs["chr1"]["g8"].synteny.order == 6
+        assert annot_after.chrs["chr1"]["g9"].synteny.order == 7
+
+        assert annot_after.chrs["chr1"]["g1"].synteny.liftover_conserved == False
+        assert annot_after.chrs["chr1"]["g2"].synteny.liftover_conserved == False
+        assert annot_after.chrs["chr1"]["g3"].synteny.liftover_conserved == False
+        assert annot_after.chrs["chr1"]["g4"].synteny.liftover_conserved == False
+        assert annot_after.chrs["chr1"]["g5"].synteny.liftover_conserved == False
+        assert annot_after.chrs["chr1"]["g7"].synteny.liftover_conserved == False
+        assert annot_after.chrs["chr1"]["g8"].synteny.liftover_conserved == True
+        assert annot_after.chrs["chr1"]["g9"].synteny.liftover_conserved == True
+
+# ============================================================
+# Testing subset
+# ============================================================
+
+class TestSubset:
+    def test_subset(self, arabidopsis_araport11_gff3_file):
+
+        annot = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+
+        assert len(annot.all_gene_ids) == 3000
+
+        annot.subset(gene_cap=300, quiet=True)
+
+        assert len(annot.all_gene_ids) == 300
