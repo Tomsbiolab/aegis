@@ -2781,14 +2781,14 @@ class Annotation():
 
         if header:
             if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, skiprows=1, dtype=str)
-            else:
-                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
-        else:
-            if file_path.endswith(".xlsx"):
                 df = pd.read_excel(file_path, dtype=str)
             else:
                 df = pd.read_csv(file_path, sep=sep, dtype=str)
+        else:
+            if file_path.endswith(".xlsx"):
+                df = pd.read_excel(file_path, header=None, dtype=str)
+            else:
+                df = pd.read_csv(file_path, header=None, sep=sep, dtype=str)
 
         df = df.fillna("")
 
