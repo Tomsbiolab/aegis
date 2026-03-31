@@ -43,19 +43,19 @@ def main(
         "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id."
     )] = False, 
     prefix: Annotated[str, typer.Option(
-        "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. swich from 'VIT...' to 'Vitvi...'. Together with other options such as -sf, -sp, -se, and -gd the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id."
+        "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. swich from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id."
     )] = "",
     suffix: Annotated[str, typer.Option(
-        "--suffix", help="Choose a new gene id suffix to include within the new gene id structure; See -b option."
+        "--suffix", help="Choose a new gene id suffix to include within the new gene id structure; See --prefix option."
     )] = "",
     spacer: Annotated[int, typer.Option(
-        "--spacer", help="Gene id number jump between one gene-id and the next, i.e. a spacer of 10 would result in '{prefix}{chromosome/scaffold}g00010' followed by '{prefix}{chromosome/scaffold}g00020'; See -b option."
+        "--spacer", help="Gene id number jump between one gene-id and the next, i.e. a spacer of 10 would result in '{prefix}{chromosome/scaffold}g00010' followed by '{prefix}{chromosome/scaffold}g00020'; See --prefix option."
     )] = 10,
     sep: Annotated[str, typer.Option(
-        "--separator", help="Choose a new gene id suffix to include within the new gene id structure. e.g. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}.{suffix}' instead of '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}_{suffix}'; See -b option."
+        "--separator", help="Choose a new gene id suffix to include within the new gene id structure. e.g. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}.{suffix}' instead of '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}_{suffix}'; See --prefix option."
     )] = "_",
     g_id_digits: Annotated[int, typer.Option(
-        "--gene-id-digits", help="Choose the number of digits to use for the gene id number. e.g. '{prefix}{chromosome/scaffold}g00010_{suffix}' would be the default first gene number in a particular chromosome or scaffold; See -b option."
+        "--gene-id-digits", help="Choose the number of digits to use for the gene id number. e.g. '{prefix}{chromosome/scaffold}g00010_{suffix}' would be the default first gene number in a particular chromosome or scaffold; See --prefix option."
     )] = 5,
     t_id_digits: Annotated[int, typer.Option(
         "--transcript-id-digits", help="Choose the number of digits to use for the transcript id number suffix. With the default three digits and the '_' separator the first transcript of every gene would have the '_t001' suffix."

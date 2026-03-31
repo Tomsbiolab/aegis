@@ -36,6 +36,9 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
+    if genome_name == "{genome-file}":
+        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+
     os.makedirs(output_dir, exist_ok=True)
 
     genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)

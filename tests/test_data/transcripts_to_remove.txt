@@ -1,1 +1,2 @@
-T1
+mRNA_iso1b
+mRNA_iso1c
