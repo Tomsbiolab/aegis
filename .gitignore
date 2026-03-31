@@ -7,3 +7,4 @@ dist/
 .coverage
 htmlcov/
 .vscode/settings.json
+aegis/*.dot

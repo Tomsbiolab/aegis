@@ -1,0 +1,55 @@
+##gff-version 3
+##--- Genes for synteny analysius ---
+chr1	aegis	gene	500	6000	.	+	.	ID=g1
+chr1	aegis	mRNA	500	6000	.	+	.	ID=g1_m1;Parent=g1
+chr1	aegis	exon	500	1000	.	+	.	ID=e1;Parent=g1_m1
+chr1	aegis	exon	2000	6000	.	+	.	ID=e2;Parent=g1_m1
+chr1	aegis	CDS	2000	5500	.	+	0	ID=g1_cds1;Parent=g1_m1
+#
+chr1	aegis	gene	5000	12000	.	+	.	ID=g2
+chr1	aegis	mRNA	5000	12000	.	+	.	ID=g2_m1;Parent=g2
+chr1	aegis	exon	5000	6000	.	+	.	ID=e1;Parent=g2_m1
+chr1	aegis	exon	7000	12000	.	+	.	ID=e2;Parent=g2_m1
+chr1	aegis	CDS	7000	11500	.	+	0	ID=g2_cds1;Parent=g2_m1
+#
+chr1	aegis	gene	35000	42000	.	+	.	ID=g5
+chr1	aegis	mRNA	35000	42000	.	+	.	ID=g5_m1;Parent=g5
+chr1	aegis	exon	35000	36000	.	+	.	ID=e1;Parent=g5_m1
+chr1	aegis	exon	37000	42000	.	+	.	ID=e2;Parent=g5_m1
+chr1	aegis	CDS	37000	41500	.	+	0	ID=g5_cds1;Parent=g5_m1
+#
+chr1	aegis	gene	15000	22000	.	+	.	ID=g3
+chr1	aegis	mRNA	15000	22000	.	+	.	ID=g3_m1;Parent=g3
+chr1	aegis	exon	15000	16000	.	+	.	ID=e1;Parent=g3_m1
+chr1	aegis	exon	17000	22000	.	+	.	ID=e2;Parent=g3_m1
+chr1	aegis	CDS	17000	21500	.	+	0	ID=g3_cds1;Parent=g3_m1
+#
+chr1	aegis	gene	25000	32000	.	+	.	ID=g4
+chr1	aegis	mRNA	25000	32000	.	+	.	ID=g4_m1;Parent=g4
+chr1	aegis	exon	25000	26000	.	+	.	ID=e1;Parent=g4_m1
+chr1	aegis	exon	27000	32000	.	+	.	ID=e2;Parent=g4_m1
+chr1	aegis	CDS	27000	31500	.	+	0	ID=g4_cds1;Parent=g4_m1
+#
+chr1	aegis	gene	45000	52000	.	+	.	ID=g6
+chr1	aegis	mRNA	45000	52000	.	+	.	ID=g6_m1;Parent=g6
+chr1	aegis	exon	45000	46000	.	+	.	ID=e1;Parent=g6_m1
+chr1	aegis	exon	47000	52000	.	+	.	ID=e2;Parent=g6_m1
+chr1	aegis	CDS	47000	51500	.	+	0	ID=g6_cds1;Parent=g6_m1
+#
+chr1	aegis	gene	55000	62000	.	+	.	ID=g7
+chr1	aegis	mRNA	55000	62000	.	+	.	ID=g7_m1;Parent=g7
+chr1	aegis	exon	55000	56000	.	+	.	ID=e1;Parent=g7_m1
+chr1	aegis	exon	57000	62000	.	+	.	ID=e2;Parent=g7_m1
+chr1	aegis	CDS	57000	61500	.	+	0	ID=g7_cds1;Parent=g7_m1
+#
+chr1	aegis	gene	65000	72000	.	+	.	ID=g8
+chr1	aegis	mRNA	65000	72000	.	+	.	ID=g8_m1;Parent=g8
+chr1	aegis	exon	65000	66000	.	+	.	ID=e1;Parent=g8_m1
+chr1	aegis	exon	67000	72000	.	+	.	ID=e2;Parent=g8_m1
+chr1	aegis	CDS	67000	71500	.	+	0	ID=g8_cds1;Parent=g8_m1
+#
+chr1	aegis	gene	75000	82000	.	+	.	ID=g9
+chr1	aegis	mRNA	75000	82000	.	+	.	ID=g9_m1;Parent=g9
+chr1	aegis	exon	75000	76000	.	+	.	ID=e1;Parent=g9_m1
+chr1	aegis	exon	77000	82000	.	+	.	ID=e2;Parent=g9_m1
+chr1	aegis	CDS	77000	81500	.	+	0	ID=g9_cds1;Parent=g9_m1
