@@ -282,7 +282,7 @@
         - `def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, custom_filename: str=""):`
         - `def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, custom_filename: str=""):`
         - `def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False, custom_filename: str=""):`
-        - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False):`
+        - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, custom_filename: str=""):`
         - `def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):`
         - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):`
         - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):`
@@ -407,8 +407,6 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
-  - **aegis_output/**
-    - **features/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
   - **images/**

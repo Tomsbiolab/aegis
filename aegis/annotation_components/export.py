@@ -656,18 +656,21 @@ class AnnotationExport:
                             f_out.write(f"|{g.strand}|{g.ch}|{g.start}:{g.end}")
                         f_out.write(f"\n{g.seq}\n")
 
-    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False):
+    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, custom_filename: str=""):
         """
 
         Verbose will include promoter type, strand, chromosome, and coordinates.
 
         """
         if custom_path:
-            output_file = Path(custom_path)
+            output_path = Path(custom_path)
         else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
+            output_path = Path(self._annot.path) / "features"
+        output_path.mkdir(parents=True, exist_ok=True)
+        output_path = str(output_path) + "/"
+
+        output_file = output_path
+
         if use_name_not_id:
             output_file += self._annot.name
         else:
@@ -690,8 +693,15 @@ class AnnotationExport:
 
         if verbose:
             output_file += "_coordinates"
-            
-        output_file += f"_{self._annot.promoter_size}_{self._annot.promoter_types}.fasta"
+
+        if custom_filename:
+            output_file = f"{output_path}{custom_filename}"
+
+        else:
+            output_file += f"_{self._annot.promoter_size}_{self._annot.promoter_types}.fasta"
+
+        if not output_file.endswith(".fasta"):
+            output_file += ".fasta"
 
         valid_id_choices = ["gene", "transcript", "promoter"]
 
