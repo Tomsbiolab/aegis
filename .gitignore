@@ -6,4 +6,5 @@ dist/
 .python-version
 .coverage
 htmlcov/
+.vscode/settings.json
 aegis/*.dot
