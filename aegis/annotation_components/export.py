@@ -1018,7 +1018,7 @@ class AnnotationExport:
 
             progress_bar.close()
 
-    def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False):
+    def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False):
 
         if not custom_path:
             export_folder = Path(self._annot.path) / "lists"
@@ -1072,10 +1072,15 @@ class AnnotationExport:
                         out.append(str(g.end))
                     if lengths:
                         if main_transcript_length_instead_of_gene_length:
+                            t_size = 0
                             for t in g.transcripts.values():
                                 if t.main:
-                                    out.append(str(t.size))
+                                    t_size = t.size
                                     break
+                            if t_size == 0 and main_gene_length_when_transcript_missing:
+                                out.append(str(g.size))
+                            else:
+                                out.append(str(t_size))
                         else:
                             out.append(str(g.size))
                     if coding_info:
