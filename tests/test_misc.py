@@ -10,7 +10,7 @@ from aegis.utils.genefunctions import (
     find_ORFs,
     longest_ORF,
     trim_surplus,
-    translate
+    flexible_translate
 )
 
 from aegis.feature import Feature
@@ -360,7 +360,7 @@ class TestTranslate:
     def test_translate_both_readthrough(self):
         # ATG AAA TAA -> M K *
         seq = "ATGAAATAA"
-        start, end_stop, early_stop, surplus, gaps, protein, cs, ce = translate(seq, readthrough="both")
+        start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
         assert start == "present"
         assert end_stop is True
         assert early_stop is False
@@ -370,21 +370,21 @@ class TestTranslate:
     def test_translate_no_start(self):
         # GGG AAA TAA -> no M
         seq = "GGGAAATAA"
-        start, end_stop, early_stop, surplus, gaps, protein, cs, ce = translate(seq, readthrough="both")
+        start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
         assert start in ("absent", "late")
 
     def test_translate_none_readthrough_with_orfs(self):
         # has an ORF inside
         seq = "GGGGATGAAATAAGGG"
         # "none" mode finds the longest ORF
-        result = translate(seq, readthrough="none")
+        result = flexible_translate(seq, readthrough="none")
         # returns a tuple
         assert isinstance(result, tuple)
 
     def test_translate_ambiguous_codons(self):
         # N in sequence signals ambiguity
         seq = "ATGNNATAA"
-        start, end_stop, early_stop, surplus, gaps, protein, cs, ce = translate(seq, readthrough="both")
+        start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
         assert gaps is True
 
 
