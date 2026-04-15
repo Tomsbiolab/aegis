@@ -6,7 +6,7 @@ Module with an array of genomic functions.
 @authors: David Navarro, Antonio Santiago
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from ..annotation import Annotation
@@ -15,10 +15,12 @@ if TYPE_CHECKING:
 import pandas as pd
 import time
 import warnings
+import itertools
 
+from collections import defaultdict
 from pathlib import Path
-from Bio.Data import CodonTable
 
+# nucleotides
 _STR_FROM = "ACGTRYSWKMBDHVNX-"
 _STR_TO   = "TGCAYRSWMKVHDBNX-"
 _BYTES_COMP_TABLE = bytes.maketrans(_STR_FROM.encode(), _STR_TO.encode())
@@ -26,13 +28,64 @@ _BYTES_COMP_TABLE = bytes.maketrans(_STR_FROM.encode(), _STR_TO.encode())
 def reverse_complement(in_seq: str) -> str:
     return in_seq.encode('ascii').translate(_BYTES_COMP_TABLE)[::-1].decode('ascii')
 
+iupac_dna_nucleotides = {
+    "W": ["A", "T"],
+    "S": ["C", "G"],
+    "M": ["A", "C"],
+    "K": ["G", "T"],
+    "R": ["A", "G"],
+    "Y": ["C", "T"],
+    "B": ["C", "G", "T"],
+    "D": ["A", "G", "T"],
+    "H": ["A", "C", "T"],
+    "V": ["A", "C", "G"],
+    "N": ["A", "C", "G", "T"],
+    "A": ["A"],
+    "C": ["C"],
+    "G": ["G"],
+    "T": ["T"]
+}
+
+codon_dict = {'TTT': 'F', 'TTC': 'F', 'TTA': 'L', 'TTG': 'L', 'TCT': 'S', 'TCC': 'S', 'TCA': 'S', 'TCG': 'S', 'TAT': 'Y', 'TAC': 'Y', 'TGT': 'C', 'TGC': 'C', 'TGG': 'W', 'CTT': 'L', 'CTC': 'L', 'CTA': 'L', 'CTG': 'L', 'CCT': 'P', 'CCC': 'P', 'CCA': 'P', 'CCG': 'P', 'CAT': 'H', 'CAC': 'H', 'CAA': 'Q', 'CAG': 'Q', 'CGT': 'R', 'CGC': 'R', 'CGA': 'R', 'CGG': 'R', 'ATT': 'I', 'ATC': 'I', 'ATA': 'I', 'ATG': 'M', 'ACT': 'T', 'ACC': 'T', 'ACA': 'T', 'ACG': 'T', 'AAT': 'N', 'AAC': 'N', 'AAA': 'K', 'AAG': 'K', 'AGT': 'S', 'AGC': 'S', 'AGA': 'R', 'AGG': 'R', 'GTT': 'V', 'GTC': 'V', 'GTA': 'V', 'GTG': 'V', 'GCT': 'A', 'GCC': 'A', 'GCA': 'A', 'GCG': 'A', 'GAT': 'D', 'GAC': 'D', 'GAA': 'E', 'GAG': 'E', 'GGT': 'G', 'GGC': 'G', 'GGA': 'G', 'GGG': 'G', "TAA": "*", "TAG": "*", "TGA": "*"}
+
+
+extended_codon_dict = {}
+all_iupac_chars = list(iupac_dna_nucleotides.keys())
+
+for c1, c2, c3 in itertools.product(all_iupac_chars, repeat=3):
+    ambiguous_codon = c1 + c2 + c3
+    
+    possible_aas = set()
+    for b1, b2, b3 in itertools.product(iupac_dna_nucleotides[c1], iupac_dna_nucleotides[c2], iupac_dna_nucleotides[c3]):
+        standard_codon = b1 + b2 + b3
+        possible_aas.add(codon_dict[standard_codon])
+    
+    if len(possible_aas) == 1:
+        extended_codon_dict[ambiguous_codon] = possible_aas.pop()
+    else:
+        extended_codon_dict[ambiguous_codon] = "X"
+
+byte_codon_dict = {tuple(k.encode('ascii')): v for k, v in extended_codon_dict.items()}
+byte_dict = defaultdict(lambda: "X", byte_codon_dict)
+
+def translate(seq: str) -> str:
+    """
+    Translates an uppercase DNA sequence to Amino Acids.
+    Handles all ambiguous IUPAC bases.
+    Assumes input is a multiple of 3
+    """
+
+    it = iter(seq.encode('ascii'))
+
+    return "".join(map(byte_dict.__getitem__, zip(it, it, it)))
+
 def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool = False, min_codon_len: int = 2, start_codon: str = "ATG", stop_codons=["TAA", "TAG", "TGA"]) -> list[tuple[str, int, int]]:
     
     stop_set = frozenset(stop_codons) if not isinstance(stop_codons, (set, frozenset)) else stop_codons
     seq_len = len(in_seq)
     min_seq_len = min_codon_len * 3
     
-    f0, f1, f2 = [], [],[]
+    f0, f1, f2 = [], [], []
     appends = (f0.append, f1.append, f2.append)
 
     starts =[]
@@ -87,42 +140,62 @@ def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool =
 
     return f0 + f1 + f2
 
-def longest_ORF(orfs:list[tuple[str, int, int]]) -> tuple[str, int, int]:
-    longest = ("", 0, 0)
-    for orf in orfs:
-        if len(orf[0]) > len(longest[0]):
-            longest = orf
+def longest_ORF(orfs: list[tuple[str, int, int]]) -> tuple[str, int, int]:
+    return max(orfs, key=lambda x: len(x[0]), default=("", 0, 0))
 
-    return longest
+def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = 6, readthrough_stop: bool = True) -> tuple[str, bool]:
+    """
+    Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
+    
+    in_seq: The input nucleotide sequence.
+    mode: Trimming strategy. 
+        - "start": Trims from the 5' end.
+        - "end": Trims from the 3' end.
+        - "orf": Extracts the longest ORF. Falls back to original sequence if criteria fail.
+        - "orf_or_end": Extracts longest ORF. Falls back to 3' trimming if criteria fail.
+    max_nucleotide_trim: Maximum allowed nucleotides to trim when using ORF modes.
+    readthrough_stop: Passed to find_ORFs.
+    """
 
-def trim_surplus(in_seq:str) -> tuple[str, bool]:
-    """
-    Function that trims surplus nucleotides in the event of a sequence not
-    being a multiple of three. The trimming is orientated by the presence of
-    start and end codons provided they are very close to the start and end
-    of input sequences, otherwise just the end of the sequence is trimmed.
-    """
-    nucleotide_surplus = False
     surplus = len(in_seq) % 3
-    if surplus != 0:
-        nucleotide_surplus = True
-        orfs = find_ORFs(in_seq, readthrough_stop=True)
+    nucleotide_surplus = surplus != 0
+
+    if mode == "end":
+        out_seq = in_seq[:-surplus] if surplus else in_seq
+    
+    elif mode == "start":
+        out_seq = in_seq[surplus:]
+
+    elif mode in ("orf", "orf_or_end"):
+        orfs = find_ORFs(in_seq, readthrough_stop=readthrough_stop)
         orf, _, _ = longest_ORF(orfs)
-        excess = len(in_seq) - len(orf)
-        # this aims to trim at most 2 complete or incomplete codons: one from
-        # the beginning of the sequence and one from the end
-        if excess < 6:
+
+        if orf and (max_nucleotide_trim is None or (len(in_seq) - len(orf)) <= max_nucleotide_trim):
             out_seq = orf
         else:
-            out_seq = in_seq[:-surplus]
+            if mode == "orf_or_end":
+                out_seq = in_seq[:-surplus] if surplus else in_seq
+            else: # mode == "orf"
+                out_seq = in_seq
+                
     else:
-        out_seq = in_seq
+        raise ValueError(f"Invalid mode: {mode}")
 
     return out_seq, nucleotide_surplus
 
-# standard genetic code
-def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codon_table=CodonTable.unambiguous_dna_by_id[1]):
-    # translating a protein
+def flexible_translate(in_seq:str, codon_dict:dict[str, str]=codon_dict, readthrough:str="both", must_have_stop:bool=True):
+    """
+    Translates a nucleotide sequence into a protein sequence.
+    
+    in_seq: The input nucleotide sequence.
+    readthrough: Translation strategy. 
+        - "both": Translates the entire sequence as is.
+        - "start": Translates from the first codon even if it is not an ATG.
+        - "end": Translates from an ATG and readsthrough stop codons.
+    must_have_stop: Whether the protein must have a stop codon.
+    codon_table: The codon table to use for translation, standard genetic code by default.
+    """
+
     out_seq = ""
     in_seq = in_seq.upper()
     start = "present"
@@ -131,21 +204,14 @@ def translate(in_seq:str, readthrough:str="both", must_have_stop:bool=True, codo
     gaps = False
     coding_start = False
     coding_end = False
-    
-    codon_dict = {}
-    for codon, aa in codon_table.forward_table.items():
-        codon_dict[codon] = aa
-
-    codon_dict["TAA"] = "*"
-    codon_dict["TAG"] = "*"
-    codon_dict["TGA"] = "*"
+ 
 
     if readthrough == "both" or readthrough == "start" or readthrough == "end":
         in_seq, nucleotide_surplus = trim_surplus(in_seq)
     else:
         nucleotide_surplus = False
 
-    ambiguous_letters = ["B", "D", "H", "K", "M", "N", "R", "S", "V", "W", "Y"]
+    ambiguous_letters = ["B", "D", "H", "K", "M", "N", "R", "S", "V", "W", "Y", "X"]
     # for masked genomes
     ambiguous_letters.append("X")
 

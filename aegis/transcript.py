@@ -3,7 +3,7 @@ from __future__ import annotations
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
-from .utils.genefunctions import find_ORFs, longest_ORF, translate
+from .utils.genefunctions import find_ORFs, longest_ORF, flexible_translate
 
 class Transcript(Feature):
 
@@ -304,7 +304,7 @@ class Transcript(Feature):
 
     def generate_best_protein(self, must_have_stop:bool=True):
         if self.strand == "+" or self.strand == "-":
-            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = translate(self.seq, "none", must_have_stop=must_have_stop) # type: ignore
+            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = flexible_translate(self.seq, readthrough="none", must_have_stop=must_have_stop) # type: ignore
         elif self.strand == ".":
             fw, rv = self.seqs #type: ignore
             plus_orfs = find_ORFs(fw, must_have_stop)
