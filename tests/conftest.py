@@ -165,18 +165,32 @@ def transcripts_to_combine_gff3_file():
 
 @pytest.fixture
 def synteny_before_liftover_gff3_file():
-    """GFF3 file with features that should be combined."""
+    """GFF3 file with features before synteny liftover."""
     return str(TEST_DATA_DIR / "input/annotation/synteny_before_liftover.gff3")
 
 @pytest.fixture
 def synteny_after_liftover_gff3_file():
-    """GFF3 file with features that should be combined."""
+    """GFF3 file with features after synteny liftover."""
     return str(TEST_DATA_DIR / "input/annotation/synteny_after_liftover.gff3")
 
 @pytest.fixture
 def arabidopsis_araport11_gff3_file():
-    """GFF3 file with features that should be combined."""
+    """GFF3 file with Araport11 subset annotation."""
     return str(TEST_DATA_DIR / "input/annotation/arabidopsis_araport11.gff3")
+
+@pytest.fixture
+def arabidopsis_araport11_no_CDS_gff3_file():
+    """GFF3 file with Araport11 subset annotation without CDS."""
+    return str(TEST_DATA_DIR / "input/annotation/arabidopsis_araport11_no_CDS.gff3")
+
+# ---------------------------------------------------------------------------
+# Output GFF3 files
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def arabidopsis_araport11_with_CDS_gff3_file():
+    """GFF3 file with Araport11 subset annotation with CDS."""
+    return str(TEST_DATA_DIR / "gff_output/araport11_with_CDS_on_TAIR10_clean.gff3")
 
 # ---------------------------------------------------------------------------
 # FASTA fixture — loaded from test_data/
@@ -191,6 +205,11 @@ def sample_fasta_file():
 def transcripts_to_combine_fasta_file():
     """Return path to the FASTA file for the transcripts_to_combine GFF3 file."""
     return str(TEST_DATA_DIR / "input/fasta/transcripts_to_combine.fasta")
+
+@pytest.fixture
+def arabidopsis_tair10_fasta_file():
+    """Return path to the FASTA file for the Arabidopsis TAIR10 GFF3 file."""
+    return str(TEST_DATA_DIR / "input/fasta/arabidopsis_tair10.fasta")
 
 # ---------------------------------------------------------------------------
 # Ready-made class instances and creation helpers

@@ -2417,3 +2417,27 @@ class TestSubset:
         annot.subset(gene_cap=300, quiet=True)
 
         assert len(annot.all_gene_ids) == 300
+
+
+# ============================================================
+# Testing rework CDS
+# ============================================================
+
+class TestReworkCDS:
+    def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):
+
+        output_dir = tmp_path / "out_gffs"
+
+        genome = Genome("TAIR10", arabidopsis_tair10_fasta_file)
+        annot = Annotation(arabidopsis_araport11_no_CDS_gff3_file, "araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True)
+
+        annot.export.gff(custom_path=tmp_path)
+
+        # Compare contents
+        with open(arabidopsis_araport11_with_CDS_gff3_file, "r") as f:
+            expected_content = f.read()
+            
+        with open(output_dir / "araport11_no_CDS_on_TAIR10_clean.gff3", "r") as f:
+            generated_content = f.read()
+            
+        assert generated_content == expected_content, f"Output mismatch for {arabidopsis_araport11_with_CDS_gff3_file}"
