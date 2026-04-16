@@ -23,6 +23,7 @@
       - `def stats(self) -> AnnotationStats:`
       - `def export(self) -> AnnotationExport:`
       - `def summary(self) -> dict:`
+      - `def iter_genes(self):`
       - `def iter_features(self, include_atypical:bool=True, include_orphaned:bool=True):`
       - `def feature_suffix(self) -> str:`
       - `def all_suffixes(self) -> str:`

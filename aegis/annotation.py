@@ -315,6 +315,11 @@ class Annotation():
     def summary(self) -> dict:
         return self.stats.data
 
+    def iter_genes(self):
+        for genes in self.chrs.values():
+            for g in genes.values():
+                yield g
+
     def iter_features(self, include_atypical:bool=True, include_orphaned:bool=True):
 
         for genes in self.chrs.values():
@@ -1917,30 +1922,8 @@ class Annotation():
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
     def rename_source(self, new_source:str="aegis", atypical:bool=True, orphaned:bool=True):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                g.source = new_source
-                for t in g.transcripts.values():
-                    t.source = new_source
-                    for e in t.exons:
-                        e.source = new_source
-                    if t.introns:
-                        for i in t.introns:
-                            i.source = new_source
-                    for c in t.CDSs.values():
-                        c.source = new_source
-                        for cs in c.CDS_segments:
-                            cs.source = new_source
-                        for u in c.UTRs:
-                            u.source = new_source
-
-        if atypical:
-            for a in self.atypical_features:
-                a.source = new_source
-        
-        if orphaned:
-            for o in self.orphaned_features:
-                o.source = new_source
+        for ft in self.iter_features(include_atypical=atypical, include_orphaned=orphaned):
+            ft.source = new_source
         
     def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
 
