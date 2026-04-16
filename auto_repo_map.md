@@ -23,6 +23,7 @@
       - `def stats(self) -> AnnotationStats:`
       - `def export(self) -> AnnotationExport:`
       - `def summary(self) -> dict:`
+      - `def iter_features(self, include_atypical:bool=True, include_orphaned:bool=True):`
       - `def feature_suffix(self) -> str:`
       - `def all_suffixes(self) -> str:`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):`
@@ -447,8 +448,11 @@
       - `def synteny_before_liftover_gff3_file():`
       - `def synteny_after_liftover_gff3_file():`
       - `def arabidopsis_araport11_gff3_file():`
+      - `def arabidopsis_araport11_no_CDS_gff3_file():`
+      - `def arabidopsis_araport11_with_CDS_gff3_file():`
       - `def sample_fasta_file():`
       - `def transcripts_to_combine_fasta_file():`
+      - `def arabidopsis_tair10_fasta_file():`
       - `def make_feature():`
       - `def _make(feature_id="feat001", ch="chr1", source="aegis", feature="gene", strand="+", start=100, end=500, score=".", parents=None, attributes=None) -> Feature:`
       - `def make_gene():`
@@ -703,6 +707,8 @@
       - `def test_synteny(self, synteny_before_liftover_gff3_file, synteny_after_liftover_gff3_file):`
       - `class TestSubset:`
       - `def test_subset(self, arabidopsis_araport11_gff3_file):`
+      - `class TestReworkCDS:`
+      - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_equivalence.py
@@ -941,6 +947,7 @@
       - coverage_html_cb_dd2e7eb5.js
     - **test_data/**
       - **features_output/**
+      - **gff_output/**
       - **input/**
         - **annotation/**
         - **fasta/**
