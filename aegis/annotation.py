@@ -264,46 +264,7 @@ class Annotation():
                 if not rogue_chromosome_format:
                     self.tags.add("dapfit")
 
-        misc_attributes = False
-        for genes in self.chrs.values():
-            for g in genes.values():
-                if g.misc_attributes:
-                    misc_attributes = True
-                    break
-                for t in g.transcripts.values():
-                    if t.misc_attributes:
-                        misc_attributes = True
-                        break
-                    for e in t.exons:
-                        if e.misc_attributes:
-                            misc_attributes = True
-                            break
-                    for c in t.CDSs.values():
-                        if c.misc_attributes:
-                            misc_attributes = True
-                            break
-                        for u in c.UTRs:
-                            if u.misc_attributes:
-                                misc_attributes = True
-                                break
-                    for ft in t.miRNAs:
-                        if ft.misc_attributes:
-                            misc_attributes = True
-                            break
-                    if misc_attributes:
-                        break
-                if misc_attributes:
-                    break
-            if misc_attributes:
-                break
-        for ft in self.atypical_features:
-            if ft.misc_attributes:
-                misc_attributes = True
-                break
-        for ft in self.orphaned_features:
-            if ft.misc_attributes:
-                misc_attributes = True
-                break
+        misc_attributes = any(ft.misc_attributes for ft in self.iter_features())
 
         if not misc_attributes:
             self.tags.add("clean")
@@ -353,6 +314,43 @@ class Annotation():
     @property
     def summary(self) -> dict:
         return self.stats.data
+
+    def iter_features(self, include_atypical:bool=True, include_orphaned:bool=True):
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                yield g
+                for t in g.transcripts.values():
+                    yield t
+                    for e in t.exons:
+                        yield e
+                    for c in t.CDSs.values():
+                        yield c
+                        for cs in c.CDS_segments:
+                            yield cs
+                        for u in c.UTRs:
+                            yield u
+
+                    if t.introns:
+                        for i in t.introns:
+                            yield i
+                    
+                    if t.temp_CDSs:
+                        for c in t.temp_CDSs:
+                            yield c
+                    if t.temp_UTRs:
+                        for u in t.temp_UTRs:
+                            yield u
+
+                    for ft in t.miRNAs:
+                        yield ft
+                        
+        if include_atypical:
+            for ft in self.atypical_features:
+                yield ft
+        if include_orphaned:
+            for ft in self.orphaned_features:
+                yield ft
 
     @property
     def feature_suffix(self) -> str:
