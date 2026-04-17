@@ -264,7 +264,46 @@ class Annotation():
                 if not rogue_chromosome_format:
                     self.tags.add("dapfit")
 
-        misc_attributes = any(ft.misc_attributes for ft in self.iter_features())
+        misc_attributes = False
+        for genes in self.chrs.values():
+            for g in genes.values():
+                if g.misc_attributes:
+                    misc_attributes = True
+                    break
+                for t in g.transcripts.values():
+                    if t.misc_attributes:
+                        misc_attributes = True
+                        break
+                    for e in t.exons:
+                        if e.misc_attributes:
+                            misc_attributes = True
+                            break
+                    for c in t.CDSs.values():
+                        if c.misc_attributes:
+                            misc_attributes = True
+                            break
+                        for u in c.UTRs:
+                            if u.misc_attributes:
+                                misc_attributes = True
+                                break
+                    for ft in t.miRNAs:
+                        if ft.misc_attributes:
+                            misc_attributes = True
+                            break
+                    if misc_attributes:
+                        break
+                if misc_attributes:
+                    break
+            if misc_attributes:
+                break
+        for ft in self.atypical_features:
+            if ft.misc_attributes:
+                misc_attributes = True
+                break
+        for ft in self.orphaned_features:
+            if ft.misc_attributes:
+                misc_attributes = True
+                break
 
         if not misc_attributes:
             self.tags.add("clean")
@@ -316,46 +355,89 @@ class Annotation():
         return self.stats.data
 
     def iter_genes(self):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                yield g
+        for chrom in self.chrs.values():
+            yield from chrom.values()
 
-    def iter_features(self, include_atypical:bool=True, include_orphaned:bool=True):
+    def iter_transcripts(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                yield from g.transcripts.values()
 
-        for genes in self.chrs.values():
-            for g in genes.values():
+    def iter_exons(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                for t in g.transcripts.values():
+                    yield from t.exons
+
+    def iter_CDSs(self, segments: bool = True):
+        if segments:
+            for chrom in self.chrs.values():
+                for g in chrom.values():
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            yield c
+                            yield from c.CDS_segments
+        else:
+            for chrom in self.chrs.values():
+                for g in chrom.values():
+                    for t in g.transcripts.values():
+                        yield from t.CDSs.values()
+
+    def iter_UTRs(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        yield from c.UTRs
+
+    def iter_introns(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                for t in g.transcripts.values():
+                    if t.introns:
+                        yield from t.introns
+
+    def iter_miRNAs(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                for t in g.transcripts.values():
+                    yield from t.miRNAs
+
+    def iter_proteins(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        yield c.protein
+
+    def iter_promoters(self):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
+                for t in g.transcripts.values():
+                    yield t.promoter
+
+    def iter_features(self, include_atypical: bool = True, include_orphaned: bool = True):
+        for chrom in self.chrs.values():
+            for g in chrom.values():
                 yield g
                 for t in g.transcripts.values():
                     yield t
-                    for e in t.exons:
-                        yield e
+                    yield from t.exons
+                    
                     for c in t.CDSs.values():
                         yield c
-                        for cs in c.CDS_segments:
-                            yield cs
-                        for u in c.UTRs:
-                            yield u
-
-                    if t.introns:
-                        for i in t.introns:
-                            yield i
+                        yield from c.CDS_segments
+                        yield from c.UTRs
                     
-                    if t.temp_CDSs:
-                        for c in t.temp_CDSs:
-                            yield c
-                    if t.temp_UTRs:
-                        for u in t.temp_UTRs:
-                            yield u
+                    if t.introns:
+                        yield from t.introns
+                    yield from t.miRNAs
 
-                    for ft in t.miRNAs:
-                        yield ft
-                        
         if include_atypical:
-            for ft in self.atypical_features:
-                yield ft
+            yield from self.atypical_features
+            
         if include_orphaned:
-            for ft in self.orphaned_features:
-                yield ft
+            yield from self.orphaned_features
 
     @property
     def feature_suffix(self) -> str:
@@ -997,6 +1079,7 @@ class Annotation():
                     '{percentage:3.0f}%|'
                     f'\033[1;62m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
+
         for genes in self.chrs.values():
             for g in genes.values():
                 count += 1
@@ -1130,6 +1213,7 @@ class Annotation():
             if line != "":
                 rRNA_transcripts.add(line)
         f_in.close()
+
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -1141,6 +1225,7 @@ class Annotation():
                         t.main = False
                         t.temp_CDSs = []
                         t.temp_UTRs = []
+
         if clean:
             self.remove_other_mRNA_transcripts_from_rRNA_genes()
             self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
@@ -1922,8 +2007,32 @@ class Annotation():
         self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
 
     def rename_source(self, new_source:str="aegis", atypical:bool=True, orphaned:bool=True):
-        for ft in self.iter_features(include_atypical=atypical, include_orphaned=orphaned):
-            ft.source = new_source
+        for genes in self.chrs.values():
+            for g in genes.values():
+                g.source = new_source
+                for t in g.transcripts.values():
+                    t.source = new_source
+                    for e in t.exons:
+                        e.source = new_source
+                    if t.introns:
+                        for i in t.introns:
+                            i.source = new_source
+                    for c in t.CDSs.values():
+                        c.source = new_source
+                        for cs in c.CDS_segments:
+                            cs.source = new_source
+                        for u in c.UTRs:
+                            u.source = new_source
+                    for ft in t.miRNAs:
+                        ft.source = new_source
+
+        if atypical:
+            for a in self.atypical_features:
+                a.source = new_source
+        
+        if orphaned:
+            for o in self.orphaned_features:
+                o.source = new_source
         
     def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
 
