@@ -23,7 +23,16 @@
       - `def stats(self) -> AnnotationStats:`
       - `def export(self) -> AnnotationExport:`
       - `def summary(self) -> dict:`
-      - `def iter_features(self, include_atypical:bool=True, include_orphaned:bool=True):`
+      - `def iter_genes(self):`
+      - `def iter_transcripts(self):`
+      - `def iter_exons(self):`
+      - `def iter_CDSs(self, segments: bool = True):`
+      - `def iter_UTRs(self):`
+      - `def iter_introns(self):`
+      - `def iter_miRNAs(self):`
+      - `def iter_proteins(self):`
+      - `def iter_promoters(self):`
+      - `def iter_features(self, include_atypical: bool = True, include_orphaned: bool = True):`
       - `def feature_suffix(self) -> str:`
       - `def all_suffixes(self) -> str:`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):`
