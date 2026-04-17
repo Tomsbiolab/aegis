@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .genome import Genome
 
 from .feature import Feature
 from .misc_features import Protein
-from .utils.genefunctions import reverse_complement
+from .utils.genefunctions import reverse_complement, trim_surplus
 
 class CDS(Feature):
 
@@ -205,7 +205,13 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, readthrough:str="both"):
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = 6, readthrough_stop: bool = True, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False):
+
+        coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, readthrough_stop=readthrough_stop) # type: ignore
+
+        
+
+
         self.protein = Protein(f"{self.id}.prot", self.seq, self.ch, readthrough) # type: ignore
 
     def clear_protein(self):

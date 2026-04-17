@@ -6,7 +6,7 @@ if TYPE_CHECKING:
 
 import copy
 
-from .utils.genefunctions import flexible_translate
+from .utils.genefunctions import translate, trim_surplus
 from .feature import Feature
 
 class Protein():
@@ -23,6 +23,8 @@ class Protein():
         self.readthrough = readthrough
         self._blast_hits = None
         # readthrough can be start, end, both or none 
+
+        
         self.start, self.end_stop, self.early_stop, self.nucleotide_surplus, self.gaps, self.seq, self.coding_start, self.coding_end = flexible_translate(nucleotides, readthrough=readthrough)
         if self.start == "late" or self.start == "absent" or self.end_stop == False or self.nucleotide_surplus or self.gaps:
             self.partial = True
