@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .genome import Genome
+from typing import TYPE_CHECKING, Literal
 
 from .feature import Feature
 from .misc_features import Protein
-from .utils.genefunctions import reverse_complement
+from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement
 
 class CDS(Feature):
 
@@ -104,7 +101,7 @@ class CDS(Feature):
                 self.renamed = True
                 self.update_numbering()
                 if self.protein is not None:
-                    self.generate_protein()
+                    self.protein.id = f"{self.id}.prot"
 
         cs_count = 0
         for cs in self.CDS_segments:
@@ -128,55 +125,63 @@ class CDS(Feature):
         self.UTRs = []
 
     @property
-    def seq(self) -> str|None:
+    def seq(self) -> str:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             cds_seq = ""
-            if self.strand == "+":
-                for cs in self.CDS_segments:
-                    cds_seq += cs.seq # type: ignore
-            elif self.strand == "-":
+
+            if self.strand == "-":
                 for cs in reversed(self.CDS_segments):
-                    cds_seq += cs.seq # type: ignore
+                    cds_seq += cs.seq
+            else:
+                for cs in self.CDS_segments:
+                    cds_seq += cs.seq
+
             return cds_seq
 
     @property
-    def hard_seq(self) -> str|None:
+    def hard_seq(self) -> str:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             cds_seq = ""
-            if self.strand == "+":
-                for cs in self.CDS_segments:
-                    cds_seq += cs.hard_seq # type: ignore
-            elif self.strand == "-":
+
+            if self.strand == "-":
                 for cs in reversed(self.CDS_segments):
-                    cds_seq += cs.hard_seq # type: ignore
+                    cds_seq += cs.hard_seq
+            else:
+                for cs in self.CDS_segments:
+                    cds_seq += cs.hard_seq
+
             return cds_seq
 
     @property
-    def seqs(self) -> list[str]|None:
+    def seqs(self) -> list[str]:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             cds_seqs = ["", ""]
             for cs in self.CDS_segments:
-                fw, rv = cs.seqs # type: ignore
-                cds_seqs[0] += fw
-                cds_seqs[1] += rv
+                cds_seqs[0] += cs.seq
+
+            for cs in reversed(self.CDS_segments):
+                cds_seqs[1] += reverse_complement(cs.seq)
+
             return cds_seqs
 
     @property
-    def hard_seqs(self) -> list[str]|None:
+    def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             cds_seqs = ["", ""]
             for cs in self.CDS_segments:
-                fw, rv = cs.hard_seqs # type: ignore
-                cds_seqs[0] += fw
-                cds_seqs[1] += rv
+                cds_seqs[0] += cs.hard_seq
+
+            for cs in reversed(self.CDS_segments):
+                cds_seqs[1] += reverse_complement(cs.hard_seq)
+
             return cds_seqs
 
     @property
@@ -205,8 +210,55 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, readthrough:str="both"):
-        self.protein = Protein(f"{self.id}.prot", self.seq, self.ch, readthrough) # type: ignore
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, readthrough_stop: bool = True, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, correct_CDS:bool=False, quiet:bool=True):
+
+        if self.strand == ".":
+            seq_fw, seq_rv = self.seqs
+            fw_orf = choose_orf(find_ORFs(seq_fw), orf_choice_mode)
+            rv_orf = choose_orf(find_ORFs(seq_rv), orf_choice_mode)
+
+            if len(fw_orf[0]) >= len(rv_orf[0]):
+                self.strand = "+"
+                for cs in self.CDS_segments:
+                    cs.strand = "+"
+            else:
+                self.strand = "-"
+                for cs in self.CDS_segments:
+                    cs.strand = "-"
+
+        coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, readthrough_stop=readthrough_stop)
+
+        if relative_coding_end != 0:
+
+            protein_seq = translate(coding_seq)
+
+            corrected_segments = map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
+
+            protein_start = corrected_segments[0][0]
+            protein_end = corrected_segments[-1][1]
+
+            if correct_CDS:
+
+                new_CDS_segments = []
+                if self.parents:
+                    new_parents = self.parents[:]
+                else:
+                    new_parents = []
+
+                for start, end in corrected_segments:
+                    new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
+
+                self.CDS_segments = new_CDS_segments
+
+                self.start = protein_start
+                self.end = protein_end
+
+            self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
+
+            if not quiet and nucleotide_surplus:
+                print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
+        elif not quiet:
+            print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
 
     def clear_protein(self):
         self.protein = None
@@ -223,6 +275,22 @@ class CDS(Feature):
             same = False
         
         return same
+
+    @property
+    def relative_coding_start(self):
+        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
+        if self.protein:
+            return (self.protein.start - self.start)
+        else:
+            return 0
+
+    @property
+    def relative_coding_end(self):
+        """ Returns python index of last protein nucleotide within the CDS sequence string, or the last CDS nucleotide index if no protein was generated yet."""
+        if self.protein:
+            return (self.protein.end - self.start)
+        else:
+            return self.end - self.start
 
 class Exon(Feature):
     __slots__ = ()

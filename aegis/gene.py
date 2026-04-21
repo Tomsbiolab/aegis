@@ -163,7 +163,7 @@ class Gene(Feature):
             t.clear_UTRs()
         self.update()
 
-    def combine_transcripts(self, low_memory:bool=True, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=False, quiet:bool=False):
+    def combine_transcripts(self, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=False, quiet:bool=False):
         """
         Useful for RNA-Seq read counting for transcript variants as "one" gene.
         """
@@ -213,12 +213,12 @@ class Gene(Feature):
                     if not self.coding:
                         continue
 
-                t.generate_best_protein()
-                t.generate_CDSs_based_on_ORF(low_memory)
+                t.generate_best_protein(quiet=quiet)
                 if t.coding_ratio < 0.80:
-                    t.generate_best_protein(must_have_stop=False)
-                    t.generate_CDSs_based_on_ORF(low_memory)
+                    t.generate_best_protein(must_have_stop=False, quiet=quiet)
                 t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
+            
+            self.update(quiet=quiet)
 
     def longer_CDS(self, other:Gene):
         for t1 in self.transcripts.values():

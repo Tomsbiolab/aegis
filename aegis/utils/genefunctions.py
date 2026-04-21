@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from ..annotation import Annotation
     from ..gene import Gene
+    from ..subfeatures import Feature
 
 import pandas as pd
 import time
@@ -63,10 +64,10 @@ for c1, c2, c3 in itertools.product(all_iupac_chars, repeat=3):
     if len(possible_aas) == 1:
         extended_codon_dict[ambiguous_codon] = possible_aas.pop()
     else:
-        extended_codon_dict[ambiguous_codon] = "X"
+        extended_codon_dict[ambiguous_codon] = "-"
 
 byte_codon_dict = {tuple(k.encode('ascii')): v for k, v in extended_codon_dict.items()}
-byte_dict = defaultdict(lambda: "X", byte_codon_dict)
+byte_dict = defaultdict(lambda: "-", byte_codon_dict)
 
 def translate(seq: str) -> str:
     """
@@ -78,6 +79,45 @@ def translate(seq: str) -> str:
     it = iter(seq.encode('ascii'))
 
     return "".join(map(byte_dict.__getitem__, zip(it, it, it)))
+
+def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
+
+    working_segments = segments if strand == "+" else reversed(segments)
+    
+    output_segments = []
+    current_offset = 0
+    
+    for seg in working_segments:
+        if current_offset > rel_end:
+            break
+            
+        seg_len = seg.end - seg.start + 1
+        
+        seg_rel_start = current_offset
+        seg_rel_end = current_offset + seg_len - 1
+        
+        overlap_start = max(rel_start, seg_rel_start)
+        overlap_end = min(rel_end, seg_rel_end)
+        
+        if overlap_start <= overlap_end:
+            dist_5p = overlap_start - seg_rel_start
+            overlap_len = overlap_end - overlap_start + 1
+            
+            if strand == "+":
+                g_start = seg.start + dist_5p
+                g_end = g_start + overlap_len - 1
+            else:
+                g_end = seg.end - dist_5p
+                g_start = g_end - overlap_len + 1
+            
+            output_segments.append((int(g_start), int(g_end)))
+            
+        current_offset += seg_len
+
+    if strand == "-":
+        output_segments.reverse()
+
+    return output_segments
 
 def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool = False, min_codon_len: int = 2, start_codon: str = "ATG", stop_codons=["TAA", "TAG", "TGA"]) -> list[tuple[str, int, int]]:
     
@@ -140,10 +180,17 @@ def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool =
 
     return f0 + f1 + f2
 
-def longest_ORF(orfs: list[tuple[str, int, int]]) -> tuple[str, int, int]:
-    return max(orfs, key=lambda x: len(x[0]), default=("", 0, 0))
+def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earliest"]="longest") -> tuple[str, int, int]:
+    if mode == "longest":
+        return max(orfs, key=lambda x: (len(x[0]), -x[1]), default=("", 0, 0))
+        
+    elif mode == "earliest":
+        return max(orfs, key=lambda x: (-x[1], len(x[0])), default=("", 0, 0))
+        
+    else:
+        raise ValueError(f"Invalid mode: '{mode}'. Expected 'longest' or 'earliest'.")
 
-def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = 6, readthrough_stop: bool = True) -> tuple[str, bool]:
+def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = 6, readthrough_stop: bool = True, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True) -> tuple[str, bool, int, int]:
     """
     Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
     
@@ -159,152 +206,41 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
 
     surplus = len(in_seq) % 3
     nucleotide_surplus = surplus != 0
+    coding_start = 0
+    coding_end = len(in_seq) - 1
 
     if mode == "end":
-        out_seq = in_seq[:-surplus] if surplus else in_seq
+
+        if surplus:
+            out_seq = in_seq[:-surplus]
+            coding_end -= surplus
+        else:
+            out_seq = in_seq
     
     elif mode == "start":
         out_seq = in_seq[surplus:]
+        coding_start += surplus
 
     elif mode in ("orf", "orf_or_end"):
-        orfs = find_ORFs(in_seq, readthrough_stop=readthrough_stop)
-        orf, _, _ = longest_ORF(orfs)
+        orfs = find_ORFs(in_seq, readthrough_stop=readthrough_stop, must_have_stop=must_have_stop)
+        orf, coding_start, coding_end = choose_orf(orfs, mode=orf_choice_mode)
 
         if orf and (max_nucleotide_trim is None or (len(in_seq) - len(orf)) <= max_nucleotide_trim):
             out_seq = orf
         else:
             if mode == "orf_or_end":
-                out_seq = in_seq[:-surplus] if surplus else in_seq
+                if surplus:
+                    out_seq = in_seq[:-surplus]
+                    coding_end -= surplus
+                else:
+                    out_seq = in_seq
             else: # mode == "orf"
                 out_seq = in_seq
                 
     else:
         raise ValueError(f"Invalid mode: {mode}")
 
-    return out_seq, nucleotide_surplus
-
-def flexible_translate(in_seq:str, codon_dict:dict[str, str]=codon_dict, readthrough:str="both", must_have_stop:bool=True):
-    """
-    Translates a nucleotide sequence into a protein sequence.
-    
-    in_seq: The input nucleotide sequence.
-    readthrough: Translation strategy. 
-        - "both": Translates the entire sequence as is.
-        - "start": Translates from the first codon even if it is not an ATG.
-        - "end": Translates from an ATG and readsthrough stop codons.
-    must_have_stop: Whether the protein must have a stop codon.
-    codon_table: The codon table to use for translation, standard genetic code by default.
-    """
-
-    out_seq = ""
-    in_seq = in_seq.upper()
-    start = "present"
-    early_stop = False
-    end_stop = True
-    gaps = False
-    coding_start = False
-    coding_end = False
- 
-
-    if readthrough == "both" or readthrough == "start" or readthrough == "end":
-        in_seq, nucleotide_surplus = trim_surplus(in_seq)
-    else:
-        nucleotide_surplus = False
-
-    ambiguous_letters = ["B", "D", "H", "K", "M", "N", "R", "S", "V", "W", "Y", "X"]
-    # for masked genomes
-    ambiguous_letters.append("X")
-
-    # default option where CDS sequence is read as it has been annotated
-    if readthrough == "both":
-        for x in range(0, len(in_seq), 3):
-            temp_codon = in_seq[x] + in_seq[x+1] + in_seq[x+2]
-            if any(letter in ambiguous_letters for letter in temp_codon):
-                amino = "X"
-                gaps = True
-            else:
-                amino = codon_dict[temp_codon]
-                out_seq += amino
-            if x == 0 and amino != "M":
-                start = "absent"
-                if "ATG" in in_seq:
-                    start = "late"
-            elif x == (len(in_seq) - 3) and amino != "*":
-                end_stop = False
-            if amino == "*" and x < (len(in_seq) - 3):
-                early_stop = True
-
-    # the protein will stop being read after the first
-    # stop codon, but the first ATG will not be searched for, i.e. the first
-    # codon is readthrough no matter what
-    elif readthrough == "start":
-        for x in range(0, len(in_seq), 3):
-            temp_codon = in_seq[x] + in_seq[x+1] + in_seq[x+2]
-            if any(letter in ambiguous_letters for letter in temp_codon):
-                amino = "X"
-                gaps = True
-            else:
-                amino = codon_dict[temp_codon]
-                out_seq += amino
-            if x == 0 and amino != "M":
-                start = "absent"
-                if "ATG" in in_seq:
-                    start = "late"
-            elif x == (len(in_seq) - 3) and amino != "*":
-                end_stop = False
-            if amino == "*" and x < (len(in_seq) - 3):
-                early_stop = True
-                break
-
-    # this begins reading from the first ATG till the end of the sequence
-    elif readthrough == "end":
-        index = in_seq.find("ATG")
-        if index == -1:
-            # ATG codon not found and hence output is empty, however end_stop
-            # and early_stop, or gaps are determined
-            out_seq = ""
-            for x in range(0, len(in_seq), 3):
-                temp_codon = in_seq[x] + in_seq[x+1] + in_seq[x+2]
-                if any(letter in ambiguous_letters for letter in temp_codon):
-                    amino = "X"
-                    gaps = True
-                if x == (len(in_seq) - 3) and amino != "*":
-                    end_stop = False
-                if amino == "*" and x < (len(in_seq) - 3):
-                    early_stop = True
-        else:
-            # Trim nucleotides preceding ATG codon
-            return in_seq[index:]
-
-    # longest orf is read as a protein, this is with readthrough == "none"
-    else:
-        orfs = find_ORFs(in_seq, must_have_stop=must_have_stop)
-        if len(orfs) > 0:
-            longest, coding_start, coding_end = longest_ORF(orfs)
-
-            for x in range(0, len(longest), 3):
-                temp_codon = longest[x] + longest[x+1] + longest[x+2]
-                if any(letter in ambiguous_letters for letter in temp_codon):
-                    amino = "X"
-                    gaps = True
-                else:
-                    amino = codon_dict[temp_codon]
-                    out_seq += amino
-                if x == 0 and amino != "M":
-                    start = "absent"
-                    if "ATG" in longest:
-                        start = "late"
-                elif x == (len(in_seq) - 3) and amino != "*":
-                    end_stop = False
-                if amino == "*" and x < (len(in_seq) - 3):
-                    early_stop = True
-                    break
-        else:
-            start = "absent"
-            end_stop = False
-            out_seq = ""
-
-    return start, end_stop, early_stop, nucleotide_surplus, gaps, out_seq, coding_start, coding_end
+    return out_seq, nucleotide_surplus, coding_start, coding_end
 
 def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:
     genes = sorted(genes_dict.values())

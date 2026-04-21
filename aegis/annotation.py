@@ -7,7 +7,7 @@ Module defining several genomic classes.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .genome import Genome
@@ -1259,6 +1259,24 @@ class Annotation():
                 earliest_start = None
                 latest_end = None
                 for t in g.transcripts.values():
+
+                    for c in t.CDSs.values():
+                        if hasattr(c, 'CDS_segments') and c.CDS_segments:
+                            seg_start = c.CDS_segments[0].start
+                            seg_end = c.CDS_segments[-1].end
+                            
+                            if c.start != seg_start:
+                                if not quiet:
+                                    print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
+                                c.start = seg_start
+                                self.sorted = False
+                                
+                            if c.end != seg_end:
+                                if not quiet:
+                                    print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
+                                c.end = seg_end
+                                self.sorted = False
+
                     if t.exons:
                         for c in t.CDSs.values():
                             if c.start < t.exons[0].start:
@@ -1342,13 +1360,48 @@ class Annotation():
                     t.clear_promoter()
         self.contains_promoters = False
 
-    def generate_proteins(self, readthrough:str="both"):
+    def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
-                        c.generate_protein(readthrough)
+                        c.generate_protein(mode=mode, quiet=quiet)
         self.contains_protein_sequences = True
+    
+    def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        if c.protein:
+
+                            if c.protein.start != c.CDS_segments[0].start or c.protein.end != c.CDS_segments[-1].end:
+                                new_CDS_segments = []
+                                
+                                for cs in c.CDS_segments: 
+
+                                    if cs.end < c.protein.start:
+                                        continue
+
+                                    elif cs.start > c.protein.end:
+                                        continue
+
+                                    else:
+                                        
+                                        if cs.start < c.protein.start:
+                                            cs.start = c.protein.start
+
+                                        if cs.end > c.protein.end:
+                                            cs.end = c.protein.end
+                                            
+                                        new_CDS_segments.append(cs)
+                                
+                                c.CDS_segments = new_CDS_segments
+
+                            c.start = c.CDS_segments[0].start
+                            c.end = c.CDS_segments[-1].end
+
+        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
 
     def clear_proteins(self):
         for genes in self.chrs.values():
@@ -1902,7 +1955,7 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1927,12 +1980,11 @@ class Annotation():
                     if t.coding and not override:
                         continue
                     t.generate_best_protein()
-                    t.generate_CDSs_based_on_ORF(low_memory)
                     t.update()
                     if t.coding_ratio < coding_ratio_threshold:
                         t.generate_best_protein(must_have_stop=False)
-                        t.generate_CDSs_based_on_ORF(low_memory)
                     t.update()
+                g.update()
 
         progress_bar.close()
         self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)
