@@ -3,12 +3,14 @@ Tests for aegis.genefunctions — pure utility functions.
 """
 
 import pytest
+from unittest.mock import patch, PropertyMock
 
 from pathlib import Path
 from aegis.utils.genefunctions import (
     reverse_complement,
     find_ORFs,
     choose_orf,
+    translate,
     trim_surplus
 )
 
@@ -355,123 +357,222 @@ class TestTrimSurplus:
 # translate
 # ============================================================
 
-# class TestTranslate:
-#     def test_translate_both_readthrough(self):
-#         # ATG AAA TAA -> M K *
-#         seq = "ATGAAATAA"
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
-#         assert start == "present"
-#         assert end_stop is True
-#         assert early_stop is False
-#         assert "M" in protein
-#         assert "*" in protein
+class TestTranslate:
+    """Test the translate() utility function."""
 
-#     def test_translate_no_start(self):
-#         # GGG AAA TAA -> no M
-#         seq = "GGGAAATAA"
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
-#         assert start == "absent"
+    def test_simple_orf(self):
+        # ATG AAA TAA = M K *
+        assert translate("ATGAAATAA") == "MK*"
 
-#     def test_translate_no_start_but_ATG_in_frame(self):
-#         # GGG ATG TAA -> M present
-#         seq = "GGGATGTAA"
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
-#         assert start == "late"
+    def test_no_start_codon(self):
+        # GGG AAA TAA = G K *
+        prot = translate("GGGAAATAA")
+        assert prot[0] != "M"
+        assert prot == "GK*"
 
-#     def test_translate_no_start_but_ATG_not_in_frame(self):
-#         # GGA TGA TAA -> no M
-#         seq = "GGATGATAA"
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
-#         assert start == "absent"
+    def test_late_start_in_frame(self):
+        # GGG ATG TAA = G M *
+        prot = translate("GGGATGTAA")
+        assert prot[0] != "M"
+        assert "M" in prot[1:] # ATG is in-frame but not first codon
 
-#     def test_translate_none_readthrough_with_orfs(self):
-#         # has an ORF inside
-#         seq = "GGGGATGAAATAAGGG"
-#         result = flexible_translate(seq, readthrough="none")
-#         # returns a tuple
-#         assert isinstance(result, tuple)
+    def test_atg_not_in_frame(self):
+        # GGA TGA TAA = G * * (the ATG straddles codons 1 and 2)
+        prot = translate("GGATGATAA")
+        assert "M" not in prot # no methionine at any codon boundary
 
-#     def test_translate_ambiguous_codons(self):
-#         # N in sequence signals ambiguity
-#         seq = "ATGNNATAA"
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
-#         assert gaps is True
+    def test_ambiguous_codons_produce_gap(self):
+        # N in sequence signals ambiguity
+        # ATG NNA TAA = M - * (NN + A can't resolve to one AA)
+        prot = translate("ATGNNATAA")
+        assert prot[0] == "M"
+        assert "-" in prot # ambiguous codon rendered as gap
+        assert prot[-1] == "*"
 
-#     def test_translate_end_with_atg(self):
-#         # GGG is discarded, ATG AAA TAA is translated.
-#         # Note: trim_surplus (orf_or_end mode) extracts the ORF "ATGAAATAA"
-#         # before flexible_translate looks for ATG, so idx == 0 and surplus
-#         # comes from whether the *original* was a non-multiple of 3.
-#         seq = "GGGATGAAATAA"  # 12 nt → multiple of 3 → trim_surplus surplus=False
-#         result = flexible_translate(seq, readthrough="end")
-#         # Must return a tuple (was a bug: used to return str)
-#         assert isinstance(result, tuple)
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = result
-#         assert start == "present"
-#         assert protein.startswith("M")
-#         assert end_stop is True
+    def test_longer_sequence(self):
+        # ATG AAA CCC GGG TTT AA = M K P G F
+        prot = translate("ATGAAACCCGGGTTTAA")
+        # 17 nt is NOT a multiple of 3, but translate just stops when bytes run out
+        assert len(prot) == 5
 
-#         # A sequence whose length is NOT a multiple of 3 should flag surplus
-#         seq2 = "GGGGATGAAATAA"  # 13 nt → surplus
-#         result2 = flexible_translate(seq2, readthrough="end")
-#         assert isinstance(result2, tuple)
-#         start2, end_stop2, early_stop2, surplus2, gaps2, protein2, cs2, ce2 = result2
-#         assert start2 == "present"
-#         assert protein2.startswith("M")
-#         assert surplus2 is True
 
-#     def test_translate_end_no_atg(self):
-#         # No ATG → empty protein
-#         seq = "GGGCCCAAA"
-#         result = flexible_translate(seq, readthrough="end")
-#         assert isinstance(result, tuple)
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = result
-#         assert start == "absent"
-#         assert protein == ""
+# ============================================================
+# translate + trim_surplus
+# ============================================================
 
-#     def test_translate_end_atg_at_start(self):
-#         # ATG at position 0 → no surplus from trimming
-#         seq = "ATGAAATAA"
-#         result = flexible_translate(seq, readthrough="end")
-#         assert isinstance(result, tuple)
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = result
-#         assert start == "present"
-#         assert protein.startswith("M")
+class TestTranslatePipeline:
+    """
+    Test trim_surplus -> translate.
+    """
 
-#     def test_translate_start_stops_at_first_stop(self):
-#         # ATG AAA TAA CCC GGG → should stop at TAA
-#         seq = "ATGAAATAACCCGGG"
-#         result = flexible_translate(seq, readthrough="start")
-#         assert isinstance(result, tuple)
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = result
-#         assert protein == "MK*"
-#         assert end_stop is True
-#         assert early_stop is False
+    def test_orf_or_end_extracts_orf(self):
+        # GGG ATG AAA TAA (12 nt, multiple of 3)
+        seq = "GGGATGAAATAA"
+        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
+        assert trimmed == "ATGAAATAA"
+        assert surplus is False
+        prot = translate(trimmed)
+        assert prot == "MK*"
 
-#     def test_translate_both_readthrough_reads_through_stop(self):
-#         # ATG AAA TAA CCC GGG (15 nt, multiple of 3).
-#         # trim_surplus(mode="orf_or_end") extracts the longest ORF "ATGAAATAA"
-#         # (trim is ≤6 nt), so the translated sequence is just "MK*" — the
-#         # internal stop becomes the terminal stop, not an early stop.
-#         # To test readthrough of stops we need a sequence where trim_surplus
-#         # cannot extract a shorter clean ORF (e.g. trim > max_nucleotide_trim).
-#         seq = "ATGAAATAACCCGGG"
-#         start, end_stop, early_stop, surplus, gaps, protein, cs, ce = flexible_translate(seq, readthrough="both")
-#         # trim_surplus already tightened the sequence to "ATGAAATAA",
-#         # so early_stop is False and end_stop is True.
-#         assert start == "present"
-#         assert end_stop is True
-#         assert early_stop is False
+    def test_orf_or_end_with_surplus(self):
+        # 13 nt = surplus flag should be True
+        seq = "GGGGATGAAATAA"
+        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
+        assert surplus is True
+        prot = translate(trimmed)
+        assert prot.startswith("M")
+        assert prot.endswith("*")
 
-#         # Use a sequence that trim_surplus cannot tighten (no clean ORF found
-#         # within max_nucleotide_trim=6): 18 nt with an internal stop at codon 2.
-#         # "GGG ATG TAA CCC GGG TTT" — trim_surplus finds ORF "ATGTAA" (6nt),
-#         # trim = 18-6 = 12 > 6 → falls back to 3'-trimming → full 18nt sequence.
-#         # Mode "both" reads all 6 codons, encountering TAA at position 2.
-#         seq2 = "GGGATGTAACCCGGG"  # 15 nt, trim_surplus trims to 15 (ORF=ATGTAA 6nt, diff=9>6 → fallback)
-#         start2, _, early_stop2, _, _, protein2, _, _ = flexible_translate(seq2, readthrough="both")
-#         assert early_stop2 is True
-#         assert len(protein2) > 2
+    def test_end_mode_trims_from_3prime(self):
+        # 10 nt = end-trim removes 1 nt
+        seq = "ATGAAATAAG"
+        trimmed, surplus, _, _ = trim_surplus(seq, mode="end")
+        assert len(trimmed) % 3 == 0
+        assert surplus is True
+        prot = translate(trimmed)
+        assert prot == "MK*"
+
+    def test_no_atg_in_sequence(self):
+        # No ATG = orf mode yields no ORF, fallback to end-trimming
+        seq = "GGGCCCAAA"
+        trimmed, surplus, _, _ = trim_surplus(seq, mode="orf_or_end")
+        prot = translate(trimmed)
+        assert "M" not in prot
+        assert prot == "GPK"
+
+    def test_internal_stop(self):
+        # ATG AAA TAA CCC GGG (15 nt)
+        seq = "ATGAAATAACCCGGG"
+        trimmed, _, _, _ = trim_surplus(seq, mode="orf_or_end")
+        assert trimmed == "ATGAAATAA"
+        prot = translate(trimmed)
+        assert prot == "MK*"
+
+    def test_internal_stop_with_large_trim_fallback(self):
+        # "GGG ATG TAA CCC GGG" = 15 nt, trim difference > 6 nt so fallback to end-trimming
+        seq = "GGGATGTAACCCGGG"
+        trimmed, _, _, _ = trim_surplus(seq, mode="orf_or_end")
+        assert len(trimmed) == 15
+        prot = translate(trimmed)
+        assert "*" in prot[:-1]
+
+    def test_start_mode_trims_from_5prime(self):
+        # "AATGTAA" = start-trim removes 1 nt from 5' to get mult-of-3
+        seq = "AATGTAA"
+        trimmed, surplus, _, _ = trim_surplus(seq, mode="start")
+        assert len(trimmed) % 3 == 0
+        assert surplus is True
+        assert trimmed.startswith("ATG")
+
+
+# ============================================================
+# CDS.generate_protein
+# ============================================================
+
+class TestGenerateProtein:
+    """
+    Test CDS.generate_protein() and resulting Protein properties.
+
+    We use unittest.mock to patch the CDS.seq property so it returns
+    a known nucleotide string without needing a genome loaded.
+    """
+
+    @staticmethod
+    def _make_cds(make_CDS_segment, make_CDS, seq_len: int, strand: str = "+"):
+        """Build a CDS spanning *seq_len* nucleotides."""
+        seg = make_CDS_segment("seg1", start=1000, end=1000 + seq_len - 1, strand=strand)
+        return make_CDS(segments=[seg], strand=strand)
+
+    def test_standard_protein(self, make_CDS_segment, make_CDS):
+        # ATG AAA TAA  ->  M K *
+        seq = "ATGAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p.seq == "MK*"
+        assert p.ATG_start is True
+        assert p.end_stop is True
+        assert p.early_stop is False
+        assert p.gaps is False
+        assert p.partial is False
+        assert p.truncated is False
+
+    def test_no_start_codon(self, make_CDS_segment, make_CDS):
+        # GGG AAA TAA = G K *
+        seq = "GGGAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p.ATG_start is False
+        assert p.end_stop is True
+        assert p.partial is True # no start
+
+    def test_late_start_in_frame(self, make_CDS_segment, make_CDS):
+        # GGG ATG TAA = G M *
+        seq = "GGGATGTAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p.ATG_start is False # first codon is not M
+        assert p.ATG_late is True # M exists later in frame
+        assert p.partial is True # no start
+
+    def test_atg_not_in_frame(self, make_CDS_segment, make_CDS):
+        # GGA TGA TAA = G * * (ATG straddles codon boundary)
+        seq = "GGATGATAA" 
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p.ATG_start is False
+        assert p.ATG_late is False # no M anywhere in protein
+        assert p.partial is True
+
+    def test_ambiguous_codons(self, make_CDS_segment, make_CDS):
+        # ATG NNA TAA = M - *
+        seq = "ATGNNATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p.gaps is True
+        assert p.partial is True # gaps = partial
+
+    def test_orf_extraction(self, make_CDS_segment, make_CDS):
+        # GGG ATG AAA TAA (12 nt, ORF trim < 6)
+        seq = "GGGATGAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="orf_or_end")
+        p = cds.protein
+        assert p.seq == "MK*"
+        assert p.ATG_start is True
+        assert p.end_stop is True
+        assert p.early_stop is False
+
+    def test_early_stop(self, make_CDS_segment, make_CDS):
+        # ATG TAA AAA TAA = M * K *
+        seq = "ATGTAAAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p.early_stop is True
+        assert p.end_stop is True
+        assert p.truncated is True
+
+    def test_surplus_flagged(self, make_CDS_segment, make_CDS):
+        seq = "GGGGATGAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="orf_or_end")
+        p = cds.protein
+        assert p.nucleotide_surplus is True
+        assert p.seq.startswith("M")
+        assert p.seq.endswith("*")
 
 
 # ============================================================
