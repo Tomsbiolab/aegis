@@ -7,7 +7,7 @@ Module defining several genomic classes.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .genome import Genome
@@ -1272,12 +1272,12 @@ class Annotation():
                     t.clear_promoter()
         self.contains_promoters = False
 
-    def generate_proteins(self, readthrough:str="both"):
+    def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
-                        c.generate_protein(readthrough)
+                        c.generate_protein(mode=mode, quiet=quiet)
         self.contains_protein_sequences = True
     
     def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):
@@ -1867,7 +1867,7 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, override:bool=True, low_memory:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1892,12 +1892,11 @@ class Annotation():
                     if t.coding and not override:
                         continue
                     t.generate_best_protein()
-                    t.generate_CDSs_based_on_ORF(low_memory)
                     t.update()
                     if t.coding_ratio < coding_ratio_threshold:
                         t.generate_best_protein(must_have_stop=False)
-                        t.generate_CDSs_based_on_ORF(low_memory)
                     t.update()
+                g.update()
 
         progress_bar.close()
         self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)

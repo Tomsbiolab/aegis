@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from ..annotation import Annotation
     from ..gene import Gene
+    from ..subfeatures import Feature
 
 import pandas as pd
 import time
@@ -78,6 +79,45 @@ def translate(seq: str) -> str:
     it = iter(seq.encode('ascii'))
 
     return "".join(map(byte_dict.__getitem__, zip(it, it, it)))
+
+def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
+
+    working_segments = segments if strand == "+" else reversed(segments)
+    
+    output_segments = []
+    current_offset = 0
+    
+    for seg in working_segments:
+        if current_offset > rel_end:
+            break
+            
+        seg_len = seg.end - seg.start + 1
+        
+        seg_rel_start = current_offset
+        seg_rel_end = current_offset + seg_len - 1
+        
+        overlap_start = max(rel_start, seg_rel_start)
+        overlap_end = min(rel_end, seg_rel_end)
+        
+        if overlap_start <= overlap_end:
+            dist_5p = overlap_start - seg_rel_start
+            overlap_len = overlap_end - overlap_start + 1
+            
+            if strand == "+":
+                g_start = seg.start + dist_5p
+                g_end = g_start + overlap_len - 1
+            else:
+                g_end = seg.end - dist_5p
+                g_start = g_end - overlap_len + 1
+            
+            output_segments.append((int(g_start), int(g_end)))
+            
+        current_offset += seg_len
+
+    if strand == "-":
+        output_segments.reverse()
+
+    return output_segments
 
 def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool = False, min_codon_len: int = 2, start_codon: str = "ATG", stop_codons=["TAA", "TAG", "TGA"]) -> list[tuple[str, int, int]]:
     
@@ -201,110 +241,6 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
         raise ValueError(f"Invalid mode: {mode}")
 
     return out_seq, nucleotide_surplus, coding_start, coding_end
-
-def flexible_translate(in_seq: str, readthrough_stop: bool = True, must_have_stop: bool = True, trim_mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = 6, orf_choice_mode: Literal["longest", "earliest"]="longest") -> tuple:
-    """
-    Analyses a nucleotide sequence and returns protein quality information.
-
-    Uses translate() and find_ORFs() internally.
-
-    Parameters
-    ----------
-    in_seq : str
-        Input nucleotide sequence (uppercase).
-    readthrough : str
-        Translation strategy:
-        - "both"  : Translates the full sequence as annotated (readthrough stops,
-                    no ATG required). Sequence is first aligned to a multiple of 3
-                    via trim_surplus.
-        - "start" : Same as "both" but stops at the first stop codon.
-        - "end"   : Trims to the first ATG and translates to the end of the
-                    sequence (readthrough stops).
-        - "none"  : Finds the longest ORF with find_ORFs and translates it.
-    must_have_stop : bool
-        Only used in "none" mode. If True, ORFs must contain a stop codon.
-
-    Returns
-    -------
-    tuple : (start, end_stop, early_stop, nucleotide_surplus, gaps,
-             protein_seq, coding_start, coding_end)
-        - start           : "present" | "late" | "absent"
-        - end_stop        : bool — protein ends with a stop codon
-        - early_stop      : bool — internal stop codon present
-        - nucleotide_surplus : bool — sequence length was not a multiple of 3
-        - gaps            : bool — ambiguous/masked bases (-) present
-        - protein_seq     : str — translated amino acid sequence
-        - coding_start    : int | False — ORF start offset in in_seq ("none" only)
-        - coding_end      : int | False — ORF end offset in in_seq ("none" only)
-    """
-
-    in_seq = in_seq.upper()
-    coding_start: int | bool = False
-    coding_end: int | bool = False
-
-    # ------------------------------------------------------------------ #
-    # 1. Determine the sequence to translate and nucleotide_surplus      #
-    # ------------------------------------------------------------------ #
-
-    in_seq, nucleotide_surplus = trim_surplus(in_seq, mode=trim_mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, readthrough_stop=readthrough_stop)
-
-    
-
-
-
-    if readthrough == "end":
-        idx = in_seq.find("ATG")
-        if idx == -1:
-            # No ATG: return empty protein with appropriate flags
-            return "absent", False, False, nucleotide_surplus, False, "", False, False
-        # Trim to the first ATG; mark surplus if we discarded leading bases
-        if idx > 0:
-            nucleotide_surplus = True
-        in_seq = in_seq[idx:]
-
-    if readthrough == "none":
-        orfs = find_ORFs(in_seq, must_have_stop=must_have_stop)
-        if not orfs:
-            return "absent", False, False, nucleotide_surplus, False, "", False, False
-        seq_to_translate, coding_start, coding_end = choose_orf(orfs, mode=orf_choice_mode)
-    else:
-        seq_to_translate = in_seq
-
-    # ------------------------------------------------------------------ #
-    # 2. Translate with the fast translate()                             #
-    # ------------------------------------------------------------------ #
-    protein = translate(seq_to_translate)
-
-    # ------------------------------------------------------------------ #
-    # 3. For "start" and "end" modes, stop at the first stop codon       #
-    # ------------------------------------------------------------------ #
-    if readthrough in ("start", "end"):
-        stop_idx = protein.find("*")
-        if stop_idx != -1:
-            protein = protein[:stop_idx + 1]
-
-    # ------------------------------------------------------------------ #
-    # 4. Derive quality flags                                            #
-    # ------------------------------------------------------------------ #
-    if not protein:
-        return "absent", False, False, nucleotide_surplus, False, "", coding_start, coding_end
-
-    gaps = "-" in protein
-
-    first_aa = protein[0]
-    if first_aa == "M":
-        start = "present"
-    elif any(seq_to_translate[i:i+3] == "ATG" for i in range(0, len(seq_to_translate), 3)):
-        start = "late"
-    else:
-        start = "absent"
-
-    end_stop = protein[-1] == "*"
-
-    # Early stop = a "*" anywhere before the last position
-    early_stop = "*" in protein[:-1]
-
-    return start, end_stop, early_stop, nucleotide_surplus, gaps, protein, coding_start, coding_end
 
 def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:
     genes = sorted(genes_dict.values())

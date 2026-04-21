@@ -6,40 +6,42 @@ if TYPE_CHECKING:
 
 import copy
 
-from .utils.genefunctions import translate, trim_surplus
 from .feature import Feature
 
 class Protein():
 
-    __slots__ = ("id", "ch", "summary_tag", "readthrough", "_blast_hits", "start", "end_stop", "early_stop", "nucleotide_surplus", "gaps", "seq", "coding_start", "coding_end", "partial", "truncated", "size")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "nucleotide_surplus", "seq", "partial", "truncated", "start", "end")
 
     _blast_hits: list[BlastHit] | None
-    size: int
+    start: int
+    end: int
+    ch: str
+    readthrough: str
+    partial: bool
+    truncated: bool
+    seq: str
+    nucleotide_surplus: bool
 
-    def __init__(self, prot_id:str, nucleotides:str, chrom:str, readthrough:str="both"):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str):
         self.id = prot_id
         self.ch = chrom
-        self.summary_tag = ""
+        self.start = start
+        self.end = end
         self.readthrough = readthrough
         self._blast_hits = None
-        # readthrough can be start, end, both or none 
 
-        
-        self.start, self.end_stop, self.early_stop, self.nucleotide_surplus, self.gaps, self.seq, self.coding_start, self.coding_end = flexible_translate(nucleotides, readthrough=readthrough)
-        if self.start == "late" or self.start == "absent" or self.end_stop == False or self.nucleotide_surplus or self.gaps:
+        self.seq = sequence
+        self.nucleotide_surplus = nucleotide_surplus
+
+        if self.ATG_start == False or self.end_stop == False or self.nucleotide_surplus or self.gaps:
             self.partial = True
-            self.summary_tag += "partial"
         else:
             self.partial = False
+
         if self.early_stop and self.end_stop:
             self.truncated = True
-            if self.summary_tag == "":
-                self.summary_tag += "truncated"
-            else:
-                self.summary_tag += "_truncated"
         else:
             self.truncated = False
-        self.size = len(self.seq)
 
     def copy(self):
         return copy.deepcopy(self)
@@ -92,6 +94,42 @@ class Protein():
         if self._blast_hits is None:
             self._blast_hits = []
         return self._blast_hits
+
+    @property
+    def gaps(self):
+        if "-" in self.seq:
+            return True
+        return False
+    
+    @property
+    def size(self) -> int:
+        return (self.end - self.start) + 1
+    
+    @property
+    def ATG_start(self) -> bool:
+        return self.seq[0] == "M"
+
+    @property
+    def end_stop(self) -> bool:
+        return self.seq[-1] == "*"
+
+    @property
+    def early_stop(self) -> bool:
+        return "*" in self.seq[:-1]
+
+    @property
+    def ATG_late(self) -> bool:
+        return "M" in self.seq[1:]
+
+    @property
+    def summary_tag(self) -> str:
+        summary_tag = []
+        if self.partial:
+            summary_tag.append("partial")
+        if self.truncated:
+            summary_tag.append("truncated")
+        return "_".join(summary_tag)
+
 
 class Promoter(Feature):
     __slots__ = ('type',)

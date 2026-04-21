@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from ..annotation import Annotation
     from ..genome import Genome
+    from ..subfeatures import CDS
 
 import time
 import os
@@ -87,20 +88,9 @@ class AnnotationExport:
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, readthrough:str = "both", use_name_not_id: bool = False, custom_filename: str=""):
-        """
-        Main proteins means only proteins obtained from the main CDSs of the
-        main transcripts. This equates to one protein per gene.
-
-        Verbose will include protein tag details and readthrough options, strand, chromosome, and coordinates.
-
-        Proteins will be exported into fastas with their protein ids unless 
-        CDS, transcript or gene has been selected as used_id. To avoid duplicate
-        equal entries, when choosing gene or transcript only main proteins will
-        be able to be output.
-
-        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
-        """
+    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, custom_filename: str=""):
+        
+        final_cs: list[CDS]
 
         if custom_path:
             output_path = Path(custom_path)
@@ -119,7 +109,7 @@ class AnnotationExport:
         output_file += "_proteins"
 
         if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(readthrough=readthrough)
+            self._annot.generate_proteins(mode=mode)
 
         if unique_proteins_per_gene:
             only_main = False
@@ -218,11 +208,11 @@ class AnnotationExport:
                         if c.protein.summary_tag and verbose:
                             f_out.write(f"|{c.protein.summary_tag}")
                         if verbose:
-                            f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.ch}|{c.start}:{c.end}")
+                            f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
 
                         f_out.write(f"\n{c.protein.seq}\n")
 
-    def unique_proteins(self, custom_path: str = "", quiet: bool = False, readthrough:str = "both"):
+    def unique_proteins(self, custom_path: str = "", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end"):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -243,7 +233,7 @@ class AnnotationExport:
         output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_proteins.fasta"
 
         if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(readthrough=readthrough)
+            self._annot.generate_proteins(mode=mode)
 
         all_protein_seqs = {}
         self._annot.all_protein_ids = {}

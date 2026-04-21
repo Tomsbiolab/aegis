@@ -3,16 +3,14 @@ from __future__ import annotations
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
-from .utils.genefunctions import find_ORFs, longest_ORF, flexible_translate
+from .utils.genefunctions import reverse_complement
 
 class Transcript(Feature):
 
     __slots__ = (
         'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'main',
         'miRNAs', 'renamed_exons', 'renamed_utrs', 'polycistronic',
-        'promoter', 'protein_start', 'protein_end_stop',
-        'protein_early_stop', 'protein_nucleotide_surplus', 'protein_gaps',
-        'protein_seq', 'coding_start', 'coding_end', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
+        'promoter', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
     )
 
     CDSs: dict[str, CDS]
@@ -302,122 +300,23 @@ class Transcript(Feature):
 
             self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, [self.id])
 
-    def generate_best_protein(self, must_have_stop:bool=True):
-        if self.strand == "+" or self.strand == "-":
-            self.protein_start, self.protein_end_stop, self.protein_early_stop, self.protein_nucleotide_surplus, self.protein_gaps, self.protein_seq, self.coding_start, self.coding_end = flexible_translate(self.seq, readthrough="none", must_have_stop=must_have_stop) # type: ignore
-        elif self.strand == ".":
-            fw, rv = self.seqs #type: ignore
-            plus_orfs = find_ORFs(fw, must_have_stop)
-            neg_orfs = find_ORFs(rv, must_have_stop)
-            plus_long_orf, _, _ = longest_ORF(plus_orfs)
-            neg_long_orf, _, _ = longest_ORF(neg_orfs)
+    def generate_best_protein(self, must_have_stop:bool=True, readthrough_stop:bool=False, quiet:bool=True):
 
-            if plus_long_orf != "" or neg_long_orf != "":
-                if len(plus_long_orf) >= len(neg_long_orf):
-                    self.strand = "+"
-                    for e in self.exons:
-                        e.strand = "+"
-                    self.generate_best_protein(must_have_stop=must_have_stop)
+        self.temp_CDSs = []
 
-                else:
-                    self.strand = "-"
-                    for e in self.exons:
-                        e.strand = "-"
-                    self.generate_best_protein(must_have_stop=must_have_stop)
+        for e in self.exons:
+            self.temp_CDSs.append(Feature(feature_id=f"{self.id}_CDS1", ch=self.ch, source=self.source, feature="CDS", strand=self.strand, start=e.start, end=e.end, score=self.score, parents=[self.id]))
 
-    def generate_CDSs_based_on_ORF(self, low_memory:bool=True):
-        if self.temp_CDSs is None:
-            self.temp_CDSs = []
-        if self.temp_UTRs is None:
-            self.temp_UTRs = []
-        if self.temp_CDSs == []:
-            if self.protein_seq != "":
+        self.generate_CDSs(quiet=quiet)
 
-                parents = [self.id]
-                start_exon = ""
-                end_exon = ""
-                surplus_start = ""
-                surplus_end = ""
-                if self.strand == "+":
-                    temp_size = 0
-                    if type(self.coding_start) == int and type(self.coding_end) == int:
-                        surplus_start = 0
-                        surplus_end = 0
-                        start_exon = 0
-                        end_exon = 0
-                        for index, e in enumerate(self.exons):
-                            temp_size += e.size
-                            if temp_size > self.coding_start:
-                                surplus_start =  self.coding_start - (temp_size-e.size)
-                                start_exon = index
-                                break
-                        temp_size = 0
-                        for index, e in enumerate(self.exons):
-                            temp_size += e.size
-                            if temp_size > self.coding_end:
-                                surplus_end = self.coding_end - (temp_size-e.size)
-                                end_exon = index
-                                break
-                        
-                        for index, e in enumerate(self.exons):
+        self.CDSs[f"{self.id}_CDS1"].generate_protein(mode="orf", must_have_stop=must_have_stop, readthrough_stop=readthrough_stop, correct_CDS=True, quiet=quiet)
 
-                            if (index == start_exon) and (index == end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start+surplus_start, e.start+surplus_end,
-                                                            e.score, parents))
-                            elif index == start_exon:
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start+surplus_start, e.end, e.score, parents))
-                            elif (index > start_exon) and (index < end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, parents))
-                            elif index == end_exon:
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start, e.start+surplus_end, e.score, parents))
+        self.strand = self.CDSs[f"{self.id}_CDS1"].strand
 
-                elif self.strand == "-":
-                    temp_size = 0
-                    if type(self.coding_start) == int and type(self.coding_end) == int:
-                        surplus_start = 0
-                        surplus_end = 0
-                        start_exon = 0
-                        end_exon = 0
-                        for index, e in enumerate(reversed(self.exons)):
-                            temp_size += e.size
-                            if temp_size > self.coding_start:
-                                surplus_start = self.coding_start - (temp_size-e.size)
-                                start_exon = index
-                                break
-                        temp_size = 0
-                        for index, e in enumerate(reversed(self.exons)):
-                            temp_size += e.size
-                            if temp_size > self.coding_end:
-                                surplus_end = self.coding_end - (temp_size-e.size)
-                                end_exon = index
-                                break
-                        
-                        for index, e in enumerate(reversed(self.exons)):
-
-                            if (index == start_exon) and (index == end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.end-surplus_end, e.end-surplus_start,
-                                                            e.score, parents))
-                            elif index == start_exon:
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.start, e.end-surplus_start, e.score, parents))
-                            elif (index > start_exon) and (index < end_exon):
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, e.start, e.end, e.score, parents))
-                            elif index == end_exon:
-                                self.temp_CDSs.append(Feature(f"{self.id}_CDS1", e.ch, e.source, "CDS", e.strand, 
-                                                            e.end-surplus_end, e.end, e.score, parents))
-
-                elif self.strand == ".":
-                    pass
-
-                self.generate_CDSs()
-                if low_memory:
-                    self.clear_sequence()
-        else:
-            print(f"CDS segments exist already for {self.id}")
+        for e in self.exons:
+            e.strand = self.strand
+        
+        self.generate_CDSs(quiet=quiet)
 
     def almost_equal(self, other:Transcript):
         almost_equal = True
@@ -704,62 +603,64 @@ class Transcript(Feature):
                         if i.end < c.end and i.start > c.start:
                             i.intra_coding = True
 
-    def clear_sequence(self):
-        self.protein_seq = ""
-
     def clear_promoter(self):
         self.promoter = None
 
     @property
-    def seq(self) -> str|None:
+    def seq(self) -> str:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             transcript_seq = ""
-            if self.strand == "+":
-                for exon in self.exons:
-                    transcript_seq += exon.seq # type: ignore
-            elif self.strand == "-":
+            if self.strand == "-":
                 for exon in reversed(self.exons):
-                    transcript_seq += exon.seq # type: ignore
+                    transcript_seq += exon.seq
+            else:
+                for exon in self.exons:
+                    transcript_seq += exon.seq
+
             return transcript_seq
 
     @property
-    def hard_seq(self) -> str|None:
+    def hard_seq(self) -> str:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             transcript_seq = ""
-            if self.strand == "+":
-                for exon in self.exons:
-                    transcript_seq += exon.hard_seq # type: ignore
-            elif self.strand == "-":
+            if self.strand == "-":
                 for exon in reversed(self.exons):
-                    transcript_seq += exon.hard_seq # type: ignore
+                    transcript_seq += exon.hard_seq
+            else:
+                for exon in self.exons:
+                    transcript_seq += exon.hard_seq
             return transcript_seq
 
     @property
-    def seqs(self) -> list[str]|None:
+    def seqs(self) -> list[str]:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             transcript_seqs = ["", ""]
             for exon in self.exons:
-                fw, rv = exon.seqs # type: ignore
-                transcript_seqs[0] += fw
-                transcript_seqs[1] += rv
+                transcript_seqs[0] += exon.seq
+
+            for exon in reversed(self.exons):
+                transcript_seqs[1] += reverse_complement(exon.seq)
+
             return transcript_seqs
 
     @property
-    def hard_seqs(self) -> list[str]|None:
+    def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             transcript_seqs = ["", ""]
             for exon in self.exons:
-                fw, rv = exon.hard_seqs # type: ignore
-                transcript_seqs[0] += fw
-                transcript_seqs[1] += rv
+                transcript_seqs[0] += exon.hard_seq
+
+            for exon in reversed(self.exons):
+                transcript_seqs[1] += reverse_complement(exon.hard_seq)
+
             return transcript_seqs
     
     @property

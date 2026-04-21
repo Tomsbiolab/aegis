@@ -358,27 +358,27 @@ class Feature():
         return self._quality
 
     @property
-    def seq(self) -> str|None:
+    def seq(self) -> str:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            if self.strand == "+":
-                return self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
-            elif self.strand == "-":
+            if self.strand == "-":
                 return reverse_complement(self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+            else:
+                return self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
 
     @property
-    def hard_seq(self) -> str|None:
+    def hard_seq(self) -> str:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            if self.strand == "+":
-                return self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
-            elif self.strand == "-":
+            if self.strand == "-":
                 return reverse_complement(self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+            else:
+                return self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
 
     @property
-    def seqs(self) -> list[str]|None:
+    def seqs(self) -> list[str]:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
@@ -386,7 +386,7 @@ class Feature():
             return [raw, reverse_complement(raw)]
 
     @property
-    def hard_seqs(self) -> list[str]|None:
+    def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:

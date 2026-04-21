@@ -8,6 +8,8 @@ if TYPE_CHECKING:
     from .subfeatures import CDS
     from .hits import BlastHit
 
+import copy
+
 from .utils.misc import count_occurrences
 
 class FeatureAttributes():
@@ -35,6 +37,9 @@ class FeatureAttributes():
             if getattr(self, slot) != getattr(other, slot):
                 return False
         return True
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 class GeneSynteny():
     __slots__ = ('previous', 'next', 'order', 'old_previous', 'old_next', 'old_order', 'liftover_conserved')
