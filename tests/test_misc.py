@@ -173,7 +173,7 @@ class TestFindORFs:
     def test_orfs(self):
         # ATG + 6 codons + TAA  = 24 nt
         seq = "AGATATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGA"
-        orfs = find_ORFs(seq, must_have_stop=True, readthrough_stop=False)
+        orfs = find_ORFs(seq, must_have_stop=True, tolerated_stops=0)
         assert len(orfs) == 1
         # the ORF should start with ATG and end with a stop codon
         orf_seq = orfs[0][0]
@@ -183,32 +183,19 @@ class TestFindORFs:
         assert orfs[0][2] == 27
         assert orf_seq == "ATGAAACCCGGGTTGATTAACTAA"
 
-        orfs = find_ORFs(seq, must_have_stop=True, readthrough_stop=True)
-        assert len(orfs) == 2
-        # the ORF should start with ATG and end with a stop codon
-        orf_seq = orfs[0][0]
-        assert orf_seq.startswith("ATG")
-        assert orf_seq[-3:] == "TAA"
-        assert orfs[0][1] == 4
-        assert orfs[0][2] == 27
-        assert orf_seq == "ATGAAACCCGGGTTGATTAACTAA"
+        orfs = find_ORFs(seq, must_have_stop=True, tolerated_stops=float("inf"))
+        assert len(orfs) == 1
 
-        orf_seq = orfs[1][0]
+        # the longest ORF fulfilling the criteria is found
+        orf_seq = orfs[0][0]
         assert orf_seq.startswith("ATG")
         assert orf_seq[-3:] == "TAG"
-        assert orfs[1][1] == 4
-        assert orfs[1][2] == 36
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 36
         assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAG"
 
-        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=False)
-        assert len(orfs) == 7
-        
-        orf_seq = orfs[0][0]
-        assert orf_seq.startswith("ATG")
-        assert orf_seq[-3:] == "AAA"
-        assert orfs[0][1] == 4
-        assert orfs[0][2] == 9
-        assert orf_seq == "ATGAAA"
+        orfs = find_ORFs(seq, must_have_stop=False, tolerated_stops=0)
+        assert len(orfs) == 1
 
         orf_seq = orfs[-1][0]
         assert orf_seq.startswith("ATG")
@@ -217,51 +204,32 @@ class TestFindORFs:
         assert orfs[-1][2] == 27
         assert orf_seq == "ATGAAACCCGGGTTGATTAACTAA"
 
-        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=True)
-        assert len(orfs) == 11
+        orfs = find_ORFs(seq, must_have_stop=False, tolerated_stops=float("inf"))
+        assert len(orfs) == 1
         
         orf_seq = orfs[0][0]
         assert orf_seq.startswith("ATG")
-        assert orf_seq[-3:] == "AAA"
-        assert orfs[0][1] == 4
-        assert orfs[0][2] == 9
-        assert orf_seq == "ATGAAA"
-
-        orf_seq = orfs[-1][0]
-        assert orf_seq.startswith("ATG")
         assert orf_seq[-3:] == "AAG"
-        assert orfs[-1][1] == 4
-        assert orfs[-1][2] == 39
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 39
         assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAG"
 
-        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=False, min_codon_len=1)
-        assert len(orfs) == 8
-        
+        orfs = find_ORFs(seq, must_have_stop=False, tolerated_stops=float("inf"))
         orf_seq = orfs[0][0]
         assert orf_seq.startswith("ATG")
-        assert orf_seq[-3:] == "ATG"
-        assert orfs[0][1] == 4
-        assert orfs[0][2] == 6
-        assert orf_seq == "ATG"
-
-        seq = "AGATATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGAA"
-
-        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=True)
-        orf_seq = orfs[-1][0]
-        assert orf_seq.startswith("ATG")
         assert orf_seq[-3:] == "AAG"
-        assert orfs[-1][1] == 4
-        assert orfs[-1][2] == 39
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 39
         assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAG"
 
         seq = "AGATATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGAAA"
 
-        orfs = find_ORFs(seq, must_have_stop=False, readthrough_stop=True)
-        orf_seq = orfs[-1][0]
+        orfs = find_ORFs(seq, must_have_stop=False, tolerated_stops=float("inf"))
+        orf_seq = orfs[0][0]
         assert orf_seq.startswith("ATG")
         assert orf_seq[-3:] == "AAA"
-        assert orfs[-1][1] == 4
-        assert orfs[-1][2] == 42
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 42
         assert orf_seq == "ATGAAACCCGGGTTGATTAACTAAAAAGATTAGAAGAAA"
 
     def test_no_start_codon(self):

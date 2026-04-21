@@ -1955,7 +1955,7 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, quiet:bool=False):
+    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1979,12 +1979,19 @@ class Annotation():
                 for t in g.transcripts.values():
                     if t.coding and not override:
                         continue
-                    t.generate_best_protein()
-                    t.update()
+
+                    t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len, quiet=quiet)
+                    t.update(quiet=quiet)
+
                     if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(must_have_stop=False)
-                    t.update()
-                g.update()
+                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, tolerated_stops=1, min_codon_len=min_codon_len, quiet=quiet)
+                    t.update(quiet=quiet)
+
+                    if t.coding_ratio < coding_ratio_threshold:
+                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet)
+                    t.update(quiet=quiet)
+
+                g.update(quiet=quiet)
 
         progress_bar.close()
         self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)

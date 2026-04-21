@@ -210,12 +210,12 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, readthrough_stop: bool = True, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, correct_CDS:bool=False, quiet:bool=True):
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):
 
         if self.strand == ".":
             seq_fw, seq_rv = self.seqs
-            fw_orf = choose_orf(find_ORFs(seq_fw), orf_choice_mode)
-            rv_orf = choose_orf(find_ORFs(seq_rv), orf_choice_mode)
+            fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
+            rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
 
             if len(fw_orf[0]) >= len(rv_orf[0]):
                 self.strand = "+"
@@ -226,7 +226,7 @@ class CDS(Feature):
                 for cs in self.CDS_segments:
                     cs.strand = "-"
 
-        coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, readthrough_stop=readthrough_stop)
+        coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
 
         if relative_coding_end != 0:
 
