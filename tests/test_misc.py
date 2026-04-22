@@ -279,44 +279,44 @@ class TestTrimSurplus:
     def test_surplus_trimmed(self):
         seq = "ATGAAATAAG"  # 10 nt, surplus = 1
         out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is True
+        assert surplus is False
         assert len(out) % 3 == 0
     
     def test_surplus_other(self):
 
         seq = "AGGAGATGTAAGATGAT"
-        out, surplus, _, _ = trim_surplus(seq)
+        out, surplus, _, _ = trim_surplus(seq, max_nucleotide_trim=6)
         assert surplus is True
         assert len(out) % 3 == 0
         assert out == "AGGAGATGTAAGATG"
 
         seq = "AAATGTAA"
         out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is True
+        assert surplus is False
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
-        seq = "AATGTAA"
+        seq = "AATGTAA" 
         out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is True
+        assert surplus is False
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAATGTAAAA"
         out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is True
+        assert surplus is False
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAATGTAAAAA"
         out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is True
+        assert surplus is False
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAAATGTAAAA"
         out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is True
+        assert surplus is False
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
@@ -383,10 +383,10 @@ class TestTranslatePipeline:
         assert prot == "MK*"
 
     def test_orf_or_end_with_surplus(self):
-        # 13 nt = surplus flag should be True
+        # 13 nt = surplus flag should be False
         seq = "GGGGATGAAATAA"
         trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
-        assert surplus is True
+        assert surplus is False
         prot = translate(trimmed)
         assert prot.startswith("M")
         assert prot.endswith("*")
@@ -419,7 +419,7 @@ class TestTranslatePipeline:
     def test_internal_stop_with_large_trim_fallback(self):
         # "GGG ATG TAA CCC GGG" = 15 nt, trim difference > 6 nt so fallback to end-trimming
         seq = "GGGATGTAACCCGGG"
-        trimmed, _, _, _ = trim_surplus(seq, mode="orf_or_end")
+        trimmed, _, _, _ = trim_surplus(seq, mode="orf_or_end", max_nucleotide_trim=6)
         assert len(trimmed) == 15
         prot = translate(trimmed)
         assert "*" in prot[:-1]
@@ -510,7 +510,7 @@ class TestGenerateProtein:
         assert p.partial is True # gaps = partial
 
     def test_orf_extraction(self, make_CDS_segment, make_CDS):
-        # GGG ATG AAA TAA (12 nt, ORF trim < 6)
+        # GGG ATG AAA TAA (12 nt)
         seq = "GGGATGAAATAA"
         cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
         with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
@@ -532,13 +532,13 @@ class TestGenerateProtein:
         assert p.end_stop is True
         assert p.truncated is True
 
-    def test_surplus_flagged(self, make_CDS_segment, make_CDS):
+    def test_no_surplus_flagged(self, make_CDS_segment, make_CDS):
         seq = "GGGGATGAAATAA"
         cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
         with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
             cds.generate_protein(mode="orf_or_end")
         p = cds.protein
-        assert p.nucleotide_surplus is True
+        assert p.nucleotide_surplus is False
         assert p.seq.startswith("M")
         assert p.seq.endswith("*")
 
