@@ -199,7 +199,7 @@ def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earli
     else:
         raise ValueError(f"Invalid mode: '{mode}'. Expected 'longest' or 'earliest'.")
 
-def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = 6, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:
+def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:
     """
     Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
     
