@@ -300,7 +300,7 @@ class Transcript(Feature):
 
             self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, [self.id])
 
-    def generate_best_protein(self, must_have_stop:bool=True, readthrough_stop:bool=False, quiet:bool=True):
+    def generate_best_protein(self, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, enforce_start_codon:bool=True, must_have_stop:bool=True, tolerated_stops: int = 0, quiet:bool=True):
 
         self.temp_CDSs = []
 
@@ -309,7 +309,7 @@ class Transcript(Feature):
 
         self.generate_CDSs(quiet=quiet)
 
-        self.CDSs[f"{self.id}_CDS1"].generate_protein(mode="orf", must_have_stop=must_have_stop, readthrough_stop=readthrough_stop, correct_CDS=True, quiet=quiet)
+        self.CDSs[f"{self.id}_CDS1"].generate_protein(mode="orf", start_codons=start_codons, stop_codons=stop_codons, enforce_start_codon=enforce_start_codon, min_codon_len=min_codon_len, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, correct_CDS=True, quiet=quiet)
 
         self.strand = self.CDSs[f"{self.id}_CDS1"].strand
 

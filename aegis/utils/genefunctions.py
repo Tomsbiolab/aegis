@@ -6,7 +6,7 @@ Module with an array of genomic functions.
 @authors: David Navarro, Antonio Santiago
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Optional, Union
 
 if TYPE_CHECKING:
     from ..annotation import Annotation
@@ -17,6 +17,7 @@ import pandas as pd
 import time
 import warnings
 import itertools
+import math
 
 from collections import defaultdict
 from pathlib import Path
@@ -119,64 +120,72 @@ def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, 
 
     return output_segments
 
-def find_ORFs(in_seq: str, must_have_stop: bool = True, readthrough_stop: bool = False, min_codon_len: int = 2, start_codon: str = "ATG", stop_codons=["TAA", "TAG", "TGA"]) -> list[tuple[str, int, int]]:
-    
+def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[int, float, None] = 0, min_codon_len: int = 2, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA")) -> list[tuple[str, int, int]]:
+
+    if tolerated_stops is None or tolerated_stops < 0:
+        tolerated_stops = float('inf')
+
     stop_set = frozenset(stop_codons) if not isinstance(stop_codons, (set, frozenset)) else stop_codons
+
     seq_len = len(in_seq)
     min_seq_len = min_codon_len * 3
-    
+
     f0, f1, f2 = [], [], []
     appends = (f0.append, f1.append, f2.append)
 
-    starts =[]
-    starts_append = starts.append
-    i = in_seq.find(start_codon)
+    starts_set = set()
     limit_start = seq_len - 3
-    
-    while i != -1:
-        if i <= limit_start:
-            starts_append(i)
-        i = in_seq.find(start_codon, i + 1)
 
-    append_start = (not must_have_stop) and (3 >= min_seq_len)
+    if enforce_start_codon:
+        for st_codon in start_codons:
+            i = in_seq.find(st_codon)
+            while i != -1:
+                if i <= limit_start:
+                    starts_set.add(i)
+                i = in_seq.find(st_codon, i + 1)
+    else:
+        for init_idx in range(min(3, seq_len - 2)):
+            starts_set.add(init_idx)
+            
+        for stop in stop_set:
+            idx = in_seq.find(stop)
+            while idx != -1:
+                if idx + 3 <= limit_start:
+                    starts_set.add(idx + 3)
+                idx = in_seq.find(stop, idx + 1)
+                
+    starts = sorted(starts_set)
     limit_stop = seq_len - 2
 
-    if must_have_stop and not readthrough_stop:
-        for i in starts:
-            append_func = appends[i % 3]
-            for j in range(i + 3, limit_stop, 3):
-                if in_seq[j:j+3] in stop_set:
-                    if j + 3 - i >= min_seq_len:
-                        append_func((in_seq[i:j+3], i, j + 2))
+    for i in starts:
+        if not enforce_start_codon and in_seq[i:i+3] in stop_set:
+            continue
+            
+        append_func = appends[i % 3]
+        stops_seen = 0
+        last_stop_idx = -1
+        
+        for j in range(i + 3, limit_stop, 3):
+            end_idx = j + 3
+            codon = in_seq[j:end_idx]
+            
+            if codon in stop_set:
+                stops_seen += 1
+                last_stop_idx = end_idx
+                
+                if stops_seen > tolerated_stops:
+                    if end_idx - i >= min_seq_len:
+                        append_func((in_seq[i:end_idx], i, end_idx - 1))
                     break
-                    
-    elif must_have_stop and readthrough_stop:
-        for i in starts:
-            append_func = appends[i % 3]
-            for j in range(i + 3, limit_stop, 3):
-                if in_seq[j:j+3] in stop_set:
-                    if j + 3 - i >= min_seq_len:
-                        append_func((in_seq[i:j+3], i, j + 2))
-                        
-    elif not must_have_stop and not readthrough_stop:
-        for i in starts:
-            append_func = appends[i % 3]
-            if append_start:
-                append_func((in_seq[i:i+3], i, i + 2))
-            for j in range(i + 3, limit_stop, 3):
-                if j + 3 - i >= min_seq_len:
-                    append_func((in_seq[i:j+3], i, j + 2))
-                if in_seq[j:j+3] in stop_set:
-                    break
-                    
-    else:
-        for i in starts:
-            append_func = appends[i % 3]
-            if append_start:
-                append_func((in_seq[i:i+3], i, i + 2))
-            for j in range(i + 3, limit_stop, 3):
-                if j + 3 - i >= min_seq_len:
-                    append_func((in_seq[i:j+3], i, j + 2))
+        else:
+            if not must_have_stop:
+                frame_end = i + ((seq_len - i) // 3) * 3
+                if frame_end - i >= min_seq_len:
+                    append_func((in_seq[i:frame_end], i, frame_end - 1))
+            else:
+                if stops_seen > 0 and last_stop_idx != -1:
+                    if last_stop_idx - i >= min_seq_len:
+                        append_func((in_seq[i:last_stop_idx], i, last_stop_idx - 1))
 
     return f0 + f1 + f2
 
@@ -190,7 +199,7 @@ def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earli
     else:
         raise ValueError(f"Invalid mode: '{mode}'. Expected 'longest' or 'earliest'.")
 
-def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = 6, readthrough_stop: bool = True, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True) -> tuple[str, bool, int, int]:
+def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = 6, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:
     """
     Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
     
@@ -222,7 +231,7 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
         coding_start += surplus
 
     elif mode in ("orf", "orf_or_end"):
-        orfs = find_ORFs(in_seq, readthrough_stop=readthrough_stop, must_have_stop=must_have_stop)
+        orfs = find_ORFs(in_seq, tolerated_stops=tolerated_stops, must_have_stop=must_have_stop, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
         orf, coding_start, coding_end = choose_orf(orfs, mode=orf_choice_mode)
 
         if orf and (max_nucleotide_trim is None or (len(in_seq) - len(orf)) <= max_nucleotide_trim):

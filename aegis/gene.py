@@ -214,9 +214,15 @@ class Gene(Feature):
                         continue
 
                 t.generate_best_protein(quiet=quiet)
+                t.update(quiet=quiet)
+
+                if t.coding_ratio < 0.80:
+                    t.generate_best_protein(tolerated_stops=1, quiet=quiet)
+                t.update(quiet=quiet)
+
                 if t.coding_ratio < 0.80:
                     t.generate_best_protein(must_have_stop=False, quiet=quiet)
-                t.update(consider_polycistronic=False, consider_read_utrs=False, quiet=quiet)
+                t.update(quiet=quiet)
             
             self.update(quiet=quiet)
 
