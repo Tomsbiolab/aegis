@@ -236,6 +236,7 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
 
         if orf and (max_nucleotide_trim is None or (len(in_seq) - len(orf)) <= max_nucleotide_trim):
             out_seq = orf
+            nucleotide_surplus = False
         else:
             if mode == "orf_or_end":
                 if surplus:
@@ -245,6 +246,9 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
                     out_seq = in_seq
             else: # mode == "orf"
                 out_seq = in_seq
+                nucleotide_surplus = False
+
+        
                 
     else:
         raise ValueError(f"Invalid mode: {mode}")
