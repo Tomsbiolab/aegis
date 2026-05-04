@@ -244,59 +244,26 @@ class Gene(Feature):
         """
         Method required to deal with the fact that a gene may have several blast hits due to several proteins...
         """
-        self_proteins = []
-        for t in self.transcripts.values():
-            for c in t.CDSs.values():
-                self_proteins.append(c.protein)
+        self_proteins = [c.protein for t in self.transcripts.values() for c in t.CDSs.values() if c.protein]
+        other_proteins = [c.protein for t in other.transcripts.values() for c in t.CDSs.values() if c.protein]
 
-        other_proteins = []
-        for t in other.transcripts.values():
-            for c in t.CDSs.values():
-                other_proteins.append(c.protein)
-
-        best_self_protein = None
-        if self_proteins == []:
-            print(f"Warning: {self.id} gene has no associated proteins.")
-        elif len(self_proteins) == 1:
-            best_self_protein = self_proteins[0]
-        else:
-            best_self_protein = self_proteins[0]
-            for n, p in enumerate(self_proteins):
-                if n > 0:
-                    current_best = best_self_protein.compare_blast_hits(p, source_priority)
-                    if not current_best:
-                        best_self_protein = p
-
-        best_other_protein = None
-        if other_proteins == []:
-            print(f"Warning: {other.id} gene has no associated proteins.")
-        elif len(other_proteins) == 1:
-            best_other_protein = other_proteins[0]
-        else:
-            best_other_protein = other_proteins[0]
-            for n, p in enumerate(other_proteins):
-                if n > 0:
-                    current_best = best_other_protein.compare_blast_hits(p, source_priority)
-                    if not current_best:
-                        best_other_protein = p
-        
-        if best_self_protein != None and best_other_protein != None:
-            query_best = best_self_protein.compare_blast_hits(best_other_protein, source_priority)
-
-            return query_best
-        
-        elif best_other_protein == None and best_other_protein == None:
-            print(f"Warning: {self.id} or {other.id} genes have no associated proteins.")
-            
+        if not self_proteins and not other_proteins:
+            print(f"Warning: {self.id} and {other.id} genes have no associated proteins.")
             return None
-        
-        elif best_other_protein == None:
-
+        elif not self_proteins:
+            print(f"Warning: {self.id} gene has no associated proteins.")
+            return False
+        elif not other_proteins:
+            print(f"Warning: {other.id} gene has no associated proteins.")
             return True
 
-        elif best_self_protein == None:
-            
-            return False
+        if not source_priority:
+            return True
+
+        best_self_protein = min(self_proteins, key=lambda p: p.get_blast_hits_key(source_priority))
+        best_other_protein = min(other_proteins, key=lambda p: p.get_blast_hits_key(source_priority))
+
+        return best_self_protein.compare_blast_hits(best_other_protein, source_priority)
 
     def get_main_CDS_range(self):
         for t in self.transcripts.values():

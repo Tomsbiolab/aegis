@@ -40,23 +40,28 @@ class AnnotationRedundancy:
                 if remove_masked:
                     if g.quality.masked_fraction == 1:
                         g.quality.remove = True
+                        continue
                 if remove_noncoding:
                     if not g.coding:
                         g.quality.remove = True
-                    else:
-                        for t in g.transcripts.values():
-                            if t.main:
-                                if t.quality.masked_fraction == 1:
-                                    g.quality.remove = True
-                                for c in t.CDSs.values():
-                                    if c.main:
-                                        if c.size < (protein_size * 3) or c.quality.masked_fraction == 1:
-                                            g.quality.remove = True
+                        continue
                 for t in g.transcripts.values():
                     if t.main:
-                        for i in t.introns:
-                            if i.size > intron_size:
-                                g.quality.remove = True
+                        if t.quality.masked_fraction == 1:
+                            g.quality.remove = True
+                            break
+                        for c in t.CDSs.values():
+                            if c.main:
+                                if c.size < (protein_size * 3) or c.quality.masked_fraction == 1:
+                                    g.quality.remove = True
+                                    break
+                        if t.introns:
+                            for i in t.introns:
+                                if i.size > intron_size:
+                                    g.quality.remove = True
+                                    break
+                        break
+
         progress_bar.close()
 
     def mark_transcriptomic_supported_genes(self, quiet:bool=False):
@@ -89,7 +94,7 @@ class AnnotationRedundancy:
                                     g.quality.transcriptomic_evidence = True
         progress_bar.close()
 
-    def mark_abinitio_supported_genes(self, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
+    def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -283,7 +288,7 @@ class AnnotationRedundancy:
                             g.quality.overlap_reliable = True
         progress_bar.close()
 
-    def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
+    def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["augustus", "genemark"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -413,7 +418,7 @@ class AnnotationRedundancy:
         progress_bar.close()
         self._annot.update(rename_features=["transcript", "CDS", "exon", "UTR"])
 
-    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["AUGUSTUS", "GeneMark.hmm3"], quiet:bool=False):
+    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus", "genemark"], quiet:bool=False):
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -813,7 +818,7 @@ class AnnotationRedundancy:
 
         self._annot.sorted = False
 
-    def remove(self, source_priority:list, quiet:bool=False):
+    def filter(self, source_priority:list, quiet:bool=False):
         self._annot.remove_duplicate_transcripts(quiet=quiet)
         self._annot.make_alternative_transcripts_into_genes(quiet=quiet)
         self._annot.overlaps.detect(quiet=quiet)
@@ -827,7 +832,7 @@ class AnnotationRedundancy:
         self.mark_overlap_with_reliable_genes(quiet=quiet)
         self.find_best_gene_model(source_priority, just_with_reliables=False, quiet=quiet)
 
-        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["AUGUSTUS", "Liftoff", "GeneMark.hmm3"], quiet=quiet)
+        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["augustus", "Liftoff", "genemark"], quiet=quiet)
         self._annot.overlaps.detect(quiet=quiet)
 
         self.rescue_longer_same_frame_CDS(quiet=quiet)

@@ -2643,16 +2643,19 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                to_eliminate = []
-                for t1 in g.transcripts.values():
-                    if t1.id not in to_eliminate:
-                        for t2 in g.transcripts.values():
-                            if t2.id not in to_eliminate:
-                                if t1.id == t2.id:
-                                    continue
-                                if t1.almost_equal(t2):
-                                    to_eliminate.append(t1.id)
-                to_eliminate = set(to_eliminate)
+                to_eliminate = set()
+                transcripts = list(g.transcripts.values())
+                for i in range(len(transcripts)):
+                    t1 = transcripts[i]
+                    if t1.id in to_eliminate:
+                        continue
+                    for j in range(i + 1, len(transcripts)):
+                        t2 = transcripts[j]
+                        if t2.id in to_eliminate:
+                            continue
+                        if t1.almost_equal(t2):
+                            to_eliminate.add(t2.id)
+
                 for t_eliminate in to_eliminate:
                     del g.transcripts[t_eliminate]
         progress_bar.close()
