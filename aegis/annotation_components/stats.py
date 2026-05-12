@@ -97,6 +97,7 @@ class AnnotationStats:
     def calculate_transcript_masking(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
+                g.quality.calculate_masking()
                 for t in g.transcripts.values():
                     t.quality.calculate_masking()
                     for c in t.CDSs.values():

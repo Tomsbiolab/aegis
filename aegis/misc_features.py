@@ -46,48 +46,29 @@ class Protein():
     def copy(self):
         return copy.deepcopy(self)
 
-    def compare_blast_hits(self, other:Protein, source_priority:list):
-        compared = False
-        query_best = True
-        while not compared:
-            for s in source_priority:
-                query_evalue = float(2)
-                query_bitscore = float(-1)
-                target_evalue = float(2)
-                target_bitscore = float(-1)
-                
-                for b in self.blast_hits:
-                    if b.source == s:
-                        if b.evalue < query_evalue:
-                            query_evalue = b.evalue
-                        if b.score > query_bitscore:
-                            query_bitscore = b.score
+    def get_blast_hits_key(self, source_priority:list) -> tuple:
+        best = {}
+        for b in self.blast_hits:
+            if b.source not in best:
+                best[b.source] = {"evalue": b.evalue, "score": b.score}
+            else:
+                if b.evalue < best[b.source]["evalue"]:
+                    best[b.source]["evalue"] = b.evalue
+                if b.score > best[b.source]["score"]:
+                    best[b.source]["score"] = b.score
+                    
+        key = []
+        for s in source_priority:
+            hit = best.get(s, {"evalue": float('inf'), "score": float('-inf')})
+            key.append(hit["evalue"])
+            key.append(-hit["score"])
+            
+        return tuple(key)
 
-                for b in other.blast_hits:
-                    if b.source == s:
-                        if b.evalue < target_evalue:
-                            target_evalue = b.evalue
-                        if b.score > target_bitscore:
-                            target_bitscore = b.score
-
-                if query_evalue < target_evalue:
-                    compared = True
-                    break
-                elif query_evalue > target_evalue:
-                    query_best = False
-                    compared = True
-                    break
-                elif query_bitscore > target_bitscore:
-                    compared = True
-                    break
-                elif query_bitscore < target_bitscore:
-                    query_best = False
-                    compared = True
-                    break
-                elif s == source_priority[-1]:
-                    compared = True
-
-        return query_best
+    def compare_blast_hits(self, other:Protein, source_priority:list) -> bool:
+        if not source_priority:
+            return True
+        return self.get_blast_hits_key(source_priority) <= other.get_blast_hits_key(source_priority)
 
     @property
     def blast_hits(self):
