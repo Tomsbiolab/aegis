@@ -232,6 +232,7 @@ class AnnotationRedundancy:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     progress_bar.update(1)
+                    # mark unrescuable genes in different strand to a reliable gene and overlapping exon with cds of the reliable gene
                     if g.quality.remove and not g.quality.overlap_reliable and g.quality.transcriptomic_evidence and not g.quality.unrescuable:
                         for o in g.overlaps["self"]:
                             if not self._annot.chrs[g.ch][o.id].quality.remove:
@@ -259,7 +260,7 @@ class AnnotationRedundancy:
                                         self._annot.chrs[g.ch][o.id].quality.rescue = True
                                         g.quality.rescue = False
                                         g.quality.remove = True
-                                        g.quality.unrescuable = True    
+                                        g.quality.unrescuable = True
 
         progress_bar.close()
 
@@ -324,6 +325,8 @@ class AnnotationRedundancy:
                                 query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
                                 if not query_best:
                                     g.alternative_transcript_rescue.append(o.id)
+        
+        # cluster genes with alternative transcript rescue
         gene_groups = []
 
         for genes in self._annot.chrs.values():
@@ -350,7 +353,9 @@ class AnnotationRedundancy:
                                 else:
                                     gene_groups.append(temp_group)
 
+
         merge_genes = set()
+
         for gene_set in gene_groups:
             merge_genes = merge_genes | gene_set
             best_reliable = ""
@@ -530,11 +535,12 @@ class AnnotationRedundancy:
 
                             for t in self._annot.chrs[chrom][o.id].transcripts.values():
                                 if t.main:
-                                    for i in t.introns:
-                                        if i.start < g.start and i.end > g.end:
-                                            g.quality.intron_nested_single = True
-                                            break
-                                    break
+                                    if t.introns:
+                                        for i in t.introns:
+                                            if i.start < g.start and i.end > g.end:
+                                                g.quality.intron_nested_single = True
+                                                break
+                                        break
 
     def remove_fully_intron_nested_genes(self):
         for genes in self._annot.chrs.values():
@@ -691,7 +697,7 @@ class AnnotationRedundancy:
                                 min_gene_size = min(sizes)
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_CDS and self._annot.chrs[g.ch][o.id].size == min_gene_size and rescue_transcripts == {}:
+                                        if self._annot.chrs[g.ch][o.id].size == min_gene_size and rescue_transcripts == {}:
                                             for t in self._annot.chrs[g.ch][o.id].transcripts.values():
                                                 rescue_transcripts[t.id] = t.copy()
 
@@ -731,7 +737,7 @@ class AnnotationRedundancy:
                                 min_gene_size = min(sizes)
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_exon and self._annot.chrs[g.ch][o.id].size == min_gene_size and rescue_transcripts == {}:
+                                        if self._annot.chrs[g.ch][o.id].size == min_gene_size and rescue_transcripts == {}:
                                             for t in self._annot.chrs[g.ch][o.id].transcripts.values():
                                                 rescue_transcripts[t.id] = t.copy()
 
