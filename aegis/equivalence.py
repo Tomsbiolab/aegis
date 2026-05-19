@@ -8,6 +8,7 @@ import pandas as pd
 import time
 import os
 import shutil
+import subprocess
 
 from pathlib import Path
 
@@ -130,7 +131,18 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             "python", "-m", "jcvi.compara.catalog", "ortholog",
             annot1.name, annot2.name, "--no_strip_names"
         ]
-        run_command(mcscan_dir, jcvi_ortho_cmd)
+        
+        try:
+            run_command(mcscan_dir, jcvi_ortho_cmd)
+        except subprocess.CalledProcessError as e:
+            # Intercept the specific 0-anchor error string from stderr or stdout
+            error_msg = f"{e.stdout} {e.stderr}"
+            if "0 anchor was found" in error_msg:
+                print(f"\n\t⚠️  JCVI found 0 syntenic anchors between {annot1.name} and {annot2.name}.")
+                print("\tThis is a normal biological result. Skipping anchor generation and continuing pipeline...")
+            else:
+                # If it's an actual systemic failure (e.g., Docker died, out of memory), crash normally
+                raise
 
 
 class Equivalence():
