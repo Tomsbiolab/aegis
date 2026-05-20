@@ -36,7 +36,7 @@ def main(
         "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
     output_filename: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Output filename to be saved to output folder, without extension, .tsv will be added to the filename."
+        "-o", "--output-file", help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename."
     )] = "equivalences{other_tags}.tsv",
     group_names: Annotated[str, typer.Option(
         "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
@@ -132,7 +132,7 @@ def main(
         raise typer.Exit(code=1)
     
 
-    if annotation_names != "{annotation-filename(s)}":
+    if annotation_names != ["{annotation-filename(s)}"]:
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
