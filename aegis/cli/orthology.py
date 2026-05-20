@@ -132,7 +132,7 @@ def main(
         raise typer.Exit(code=1)
     
 
-    if annotation_names != "{annotation-filename(s)}":
+    if annotation_names != ["{annotation-filename(s)}"]:
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
