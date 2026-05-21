@@ -145,6 +145,10 @@ def main(
         if "." in annotation_name:
             warnings.warn(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.' and will be replaced by '_'.")
 
+    for annotation_name in annotation_names:
+        if "__to__" in annotation_name:
+            raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible term: '__to__' as it is used internally for temporary file naming.")
+
     for index, item in enumerate(annotation_names):
         annotation_names[index] = item.replace(".", "_") # type: ignore
 
