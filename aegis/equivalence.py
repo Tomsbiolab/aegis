@@ -28,7 +28,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
     print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
-    liftoff_gff = liftoff_dir / f"liftoff_{annot1.name}_to_{annot2.name}.gff"
+    liftoff_gff = liftoff_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
     liftoff_cmd = [
         "liftoff", str(genome2.file), str(genome1.file),
         "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types
@@ -49,13 +49,13 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
     print(f"\t\tRunning aegis overlap on liftoff result.")
 
     if synteny:
-        a_liftoff = Annotation(str(liftoff_gff), genome=genome2, original_annotation=annot1, quiet=quiet)
+        a_liftoff = Annotation(annot1.name, genome=genome2, original_annotation=annot1, quiet=quiet)
     else:
-        a_liftoff = Annotation(str(liftoff_gff), genome=genome2, quiet=quiet)
+        a_liftoff = Annotation(annot1.name, genome=genome2, quiet=quiet)
 
     a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
-    _ = a_liftoff.overlaps.export(custom_path=str(liftoff_dir), output_file=f"liftoff_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+    _ = a_liftoff.overlaps.export(custom_path=str(liftoff_dir), output_file=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
     del a_liftoff
 
@@ -63,9 +63,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
         print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
 
-        lifton_gff = lifton_dir / f"lifton_{annot1.name}_to_{annot2.name}.gff3"
+        lifton_gff = lifton_dir / f"lifton__{annot1.name}__to__{annot2.name}.gff3"
         lifton_cmd = [
-            "lifton", "-g", f"{working_directory}/gffs/{annot1.name}_for_lifton.gff3", "-o", str(lifton_gff),
+            "lifton", "-g", f"{working_directory}/gffs/{annot1.name}__for__lifton.gff3", "-o", str(lifton_gff),
             "-flank",  "0.1", "-f", types
         ]
         if copies:
@@ -88,13 +88,13 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         print(f"\t\tRunning aegis overlap on lifton result.")
 
         if synteny:
-            a_lifton = Annotation(str(lifton_gff), genome=genome2, original_annotation=annot1, quiet=quiet)
+            a_lifton = Annotation(annot1.name, genome=genome2, original_annotation=annot1, quiet=quiet)
         else:
-            a_lifton = Annotation(str(lifton_gff), genome=genome2, quiet=quiet)
+            a_lifton = Annotation(annot1.name, genome=genome2, quiet=quiet)
 
         a_lifton.overlaps.detect(annot2, quiet=quiet)
 
-        _ = a_lifton.overlaps.export(custom_path=str(lifton_dir), output_file=f"lifton_{annot1.name}_to_{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        _ = a_lifton.overlaps.export(custom_path=str(lifton_dir), output_file=f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
         del a_lifton
 
@@ -102,8 +102,8 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
     diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
 
-    diamond_result = diamond_dir / f"single_{annot1.name}_to_{annot2.name}.txt"
-    diamond_result_best = diamond_dir / f"single_best_{annot1.name}_to_{annot2.name}.txt"
+    diamond_result = diamond_dir / f"single_{annot1.name}__to__{annot2.name}.txt"
+    diamond_result_best = diamond_dir / f"single_best_{annot1.name}__to__{annot2.name}.txt"
 
     print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
     blastp_cmd = [
@@ -631,8 +631,8 @@ class Simple_annotation():
             query_col_identity = "identity_x"
             target_col_identity = "identity_y"
 
-            rbbh_file = f"{blast_folder}/rbbh_{query_annotation}_to_{target_annotation}.txt"
-            rbh_file = f"{blast_folder}/rbh_{query_annotation}_to_{target_annotation}.txt"
+            rbbh_file = f"{blast_folder}/rbbh_{query_annotation}__to__{target_annotation}.txt"
+            rbh_file = f"{blast_folder}/rbh_{query_annotation}__to__{target_annotation}.txt"
             if not os.path.isfile(rbbh_file):
                 query_col = "subject_x"
                 target_col = "query_x"
@@ -645,15 +645,13 @@ class Simple_annotation():
                 query_col_identity = "identity_y"
                 target_col_identity = "identity_x"
 
-                rbbh_file = f"{blast_folder}/rbbh_{target_annotation}_to_{query_annotation}.txt"
-                rbh_file = f"{blast_folder}/rbh_{target_annotation}_to_{query_annotation}.txt"
+                rbbh_file = f"{blast_folder}/rbbh_{target_annotation}__to__{query_annotation}.txt"
+                rbh_file = f"{blast_folder}/rbh_{target_annotation}__to__{query_annotation}.txt"
 
-            fwd_file = f"{blast_folder}/single_{query_annotation}_to_{target_annotation}.txt"
-            rev_file = f"{blast_folder}/single_{target_annotation}_to_{query_annotation}.txt"
+            fwd_file = f"{blast_folder}/single_{query_annotation}__to__{target_annotation}.txt"
+            rev_file = f"{blast_folder}/single_{target_annotation}__to__{query_annotation}.txt"
 
             rbbh_hits = set()
-
-            target_annotation = clean_annotation_tag(target_annotation)
 
             temp_start = time.time()
 
@@ -772,8 +770,8 @@ class Simple_annotation():
         if not liftoff:
             program = "lifton"
 
-        fwd_file = f"{folder}/{program}_{query_tag}_to_{target_tag}_overlaps.tsv"
-        rev_file = f"{folder}/{program}_{target_tag}_to_{query_tag}_overlaps.tsv"
+        fwd_file = f"{folder}/{program}_{query_tag}__to__{target_tag}_overlaps.tsv"
+        rev_file = f"{folder}/{program}_{target_tag}__to__{query_tag}_overlaps.tsv"
 
         if os.path.isfile(fwd_file) and os.path.isfile(rev_file):
             start = time.time()
@@ -805,9 +803,6 @@ class Simple_annotation():
 
                 fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
                 rev_df = rev_df[rev_df["gene_id_B"] != "NA"]
-
-                fwd_df["gene_id_A_origin"] = fwd_df["gene_id_A_origin"].apply(clean_annotation_tag)
-                rev_df["gene_id_B_origin"] = rev_df["gene_id_B_origin"].apply(clean_annotation_tag)
 
                 fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
                 rev_df = rev_df[rev_df["gene_id_B_origin"] == self.name]
@@ -989,22 +984,3 @@ class Simple_annotation():
 
         for gene in self.genes.values():
             gene.filter_equivalences(simple_rbh_blasts=simple_rbh_blasts, unidirectional_blasts=unidirectional_blasts, replace=replace, identity_threshold=identity_threshold, coverage_threshold=coverage_threshold, evalue_threshold=evalue_threshold)
-
-
-def clean_annotation_tag(annotation_tag):
-
-    annotation_tag = annotation_tag.replace("Lifton_", "")
-    annotation_tag = annotation_tag.replace("Liftoff_", "")
-    annotation_tag = annotation_tag.replace("Lifton_", "")
-    annotation_tag = annotation_tag.replace("liftoff_", "")
-
-    annotation_tag = annotation_tag.replace("Lifton", "")
-    annotation_tag = annotation_tag.replace("Liftoff", "")
-    annotation_tag = annotation_tag.replace("Lifton", "")
-    annotation_tag = annotation_tag.replace("liftoff", "")
-
-    annotation_tag = annotation_tag.split("_from_")[0]
-    annotation_tag = annotation_tag.split("_on_")[0]
-    annotation_tag = annotation_tag.split("_to_")[0]
-    
-    return annotation_tag
