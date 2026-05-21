@@ -145,6 +145,10 @@ def main(
         if "." in annotation_name:
             warnings.warn(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.' and will be replaced by '_'.")
 
+    for annotation_name in annotation_names:
+        if "__to__" in annotation_name:
+            raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible term: '__to__' as it is used internally for temporary file naming.")
+
     for index, item in enumerate(annotation_names):
         annotation_names[index] = item.replace(".", "_") # type: ignore
 
@@ -246,7 +250,7 @@ def main(
 
             a_lifton = a.copy()
             a_lifton.CDS_to_CDS_segment_ids(override=True)
-            a_lifton.export.gff(custom_path=str(gff_path), tag=f"{a_lifton.name}_for_lifton.gff3", subfolder=False, quiet=quiet)
+            a_lifton.export.gff(custom_path=str(gff_path), tag=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
 
             del a_lifton
 
@@ -305,12 +309,12 @@ def main(
 
             print(f"\nProcessing RBH and RBBHs for {a1.name} and {a2.name}")
 
-            fwd_in = diamond_path / f"single_{a1.name}_to_{a2.name}.txt"
-            rev_in = diamond_path / f"single_{a2.name}_to_{a1.name}.txt"
-            fwd_best_in = diamond_path / f"single_best_{a1.name}_to_{a2.name}.txt"
-            rev_best_in = diamond_path / f"single_best_{a2.name}_to_{a1.name}.txt"
-            rbh_out = diamond_path / f"rbh_{a1.name}_to_{a2.name}.txt"
-            rbbh_out = diamond_path / f"rbbh_{a1.name}_to_{a2.name}.txt"
+            fwd_in = diamond_path / f"single_{a1.name}__to__{a2.name}.txt"
+            rev_in = diamond_path / f"single_{a2.name}__to__{a1.name}.txt"
+            fwd_best_in = diamond_path / f"single_best_{a1.name}__to__{a2.name}.txt"
+            rev_best_in = diamond_path / f"single_best_{a2.name}__to__{a1.name}.txt"
+            rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
+            rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
 
             fwd_results = pd.read_csv(fwd_in, sep="\t", header=None)
             rev_results = pd.read_csv(rev_in, sep="\t", header=None)

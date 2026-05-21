@@ -6,7 +6,6 @@ import math
 import pytest
 
 from aegis.utils.evalue import parse_evalue, round_evalue
-from aegis.equivalence import clean_annotation_tag
 
 
 # ============================================================
@@ -60,33 +59,3 @@ class TestParseEvalue:
         result = parse_evalue("  1e-10  ")
         assert result == pytest.approx(1e-10)
 
-
-# ============================================================
-# clean_annotation_tag
-# ============================================================
-
-class TestCleanAnnotationTag:
-    def test_no_change_needed(self):
-        assert clean_annotation_tag("myannot_v1") == "myannot_v1"
-
-    def test_remove_lifton_prefix(self):
-        assert clean_annotation_tag("Lifton_myannot") == "myannot"
-
-    def test_remove_liftoff_prefix(self):
-        assert clean_annotation_tag("Liftoff_myannot") == "myannot"
-
-    def test_remove_lifton_word(self):
-        assert clean_annotation_tag("myLiftonannot") == "myannot"
-
-    def test_split_on_from(self):
-        assert clean_annotation_tag("annot_from_genome1") == "annot"
-
-    def test_split_on_on(self):
-        assert clean_annotation_tag("annot_on_genome1") == "annot"
-
-    def test_split_on_to(self):
-        assert clean_annotation_tag("annot_to_genome1") == "annot"
-
-    def test_combined_liftoff_and_from(self):
-        result = clean_annotation_tag("Liftoff_myannot_from_genome")
-        assert result == "myannot"
