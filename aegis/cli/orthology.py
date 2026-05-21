@@ -130,22 +130,23 @@ def main(
             err=True,
         )
         raise typer.Exit(code=1)
-    
 
     if annotation_names == ["{annotation-filename(s)}"]:
-        annotation_names = []
+        annotation_names = [] # type: ignore
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
             annotation_name = annotation_name.replace(".", "_")
-            annotation_names.append(annotation_name)
+            annotation_names.append(annotation_name) # type: ignore
 
     if len(annotation_files) != len(annotation_names):
         raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
-    
-    
+
     for annotation_name in annotation_names:
         if "." in annotation_name:
-            raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.'.")
+            warnings.warn(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.' and will be replaced by '_'.")
+
+    for index, item in enumerate(annotation_names):
+        annotation_names[index] = item.replace(".", "_") # type: ignore
 
     if len(annotation_names) != len(set(annotation_names)):
         raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
@@ -164,9 +165,10 @@ def main(
             raise typer.BadParameter(f"The provided number of groups do not match the number of annotation file(s).")
         
     else:
-        group_names = ["NA"] * len(annotation_files)
+        group_names = ["NA"] * len(annotation_files) # type: ignore
 
     if reference_annotation != "None":
+        reference_annotation = reference_annotation.replace(".", "_")
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
             raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
 
@@ -220,8 +222,8 @@ def main(
         mcscan_path = results_directory / "mcscan"
         mcscan_path.mkdir(parents=True, exist_ok=True)
 
-    if lift_feature_types == "ALL":
-        lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"]
+    if lift_feature_types == ["ALL"]:
+        lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"] # type: ignore
     
     lift_feature_types_file = results_directory / "chosen_liftover_features.txt"
     lift_feature_types_file = str(lift_feature_types_file)
