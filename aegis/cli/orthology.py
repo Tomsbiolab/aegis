@@ -134,23 +134,14 @@ def main(
     if annotation_names == ["{annotation-filename(s)}"]:
         annotation_names = [] # type: ignore
         for annotation_file in annotation_files:
-            annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-            annotation_name = annotation_name.replace(".", "_")
-            annotation_names.append(annotation_name) # type: ignore
+            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0]) # type: ignore
 
     if len(annotation_files) != len(annotation_names):
         raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
 
     for annotation_name in annotation_names:
-        if "." in annotation_name:
-            warnings.warn(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.' and will be replaced by '_'.")
-
-    for annotation_name in annotation_names:
         if "__to__" in annotation_name:
             raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible term: '__to__' as it is used internally for temporary file naming.")
-
-    for index, item in enumerate(annotation_names):
-        annotation_names[index] = item.replace(".", "_") # type: ignore
 
     if len(annotation_names) != len(set(annotation_names)):
         raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
@@ -172,7 +163,6 @@ def main(
         group_names = ["NA"] * len(annotation_files) # type: ignore
 
     if reference_annotation != "None":
-        reference_annotation = reference_annotation.replace(".", "_")
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
             raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
 
@@ -243,8 +233,9 @@ def main(
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
 
-
+        mcscan_name = a.name.replace(".", "_")
         a.export.gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=quiet)
+        a.export.gff(custom_path=str(gff_path), tag=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
 
         if not skip_lifton:
 
@@ -258,7 +249,8 @@ def main(
 
         a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False, custom_filename=f"{a.name}_proteins_g_id_main.fasta")
         a.clear_proteins()
-        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, custom_filename=f"{a.name}_CDSs_g_id_main.fasta")
+        
+        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, custom_filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
         diamond_db_file = diamond_path / f"{a.name}_diamond_db"
@@ -270,16 +262,17 @@ def main(
         run_command(diamond_path, makedb_cmd)
 
         if not skip_mcscan:
-            cds_fasta = CDS_path / f"{a.name}_CDSs_g_id_main.fasta"
-            cleaned_cds = mcscan_path / Path(f"{a.name}.cds")
+            cds_fasta = CDS_path / f"{mcscan_name}_CDSs_g_id_main.fasta"            
+
+            cleaned_cds = mcscan_path / Path(f"{mcscan_name}.cds")
 
             jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
             run_command(mcscan_path, jcvi_format_cmd_1)
 
-            bed_file = mcscan_path / Path(f"{a.name}.bed")
+            bed_file = mcscan_path / Path(f"{mcscan_name}.bed")
             gff_to_bed_cmd_1 = [
                 "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-                "--key=Parent", "--primary_only", f"{gff_path}/{a.name}.gff3", "-o", str(bed_file)
+                "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
             ]
             run_command(mcscan_path, gff_to_bed_cmd_1)
 
@@ -415,8 +408,11 @@ def main(
                     continue
 
             if not skip_mcscan:
-                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.anchors", "0", a2.name, group_names[n2])
-                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1.name}.{a2.name}.last.filtered", "0", a2.name, group_names[n2])
+                a1_mcscan_name = a1.name.replace(".", "_")
+                a2_mcscan_name = a2.name.replace(".", "_")
+
+                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2_mcscan_name, group_names[n2])
+                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2_mcscan_name, group_names[n2])
 
             orthofile_pattern = f"orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
             matching_files = list(protein_path.glob(orthofile_pattern))
