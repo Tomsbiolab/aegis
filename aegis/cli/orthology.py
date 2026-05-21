@@ -25,11 +25,11 @@ def main(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
     genome_files: Annotated[str, typer.Option(
-        "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g 'genomefile1,genomefile2,genomefile3,genomefile4'",
+        "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g genomefile1,genomefile2,genomefile3,genomefile4",
         callback=split_callback
     )] = "",
     annotation_names: Annotated[str, typer.Option(
-        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names 'name1,name2,name3,name4'",
+        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
         callback=split_callback
     )] = "{annotation-filename(s)}",
     output_dir: Annotated[str, typer.Option(
@@ -39,7 +39,7 @@ def main(
         "-o", "--output-file", help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename."
     )] = "equivalences{other_tags}.tsv",
     group_names: Annotated[str, typer.Option(
-        "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. '-g group1,NA,group1,group2'",
+        "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
         callback=split_callback
     )] = "",
     skip_synteny: Annotated[bool, typer.Option(
@@ -132,7 +132,7 @@ def main(
         raise typer.Exit(code=1)
     
 
-    if annotation_names != ["{annotation-filename(s)}"]:
+    if annotation_names == ["{annotation-filename(s)}"]:
         annotation_names = []
         for annotation_file in annotation_files:
             annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
