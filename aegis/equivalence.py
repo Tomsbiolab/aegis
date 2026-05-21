@@ -126,10 +126,13 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
     
     if not skip_mcscan:
         print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
-        
+
+        mcscan_name1 = annot1.name.replace(".", "_")
+        mcscan_name2 = annot1.name.replace(".", "_")
+
         jcvi_ortho_cmd = [
             "python", "-m", "jcvi.compara.catalog", "ortholog",
-            annot1.name, annot2.name, "--no_strip_names"
+            mcscan_name1, mcscan_name2, "--no_strip_names"
         ]
         
         try:
