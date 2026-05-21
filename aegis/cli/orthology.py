@@ -130,7 +130,6 @@ def main(
             err=True,
         )
         raise typer.Exit(code=1)
-    
 
     if annotation_names == ["{annotation-filename(s)}"]:
         annotation_names = [] # type: ignore
@@ -141,8 +140,7 @@ def main(
 
     if len(annotation_files) != len(annotation_names):
         raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
-    
-    
+
     for annotation_name in annotation_names:
         if "." in annotation_name:
             warnings.warn(f"The provided annotation name/tag '{annotation_name}' has an incompatible character: '.' and will be replaced by '_'.")
@@ -224,7 +222,7 @@ def main(
         mcscan_path = results_directory / "mcscan"
         mcscan_path.mkdir(parents=True, exist_ok=True)
 
-    if lift_feature_types == "ALL":
+    if lift_feature_types == ["ALL"]:
         lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"] # type: ignore
     
     lift_feature_types_file = results_directory / "chosen_liftover_features.txt"

@@ -67,10 +67,10 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    if annotation_names != "{annotation-filename(s)}":
-        annotation_names = []
+    if annotation_names == ["{annotation-filename(s)}"]:
+        annotation_names = [] # type: ignore
         for annotation_file in annotation_files:
-            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
+            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0]) # type: ignore
 
     if len(annotation_files) != len(annotation_names):
         raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
@@ -88,7 +88,7 @@ def main(
         
     else:
         synteny = False
-        original_annotation_files = ["NA"] * len(annotation_files)
+        original_annotation_files = ["NA"] * len(annotation_files) # type: ignore
     
     if reference_annotation != "None":
         if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
