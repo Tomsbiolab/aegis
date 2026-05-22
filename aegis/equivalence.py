@@ -128,7 +128,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
 
         mcscan_name1 = annot1.name.replace(".", "_")
-        mcscan_name2 = annot1.name.replace(".", "_")
+        mcscan_name2 = annot2.name.replace(".", "_")
 
         jcvi_ortho_cmd = [
             "python", "-m", "jcvi.compara.catalog", "ortholog",
