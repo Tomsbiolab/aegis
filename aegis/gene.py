@@ -552,3 +552,7 @@ class Gene(Feature):
         if self._synteny is None:
             self._synteny = GeneSynteny()
         return self._synteny
+
+    @property
+    def alternative_transcript_rescue(self) -> list:
+        return self.quality.alternative_transcript_rescue
