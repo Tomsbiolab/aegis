@@ -72,7 +72,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):
         
         start_time = time.time()
 
@@ -1058,7 +1058,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:list=[], keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
         start_time = time.time()
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -1104,7 +1104,7 @@ class Annotation():
         if standardise_features:
             self.update_features(standardise=standardise_features, quiet=quiet)
         
-        if rename_features != []:
+        if rename_features:
             self.rename_ids(features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet)
 
         if remove_missing_transcript_parent_references:
@@ -1228,7 +1228,7 @@ class Annotation():
 
         if clean:
             self.remove_other_mRNA_transcripts_from_rRNA_genes()
-            self.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+            self.update(rename_features=("transcript", "CDS", "exon", "UTR"))
         else:
             self.update()
     
@@ -1429,7 +1429,7 @@ class Annotation():
             for g in genes.values():
                 g.combine_transcripts(respect_non_coding=respect_non_coding, respect_non_combined=respect_non_combined, redetect_CDS=redetect_CDS, quiet=quiet)
         self.sorted = False
-        self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.tags.add("combined")
 
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
@@ -1668,7 +1668,8 @@ class Annotation():
         
         self.update_keys(CDS_keys=True, gene_keys=False, transcript_keys=False)
 
-    def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:list=["gene", "transcript", "CDS", "exon", "UTR"], rename_clashing_ids:bool=True, quiet:bool=False):
+    def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), rename_clashing_ids:bool=True, quiet:bool=False):
+
         """
         Priority is given to self annotation
         """
@@ -1677,8 +1678,12 @@ class Annotation():
         other.update(quiet=quiet)
 
         if rename_clashing_ids:
-            features_to_rename.extend(["transcript", "CDS", "exon", "UTR"])
-            features_to_rename = list(set(features_to_rename))
+
+            total_features_to_rename = list(features_to_rename)
+            
+            total_features_to_rename.extend(["transcript", "CDS", "exon", "UTR"])
+
+            features_to_rename = tuple(set(total_features_to_rename))
 
         if max_cds_overlap != 100 or max_exon_overlap != 100 or max_gene_overlap != 100:
             self.overlaps.detect(other, quiet=quiet)
@@ -1994,7 +1999,7 @@ class Annotation():
                 g.update(quiet=quiet)
 
         progress_bar.close()
-        self.update(rename_features=["CDS", "exon", "UTR"], quiet=quiet)
+        self.update(rename_features=("CDS", "exon", "UTR"), quiet=quiet)
         now = time.time()
         lapse = now - start_time
         if not quiet:
@@ -2063,7 +2068,7 @@ class Annotation():
         del new_chrs
 
         self.update_gene_and_transcript_list(quiet=quiet)
-        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.update(rename_features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
     def rename_source(self, new_source:str="aegis", atypical:bool=True, orphaned:bool=True):
         for genes in self.chrs.values():
@@ -2093,7 +2098,7 @@ class Annotation():
             for o in self.orphaned_features:
                 o.source = new_source
         
-    def rename_ids(self, custom_path:str="", features:list[str]=["gene", "transcript", "CDS", "exon", "UTR"], keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
+    def rename_ids(self, custom_path:str="", features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -2101,7 +2106,7 @@ class Annotation():
             if f not in acceptable_features:
                 raise ValueError(f"Incorrect feature '{f}' chosen. Select from: {acceptable_features}.")
         
-        if features == []:
+        if not features:
             raise ValueError(f"Rename ids was called but no feature levels were chosen. Select from: {acceptable_features}.")
         
         if prefix:
@@ -2109,7 +2114,7 @@ class Annotation():
                 ignored_options = []
                 if keep_existing_ids_if_derived_from_base_id:
                     ignored_options.append("keep_existing_ids_if_derived_from_base_id")
-                if features != acceptable_features:
+                if set(features) != set(acceptable_features):
                     ignored_options.append("features")
                 if remove_point_suffix:
                     ignored_options.append("remove_point_suffix")
@@ -2187,8 +2192,8 @@ class Annotation():
 
                     if "transcript" in features or prefix:
 
-                        if prefix or (base_id_present and base_id_missing):
-                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers)
+                        if prefix or base_id_missing:
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False)
                         else:
                             t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
 
@@ -2228,7 +2233,7 @@ class Annotation():
 
                         if "CDS" in features or prefix:
 
-                            if prefix or (base_id_present and base_id_missing):
+                            if prefix or base_id_missing:
                                 c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False, cds_segment_ids=cds_segment_ids)
                             else:
                                 c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, cds_segment_ids=cds_segment_ids)
@@ -2287,7 +2292,7 @@ class Annotation():
 
         self.renamed_features = changed_features
 
-        if features == ["gene", "transcript", "CDS", "exon", "UTR"]:
+        if set(features) == {"gene", "transcript", "CDS", "exon", "UTR"}:
             self.feature_tags.add("full_renamed_ids")
 
         if correspondences:
@@ -2299,7 +2304,7 @@ class Annotation():
             if "gene" in changed_features:
                 out_text = ["old_gene_id\tnew_gene_id"]
                 for k, v in correspondences_d.items():
-                    out_text.append(f"{v}\t{k}")
+                    out_text.append(f"{k}\t{v}")
                 f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
                 out_text = "\n".join(out_text)
                 f_out.write(out_text)
@@ -2659,7 +2664,7 @@ class Annotation():
                 for t_eliminate in to_eliminate:
                     del g.transcripts[t_eliminate]
         progress_bar.close()
-        self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
     def make_alternative_genes_into_transcripts(self, quiet:bool=False):
 
@@ -2692,7 +2697,7 @@ class Annotation():
             if g in self.chrs[chrom]:
                 del self.chrs[chrom][g]
 
-        self.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.update(rename_features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
     def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):
 
@@ -2814,7 +2819,7 @@ class Annotation():
         self.overlaps.clear()
 
         if update:
-            self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
+            self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
         return removed_any
 
@@ -2840,7 +2845,7 @@ class Annotation():
         self.overlaps.clear()
 
         if update:
-            self.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
+            self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
         return removed_any
 
@@ -3002,7 +3007,7 @@ class Annotation():
                             u.source = source_name
 
         self.update(quiet=quiet)
-        self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.update(quiet=quiet)
         self.export.gff(custom_path=custom_path, extra_attributes=extra_attributes, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
 
