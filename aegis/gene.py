@@ -12,7 +12,7 @@ from .transcript import Transcript
 
 class Gene(Feature):
 
-    __slots__ = ('pseudogene', 'transposable', 'transcripts', 'noncoding', '_overlaps', '_synteny', '_quality', 'base_id', 'original_base_id', 'renamed_exons', 'renamed_utrs')
+    __slots__ = ('pseudogene', 'transposable', 'transcripts', 'noncoding', '_overlaps', '_synteny', '_quality', 'original_base_id', 'renamed_exons', 'renamed_utrs')
 
     transcripts:dict[str, Transcript]
     alternative_transcript_rescue:list
@@ -33,7 +33,7 @@ class Gene(Feature):
         self.renamed_exons = False
         self.renamed_utrs = False
 
-        self.obtain_base_id(original=True)
+        self.original_base_id = self.base_id
 
         self._synteny = None
 
@@ -94,20 +94,6 @@ class Gene(Feature):
         if generated_exons:
             self.rename_exons()
 
-    def obtain_base_id(self, original:bool=False):
-
-        if self.id.endswith("gene"):
-            self.base_id = self.id[:-4]
-        elif self.id.startswith("gene"):
-            self.base_id = self.id[4:]
-        else:
-            self.base_id = self.id
-
-        self.base_id = self.base_id.strip("_,.-/:;")
-
-        if original:
-            self.original_base_id = self.base_id
-
     def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
 
         if remove_point_suffix:
@@ -115,7 +101,6 @@ class Gene(Feature):
                 self.id = self.id.split(".")[0]
                 if self.original_id != self.id:
                     self.renamed = True
-                    self.obtain_base_id()
 
         if base_id_as_id:
             if self.base_id != self.id:
@@ -126,13 +111,12 @@ class Gene(Feature):
         if prefix:
 
             if suffix:
-                self.id = f"{prefix}{self.ch}g{count:0{digits}d}{sep}{suffix}"
-            else:
-                self.id = f"{prefix}{self.ch}g{count:0{digits}d}"
+                suffix = f"{sep}{suffix}"
+
+            self.id = f"{prefix}{self.ch}g{count:0{digits}d}{suffix}"
     
             if self.original_id != self.id:
                 self.renamed = True
-                self.obtain_base_id()
             
         if self.renamed:
             self.update_numbering()
@@ -552,3 +536,15 @@ class Gene(Feature):
         if self._synteny is None:
             self._synteny = GeneSynteny()
         return self._synteny
+
+    @property
+    def base_id(self) -> str:
+
+        base = self.id
+        
+        if base.endswith("gene"):
+            base = base[:-4]
+        elif base.startswith("gene"):
+            base = base[4:]
+
+        return base.strip("_,.-/:;")
