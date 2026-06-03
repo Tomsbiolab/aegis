@@ -824,54 +824,197 @@ class AnnotationRedundancy:
 
         self._annot.sorted = False
 
+    def _take_snapshot(self):
+        snapshot = {}
+        for chrom, genes in self._annot.chrs.items():
+            for g_id, g in genes.items():
+                snapshot[g_id] = {
+                    attr: getattr(g.quality, attr, None) for attr in [
+                        'remove', 'rescue', 'reliable', 'reliable_score', 'overlap_reliable', 'unrescuable', 
+                        'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single', 'UTR_intron_nested', 
+                        'overlap_with_selected_CDS', 'overlap_with_selected_exon', 'transcriptomic_evidence', 'abinitio_evidence'
+                    ]
+                }
+                snapshot[g_id]['transcripts'] = tuple(sorted(g.transcripts.keys()))
+        return snapshot
+
+    def _print_changes(self, step_name, prev_snapshot, quiet=False):
+        current_snapshot = self._take_snapshot()
+        if quiet:
+            return current_snapshot
+        
+        # Find deleted genes
+        deleted_genes = set(prev_snapshot.keys()) - set(current_snapshot.keys())
+        # Find new genes
+        new_genes = set(current_snapshot.keys()) - set(prev_snapshot.keys())
+        # Find changed genes
+        changed_genes = {}
+        for g_id in set(prev_snapshot.keys()) & set(current_snapshot.keys()):
+            prev_vals = prev_snapshot[g_id]
+            curr_vals = current_snapshot[g_id]
+            diffs = {}
+            for attr, val in curr_vals.items():
+                if val != prev_vals[attr]:
+                    diffs[attr] = (prev_vals[attr], val)
+            if diffs:
+                changed_genes[g_id] = diffs
+
+        if deleted_genes or new_genes or changed_genes:
+            print(f"--- [Filter Step: {step_name}] Changes ---")
+            if new_genes:
+                print(f"  New genes: {', '.join(sorted(new_genes))}")
+            if deleted_genes:
+                print(f"  Removed genes: {', '.join(sorted(deleted_genes))}")
+            if changed_genes:
+                for g_id, diffs in sorted(changed_genes.items()):
+                    diff_str = ", ".join(f"{attr}: {prev} -> {curr}" for attr, (prev, curr) in diffs.items())
+                    print(f"  Gene {g_id}: {diff_str}")
+            print("------------------------------------------")
+        return current_snapshot
+
     def filter(self, source_priority:list, quiet:bool=False):
+        if not quiet:
+            print("=== Initial BLAST values ===")
+            for chrom, genes in self._annot.chrs.items():
+                for g_id, g in sorted(genes.items()):
+                    gene_blasts = []
+                    for b in g.quality.blast_hits:
+                        gene_blasts.append(f"{b.source}:{b.score}:{b.evalue}")
+                    
+                    prot_blasts = []
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if c.protein:
+                                for b in c.protein.blast_hits:
+                                    prot_blasts.append(f"{b.source}:{b.score}:{b.evalue}")
+                    
+                    blast_info = []
+                    if gene_blasts:
+                        blast_info.append(f"gene_blasts: {sorted(gene_blasts)}")
+                    if prot_blasts:
+                        blast_info.append(f"protein_blasts: {sorted(prot_blasts)}")
+                    if blast_info:
+                        print(f"  Gene {g_id}: {'; '.join(blast_info)}")
+            print("============================")
+
+        snapshot = self._take_snapshot()
+
         self._annot.remove_duplicate_transcripts(quiet=quiet)
+        snapshot = self._print_changes("remove_duplicate_transcripts", snapshot, quiet=quiet)
+
         self._annot.make_alternative_transcripts_into_genes(quiet=quiet)
+        snapshot = self._print_changes("make_alternative_transcripts_into_genes", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
+
         self._annot.stats.calculate_transcript_masking()
+        snapshot = self._print_changes("calculate_transcript_masking", snapshot, quiet=quiet)
+
         self.mark_noisy_genes(quiet=quiet)
+        snapshot = self._print_changes("mark_noisy_genes", snapshot, quiet=quiet)
+
         self._annot.remove_genes(quiet=quiet)
+        snapshot = self._print_changes("remove_genes", snapshot, quiet=quiet)
+
         self.mark_transcriptomic_supported_genes(quiet=quiet)
+        snapshot = self._print_changes("mark_transcriptomic_supported_genes", snapshot, quiet=quiet)
+
         self.mark_abinitio_supported_genes(quiet=quiet)
+        snapshot = self._print_changes("mark_abinitio_supported_genes", snapshot, quiet=quiet)
+
         self.add_reliable_CDS_evidence_score(quiet=quiet)
+        snapshot = self._print_changes("add_reliable_CDS_evidence_score", snapshot, quiet=quiet)
+
         self.find_best_gene_model(source_priority, quiet=quiet)
+        snapshot = self._print_changes("find_best_gene_model (with reliables)", snapshot, quiet=quiet)
+
         self.mark_overlap_with_reliable_genes(quiet=quiet)
+        snapshot = self._print_changes("mark_overlap_with_reliable_genes", snapshot, quiet=quiet)
+
         self.find_best_gene_model(source_priority, just_with_reliables=False, quiet=quiet)
+        snapshot = self._print_changes("find_best_gene_model (without reliables)", snapshot, quiet=quiet)
 
         self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["augustus", "Liftoff", "genemark"], quiet=quiet)
+        snapshot = self._print_changes("add_better_ab_initio_models_as_alternative_transcripts", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
         self.rescue_longer_same_frame_CDS(quiet=quiet)
+        snapshot = self._print_changes("rescue_longer_same_frame_CDS", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
         self.remove_CDS_overlaps(source_priority)
+        snapshot = self._print_changes("remove_CDS_overlaps", snapshot, quiet=quiet)
+
         self.mark_intron_nesting()
+        snapshot = self._print_changes("mark_intron_nesting", snapshot, quiet=quiet)
+
         self.remove_fully_intron_nested_genes()
+        snapshot = self._print_changes("remove_fully_intron_nested_genes", snapshot, quiet=quiet)
 
         self._annot.make_alternative_transcripts_into_genes(quiet=quiet)
+        snapshot = self._print_changes("make_alternative_transcripts_into_genes", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
         self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
+        snapshot = self._print_changes("mark_overlap_with_other_selected_CDSs", snapshot, quiet=quiet)
+
         self.mark_overlap_with_other_selected_exons(quiet=quiet)
+        snapshot = self._print_changes("mark_overlap_with_other_selected_exons", snapshot, quiet=quiet)
+
         self.select_best_possible_non_overlapping_UTR(quiet=quiet)
+        snapshot = self._print_changes("select_best_possible_non_overlapping_UTR", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
         self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
+        snapshot = self._print_changes("mark_overlap_with_other_selected_CDSs", snapshot, quiet=quiet)
+
         self.mark_overlap_with_other_selected_exons(quiet=quiet)
+        snapshot = self._print_changes("mark_overlap_with_other_selected_exons", snapshot, quiet=quiet)
+
         self.select_best_possible_non_overlapping_UTR(exon=True, quiet=quiet)
 
         self._annot.remove_genes(quiet=quiet)
+        snapshot = self._print_changes("remove_genes", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
         self._annot.make_alternative_genes_into_transcripts(quiet=quiet)
+        snapshot = self._print_changes("make_alternative_genes_into_transcripts", snapshot, quiet=quiet)
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
+
         self.find_best_gene_model_nested_overlaps(source_priority)
+        snapshot = self._print_changes("find_best_gene_model_nested_overlaps", snapshot, quiet=quiet)
+
         self.find_best_gene_model_exon_num_overlaps(source_priority)
+        snapshot = self._print_changes("find_best_gene_model_exon_num_overlaps", snapshot, quiet=quiet)
+
         self.remove_exon_overlaps(source_priority)
+        snapshot = self._print_changes("remove_exon_overlaps", snapshot, quiet=quiet)
+
         self.remove_UTRs_from_exon_overlaps()
+        snapshot = self._print_changes("remove_UTRs_from_exon_overlaps", snapshot, quiet=quiet)
+
         self._annot.remove_genes(quiet=quiet)
+
+        snapshot = self._print_changes("remove_genes", snapshot, quiet=quiet)
+
         self._annot.update(rename_features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
+
+        snapshot = self._print_changes("update (rename features)", snapshot, quiet=quiet)
+
         self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
     def remove_alternative(self):
         nodes = self._annot.overlaps.networks[chr][0].nodes()

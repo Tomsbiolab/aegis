@@ -1367,6 +1367,53 @@ class Annotation():
                     for c in t.CDSs.values():
                         c.generate_protein(mode=mode, quiet=quiet)
         self.contains_protein_sequences = True
+
+    def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet: bool = True):
+        if not self.contains_protein_sequences:
+            self.generate_proteins(mode=mode)
+
+        all_protein_seqs = {}
+        self.all_protein_ids = {}
+        for chrom, genes in self.chrs.items():
+            for g in genes.values():
+                if g.coding:
+                    for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            if c.protein is not None:
+                                if c.protein.seq != "":
+                                    all_protein_seqs[c.protein.id] = c.protein.seq
+                                    self.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
+
+        # Check if stdout or stderr are redirected to files
+        stdout_redirected = not sys.stdout.isatty()
+        stderr_redirected = not sys.stderr.isatty()
+
+        # Disable tqdm if stdout or stderr are redirected
+        if stdout_redirected or stderr_redirected or quiet:
+            disable = True
+        else:
+            disable = False
+
+        progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
+                        bar_format=(
+            f'\033[1;91mDetermining unique {self.id} proteins:\033[0m '
+            '{percentage:3.0f}%|'
+            f'\033[1;91m{{bar}}\033[0m| '
+            '{n}/{total} [{elapsed}<{remaining}]'))
+
+        unique_sequences = {}
+        self.protein_equivalences = {}
+
+        for protein_id, sequence in all_protein_seqs.items():
+            progress_bar.update(1)
+            if sequence not in unique_sequences:
+                unique_sequences[sequence] = protein_id
+                self.protein_equivalences[protein_id] = []
+            else:
+                first_protein_id = unique_sequences[sequence]
+                self.protein_equivalences[first_protein_id].append(protein_id)
+
+        progress_bar.close()
     
     def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):
         for genes in self.chrs.values():
@@ -2407,6 +2454,8 @@ class Annotation():
                     print(f"Warning: for now the add blast hits method does not accept more than one blast hit per ID ({ID})")
             f_in.close()
             if mode == "protein":
+                if not self.protein_equivalences:
+                    self.generate_protein_equivalences(quiet=True)
                 for protein_id in self.protein_equivalences:
                     chrom, g, t, c = self.all_protein_ids[protein_id]
                     prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
