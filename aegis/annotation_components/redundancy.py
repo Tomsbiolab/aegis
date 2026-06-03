@@ -421,7 +421,7 @@ class AnnotationRedundancy:
                     g.transcripts[t_copy.id] = t_copy.copy()
                     del t_copy
         progress_bar.close()
-        self._annot.update(rename_features=["transcript", "CDS", "exon", "UTR"])
+        self._annot.update(rename_features=("transcript", "CDS", "exon", "UTR"))
 
     def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus", "genemark"], quiet:bool=False):
 
@@ -479,7 +479,7 @@ class AnnotationRedundancy:
                         if best_candidate:
                             g.transcripts[best_candidate.id] = best_candidate.copy()
 
-        self._annot.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self._annot.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
     def remove_CDS_overlaps(self, source_priority, blast:bool=False, anti:bool=True):
         for genes in self._annot.chrs.values():
@@ -748,7 +748,7 @@ class AnnotationRedundancy:
         progress_bar.close()
         self._annot.rename_ids(quiet=quiet)
         self._annot.remove_duplicate_transcripts(quiet=quiet)
-        self._annot.update(rename_features=["transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self._annot.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
     def find_best_gene_model_nested_overlaps(self, source_priority, blast=False):
         """
@@ -1006,9 +1006,10 @@ class AnnotationRedundancy:
         snapshot = self._print_changes("remove_UTRs_from_exon_overlaps", snapshot, quiet=quiet)
 
         self._annot.remove_genes(quiet=quiet)
+
         snapshot = self._print_changes("remove_genes", snapshot, quiet=quiet)
 
-        self._annot.update(rename_features=["gene", "transcript", "CDS", "exon", "UTR"], quiet=quiet)
+        self._annot.update(rename_features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
         snapshot = self._print_changes("update (rename features)", snapshot, quiet=quiet)
 

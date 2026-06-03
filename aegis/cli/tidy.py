@@ -124,9 +124,9 @@ def main(
     remove_missing_transcript_parent_references = not(keep_missing_transcript_parent_references)
 
     if keep_original_subfeature_ids:
-        rename_features = []
+        rename_features = ()
     else:
-        rename_features = ["CDS", "UTR", "exon"]
+        rename_features = ("CDS", "UTR", "exon")
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]

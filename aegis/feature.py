@@ -27,6 +27,7 @@ class Feature():
 
     _ID_NUMBER_RE = re.compile(r'(\d+)$')
 
+    id: str
     gtf_attributes: list[str]|None
     start: int
     end: int

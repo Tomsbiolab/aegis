@@ -87,10 +87,7 @@ class CDS(Feature):
             self.renamed = True
 
             if keep_numbering and self.id_number != None:
-                if self.main:
-                    self.id = f"{base_id}{sep}CDS{self.id_number:0{digits}d}"
-                else:
-                    self.id = f"{base_id}{sep}CDS{self.id_number:0{digits}d}"
+                self.id = f"{base_id}{sep}CDS{self.id_number:0{digits}d}"
             else:
                 if self.main:
                     self.id = f"{base_id}{sep}CDS{1:0{digits}d}"
