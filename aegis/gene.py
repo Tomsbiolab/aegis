@@ -548,3 +548,8 @@ class Gene(Feature):
             base = base[4:]
 
         return base.strip("_,.-/:;")
+
+    @property
+    def alternative_transcript_rescue(self) -> list:
+        return self.quality.alternative_transcript_rescue
+
