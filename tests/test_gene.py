@@ -81,23 +81,19 @@ class TestGeneObtainBaseId:
     def test_base_id_strips_gene_prefix(self, make_gene):
         """obtain_base_id sets self.base_id by stripping 'gene' prefix."""
         g = make_gene(feature_id="gene001")
-        g.obtain_base_id()
         # "gene001" starts with "gene" → base_id = id[4:] = "001"
         assert g.base_id == "001"
 
     def test_base_id_with_gene_suffix(self, make_gene):
         g = make_gene(feature_id="Vitvi01g00123_gene")
-        g.obtain_base_id()
         assert g.base_id == "Vitvi01g00123"
 
     def test_base_id_no_gene_in_name(self, make_gene):
         g = make_gene(feature_id="AT1G00100")
-        g.obtain_base_id()
         assert g.base_id == "AT1G00100"
 
     def test_base_id_original_flag(self, make_gene):
         g = make_gene(feature_id="gene001")
-        g.obtain_base_id(original=True)
         assert g.base_id == "001"
         assert g.original_base_id == "001"
 
