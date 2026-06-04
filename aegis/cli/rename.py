@@ -97,7 +97,7 @@ def main(
         
     if (remove_point_suffix or strip_gene_tag) and "gene" not in rename_features:
         typer.echo(f"'gene' was not included in features={rename_features} but --remove_point_suffix or --strip_gene_tag flags were used, therefore, 'gene' was added to the list of modified features.", err=True)
-        rename_features.append("gene")
+        rename_features.append("gene") #type: ignore
 
     if rename_features == []:
         raise typer.BadParameter(f"No features were chosen to rename their ids. Select from: {VALID_FEATURES}.")
@@ -112,7 +112,7 @@ def main(
     if output_file == "{annotation-name}_renamed.gff3":
         output_file = f"{annotation_name}_renamed.gff3"
 
-    annotation.rename_ids(custom_path=output_dir, features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, quiet=quiet)
+    annotation.rename_ids(custom_path=output_dir, features=tuple(rename_features), keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, quiet=quiet)
     annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet, subfolder=subfolder)
 
 if __name__ == "__main__":

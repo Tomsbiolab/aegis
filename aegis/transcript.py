@@ -82,10 +82,7 @@ class Transcript(Feature):
         if rename:
 
             if keep_numbering and self.id_number != None:
-                if self.main:
-                    self.id = f"{base_id}{sep}t{self.id_number:0{digits}d}"
-                else:
-                    self.id = f"{base_id}{sep}t{self.id_number:0{digits}d}"
+                self.id = f"{base_id}{sep}t{self.id_number:0{digits}d}"
             else:
                 if self.main:
                     self.id = f"{base_id}{sep}t{1:0{digits}d}"

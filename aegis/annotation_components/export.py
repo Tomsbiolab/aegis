@@ -214,15 +214,6 @@ class AnnotationExport:
 
     def unique_proteins(self, custom_path: str = "", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end"):
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         if custom_path:
             output_file = Path(custom_path)
@@ -232,45 +223,13 @@ class AnnotationExport:
         output_file = str(output_file) + "/"
         output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_proteins.fasta"
 
-        if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(mode=mode)
-
-        all_protein_seqs = {}
-        self._annot.all_protein_ids = {}
-        for chrom, genes in self._annot.chrs.items():
-            for g in genes.values():
-                if g.coding:
-                    for t in g.transcripts.values():
-                        for c in t.CDSs.values():
-                            if c.protein is not None:
-                                if c.protein.seq != "":
-                                    all_protein_seqs[c.protein.id] = c.protein.seq
-                                    self._annot.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
-
-        progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
-                        bar_format=(
-            f'\033[1;91mDetermining and exporting unique {self._annot.id} proteins:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;91m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
-
-        unique_sequences = {}
-        self._annot.protein_equivalences = {}
-
-        for protein_id, sequence in all_protein_seqs.items():
-            progress_bar.update(1)
-            if sequence not in unique_sequences:
-                unique_sequences[sequence] = protein_id
-                self._annot.protein_equivalences[protein_id] = []
-            else:
-                first_protein_id = unique_sequences[sequence]
-                self._annot.protein_equivalences[first_protein_id].append(protein_id)
+        self._annot.generate_protein_equivalences(mode=mode, quiet=quiet)
 
         with open(output_file, "w", encoding="utf-8") as f_out:
-            for sequence, protein_id in unique_sequences.items():
+            for protein_id in self._annot.protein_equivalences:
+                chrom, g, t, c = self._annot.all_protein_ids[protein_id]
+                sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
                 f_out.write(f">{protein_id}\n{sequence}\n")
-
-        progress_bar.close()
 
         now = time.time()
         lapse = now - start_time
