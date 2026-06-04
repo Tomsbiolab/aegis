@@ -51,6 +51,7 @@
       - `def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):`
       - `def clear_promoters(self):`
       - `def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):`
+      - `def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet: bool = True):`
       - `def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):`
       - `def clear_proteins(self):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
@@ -345,6 +346,8 @@
         - `def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):`
         - `def remove_exon_overlaps(self, source_priority, blast:bool=False):`
         - `def remove_UTRs_from_exon_overlaps(self):`
+        - `def _take_snapshot(self):`
+        - `def _print_changes(self, step_name, prev_snapshot, quiet=False):`
         - `def filter(self, source_priority:list, quiet:bool=False):`
         - `def remove_alternative(self):`
       - stats.py
