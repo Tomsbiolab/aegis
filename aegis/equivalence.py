@@ -773,8 +773,8 @@ class Simple_annotation():
         if not liftoff:
             program = "lifton"
 
-        fwd_file = f"{folder}/{program}_{query_tag}__to__{target_tag}_overlaps.tsv"
-        rev_file = f"{folder}/{program}_{target_tag}__to__{query_tag}_overlaps.tsv"
+        fwd_file = f"{folder}/{program}__{query_tag}__to__{target_tag}_overlaps.tsv"
+        rev_file = f"{folder}/{program}__{target_tag}__to__{query_tag}_overlaps.tsv"
 
         if os.path.isfile(fwd_file) and os.path.isfile(rev_file):
             start = time.time()
