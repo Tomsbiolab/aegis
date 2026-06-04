@@ -427,7 +427,7 @@ class AnnotationOverlaps:
                             if target_CDS and query_CDS:
                                 CDSs_in_both = True
                                 if gene_orientation != CDS_orientation:
-                                    print(f"Error: {self._annot.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}. DO NOT CONTINUE! -> fix the problem!")
+                                    print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}")
                                 if overlapping:
                                     CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
                                     CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
