@@ -16,48 +16,51 @@ from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue
 
-def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, quiet:bool=True):
+def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, quiet:bool=True):
 
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
     protein_dir = working_directory / "proteins"
     diamond_dir = working_directory / "diamond"
     mcscan_dir = working_directory / "mcscan"
+    orthofinder_dir = protein_dir / f"orthofinder_{annot1.name}__to__{annot2.name}"
 
     print(f"\n\n{annot1.name} vs {annot2.name}:")
 
-    print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
+    if not skip_liftoff:
 
-    liftoff_gff = liftoff_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
-    liftoff_cmd = [
-        "liftoff", str(genome2.file), str(genome1.file),
-        "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types
-    ]
-    if copies:
-        liftoff_cmd.append("-copies")
+        print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
-    run_command(liftoff_dir, liftoff_cmd)
+        liftoff_gff = liftoff_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
+        liftoff_cmd = [
+            "liftoff", str(genome2.file), str(genome1.file),
+            "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types
+        ]
+        if copies:
+            liftoff_cmd.append("-copies")
 
-    to_remove = liftoff_dir / "intermediate_files"
+        run_command(liftoff_dir, liftoff_cmd)
 
-    if os.path.exists(str(to_remove)):
-        shutil.rmtree(str(to_remove))
-        unmapped_file = f"{str(liftoff_dir)}/unmapped_features.txt"
-        if os.path.isfile(unmapped_file):
-            os.remove(unmapped_file)
+        to_remove = liftoff_dir / "intermediate_files"
 
-    print(f"\t\tRunning aegis overlap on liftoff result.")
+        if os.path.exists(str(to_remove)):
+            shutil.rmtree(str(to_remove))
+            unmapped_file = f"{str(liftoff_dir)}/unmapped_features.txt"
+            if os.path.isfile(unmapped_file):
+                os.remove(unmapped_file)
 
-    if synteny:
-        a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=annot1.name, genome=genome2, original_annotation=annot1, quiet=quiet)
-    else:
-        a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=annot1.name, genome=genome2, quiet=quiet)
+        print(f"\t\tRunning aegis overlap on liftoff result.")
 
-    a_liftoff.overlaps.detect(annot2, quiet=quiet)
+        if synteny:
+            a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=annot1.name, genome=genome2, original_annotation=annot1, quiet=quiet)
+        else:
+            a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=annot1.name, genome=genome2, quiet=quiet)
 
-    _ = a_liftoff.overlaps.export(custom_path=str(liftoff_dir), output_file=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
-    del a_liftoff
+        _ = a_liftoff.overlaps.export(custom_path=str(liftoff_dir), output_file=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+
+        del a_liftoff
 
     if not skip_lifton:
 
@@ -100,29 +103,31 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
     protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 
-    diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
+    if not skip_blasts:
 
-    diamond_result = diamond_dir / f"single_{annot1.name}__to__{annot2.name}.txt"
-    diamond_result_best = diamond_dir / f"single_best_{annot1.name}__to__{annot2.name}.txt"
+        diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
 
-    print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
-    blastp_cmd = [
-        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
-        "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
-        "--evalue", str(evalue), "--max-hsps", str(max_hsps), "--query-cover", str(coverage)
-    ]
+        diamond_result = diamond_dir / f"single_{annot1.name}__to__{annot2.name}.txt"
+        diamond_result_best = diamond_dir / f"single_best_{annot1.name}__to__{annot2.name}.txt"
 
-    run_command(diamond_dir, blastp_cmd)
+        print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
+        blastp_cmd = [
+            "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+            "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+            "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
+            "--evalue", str(evalue), "--max-hsps", str(max_hsps), "--query-cover", str(coverage)
+        ]
 
-    blastp_cmd = [
-        "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
-        "--out", str(diamond_result_best), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-        "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
-        "--max-target-seqs", "1", "--evalue", str(evalue), "--max-hsps", str(max_hsps)
-    ]
+        run_command(diamond_dir, blastp_cmd)
 
-    run_command(diamond_dir, blastp_cmd)
+        blastp_cmd = [
+            "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+            "--out", str(diamond_result_best), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+            "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
+            "--max-target-seqs", "1", "--evalue", str(evalue), "--max-hsps", str(max_hsps)
+        ]
+
+        run_command(diamond_dir, blastp_cmd)
     
     if not skip_mcscan:
         print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
@@ -147,6 +152,26 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
                 # If it's an actual systemic failure (e.g., Docker died, out of memory), crash normally
                 raise
 
+    if pairwise_orthofinder:
+        print(f"\nRunning OrthoFinder between {annot1.name} and {annot2.name}")
+
+        orthofinder_dir.mkdir(parents=True, exist_ok=True)
+
+        protein_fasta_1 = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
+        protein_fasta_2 = protein_dir / f"{annot2.name}_proteins_g_id_main.fasta"
+
+        shutil.copy(protein_fasta_1, orthofinder_dir / protein_fasta_1.name)
+        if protein_fasta_1 != protein_fasta_2:
+            shutil.copy(protein_fasta_2, orthofinder_dir / protein_fasta_2.name)
+
+        orthofinder_cmd = [
+            "orthofinder",
+            "-f", str(orthofinder_dir),
+            "-t", str(num_threads),
+            "-a", str(num_threads),
+            "-o", f"{str(orthofinder_dir)}/orthofinder/"
+        ]
+        run_command(orthofinder_dir, orthofinder_cmd)
 
 class Equivalence():
 

@@ -61,13 +61,25 @@ def main(
         "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
     )] = "ALL",
     skip_lifton: Annotated[bool, typer.Option(
-        "--skip-lifton", help="Skip LiftOn, use flag in case LiftOn is causing compatibility issues."
+        "--skip-lifton", help="Skip LiftOn."
+    )] = False,
+    skip_liftoff: Annotated[bool, typer.Option(
+        "--skip-liftoff", help="Skip Liftoff."
     )] = False,
     skip_copies: Annotated[bool, typer.Option(
-        "--skip-copies", help="Liftoff and Lifton are run in copies mode my default, flag to deactivate."
+        "--skip-copies", help="Liftoff and LiftOn are run in copies mode my default, flag to deactivate."
     )] = False,
     skip_mcscan: Annotated[bool, typer.Option(
         "--skip-mcscan", help="Skip the JCVI toolkit synteny and collinearity analysis (MCScan). Useful when JCVI is causing compatibility issues."
+    )] = False,
+    skip_orthofinder: Annotated[bool, typer.Option(
+        "--skip-orthofinder", help="Skip the OrthoFinder analysis."
+    )] = False,
+    pairwise_orthofinder: Annotated[bool, typer.Option(
+        "--pairwise-orthofinder", help="Execute OrthoFinder on independent annotation pairs. Overrides the default multi-annotation bulk analysis. Recommended for highly divergent taxa or targeted 1:1 orthologue mapping."
+    )] = False,
+    skip_all_blasts: Annotated[bool, typer.Option(
+        "--skip-all-blasts", help="Skip all BLASTs."
     )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep-intermediate", help="Keep intermediate files, useful for identifying errors."
@@ -142,6 +154,9 @@ def main(
     for annotation_name in annotation_names:
         if "__to__" in annotation_name:
             raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible term: '__to__' as it is used internally for temporary file naming.")
+
+    if skip_mcscan and skip_liftoff and skip_all_blasts and skip_orthofinder and skip_lifton:
+        raise typer.BadParameter("No analysis methods selected. Please select at least one analysis method. Run 'aegis orthology --help' for more information.")
 
     if len(annotation_names) != len(set(annotation_names)):
         raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
@@ -253,13 +268,13 @@ def main(
         a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, custom_filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
-        diamond_db_file = diamond_path / f"{a.name}_diamond_db"
 
-
-        makedb_cmd = [
-            "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
-        ]
-        run_command(diamond_path, makedb_cmd)
+        if not skip_all_blasts:
+            diamond_db_file = diamond_path / f"{a.name}_diamond_db"
+            makedb_cmd = [
+                "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
+            ]
+            run_command(diamond_path, makedb_cmd)
 
         if not skip_mcscan:
             cds_fasta = CDS_path / f"{mcscan_name}_CDSs_g_id_main.fasta"            
@@ -276,7 +291,6 @@ def main(
             ]
             run_command(mcscan_path, gff_to_bed_cmd_1)
 
-        
 
     for n1, a1 in enumerate(annotations):
 
@@ -285,107 +299,109 @@ def main(
             if n1 == n2:
                 continue
 
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, quiet=quiet)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_liftoff=skip_liftoff, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, skip_blasts=skip_all_blasts, pairwise_orthofinder=pairwise_orthofinder, quiet=quiet)
 
+    if not skip_all_blasts:
+        # Obtaining RBHs and RBBHs from single blast results
+        checked_pairs = []
+        for n1, a1 in enumerate(annotations):
+            for n2, a2 in enumerate(annotations):
+                if n1 == n2:
+                    continue
+                pair = [n1, n2]
+                pair.sort()
+                if pair in checked_pairs:
+                    continue
+                checked_pairs.append(pair)
 
-    # Obtaining RBHs and RBBHs from single blast results
-    checked_pairs = []
-    for n1, a1 in enumerate(annotations):
-        for n2, a2 in enumerate(annotations):
-            if n1 == n2:
-                continue
-            pair = [n1, n2]
-            pair.sort()
-            if pair in checked_pairs:
-                continue
-            checked_pairs.append(pair)
+                print(f"\nProcessing RBH and RBBHs for {a1.name} and {a2.name}")
 
-            print(f"\nProcessing RBH and RBBHs for {a1.name} and {a2.name}")
+                fwd_in = diamond_path / f"single_{a1.name}__to__{a2.name}.txt"
+                rev_in = diamond_path / f"single_{a2.name}__to__{a1.name}.txt"
+                fwd_best_in = diamond_path / f"single_best_{a1.name}__to__{a2.name}.txt"
+                rev_best_in = diamond_path / f"single_best_{a2.name}__to__{a1.name}.txt"
+                rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
+                rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
 
-            fwd_in = diamond_path / f"single_{a1.name}__to__{a2.name}.txt"
-            rev_in = diamond_path / f"single_{a2.name}__to__{a1.name}.txt"
-            fwd_best_in = diamond_path / f"single_best_{a1.name}__to__{a2.name}.txt"
-            rev_best_in = diamond_path / f"single_best_{a2.name}__to__{a1.name}.txt"
-            rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
-            rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
+                fwd_results = pd.read_csv(fwd_in, sep="\t", header=None)
+                rev_results = pd.read_csv(rev_in, sep="\t", header=None)
 
-            fwd_results = pd.read_csv(fwd_in, sep="\t", header=None)
-            rev_results = pd.read_csv(rev_in, sep="\t", header=None)
+                headers = ["query", "subject", "identity", "coverage", "qlength", "slength", "alength", "bitscore", "E-value"]
+                fwd_results.columns = headers
+                rev_results.columns = headers
 
-            headers = ["query", "subject", "identity", "coverage", "qlength", "slength", "alength", "bitscore", "E-value"]
-            fwd_results.columns = headers
-            rev_results.columns = headers
+                fwd_results = fwd_results[(fwd_results["identity"] >= identity)]
+                rev_results = rev_results[(rev_results["identity"] >= identity)]
 
-            fwd_results = fwd_results[(fwd_results["identity"] >= identity)]
-            rev_results = rev_results[(rev_results["identity"] >= identity)]
+                # Create a new column in both dataframes: normalised bitscore
+                fwd_results['norm_bitscore'] = fwd_results.bitscore/fwd_results.qlength
+                rev_results['norm_bitscore'] = rev_results.bitscore/rev_results.qlength
 
-            # Create a new column in both dataframes: normalised bitscore
-            fwd_results['norm_bitscore'] = fwd_results.bitscore/fwd_results.qlength
-            rev_results['norm_bitscore'] = rev_results.bitscore/rev_results.qlength
+                # Create query and subject coverage columns in both dataframes
+                fwd_results['qcov'] = fwd_results.alength/fwd_results.qlength
+                rev_results['qcov'] = rev_results.alength/rev_results.qlength
+                fwd_results['scov'] = fwd_results.alength/fwd_results.slength
+                rev_results['scov'] = rev_results.alength/rev_results.slength
 
-            # Create query and subject coverage columns in both dataframes
-            fwd_results['qcov'] = fwd_results.alength/fwd_results.qlength
-            rev_results['qcov'] = rev_results.alength/rev_results.qlength
-            fwd_results['scov'] = fwd_results.alength/fwd_results.slength
-            rev_results['scov'] = rev_results.alength/rev_results.slength
+                # Clip maximum coverage values at 1.0
+                fwd_results['qcov'] = fwd_results['qcov'].clip(upper=1)
+                rev_results['qcov'] = rev_results['qcov'].clip(upper=1)
+                fwd_results['scov'] = fwd_results['scov'].clip(upper=1)
+                rev_results['scov'] = rev_results['scov'].clip(upper=1)
 
-            # Clip maximum coverage values at 1.0
-            fwd_results['qcov'] = fwd_results['qcov'].clip(upper=1)
-            rev_results['qcov'] = rev_results['qcov'].clip(upper=1)
-            fwd_results['scov'] = fwd_results['scov'].clip(upper=1)
-            rev_results['scov'] = rev_results['scov'].clip(upper=1)
+                # Merge forward and reverse results
+                rbh = pd.merge(fwd_results, rev_results, left_on=['subject', 'query'], right_on=['query', 'subject'], how='inner')
 
-            # Merge forward and reverse results
-            rbh = pd.merge(fwd_results, rev_results, left_on=['subject', 'query'], right_on=['query', 'subject'], how='inner')
+                rbh.to_csv(rbh_out, sep = '\t')
 
-            rbh.to_csv(rbh_out, sep = '\t')
+                del rbh
 
-            del rbh
+                fwd_results = pd.read_csv(fwd_best_in, sep="\t", header=None)
+                rev_results = pd.read_csv(rev_best_in, sep="\t", header=None)
 
-            fwd_results = pd.read_csv(fwd_best_in, sep="\t", header=None)
-            rev_results = pd.read_csv(rev_best_in, sep="\t", header=None)
+                headers = ["query", "subject", "identity", "coverage", "qlength", "slength", "alength", "bitscore", "E-value"]
+                fwd_results.columns = headers
+                rev_results.columns = headers
 
-            headers = ["query", "subject", "identity", "coverage", "qlength", "slength", "alength", "bitscore", "E-value"]
-            fwd_results.columns = headers
-            rev_results.columns = headers
+                # Create a new column in both dataframes: normalised bitscore
+                fwd_results['norm_bitscore'] = fwd_results.bitscore/fwd_results.qlength
+                rev_results['norm_bitscore'] = rev_results.bitscore/rev_results.qlength
 
-            # Create a new column in both dataframes: normalised bitscore
-            fwd_results['norm_bitscore'] = fwd_results.bitscore/fwd_results.qlength
-            rev_results['norm_bitscore'] = rev_results.bitscore/rev_results.qlength
+                # Create query and subject coverage columns in both dataframes
+                fwd_results['qcov'] = fwd_results.alength/fwd_results.qlength
+                rev_results['qcov'] = rev_results.alength/rev_results.qlength
+                fwd_results['scov'] = fwd_results.alength/fwd_results.slength
+                rev_results['scov'] = rev_results.alength/rev_results.slength
 
-            # Create query and subject coverage columns in both dataframes
-            fwd_results['qcov'] = fwd_results.alength/fwd_results.qlength
-            rev_results['qcov'] = rev_results.alength/rev_results.qlength
-            fwd_results['scov'] = fwd_results.alength/fwd_results.slength
-            rev_results['scov'] = rev_results.alength/rev_results.slength
+                # Clip maximum coverage values at 1.0
+                fwd_results['qcov'] = fwd_results['qcov'].clip(upper=1)
+                rev_results['qcov'] = rev_results['qcov'].clip(upper=1)
+                fwd_results['scov'] = fwd_results['scov'].clip(upper=1)
+                rev_results['scov'] = rev_results['scov'].clip(upper=1)
 
-            # Clip maximum coverage values at 1.0
-            fwd_results['qcov'] = fwd_results['qcov'].clip(upper=1)
-            rev_results['qcov'] = rev_results['qcov'].clip(upper=1)
-            fwd_results['scov'] = fwd_results['scov'].clip(upper=1)
-            rev_results['scov'] = rev_results['scov'].clip(upper=1)
+                # Merge forward and reverse results
+                rbbh = pd.merge(fwd_results, rev_results, left_on=['subject', 'query'], right_on=['query', 'subject'], how='inner')
 
-            # Merge forward and reverse results
-            rbbh = pd.merge(fwd_results, rev_results, left_on=['subject', 'query'], right_on=['query', 'subject'], how='inner')
+                rbbh.to_csv(rbbh_out, sep = '\t')
 
-            rbbh.to_csv(rbbh_out, sep = '\t')
+                duplicates = rbbh[rbbh.duplicated(subset=['query_x', 'subject_x'], keep=False)]
+                if not duplicates.empty:
+                    print(f"\nWarning: Duplicate rows found based on ['query_x', 'subject_x']: for {a1.name} and {a2.name} RBBHs")
+                    print(duplicates)
 
-            duplicates = rbbh[rbbh.duplicated(subset=['query_x', 'subject_x'], keep=False)]
-            if not duplicates.empty:
-                print(f"\nWarning: Duplicate rows found based on ['query_x', 'subject_x']: for {a1.name} and {a2.name} RBBHs")
-                print(duplicates)
+                del rbbh
 
-            del rbbh
-
-    print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
-    orthofinder_cmd = [
-        "orthofinder",
-        "-f", str(protein_path),
-        "-t", str(threads),
-        "-a", str(threads),
-        "-o", f"{str(protein_path)}/orthofinder/"
-    ]
-    run_command(results_directory, orthofinder_cmd)
+    if not skip_orthofinder:
+        if not pairwise_orthofinder:
+            print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
+            orthofinder_cmd = [
+                "orthofinder",
+                "-f", str(protein_path),
+                "-t", str(threads),
+                "-a", str(threads),
+                "-o", f"{str(protein_path)}/orthofinder/"
+            ]
+            run_command(results_directory, orthofinder_cmd)
 
     simple_annotations = []
 
@@ -414,31 +430,37 @@ def main(
                 a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2_mcscan_name, group_names[n2])
                 a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2_mcscan_name, group_names[n2])
 
-            orthofile_pattern = f"orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
-            matching_files = list(protein_path.glob(orthofile_pattern))
+            if not skip_orthofinder:
+                if pairwise_orthofinder:
+                    orthofile_pattern = f"orthofinder_{a1.name}__to__{a2.name}/orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
+                else:
+                    orthofile_pattern = f"orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
+                matching_files = list(protein_path.glob(orthofile_pattern))
 
-            if not matching_files:
-                warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
-            elif len(matching_files) > 1:
-                warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
-            else:
-                ortho_file_path = matching_files[0]
-                a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
+                if not matching_files:
+                    warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
+                elif len(matching_files) > 1:
+                    warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
+                else:
+                    ortho_file_path = matching_files[0]
+                    a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
-            a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
+            if not skip_liftoff:
+                a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
             if not skip_lifton:
                 a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet)
 
-            a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
+            if not skip_all_blasts:
+                a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
 
         output_file = f"{output_dir}{a1.name}_equivalences{extra_tag}.tsv"
         output_file_filtered_just_rbbhs_and_rbhs = f"{output_dir}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
         output_file_filtered_just_rbbhs = f"{output_dir}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
 
-        if skip_rbhs and skip_unidirectional_blasts:
+        if skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
             df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=quiet, return_df=True, export_csv=False)
 
-        elif skip_unidirectional_blasts:
+        elif skip_unidirectional_blasts and not skip_all_blasts:
             df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=quiet, return_df=True, export_csv=False)
 
         else:
@@ -451,9 +473,9 @@ def main(
 
     if output_filename != "equivalences{other_tags}.tsv":
         final_output_file = f"{output_dir}{output_filename}.tsv"
-    elif skip_rbhs and skip_unidirectional_blasts:
+    elif skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
         final_output_file = f"{output_dir}equivalences_just_rbbhs{extra_tag}.tsv"
-    elif skip_unidirectional_blasts:
+    elif skip_unidirectional_blasts and not skip_all_blasts:
         final_output_file = f"{output_dir}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
     else:
         final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
