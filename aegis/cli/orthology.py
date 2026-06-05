@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import warnings
 import shutil
+
 from pathlib import Path
 from typing_extensions import Annotated
 
@@ -168,7 +169,20 @@ def main(
         raise typer.BadParameter(f"A single genome file must be provided for each annotation file. Genome files: {genome_files}. Annotation files: {annotation_files}")
     
     if len(genome_files) != len(set(genome_files)):
-        raise typer.BadParameter("Avoid repeated genome assemblies. If looking to compare annotation versions associated to the same genome assembly, 'aegis overlap' may be more appropriate.")
+        repeated_genomes = {}
+        for idx, genome in enumerate(genome_files):
+            repeated_genomes.setdefault(genome, []).append(annotation_names[idx])
+            
+        repeated_msg = []
+        for genome, a_names in repeated_genomes.items():
+            if len(a_names) > 1:
+                repeated_msg.append(f"  - Genome '{genome}' used by annotations: {', '.join(a_names)}")
+                
+        print("\n⚠️  Warning: Repeated genome assemblies.\n"
+              "Bear in mind that annotations associated to the same genome will only be compared at the level of 'aegis overlap' and BLAST results. Also, OrthoFinder will only be run in pairwise mode, except for the annotation pairs which share the same genome.\n"
+              "Repeated assignments found:\n" + "\n".join(repeated_msg) + "\n")
+        
+        pairwise_orthofinder = True
     
     if group_names != []:
         if len(annotation_files) != len(group_names):
@@ -186,13 +200,13 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
-    genomes:list[Genome] = [ Genome(name=f"{annotation_names[n]}_genome", genome_file_path=g, quiet=quiet) for n, g in enumerate(genome_files) ]
+    genomes:dict[str, Genome] = { g: Genome(name=g, genome_file_path=g, quiet=quiet) for g in set(genome_files) }
 
     annotations:list[Annotation] = []
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[n], annot_file_path=annotation_file, quiet=quiet))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
@@ -231,6 +245,11 @@ def main(
         mcscan_path = results_directory / "mcscan"
         mcscan_path.mkdir(parents=True, exist_ok=True)
 
+    liftless_overlaps_dir = results_directory / "litfless_overlaps"
+
+    if len(genome_files) != len(set(genome_files)):
+        liftless_overlaps_dir.mkdir(parents=True, exist_ok=True)
+
     if lift_feature_types == ["ALL"]:
         lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"] # type: ignore
     
@@ -249,14 +268,14 @@ def main(
     for n, a in enumerate(annotations):
 
         mcscan_name = a.name.replace(".", "_")
-        a.export.gff(custom_path=str(gff_path), tag=f"{a.name}.gff3", subfolder=False, quiet=quiet)
-        a.export.gff(custom_path=str(gff_path), tag=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
+        a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
+        a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
 
         if not skip_lifton:
 
             a_lifton = a.copy()
             a_lifton.CDS_to_CDS_segment_ids(override=True)
-            a_lifton.export.gff(custom_path=str(gff_path), tag=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
+            a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
 
             del a_lifton
 
@@ -299,7 +318,7 @@ def main(
             if n1 == n2:
                 continue
 
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[n1], genome2=genomes[n2], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_liftoff=skip_liftoff, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, skip_blasts=skip_all_blasts, pairwise_orthofinder=pairwise_orthofinder, quiet=quiet)
+            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[genome_files[n1]], genome2=genomes[genome_files[n2]], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_liftoff=skip_liftoff, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, skip_blasts=skip_all_blasts, pairwise_orthofinder=pairwise_orthofinder, skip_orthofinder=skip_orthofinder,quiet=quiet)
 
     if not skip_all_blasts:
         # Obtaining RBHs and RBBHs from single blast results
@@ -423,32 +442,35 @@ def main(
                 if not a1.target and not a2.target:
                     continue
 
-            if not skip_mcscan:
-                a1_mcscan_name = a1.name.replace(".", "_")
-                a2_mcscan_name = a2.name.replace(".", "_")
+            if genome_files[n1] == genome_files[n2]:
+                a1.add_liftless_overlap_equivalences(str(liftless_overlaps_dir), a1.name, a2.name, group_names[n2], quiet=quiet)
+            else:
+                if not skip_mcscan:
+                    a1_mcscan_name = a1.name.replace(".", "_")
+                    a2_mcscan_name = a2.name.replace(".", "_")
 
-                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2_mcscan_name, group_names[n2])
-                a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2_mcscan_name, group_names[n2])
+                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2_mcscan_name, group_names[n2])
+                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2_mcscan_name, group_names[n2])
 
-            if not skip_orthofinder:
-                if pairwise_orthofinder:
-                    orthofile_pattern = f"orthofinder_{a1.name}__to__{a2.name}/orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
-                else:
-                    orthofile_pattern = f"orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
-                matching_files = list(protein_path.glob(orthofile_pattern))
+                if not skip_orthofinder:
+                    if pairwise_orthofinder:
+                        orthofile_pattern = f"orthofinder_{a1.name}__to__{a2.name}/orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
+                    else:
+                        orthofile_pattern = f"orthofinder/Results*/Orthologues/Orthologues_{a1.name}_proteins_g_id_main/{a1.name}_proteins_g_id_main__v__{a2.name}_proteins_g_id_main.tsv"
+                    matching_files = list(protein_path.glob(orthofile_pattern))
 
-                if not matching_files:
-                    warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
-                elif len(matching_files) > 1:
-                    warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
-                else:
-                    ortho_file_path = matching_files[0]
-                    a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
+                    if not matching_files:
+                        warnings.warn(f"No orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
+                    elif len(matching_files) > 1:
+                        warnings.warn(f"More than one orthofinder file for {a1.name} vs {a2.name} found! Orthofinder results not added.", category=UserWarning)
+                    else:
+                        ortho_file_path = matching_files[0]
+                        a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
-            if not skip_liftoff:
-                a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
-            if not skip_lifton:
-                a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet)
+                if not skip_liftoff:
+                    a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
+                if not skip_lifton:
+                    a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet)
 
             if not skip_all_blasts:
                 a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)

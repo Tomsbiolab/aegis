@@ -367,7 +367,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
             if x != 0:
                 continue
 
-        single_df = a.overlaps.export(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False)
+        single_df = a.overlaps.export(overlap_threshold=overlap_threshold, synteny=synteny, verbose=verbose, NAs=False, save_csv=False)
 
         if len(annotations) > 2:
 

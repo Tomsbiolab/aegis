@@ -109,7 +109,7 @@ def main(
         # if chosen_chromosomes is selected min_genes parameter is ignored
         chosen_chromosomes_set = a.subset(chosen_features=chosen_chromosomes_set, gene_cap=gene_cap, common_chromosomes=common_chromosomes, min_genes=0, quiet=quiet)
 
-    a.export.gff(custom_path=output_dir, tag=output_annot_file, subfolder=False, skip_atypical_fts=True)
+    a.export.gff(output_dir=output_dir, filename=output_annot_file, subfolder=False, skip_atypical_fts=True)
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)

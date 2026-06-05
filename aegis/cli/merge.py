@@ -79,11 +79,11 @@ def main(
             max_gene_overlap=max_gene_overlap,
             max_exon_overlap=max_exon_overlap,
             max_cds_overlap=max_cds_overlap,
-            features_to_rename=features
+            features_to_rename=tuple(features)
         )
 
     print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export.gff(output_dir, quiet=quiet, subfolder=subfolder)
+    base_annotation.export.gff(output_dir=output_dir, quiet=quiet, subfolder=subfolder)
 
     print("Done.")
 

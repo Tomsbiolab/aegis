@@ -65,9 +65,9 @@ def main(
             output_file += ".gff3"
 
     if input_format == "gff3":
-        annotation.export.gtf(custom_path=output_dir, tag=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
+        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
     elif input_format == "gtf":
-        annotation.export.gff(custom_path=output_dir, tag=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
+        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()
