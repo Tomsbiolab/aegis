@@ -178,9 +178,9 @@ def main(
             if len(a_names) > 1:
                 repeated_msg.append(f"  - Genome '{genome}' used by annotations: {', '.join(a_names)}")
                 
-        print("\n⚠️  Warning: Repeated genome assemblies.\n"
-              "Bear in mind that annotations associated to the same genome will only be compared at the level of 'aegis overlap' and BLAST results. Also, OrthoFinder will only be run in pairwise mode, except for the annotation pairs which share the same genome.\n"
-              "Repeated assignments found:\n" + "\n".join(repeated_msg) + "\n")
+        print("\nWarning: Repeated genome assemblies.\n"
+              "\nBear in mind that annotations associated to the same genome will only be compared at the level of 'aegis overlap' and BLAST results. Also, for this reason, OrthoFinder will only be run in pairwise mode, regardless of the flags used.\n"
+              "\nRepeated assignments found:\n" + "\n".join(repeated_msg) + "\n")
         
         pairwise_orthofinder = True
     

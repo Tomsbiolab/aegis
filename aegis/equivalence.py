@@ -189,7 +189,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
 class Equivalence():
 
-    preferred_type_order = ["overlap_aegis", "rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "fwd_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
+    preferred_type_order = ["aegis_overlap", "rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "fwd_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
     reliability_order = ["vvvtop_reliable", "vvtop_reliable", "vtop_reliable", "top_reliable", "vvvvv_reliable", "vvvv_reliable", "vvv_reliable", "vv_reliable", "v_reliable", "reliable", "NA"]
 
     def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):
@@ -1035,7 +1035,7 @@ class Simple_annotation():
             duplicates = fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
 
             if not duplicates.empty:
-                print(f"Error: Duplicate query and target id pairs for overlap_aegis:")
+                print(f"Error: Duplicate query and target id pairs for aegis_overlap:")
                 print(duplicates)
                 go_ahead = False
 
@@ -1046,7 +1046,7 @@ class Simple_annotation():
 
                 fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
 
-                equivalence_suffix = "overlap_aegis"
+                equivalence_suffix = "aegis_overlap"
 
                 hits = {}
             
