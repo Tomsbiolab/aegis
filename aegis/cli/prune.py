@@ -70,13 +70,13 @@ def main(
     f_in.close()
 
     if feature_type == "gene":
-        annotation.remove_genes(input_ids, override_rescue=True, quiet=quiet)
+        annotation.remove_genes(to_remove=input_ids, override_rescue=True, quiet=quiet)
     
     else:
-        annotation.remove_transcripts(input_ids, remove_genes_accordingly=True, quiet=quiet)
+        annotation.remove_transcripts(to_remove=input_ids, remove_genes_accordingly=True, quiet=quiet)
 
     output_file += ".gff3"
-    annotation.export.gff(custom_path=output_dir, tag=output_file, quiet=quiet, subfolder=subfolder)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
 
 
 if __name__ == "__main__":

@@ -817,7 +817,7 @@ class TestAnnotationTranscriptList:
 class TestAnnotationExportGff:
     def test_export_gff3(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export.gff(custom_path=str(tmp_path), quiet=True)
+        annot.export.gff(output_dir=str(tmp_path), subfolder=True, quiet=True)
         out_dir = tmp_path / "out_gffs"
         assert out_dir.exists()
         gff_files = list(out_dir.glob("*.gff3"))
@@ -828,7 +828,7 @@ class TestAnnotationExportGff:
 
     def test_export_gff3_just_genes(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export.gff(custom_path=str(tmp_path), just_genes=True, quiet=True)
+        annot.export.gff(output_dir=str(tmp_path), just_genes=True, subfolder=True, quiet=True)
         out_dir = tmp_path / "out_gffs"
         gff_files = list(out_dir.glob("*.gff3"))
         content = gff_files[0].read_text()
@@ -842,7 +842,7 @@ class TestAnnotationExportGff:
 
     def test_export_gff3_no_subfolder(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export.gff(custom_path=str(tmp_path), subfolder=False, quiet=True)
+        annot.export.gff(output_dir=str(tmp_path), subfolder=False, quiet=True)
         gff_files = list(tmp_path.glob("*.gff3"))
         assert len(gff_files) >= 1
 
@@ -854,7 +854,7 @@ class TestAnnotationExportGff:
 class TestAnnotationExportGtf:
     def test_export_gtf(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export.gtf(custom_path=str(tmp_path), quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), subfolder=True, quiet=True)
         out_dir = tmp_path / "out_gtfs"
         assert out_dir.exists()
         gtf_files = list(out_dir.glob("*.gtf"))
@@ -865,7 +865,7 @@ class TestAnnotationExportGtf:
 
     def test_export_gtf_just_genes(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
-        annot.export.gtf(custom_path=str(tmp_path), just_genes=True, quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), just_genes=True, subfolder=True, quiet=True)
         out_dir = tmp_path / "out_gtfs"
         gtf_files = list(out_dir.glob("*.gtf"))
         content = gtf_files[0].read_text()
@@ -2426,12 +2426,12 @@ class TestSubset:
 class TestReworkCDS:
     def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):
 
-        output_dir = tmp_path / "out_gffs"
+        output_dir = tmp_path
 
         genome = Genome("TAIR10", arabidopsis_tair10_fasta_file)
-        annot = Annotation(arabidopsis_araport11_no_CDS_gff3_file, "araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True)
+        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True)
 
-        annot.export.gff(custom_path=tmp_path)
+        annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True)
 
         # Compare contents
         with open(arabidopsis_araport11_with_CDS_gff3_file, "r") as f:

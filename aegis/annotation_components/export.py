@@ -691,7 +691,26 @@ class AnnotationExport:
         self._annot.rename_chromosomes(equivalences)
         self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):
+    def gff(self, 
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gffs", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes: bool = False, clean_attributes: bool = True, aliases: bool = False, symbols: bool = False, symbols_as_description: bool = False, print_empty_attributes: bool = False, miRNAs: bool = True, clean_header: bool = False,
+            # Deprecated arguments
+            output_file: str | None = None, custom_path: str | None = None, tag: str | None = ".gff3"
+            ):
+
+        if output_file is not None:
+            warnings.warn("'output_file' is deprecated. Please use 'filepath' instead.", DeprecationWarning, stacklevel=2)
+            if filepath is None:
+                filepath = output_file
+
+        if custom_path is not None:
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if tag is not None and tag != ".gff3":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = tag
 
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -710,17 +729,11 @@ class AnnotationExport:
                     f'\033[38;2;46;204;113m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-        if subfolder:
-            export_folder = Path(custom_path or self._annot.path) / "out_gffs"
-        else:
-            export_folder = Path(custom_path or self._annot.path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        output_suffix = ""
-
-        if just_genes:
-            output_suffix += "_just_genes"
+        if output_dir is None:
+            output_dir = "."
+        
+        if subfolder_name != "out_gffs":
+            subfolder = True
 
         if repeat_exons_utrs:
             self._annot.single_parent_for_exons_utrs()
@@ -734,14 +747,41 @@ class AnnotationExport:
         if clean_attributes:
             self._annot.tags.add("clean")
 
-        if tag == ".gff3":
-            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gff3"
+        if filepath:
+            final_output_path = Path(filepath)
+            final_output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if (output_dir != ".") or subfolder or filename or use_annot_dir:
+                warnings.warn(f"Exact output file path ({final_output_path}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
+
+        else:
+
+            if use_annot_dir:
+                export_folder = Path(self._annot.path)
+                if output_dir != ".":
+                    warnings.warn(f"Both 'use_annot_dir=True' and 'output_dir' were provided. Defaulting to the annotation directory ({self._annot.path}).")
+            else:
+                export_folder = Path(output_dir)
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+            
+            export_folder.mkdir(parents=True, exist_ok=True)
+
+            if not filename:
+                suffix = "_just_genes" if just_genes else ""
+                filename = f"{self._annot.id}{self._annot.all_suffixes}{suffix}.gff3"
+
+            if Path(filename).suffix:
+                final_output_path = export_folder / filename
+            else:
+                final_output_path = export_folder / f"{filename}.gff3"
 
         if not quiet:
-            print(f"Exporting {self._annot.id} gff to {export_folder}{tag}.")
+            print(f"Exporting {self._annot.id} gff to {final_output_path}.")
 
-        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
-            if clean_header or "dapmod" in self._annot.tags:
+        with open(f"{final_output_path}", "w", encoding="utf-8") as f_out:
+            if clean_header or "dapmod" in self._annot.tags or self._annot.gff_header == []:
                 f_out.write("##gff-version 3\n")
             else:
                 f_out.write("\n".join(self._annot.gff_header) + "\n")
@@ -872,7 +912,26 @@ class AnnotationExport:
                             continue
                         f_out.write("###\n")
 
-    def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):
+    def gtf(self, 
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False,
+            # Deprecated arguments
+            output_file: str | None = None, custom_path: str | None = None, tag: str | None = ".gtf"
+            ):
+
+        if output_file is not None:
+            warnings.warn("'output_file' is deprecated. Please use 'filepath' instead.", DeprecationWarning, stacklevel=2)
+            if filepath is None:
+                filepath = output_file
+
+        if custom_path is not None and custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if tag is not None and tag != ".gtf":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = tag
 
         self._annot.create_gtf_attributes()
 
@@ -893,25 +952,45 @@ class AnnotationExport:
                     f'\033[38;2;46;204;113m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
 
-        if subfolder:
-            export_folder = Path(custom_path or self._annot.path) / "out_gtfs"
+        if output_dir is None:
+            output_dir = "."
+        
+        if subfolder_name != "out_gtfs":
+            subfolder = True
+
+        if filepath:
+            final_output_path = Path(filepath)
+            final_output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if (output_dir != ".") or subfolder or filename or use_annot_dir:
+                warnings.warn(f"Exact output file path ({final_output_path}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
+
         else:
-            export_folder = Path(custom_path or self._annot.path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+            if use_annot_dir:
+                export_folder = Path(self._annot.path)
+                if output_dir != ".":
+                    warnings.warn(f"Both 'use_annot_dir=True' and 'output_dir' were provided. Defaulting to the annotation directory ({self._annot.path}).")
+            else:
+                export_folder = Path(output_dir)
 
-        output_suffix = ""
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+            
+            export_folder.mkdir(parents=True, exist_ok=True)
 
-        if just_genes:
-            output_suffix += "_just_genes"
+            if not filename:
+                suffix = "_just_genes" if just_genes else ""
+                filename = f"{self._annot.id}{self._annot.all_suffixes}{suffix}.gtf"
 
-        if tag == ".gtf":
-            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gtf"
+            if Path(filename).suffix:
+                final_output_path = export_folder / filename
+            else:
+                final_output_path = export_folder / f"{filename}.gtf"
 
         if not quiet:
-            print(f"Exporting {self._annot.id} gtf to {export_folder}{tag}.")
+            print(f"Exporting {self._annot.id} gtf to {final_output_path}.")
 
-        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
+        with open(f"{final_output_path}", "w", encoding="utf-8") as f_out:
             f_out.write("#gtf-version 2.2\n")
 
             for x1, genes in enumerate(self._annot.chrs.values()):

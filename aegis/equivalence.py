@@ -16,8 +16,9 @@ from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue
 
-def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, quiet:bool=True):
+def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, quiet:bool=True):
 
+    litfless_overlaps_dir = working_directory / "litfless_overlaps"
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
     protein_dir = working_directory / "proteins"
@@ -26,6 +27,15 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
     orthofinder_dir = protein_dir / f"orthofinder_{annot1.name}__to__{annot2.name}"
 
     print(f"\n\n{annot1.name} vs {annot2.name}:")
+
+    if genome1.file == genome2.file:
+        skip_mcscan = True
+        skip_orthofinder = True
+        skip_lifton = True
+        skip_liftoff = True
+        liftless_overlaps = True
+    else:
+        liftless_overlaps = False
 
     if not skip_liftoff:
 
@@ -58,9 +68,13 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
         a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
-        _ = a_liftoff.overlaps.export(custom_path=str(liftoff_dir), output_file=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        _ = a_liftoff.overlaps.export(output_dir=str(liftoff_dir), filename=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
         del a_liftoff
+
+    elif liftless_overlaps:
+        annot1.overlaps.detect(annot2, quiet=quiet)
+        _ = annot1.overlaps.export(output_dir=str(litfless_overlaps_dir), filename=f"{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=False, copies_info=False)
 
     if not skip_lifton:
 
@@ -97,7 +111,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
         a_lifton.overlaps.detect(annot2, quiet=quiet)
 
-        _ = a_lifton.overlaps.export(custom_path=str(lifton_dir), output_file=f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, export_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+        _ = a_lifton.overlaps.export(output_dir=str(lifton_dir), filename=f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
         del a_lifton
 
@@ -152,7 +166,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
                 # If it's an actual systemic failure (e.g., Docker died, out of memory), crash normally
                 raise
 
-    if pairwise_orthofinder:
+    if pairwise_orthofinder and not skip_orthofinder:
         print(f"\nRunning OrthoFinder between {annot1.name} and {annot2.name}")
 
         orthofinder_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +189,7 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
 class Equivalence():
 
-    preferred_type_order = ["rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "rev_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
+    preferred_type_order = ["aegis_overlap", "rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "fwd_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
     reliability_order = ["vvvtop_reliable", "vvtop_reliable", "vtop_reliable", "top_reliable", "vvvvv_reliable", "vvvv_reliable", "vvv_reliable", "vv_reliable", "v_reliable", "reliable", "NA"]
 
     def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):
@@ -1006,6 +1020,80 @@ class Simple_annotation():
 
         else:
             print(f"Warning: {fwd_file} or {rev_file} is missing.")
+
+    def add_liftless_overlap_equivalences(self, folder, query_tag, target_tag, species, quiet:bool=False):
+
+        fwd_file = f"{folder}/{query_tag}__to__{target_tag}_overlaps.tsv"
+
+        if os.path.isfile(fwd_file):
+            start = time.time()
+
+            go_ahead = True
+
+            fwd_df = pd.read_csv(fwd_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
+
+            duplicates = fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
+
+            if not duplicates.empty:
+                print(f"Error: Duplicate query and target id pairs for aegis_overlap:")
+                print(duplicates)
+                go_ahead = False
+
+            if go_ahead:
+
+                fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
+                fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
+
+                fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
+
+                equivalence_suffix = "aegis_overlap"
+
+                hits = {}
+            
+                for index, row in fwd_df.iterrows():
+
+                    gene_query = row["gene_id_A"]
+                    gene_target = row["gene_id_B"]
+
+                    pair = f"{gene_query}---{gene_target}"
+
+                    score = row["overlap_score"]
+
+                    if pair not in hits:
+                        hits[pair] = score
+                    else:
+
+                        old_score = int(hits[pair].split(" (")[0])
+                        new_score = int(score.split(" (")[0])
+
+                        if old_score > new_score:
+                            new_score = old_score
+
+                        if "multiple " in hits[pair]:
+                            match_num = int(hits[pair].split("multiple ")[-1].split(")")[0])
+                            match_num += 1
+                        else:
+                            match_num = 2
+
+                        hits[pair] = f"{new_score} (multiple {match_num})"
+
+                for pair in hits:
+
+                    equivalence_type = equivalence_suffix
+                    score = f"{hits[pair]}"
+
+                    gene_query = pair.split("---")[0]
+                    gene_target = pair.split("---")[1]
+
+                    self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
+
+                end = time.time()
+                lapse = end - start
+                if not quiet:
+                    print(f"Adding aegis overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
+
+        else:
+            print(f"Warning: {fwd_file} is missing.")
 
 
     def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float("inf")):

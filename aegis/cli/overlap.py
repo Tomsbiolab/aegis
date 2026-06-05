@@ -122,7 +122,7 @@ def main(
 
         annotations[0].overlaps.detect()
 
-        _ = annotations[0].overlaps.export(custom_path=output_dir, output_file=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, export_csv=True, NAs=include_NAs, quiet=quiet)
+        _ = annotations[0].overlaps.export(output_dir=output_dir, filename=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, save_csv=True, NAs=include_NAs, quiet=quiet)
 
     elif len(annotation_files) > 1:
 

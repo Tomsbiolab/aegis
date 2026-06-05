@@ -7,6 +7,8 @@ if TYPE_CHECKING:
 
 import time
 import sys
+import warnings
+
 import networkx as nx
 import pandas as pd
 
@@ -635,31 +637,52 @@ class AnnotationOverlaps:
     def clear_with_selected_CDSs(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                g.quality.overlap_with_selected_CDS = False   
+                g.quality.overlap_with_selected_CDS = False
 
     def clear_with_selected_exons(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 g.quality.overlap_with_selected_exon = False
 
-    def export(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:
-        start_time = time.time()
-        if export_self:
-            export = "self"
-            export_tag = "self_"
-        else:
-            export = "other"
-            export_tag = ""
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t",
+               # Deprecated arguments
+               output_file: str | None = None, custom_path: str | None = None, export_csv: bool | None = None
+               ) -> pd.DataFrame:
 
-        tag = f"{export_tag}{self._annot.id}{self._annot.feature_suffix}_overlap_t{overlap_threshold}"
-        
+        start_time = time.time()
+
+        if output_file is not None:
+            warnings.warn("'output_file' is deprecated and will be removed in a future version. Please use 'filepath' instead.", DeprecationWarning, stacklevel=2)
+            if filepath is None:
+                filepath = output_file
 
         if custom_path:
-            export_folder = Path(custom_path)
+            warnings.warn("'custom_path' is deprecated and will be removed in a future version. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if export_csv is not None:
+            warnings.warn("'export_csv' is deprecated. Please use 'save_csv' instead.", DeprecationWarning, stacklevel=2)
+            save_csv = export_csv
+
+        if output_dir is None:
+            output_dir = "."
+        
+        if subfolder_name != "overlaps":
+            subfolder = True
+
+        if export_self:
+            export_mode = "self"
+            export_tag = "self_"
         else:
-            export_folder = Path(custom_path or self._annot.path) / "overlaps"
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+            export_mode = "other"
+            export_tag = ""
+
+        
+        if not filename:
+            tag = f"{export_tag}{self._annot.id}{self._annot.feature_suffix}_overlap_t{overlap_threshold}"
+        else:
+            tag = filename
 
         correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
 
@@ -668,7 +691,7 @@ class AnnotationOverlaps:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 for name, hits in g.overlaps.items():
-                    if name == export:
+                    if name == export_mode:
                         for hit in hits:
                             if hit.score < overlap_threshold:
                                 continue
@@ -699,10 +722,9 @@ class AnnotationOverlaps:
 
         eq_df = pd.DataFrame(rows)
 
-
         if eq_df.empty:
 
-            if export == "self":
+            if export_mode == "self":
                 print(f"\nNo {self._annot.id} self overlaps were detected.")
             else:
                 print(f"\nNo {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' were detected.")
@@ -736,9 +758,7 @@ class AnnotationOverlaps:
             rows = []
             eq_df = pd.DataFrame(rows, columns=cols)
 
-
-
-        if export == "self":
+        if export_mode == "self":
             eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
             eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
@@ -748,8 +768,9 @@ class AnnotationOverlaps:
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
-            tag += "_gene_id_A_NAs"
-            if export == "self":
+            if not filename:
+                tag += "_gene_id_A_NAs"
+            if export_mode == "self":
                 overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
             else:
                 overlapping_genes = set(eq_df["gene_id_A"].dropna())
@@ -758,7 +779,7 @@ class AnnotationOverlaps:
 
             if not copies_info:
 
-                if export == "self":
+                if export_mode == "self":
 
                     for genes in self._annot.chrs.values():
                         for g in genes.values():
@@ -790,7 +811,7 @@ class AnnotationOverlaps:
 
             else:
 
-                if export == "self":
+                if export_mode == "self":
 
                     for genes in self._annot.chrs.values():
                         for g in genes.values():
@@ -822,16 +843,48 @@ class AnnotationOverlaps:
                             "gene_id_A_origin": self._annot.name
                         })          
 
-            # Combine with the original df
             if na_rows:
                 eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
+
+        
+        if filepath:
+            save_csv = True
+            final_output_path = Path(filepath)
+            final_output_path.parent.mkdir(parents=True, exist_ok=True)
+            if (output_dir != ".") or subfolder or filename or use_annot_dir:
+                warnings.warn(f"Exact output file path ({final_output_path}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
+
+        elif save_csv:
+
+            if use_annot_dir:
+                export_folder = Path(self._annot.path)
+                if output_dir != ".":
+                    warnings.warn(f"Both 'use_annot_dir=True' and 'output_dir' were provided. Defaulting to the annotation directory ({self._annot.path}).")
+            else:
+                export_folder = Path(output_dir)
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+
+            tag_path = Path(tag)
+
+            if tag_path.suffix:
+                final_output_path = export_folder / tag
+            else:
+                if sep == "\t":
+                    extension = ".tsv"
+                else:
+                    extension = ".csv"
+                final_output_path = export_folder / f"{tag}{extension}"
+
+            export_folder.mkdir(parents=True, exist_ok=True)
 
         eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
 
         if synteny:
             column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
             ascending = [True, True, False, False, False, True, True]
-        elif export == "self":
+        elif export_mode == "self":
             column_sort_order = ["overlap_score", "gene_id_A", "gene_id_B"]
             ascending = [False, True, True]
         else:
@@ -841,18 +894,13 @@ class AnnotationOverlaps:
         eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
         eq_df.reset_index(drop=True, inplace=True)
         
-        if export_csv:
-            if output_file:
-                export_path = f"{export_folder}{output_file}"
-            else:
-                export_path = f"{export_folder}{tag}.csv"
-
-            eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
+        if save_csv:
+            eq_df.to_csv(final_output_path, sep=sep, index=False, na_rep="NA")
 
             now = time.time()
             lapse = now - start_time
             if not quiet:
-                if export == "self":
+                if export_mode == "self":
                     print(f"\nExporting {self._annot.id} self overlaps took {round(lapse/60, 1)} minutes")
                 else:
                     print(f"\nExporting {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' took {round(lapse/60, 1)} minutes")

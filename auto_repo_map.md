@@ -104,7 +104,7 @@
       - `def __str__(self):`
     - conf.py
     - equivalence.py
-      - `def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, quiet:bool=True):`
+      - `def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, quiet:bool=True):`
       - `class Equivalence():`
       - `def __init__(self, id_, type_, target_annotation, species, score:str="", evalue:str|None=None, reliability:str="NA"):`
       - `def _rank(self):`
@@ -123,6 +123,7 @@
       - `def add_orthofinder_equivalences(self, file, target_annotation, species):`
       - `def add_blast_equivalences(self, blast_folder, query_annotation, target_annotation, species, skip_rbhs:bool=False, skip_unidirectional_blasts:bool=False, proteins:bool=True, quiet:bool=False):`
       - `def add_reciprocal_overlap_equivalences(self, folder, query_tag, target_tag, species, liftoff:bool=True, quiet:bool=False, synteny_present:bool=False):`
+      - `def add_liftless_overlap_equivalences(self, folder, query_tag, target_tag, species, quiet:bool=False):`
       - `def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float("inf")):`
     - feature.py
       - `class Feature():`
@@ -306,8 +307,8 @@
         - `def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False, custom_filename: str=""):`
         - `def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, custom_filename: str=""):`
         - `def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):`
-        - `def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):`
-        - `def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):`
+        - `def gff(self,`
+        - `def gtf(self,`
         - `def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False):`
         - `def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):`
       - motifs.py
@@ -323,7 +324,7 @@
         - `def add_qualitative_info(self, quiet:bool=True):`
         - `def clear_with_selected_CDSs(self):`
         - `def clear_with_selected_exons(self):`
-        - `def export(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:`
+        - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t",`
       - redundancy.py
         - `class AnnotationRedundancy:`
         - `def __init__(self, annotation: Annotation):`
