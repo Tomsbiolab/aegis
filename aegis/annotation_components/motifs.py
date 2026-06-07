@@ -1,40 +1,22 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..annotation import Annotation
-    from ..misc_features import Promoter
 
 import matplotlib.pyplot as plt
 from scipy.stats import fisher_exact
-from tqdm import tqdm
 import pandas as pd
 import os
-import sys
 
 from ..utils.genefunctions import reverse_complement
 from ..utils.misc import find_all_occurrences
+from .base import AnnotationComponent
+from ..utils.misc import start_progress_bar
 
-class AnnotationMotifs:
+class AnnotationMotifs (AnnotationComponent):
     """
     Component for handling motif methods for the Annotation class.
     Accessed via 'annotation_object.motifs'.
     """
-    _annot: Annotation
-
-    def __init__(self, annotation: Annotation):
-        self._annot = annotation
 
     def find_and_plot(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         bin_division = 30
         bins_genome_division = 30
@@ -50,12 +32,8 @@ class AnnotationMotifs:
             total = (len(query_genes) * 2) + len(self._annot.all_gene_ids.keys())
         else:
             total = (len(query_genes) * 2) + len(backlist)
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;94;1mScanning {glistname} genes for {tf_motif_tag} ({motif}):\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;94;1m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        progress_bar = start_progress_bar(total=total, description=f"Scanning {glistname} genes for {tf_motif_tag} ({motif})", colour="94", quiet=quiet)
         
         if custom_path == "":
             output_path = self._annot.path + "motifs/"

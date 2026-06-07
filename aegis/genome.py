@@ -235,26 +235,63 @@ class Genome():
         if self.unknown_chromosome:
             self.suffix += "_chr00"
 
-    def export_feature_sizes(self, custom_path:str=""):
+    def _resolve_output_path(self, filepath: str | None = None, output_dir: str | None = None, 
+        filename: str | None = None, suffix: str = "", extra_suffixes: list[str] | None = None, extension: str = ".fasta", subfolder_name: str = "out_genomes", subfolder: bool = False, use_genome_dir: bool = False):
+
+        if filepath:
+            out_path = Path(filepath)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if (output_dir is not None) or subfolder or filename or use_genome_dir:
+                warnings.warn(f"Exact output file path ({filepath}) was specified. Ignoring output_dir, use_genome_dir, subfolder, and filename arguments.")
+            return out_path
+        else:
+            if use_genome_dir:
+                export_folder = Path(self.path)
+                if output_dir is not None:
+                    warnings.warn(f"Both 'use_genome_dir={use_genome_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the genome directory ({self.path}).")
+
+            else:
+                export_folder = Path(output_dir or ".")
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+            
+            export_folder.mkdir(parents=True, exist_ok=True)
+
+            if not filename:
+                tag_str = "".join([f"_{t}" for t in (extra_suffixes or []) if t])
+                filename = f"{self.name}{tag_str}{suffix}{extension}"
+
+            if not Path(filename).suffix:
+                filename = f"{filename}{extension}"
+
+            out_path = export_folder / filename
+
+    def export_feature_sizes(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "genome_feature_sizes", quiet:bool=False,
+        #deprecated arguments
+        custom_path:str=""):
+
+        if custom_path is not None:
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
         self.update()
 
-        if custom_path == "":
-            export_folder = self.path + "genome_feature_sizes/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
-        system(f"mkdir -p {export_folder}")
+        extra_suffixes = ["genome_feature_sizes"]
 
-        tag = f"{self.name}_genome_feature_sizes{self.suffix}.tsv"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self.suffix, extra_suffixes=extra_suffixes, extension=".tsv", use_genome_dir=use_genome_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
-        out = ""
+        out = []
         for scaffold_id, scaffold in self.scaffolds.items():
-            out += f"{scaffold_id}\t{scaffold.size}\n"
-        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
-        f_out.write(out)
-        f_out.close()
+            out.append(f"{scaffold_id}\t{scaffold.size}")
+        if out:
+            out[-1] += "\n"
+            with open(str(final_output_path), "w", encoding="utf-8") as f_out:
+                f_out.write("\n".join(out))
+        elif not quiet:
+            print(f"No scaffolds/chromosomes found in {self.name} genome object.")
+
     
     def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False):
         """
@@ -333,7 +370,7 @@ class Genome():
         new_scaffolds = {}
         final_equivalences = {}
 
-        for scaffold_id, scaffold in self.scaffolds.items():
+        for scaffold in self.scaffolds.values():
             
             original_name = scaffold.original_name
             new_name = rename_map.get(original_name, scaffold.name)
@@ -410,16 +447,18 @@ class Genome():
         if file == ".fasta":
             file = f"{self.name}{self.suffix}{file}"
 
-        out = ""
+        out = []
 
         for scaffold in self.scaffolds.values():
-            out += f">{scaffold.name}\n{scaffold.seq}\n"
-
+            out.append(f">{scaffold.name}\n{scaffold.seq}")
+        
         if out:
             if not quiet:
                 print(f"Exporting {self.name} genome to {file}.")
+            out[-1] += "\n"
+
             f_out = open(f"{export_folder}{file}", "w", encoding="utf-8")
-            f_out.write(out)
+            f_out.write("\n".join(out))
             f_out.close()
         else:
             print(f"Warning: there was nothing to export for {file} genome")

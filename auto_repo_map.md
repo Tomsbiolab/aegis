@@ -188,7 +188,8 @@
       - `class Genome():`
       - `def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict=`
       - `def update(self, update_scaffolds:bool=False):`
-      - `def export_feature_sizes(self, custom_path:str=""):`
+      - `def _resolve_output_path(self, filepath: str | None = None, output_dir: str | None = None,`
+      - `def export_feature_sizes(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "genome_feature_sizes", quiet:bool=False,`
       - `def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False):`
       - `def rename_features_from_dic(self, rename_map: dict) -> dict:`
       - `def remove_scaffolds(self, output_folder:str="", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):`
@@ -294,9 +295,12 @@
     - __init__.py
     - __main__.py
     - **annotation_components/**
+      - base.py
+        - `class AnnotationComponent:`
+        - `def __init__(self, annotation:Annotation):`
+        - `def _resolve_output_path(self, filepath: str | None, output_dir: str | None, filename: str | None,`
       - export.py
-        - `class AnnotationExport:`
-        - `def __init__(self, annotation: Annotation):`
+        - `class AnnotationExport(AnnotationComponent):`
         - `def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):`
         - `def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, custom_filename: str=""):`
         - `def unique_proteins(self, custom_path: str = "", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end"):`
@@ -312,11 +316,10 @@
         - `def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False):`
         - `def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):`
       - motifs.py
-        - `class AnnotationMotifs:`
-        - `def __init__(self, annotation: Annotation):`
+        - `class AnnotationMotifs (AnnotationComponent):`
         - `def find_and_plot(self, query_genes:list, motif:str, motif_length:int, glistname, tf_motif_tag, backlist:list=[], backlistname:str="", custom_path:str="", quiet:bool=False):`
       - overlaps.py
-        - `class AnnotationOverlaps:`
+        - `class AnnotationOverlaps(AnnotationComponent):`
         - `def __init__(self, annotation:Annotation):`
         - `def detect(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):`
         - `def as_networks(self, self_mode:bool=True):`
@@ -326,8 +329,7 @@
         - `def clear_with_selected_exons(self):`
         - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t",`
       - redundancy.py
-        - `class AnnotationRedundancy:`
-        - `def __init__(self, annotation: Annotation):`
+        - `class AnnotationRedundancy(AnnotationComponent):`
         - `def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):`
         - `def mark_transcriptomic_supported_genes(self, quiet:bool=False):`
         - `def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark"], quiet:bool=False):`
@@ -352,7 +354,7 @@
         - `def filter(self, source_priority:list, quiet:bool=False):`
         - `def remove_alternative(self):`
       - stats.py
-        - `class AnnotationStats:`
+        - `class AnnotationStats(AnnotationComponent):`
         - `def __init__(self, annotation:Annotation):`
         - `def calculate_transcript_masking(self):`
         - `def calculate_gc_content(self):`
@@ -424,6 +426,7 @@
         - `def pickle_save(file, item):`
         - `def count_occurrences(string, char):`
         - `def find_all_occurrences(pattern, text):`
+        - `def start_progress_bar(total: int, description: str, quiet: bool = False, colour: str = "92"):`
         - `def run_command(working_directory: Path, command: list):`
         - `def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:`
         - `def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):`

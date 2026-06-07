@@ -23,7 +23,6 @@ import warnings
 import math
 import gc
 
-from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -33,7 +32,7 @@ from .transcript import Transcript
 from .subfeatures import Exon, UTR
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes
-from .utils.misc import read_file_with_fallback, open_file
+from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
@@ -41,7 +40,6 @@ from .annotation_components.motifs import AnnotationMotifs
 from .annotation_components.overlaps import AnnotationOverlaps
 from .annotation_components.redundancy import AnnotationRedundancy
 from .conf import default_noncoding_transcripts, default_features_r
-
 
 class Annotation():
 
@@ -181,16 +179,6 @@ class Annotation():
 
         staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_atypical_features=skip_atypical_features, quiet=quiet)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected or quite mode
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
         self._gene_info = {}
         self._transcript_info = {}
         self._miRNA_info = set()
@@ -206,11 +194,7 @@ class Annotation():
             else:
                 corrected_batch_size = batch_size
 
-            progress_bar = tqdm(total=len(staging[stage]), disable=disable, bar_format=(
-                f'\033[1;{Annotation.bar_colors[n]}mAdding {stage}s:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
+            progress_bar = start_progress_bar(total=len(staging[stage]), description=f"Adding {self.id} {stage}s", colour=Annotation.bar_colors[n], quiet=quiet)
             
             count = 0
 
@@ -1060,25 +1044,11 @@ class Annotation():
     
     def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         batch_size = 1000
         count = 0
 
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;62mUpdating {self.id} genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;62m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Updating {self.id} genes", colour="62", quiet=quiet)
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -1384,22 +1354,7 @@ class Annotation():
                                     all_protein_seqs[c.protein.id] = c.protein.seq
                                     self.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
-                        bar_format=(
-            f'\033[1;91mDetermining unique {self.id} proteins:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;91m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(all_protein_seqs.keys()), description=f"Determining unique {self.id} proteins", colour="91", quiet=quiet)
 
         unique_sequences = {}
         self.protein_equivalences = {}
@@ -1482,21 +1437,8 @@ class Annotation():
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:
             print(f"\nSorting genes for {self.id}")
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                        bar_format=(
-            f'\033[38;2;210;180;140m\033[1mSorting {self.id} genes:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[38;2;210;180;140m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Sorting {self.id} genes", colour="38;2;210;180;140", quiet=quiet)
 
         if processes > 1:
             if not quiet:
@@ -1735,22 +1677,8 @@ class Annotation():
         if max_cds_overlap != 100 or max_exon_overlap != 100 or max_gene_overlap != 100:
             self.overlaps.detect(other, quiet=quiet)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(other.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mMerging {other.id} and {self.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(other.all_gene_ids), description=f"Adding {other.id} annotation to {self.id}", colour="38;2;46;204;113", quiet=quiet)
+        
         if self.merged:
             if "_..._" in self.name:
                 first_name = self.name.split("_..._")[0]
@@ -2009,21 +1937,8 @@ class Annotation():
 
     def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mReworking {self.id} CDSs:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
     
         for genes in self.chrs.values():
             for g in genes.values():
@@ -2053,26 +1968,13 @@ class Annotation():
             print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
 
     def update_gene_and_transcript_list(self, quiet:bool=True):
-                # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         total = 0
         for genes in self.chrs.values():
             total += len(genes)
 
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mUpdating {self.id} annotation gene and transcript lists:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=total, description=f"Updating {self.id} annotation gene and transcript lists", colour="95", quiet=quiet)
+
         self.all_gene_ids = {}
         self.all_transcript_ids = {}
         for chr, genes in self.chrs.items():
@@ -2176,22 +2078,10 @@ class Annotation():
             warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.", category=UserWarning)
 
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
         changed_features = set()
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;156;42;42m\033[1mRenaming {self.id} Gene Ids:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;156;42;42m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Renaming {self.id} gene ids", colour="38;2;156;42;42", quiet=quiet)
 
         correspondences_d = {}
 
@@ -2600,27 +2490,12 @@ class Annotation():
         if to_remove is None:
             to_remove = set()
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
         total_count = 0
 
         for genes in self.chrs.values():
             total_count += len(genes)
-        
-        progress_bar = tqdm(total=total_count, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving {self.id} genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        progress_bar = start_progress_bar(total=total_count, description=f"Removing {self.id} genes", colour="91", quiet=quiet)
         
         for gene in to_remove:
             if gene in self.all_gene_ids:
@@ -2648,26 +2523,13 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
 
     def remove_missing_genes_in_overlaps(self, quiet:bool=True):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         total_count = 0
         for genes in self.chrs.values():
             total_count += len(genes)
 
-        progress_bar = tqdm(total=total_count, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving {self.id} missing genes in overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=total_count, description=f"Removing {self.id} missing genes in overlaps", colour="91", quiet=quiet)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -2679,21 +2541,9 @@ class Annotation():
         progress_bar.close()              
 
     def remove_duplicate_transcripts(self, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving repeat transcripts per gene of {self.id}:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Removing {self.id} duplicate transcripts", colour="91", quiet=quiet)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)

@@ -15,7 +15,6 @@ class Gene(Feature):
     __slots__ = ('pseudogene', 'transposable', 'transcripts', 'noncoding', '_overlaps', '_synteny', '_quality', 'original_base_id', 'renamed_exons', 'renamed_utrs')
 
     transcripts:dict[str, Transcript]
-    alternative_transcript_rescue:list
     _overlaps:dict[str, list[OverlapHit]]|None
     _synteny: GeneSynteny | None
     

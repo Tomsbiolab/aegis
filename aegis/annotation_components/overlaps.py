@@ -16,36 +16,28 @@ from pathlib import Path
 from tqdm import tqdm
 
 from ..hits import OverlapHit
+from .base import AnnotationComponent
+from ..utils.misc import start_progress_bar
 
-class AnnotationOverlaps:
+class AnnotationOverlaps(AnnotationComponent):
     """
     Component for handling overlaps methods for the Annotation class.
     Accessed via 'annotation_object.overlaps'.
     """
-    _annot: Annotation
     self_genes: set[str]
     other_genes: set[str]
 
     def __init__(self, annotation:Annotation):
-        self._annot = annotation
+        super().__init__(annotation)
         self.self_genes = set()
         self.other_genes = set()
-    
+
     def detect(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
         """
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         if not self._annot.sorted:
             self._annot.sort_genes(processes=sort_processes)
@@ -80,12 +72,8 @@ class AnnotationOverlaps:
                            "recalculate them")
                 else:
                     start_time = time.time()
-                    progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mWorking out overlaps between {self._annot.id} and {other.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+                    progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Working out overlaps between {self._annot.id} and {other.id} annotations", colour="91", quiet=quiet)
 
                     if other.name not in self._annot.overlapped_annotations: # type: ignore
                         self._annot.overlapped_annotations.add(other.name)
@@ -307,12 +295,8 @@ class AnnotationOverlaps:
             if self.self_genes != set():
                 print("There are already detected 'self' gene overlaps, please run 'self.clear()' if you want to recalculate them")
             else:
-                progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mWorking out overlaps within {self._annot.id} annotation:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
+
+                progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Working out overlaps within {self._annot.id} annotation", colour="91", quiet=quiet)
 
                 # making sure self overlaps are not added twice
                 start_time = time.time()
@@ -572,23 +556,9 @@ class AnnotationOverlaps:
         """
         Number of unique full segment overlaps between genes including all transcript variants.
         """
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        total = len(self._annot.all_gene_ids.keys())
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Adding qualitative info to {self._annot.id} overlaps", colour="95", quiet=quiet)
 
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mAdding qualitative info to {self._annot.id} overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)

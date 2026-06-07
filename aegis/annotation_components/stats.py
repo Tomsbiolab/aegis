@@ -11,6 +11,7 @@ from statistics import mean
 
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron
+from .base import AnnotationComponent
 
 KEY_DESCRIPTIONS = {
     # Mean metrics
@@ -82,16 +83,15 @@ KEY_DESCRIPTIONS = {
 }
 
 
-class AnnotationStats:
+class AnnotationStats(AnnotationComponent):
     """
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
     data: dict
-    _annot: Annotation
 
     def __init__(self, annotation:Annotation):
-        self._annot = annotation
+        super().__init__(annotation)
         self.data = {}
 
     def calculate_transcript_masking(self):
@@ -131,7 +131,7 @@ class AnnotationStats:
 
         if not self._annot.contains_protein_sequences:
             if self._annot.genome is not None:
-                self._annot.generate_proteins(readthrough="both")
+                self._annot.generate_proteins()
 
         self.calculate_gc_content()
 
