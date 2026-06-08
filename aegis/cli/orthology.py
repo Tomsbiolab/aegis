@@ -281,10 +281,10 @@ def main(
 
         Feature._ACTIVE_GENOME = a.genome
 
-        a.export.proteins(only_main=True, custom_path=str(protein_path), used_id="gene", verbose=False, custom_filename=f"{a.name}_proteins_g_id_main.fasta")
+        a.export.proteins(only_main=True, output_dir=str(protein_path), used_id="gene", verbose=False, filename=f"{a.name}_proteins_g_id_main.fasta")
         a.clear_proteins()
         
-        a.export.CDSs(only_main=True, custom_path=str(CDS_path), used_id="gene", verbose=False, custom_filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
+        a.export.CDSs(only_main=True, output_dir=str(CDS_path), used_id="gene", verbose=False, filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
 
 

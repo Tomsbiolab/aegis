@@ -2,7 +2,6 @@ import typer
 import os
 
 from typing_extensions import Annotated
-from textwrap import dedent
 
 from ..genome import Genome
 from ..annotation import Annotation
@@ -137,7 +136,7 @@ def main(
 
     if "gene" in features:
 
-        annotation.export.genes(custom_path=output_dir, verbose=detailed_headers)
+        annotation.export.genes(output_dir=output_dir, verbose=detailed_headers)
 
     if "transcript" in features:
 
@@ -147,13 +146,13 @@ def main(
             used_id = "transcript"
 
         if "unique_per_gene" in mode:
-            annotation.export.transcripts(only_main=False, verbose=detailed_headers, custom_path=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True)
+            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True) #type: ignore
         elif "unique" in mode:
-            annotation.export.unique_transcripts(custom_path=output_dir, quiet=quiet, rna_classes=rna_classes)
+            annotation.export.unique_transcripts(output_dir=output_dir, quiet=quiet, rna_classes=rna_classes) #type: ignore
         elif "all" in mode:
-            annotation.export.transcripts(only_main=False, verbose=detailed_headers, custom_path=output_dir, used_id=used_id, rna_classes=rna_classes)
+            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes) #type: ignore
         else:
-            annotation.export.transcripts(custom_path=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes)
+            annotation.export.transcripts(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes) #type: ignore
 
     if "protein" in features:
 
@@ -167,13 +166,13 @@ def main(
             used_id = "protein"
 
         if "unique_per_gene" in mode:
-            annotation.export.proteins(only_main=False, custom_path=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id)
         elif "unique" in mode:
-            annotation.export.unique_proteins(custom_path=output_dir, quiet=quiet)
+            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet)
         elif "all" in mode:
-            annotation.export.proteins(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
         else:
-            annotation.export.proteins(custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
+            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id)
 
     if "CDS" in features:
 
@@ -185,13 +184,13 @@ def main(
             used_id = "CDS"
 
         if "unique_per_gene" in mode:
-            annotation.export.CDSs(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True)
         elif "unique" in mode:
-            annotation.export.unique_CDSs(custom_path=output_dir, quiet=quiet)
+            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet)
         elif "all" in mode:
-            annotation.export.CDSs(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
         else:
-            annotation.export.CDSs(custom_path=output_dir, verbose=detailed_headers, used_id=used_id)
+            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id)
 
     if "promoter" in features:
 
@@ -203,9 +202,9 @@ def main(
             used_id = "promoter"
 
         if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
-            annotation.export.promoters(only_main=False, custom_path=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
+            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
         else:
-            annotation.export.promoters(custom_path=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
+            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
 
 if __name__ == "__main__":
     app()

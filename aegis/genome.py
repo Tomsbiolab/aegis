@@ -235,31 +235,79 @@ class Genome():
         if self.unknown_chromosome:
             self.suffix += "_chr00"
 
-    def export_feature_sizes(self, custom_path:str=""):
+    def _resolve_output_path(self, filepath: str | None = None, output_dir: str | None = None, 
+        filename: str | None = None, suffix: str = "", extra_suffixes: list[str] | None = None, extension: str = ".fasta", subfolder_name: str = "out_genomes", subfolder: bool = False, use_genome_dir: bool = False):
+
+        if filepath:
+            out_path = Path(filepath)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if (output_dir is not None) or subfolder or filename or use_genome_dir:
+                warnings.warn(f"Exact output file path ({filepath}) was specified. Ignoring output_dir, use_genome_dir, subfolder, and filename arguments.")
+            return out_path
+        else:
+            if use_genome_dir:
+                export_folder = Path(self.path)
+                if output_dir is not None:
+                    warnings.warn(f"Both 'use_genome_dir={use_genome_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the genome directory ({self.path}).")
+
+            else:
+                export_folder = Path(output_dir or ".")
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+            
+            export_folder.mkdir(parents=True, exist_ok=True)
+
+            if extension and not extension.startswith("."):
+                extension = f".{extension}"
+
+            if not filename:
+                tag_str = "".join([f"_{t}" for t in (extra_suffixes or []) if t])
+                filename = f"{self.name}{tag_str}{suffix}{extension}"
+
+            if not Path(filename).suffix:
+                filename = f"{filename}{extension}"
+
+            out_path = export_folder / filename
+
+            return out_path
+
+    def export_feature_sizes(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "coordinates", extension=".tsv",quiet:bool=False,
+        #deprecated arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
         self.update()
 
-        if custom_path == "":
-            export_folder = self.path + "genome_feature_sizes/"
-        else:
-            export_folder = custom_path
-        if export_folder[-1] != "/":
-            export_folder += "/"
-        system(f"mkdir -p {export_folder}")
+        extra_suffixes = ["genome_feature_sizes"]
 
-        tag = f"{self.name}_genome_feature_sizes{self.suffix}.tsv"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self.suffix, extra_suffixes=extra_suffixes, extension=extension, use_genome_dir=use_genome_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
-        out = ""
+        out = []
         for scaffold_id, scaffold in self.scaffolds.items():
-            out += f"{scaffold_id}\t{scaffold.size}\n"
-        f_out = open(f"{export_folder}{tag}", "w", encoding="utf-8")
-        f_out.write(out)
-        f_out.close()
-    
-    def rename_features_dap(self, output_folder:str="", return_equivalences:bool=False, export:bool=False):
+            out.append(f"{scaffold_id}\t{scaffold.size}")
+        if out:
+            out[-1] += "\n"
+            with open(str(final_output_path), "w", encoding="utf-8") as f_out:
+                f_out.write("\n".join(out))
+        elif not quiet:
+            print(f"No scaffolds/chromosomes found in {self.name} genome object.")
+
+    def rename_features_dap(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", return_equivalences:bool=False, export:bool=False, 
+        #deprecated argument
+        output_folder:str=""):
         """
         Renames scaffolds and chromosomes to become dapfit.
         """
+
+        if output_folder != "":
+            warnings.warn("'output_folder' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = output_folder
 
         if not self.dapfit:
 
@@ -319,7 +367,7 @@ class Genome():
             self.update()
 
             if export:
-                self.export(output_folder=output_folder, file=".fasta")
+                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
             if return_equivalences:
                 return self.equivalences
@@ -333,22 +381,26 @@ class Genome():
         new_scaffolds = {}
         final_equivalences = {}
 
-        for scaffold_id, scaffold in self.scaffolds.items():
+        for scaffold in self.scaffolds.values():
             
             original_name = scaffold.original_name
             new_name = rename_map.get(original_name, scaffold.name)
-            scaffold.name = new_name
+            
+            copied_scaffold = scaffold.copy()
+            copied_scaffold.name = new_name
 
             final_equivalences[original_name] = new_name
 
-            new_scaffolds[new_name] = copy.copy(scaffold)
+            new_scaffolds[new_name] = copied_scaffold
 
         self.scaffolds = new_scaffolds
         self.update()
 
         return final_equivalences
 
-    def remove_scaffolds(self, output_folder:str="", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):
+    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False,
+        #deprecated argument
+        output_folder:str=""):
         
         if self.non_chromosomal_scaffolds:
             new_scaffolds = {}
@@ -368,12 +420,14 @@ class Genome():
                 self.remove_organelles(export=export, output_folder=output_folder)
 
             elif export:
-                self.export(output_folder=output_folder, file=".fasta")
+                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
         elif remove_organelles:
             self.remove_organelles(export=export, output_folder=output_folder)
 
-    def remove_organelles(self, output_folder:str="", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):
+    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True,
+        #deprecated argument
+        output_folder:str=""):
 
         new_scaffolds = {}
 
@@ -392,45 +446,53 @@ class Genome():
         self.update()
 
         if export:
-            self.export(output_folder=output_folder, file=".fasta")
+            self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
-    def export(self, output_folder:str="", file:str=".fasta", quiet:bool=False):
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False,
+        #deprecated arguments
+        output_folder:str="", file:str=".fasta"):
+
+        if output_folder != "":
+            warnings.warn("'output_folder' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = output_folder
+
+        if file != ".fasta":
+            warnings.warn("'file' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = file
 
         self.update()
 
-        if not output_folder:
-            export_folder = self.path + "out_genomes/"
-        else:
-            export_folder = output_folder
-        if export_folder[-1] != "/":
-            export_folder += "/"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self.suffix, use_genome_dir=use_genome_dir, subfolder_name=subfolder_name, subfolder=subfolder, extension=extension)
 
-        system(f"mkdir -p {export_folder}")
+        if not self.scaffolds:
+            warnings.warn(f"There was nothing to export for {self.name} genome.")
+            return
 
-        if file == ".fasta":
-            file = f"{self.name}{self.suffix}{file}"
-
-        out = ""
-
-        for scaffold in self.scaffolds.values():
-            out += f">{scaffold.name}\n{scaffold.seq}\n"
-
-        if out:
-            if not quiet:
-                print(f"Exporting {self.name} genome to {file}.")
-            f_out = open(f"{export_folder}{file}", "w", encoding="utf-8")
-            f_out.write(out)
-            f_out.close()
-        else:
-            print(f"Warning: there was nothing to export for {file} genome")
+        if not quiet:
+            print(f"Exporting {self.name} genome to {final_output_path}.")
+        
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
+            for scaffold in self.scaffolds.values():
+                f_out.write(f">{scaffold.name}\n{scaffold.seq}\n")
 
     def copy(self):
         return copy.deepcopy(self)
         
-    def extract_peak_sequences(self, output_file_name:str, DAPseq_output_file:str, output_folder: str = "", top=600):
+    def extract_peak_sequences(self, DAPseq_output_file:str, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_peak_seqs", extension=".fasta", top=600,
+        #deprecated arguments
+        output_file_name:str="", output_folder:str=""):
 
-        export_folder = Path(output_folder or Path(self.path) / "out_peak_seqs/")
-        export_folder.mkdir(parents=True, exist_ok=True)
+        if output_folder != "":
+            warnings.warn("'output_folder' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = output_folder
+
+        if output_file_name != "":
+            warnings.warn("'output_file_name' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = output_file_name
 
         try:
             df = pd.read_csv(DAPseq_output_file, delimiter='\t', dtype=str)
@@ -439,7 +501,6 @@ class Genome():
             print(f"Error: DAPseq file not found: {DAPseq_output_file}")
             return
 
-        # --- Selection of 'top' peaks ---
         if top == 'all':
             top_df = df
         else:
@@ -488,8 +549,9 @@ class Genome():
             print("Warning: No peaks extracted for any sequence.")
             return
 
-        output_path = export_folder / output_file_name
-        with open(output_path, "w", encoding="utf-8") as f_out:
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self.suffix, extension=extension, use_genome_dir=use_genome_dir, subfolder_name=subfolder_name, subfolder=subfolder)
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for header, seq in peaks.items():
                 f_out.write(f'>{header}\n')
                 f_out.write(f'{textwrap.fill(seq, width=60)}\n')

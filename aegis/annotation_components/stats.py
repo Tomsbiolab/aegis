@@ -5,12 +5,14 @@ if TYPE_CHECKING:
     from ..annotation import Annotation
 
 import pandas as pd
+import warnings
 
 from pathlib import Path
 from statistics import mean
 
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron
+from .base import AnnotationComponent
 
 KEY_DESCRIPTIONS = {
     # Mean metrics
@@ -82,16 +84,15 @@ KEY_DESCRIPTIONS = {
 }
 
 
-class AnnotationStats:
+class AnnotationStats(AnnotationComponent):
     """
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
     data: dict
-    _annot: Annotation
 
-    def __init__(self, annotation:Annotation):
-        self._annot = annotation
+    def __init__(self, annot:Annotation):
+        super().__init__(annot)
         self.data = {}
 
     def calculate_transcript_masking(self):
@@ -122,7 +123,14 @@ class AnnotationStats:
                     unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
-    def update(self, custom_path:str="", export:bool=False, max_x:int|None=None, quiet:bool=True):
+    def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,
+        #deprecated_arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
         self._annot.update_features(quiet=quiet)
         self._annot.generate_introns()
@@ -131,14 +139,13 @@ class AnnotationStats:
 
         if not self._annot.contains_protein_sequences:
             if self._annot.genome is not None:
-                self._annot.generate_proteins(readthrough="both")
+                self._annot.generate_proteins()
 
         self.calculate_gc_content()
 
         if export:
-            export_folder = Path(custom_path or self._annot.path) / "out_stats"
-            export_folder.mkdir(parents=True, exist_ok=True)
-            export_folder = str(export_folder) + "/"
+            export_folder = self._resolve_output_dir(output_dir=output_dir, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
+            export_folder = str(export_folder)
 
         to_tally = ["coding_genes", "noncoding_genes", "CDSs_without_stop", "CDSs_with_stop"]
 

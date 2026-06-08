@@ -16,36 +16,28 @@ from pathlib import Path
 from tqdm import tqdm
 
 from ..hits import OverlapHit
+from .base import AnnotationComponent
+from ..utils.misc import start_progress_bar
 
-class AnnotationOverlaps:
+class AnnotationOverlaps(AnnotationComponent):
     """
     Component for handling overlaps methods for the Annotation class.
     Accessed via 'annotation_object.overlaps'.
     """
-    _annot: Annotation
     self_genes: set[str]
     other_genes: set[str]
 
     def __init__(self, annotation:Annotation):
-        self._annot = annotation
+        super().__init__(annotation)
         self.self_genes = set()
         self.other_genes = set()
-    
+
     def detect(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
         """
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         if not self._annot.sorted:
             self._annot.sort_genes(processes=sort_processes)
@@ -80,12 +72,8 @@ class AnnotationOverlaps:
                            "recalculate them")
                 else:
                     start_time = time.time()
-                    progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mWorking out overlaps between {self._annot.id} and {other.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+                    progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Working out overlaps between {self._annot.id} and {other.id} annotations", colour="91", quiet=quiet)
 
                     if other.name not in self._annot.overlapped_annotations: # type: ignore
                         self._annot.overlapped_annotations.add(other.name)
@@ -307,12 +295,8 @@ class AnnotationOverlaps:
             if self.self_genes != set():
                 print("There are already detected 'self' gene overlaps, please run 'self.clear()' if you want to recalculate them")
             else:
-                progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mWorking out overlaps within {self._annot.id} annotation:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
+
+                progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Working out overlaps within {self._annot.id} annotation", colour="91", quiet=quiet)
 
                 # making sure self overlaps are not added twice
                 start_time = time.time()
@@ -572,23 +556,9 @@ class AnnotationOverlaps:
         """
         Number of unique full segment overlaps between genes including all transcript variants.
         """
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        total = len(self._annot.all_gene_ids.keys())
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Adding qualitative info to {self._annot.id} overlaps", colour="95", quiet=quiet)
 
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mAdding qualitative info to {self._annot.id} overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -644,7 +614,7 @@ class AnnotationOverlaps:
             for g in genes.values():
                 g.quality.overlap_with_selected_exon = False
 
-    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t",
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t", extension: str = "", use_name_not_id: bool = False,
                # Deprecated arguments
                output_file: str | None = None, custom_path: str | None = None, export_csv: bool | None = None
                ) -> pd.DataFrame:
@@ -665,24 +635,26 @@ class AnnotationOverlaps:
             warnings.warn("'export_csv' is deprecated. Please use 'save_csv' instead.", DeprecationWarning, stacklevel=2)
             save_csv = export_csv
 
-        if output_dir is None:
-            output_dir = "."
-        
         if subfolder_name != "overlaps":
             subfolder = True
+            save_csv = True
+
+        elif filepath or filename or output_dir:
+            save_csv = True
+
+        if sep == "\t" and extension == "":
+            extension = ".tsv"
+        elif sep == "," and extension == "":
+            extension = ".csv"
 
         if export_self:
             export_mode = "self"
-            export_tag = "self_"
+            prefix = "self"
         else:
             export_mode = "other"
-            export_tag = ""
+            prefix = ""
 
-        
-        if not filename:
-            tag = f"{export_tag}{self._annot.id}{self._annot.feature_suffix}_overlap_t{overlap_threshold}"
-        else:
-            tag = filename
+        extra_suffixes = [f"overlap_t{overlap_threshold}"]
 
         correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
 
@@ -768,8 +740,9 @@ class AnnotationOverlaps:
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
-            if not filename:
-                tag += "_gene_id_A_NAs"
+
+            extra_suffixes.append("gene_id_A_NAs")
+
             if export_mode == "self":
                 overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
             else:
@@ -846,39 +819,6 @@ class AnnotationOverlaps:
             if na_rows:
                 eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
 
-        
-        if filepath:
-            save_csv = True
-            final_output_path = Path(filepath)
-            final_output_path.parent.mkdir(parents=True, exist_ok=True)
-            if (output_dir != ".") or subfolder or filename or use_annot_dir:
-                warnings.warn(f"Exact output file path ({final_output_path}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
-
-        elif save_csv:
-
-            if use_annot_dir:
-                export_folder = Path(self._annot.path)
-                if output_dir != ".":
-                    warnings.warn(f"Both 'use_annot_dir=True' and 'output_dir' were provided. Defaulting to the annotation directory ({self._annot.path}).")
-            else:
-                export_folder = Path(output_dir)
-
-            if subfolder:
-                export_folder = export_folder / subfolder_name.strip("/")
-
-            tag_path = Path(tag)
-
-            if tag_path.suffix:
-                final_output_path = export_folder / tag
-            else:
-                if sep == "\t":
-                    extension = ".tsv"
-                else:
-                    extension = ".csv"
-                final_output_path = export_folder / f"{tag}{extension}"
-
-            export_folder.mkdir(parents=True, exist_ok=True)
-
         eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
 
         if synteny:
@@ -895,7 +835,10 @@ class AnnotationOverlaps:
         eq_df.reset_index(drop=True, inplace=True)
         
         if save_csv:
-            eq_df.to_csv(final_output_path, sep=sep, index=False, na_rep="NA")
+
+            final_output_path = self._resolve_output_path(prefix=prefix, filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+            eq_df.to_csv(str(final_output_path), sep=sep, index=False, na_rep="NA")
 
             now = time.time()
             lapse = now - start_time

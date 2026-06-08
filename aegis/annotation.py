@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from .genome import Genome
     from .utils.gtf_gff import GffEntry
 
-import sys
 import copy
 import random
 import time
@@ -23,7 +22,6 @@ import warnings
 import math
 import gc
 
-from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -33,7 +31,7 @@ from .transcript import Transcript
 from .subfeatures import Exon, UTR
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes
-from .utils.misc import read_file_with_fallback, open_file
+from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
@@ -41,7 +39,6 @@ from .annotation_components.motifs import AnnotationMotifs
 from .annotation_components.overlaps import AnnotationOverlaps
 from .annotation_components.redundancy import AnnotationRedundancy
 from .conf import default_noncoding_transcripts, default_features_r
-
 
 class Annotation():
 
@@ -147,7 +144,7 @@ class Annotation():
 
         self.contains_protein_sequences = False
 
-        self.promoter_types = "standard"
+        self.promoter_type = "standard"
 
         keys = [
             "repeated_gene_IDs", "1bp_gene", "1bp_transcript", "subfeature_to_gene",
@@ -181,16 +178,6 @@ class Annotation():
 
         staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_atypical_features=skip_atypical_features, quiet=quiet)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected or quite mode
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
         self._gene_info = {}
         self._transcript_info = {}
         self._miRNA_info = set()
@@ -206,11 +193,7 @@ class Annotation():
             else:
                 corrected_batch_size = batch_size
 
-            progress_bar = tqdm(total=len(staging[stage]), disable=disable, bar_format=(
-                f'\033[1;{Annotation.bar_colors[n]}mAdding {stage}s:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
+            progress_bar = start_progress_bar(total=len(staging[stage]), description=f"Adding {self.id} {stage}s", colour=Annotation.bar_colors[n], quiet=quiet)
             
             count = 0
 
@@ -455,6 +438,72 @@ class Annotation():
         if combined_suffixes:
             combined_suffixes = "_" + combined_suffixes
         return combined_suffixes
+
+    def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None, 
+        suffix:str = "", extra_suffixes: list[str] | None = None, 
+        extension: str = ".fasta", use_annot_dir: bool = False, 
+        subfolder_name: str = "features", subfolder: bool = False, use_name_not_id: bool = False, prefix:str ="", create_dir:bool=True
+    ) -> Path:
+        
+        # Exact same logic as your original code
+        if filepath:
+            p = Path(filepath)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            if (output_dir is not None) or subfolder or filename or use_annot_dir:
+                warnings.warn(f"Exact output file path ({filepath}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
+            return p
+        else:
+            if use_annot_dir:
+                export_folder = Path(self.path)
+                if output_dir is not None:
+                    warnings.warn(f"Both 'use_annot_dir={use_annot_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the annotation directory ({self.path}).")
+            else:
+                export_folder = Path(output_dir or ".")
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+
+
+            if create_dir:
+
+                export_folder.mkdir(parents=True, exist_ok=True)
+
+            if extension and not extension.startswith("."):
+                extension = f".{extension}"
+
+            if not filename:
+
+                if prefix and not prefix.endswith("_"):
+                    prefix = f"{prefix}_"
+
+                tag_str = "".join([f"_{t}" for t in (extra_suffixes or []) if t])
+                if use_name_not_id:
+                    filename = f"{prefix}{self.name}{suffix}{tag_str}{extension}"
+                else:
+                    filename = f"{prefix}{self.id}{suffix}{tag_str}{extension}"
+            
+            if not Path(filename).suffix:
+                filename = f"{filename}{extension}"
+
+            return export_folder / filename
+
+    def _resolve_output_dir(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:
+
+        if use_annot_dir:
+            export_folder = Path(self.path)
+            if output_dir is not None:
+                warnings.warn(f"Both 'use_annot_dir={use_annot_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the annotation directory ({self.path}).")
+        else:
+            export_folder = Path(output_dir or ".")
+
+        if subfolder:
+            export_folder = export_folder / subfolder_name.strip("/")
+
+        if create_dir:
+
+            export_folder.mkdir(parents=True, exist_ok=True)
+
+        return export_folder
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):
         
@@ -1060,25 +1109,11 @@ class Annotation():
     
     def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         batch_size = 1000
         count = 0
 
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;62mUpdating {self.id} genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;62m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Updating {self.id} genes", colour="62", quiet=quiet)
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -1343,7 +1378,7 @@ class Annotation():
             - upstream_ATG : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard.
             - standard_plus_up_to_ATG : Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.
         """
-        self.promoter_types = promoter_type
+        self.promoter_type = promoter_type
         self.promoter_size = promoter_size
 
         self.contains_promoters = True
@@ -1384,22 +1419,7 @@ class Annotation():
                                     all_protein_seqs[c.protein.id] = c.protein.seq
                                     self.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
-                        bar_format=(
-            f'\033[1;91mDetermining unique {self.id} proteins:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;91m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(all_protein_seqs.keys()), description=f"Determining unique {self.id} proteins", colour="91", quiet=quiet)
 
         unique_sequences = {}
         self.protein_equivalences = {}
@@ -1482,21 +1502,8 @@ class Annotation():
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:
             print(f"\nSorting genes for {self.id}")
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                        bar_format=(
-            f'\033[38;2;210;180;140m\033[1mSorting {self.id} genes:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[38;2;210;180;140m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Sorting {self.id} genes", colour="38;2;210;180;140", quiet=quiet)
 
         if processes > 1:
             if not quiet:
@@ -1735,22 +1742,8 @@ class Annotation():
         if max_cds_overlap != 100 or max_exon_overlap != 100 or max_gene_overlap != 100:
             self.overlaps.detect(other, quiet=quiet)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(other.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mMerging {other.id} and {self.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(other.all_gene_ids), description=f"Adding {other.id} annotation to {self.id}", colour="38;2;46;204;113", quiet=quiet)
+        
         if self.merged:
             if "_..._" in self.name:
                 first_name = self.name.split("_..._")[0]
@@ -2009,21 +2002,8 @@ class Annotation():
 
     def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mReworking {self.id} CDSs:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
     
         for genes in self.chrs.values():
             for g in genes.values():
@@ -2053,26 +2033,13 @@ class Annotation():
             print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
 
     def update_gene_and_transcript_list(self, quiet:bool=True):
-                # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         total = 0
         for genes in self.chrs.values():
             total += len(genes)
 
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mUpdating {self.id} annotation gene and transcript lists:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=total, description=f"Updating {self.id} annotation gene and transcript lists", colour="95", quiet=quiet)
+
         self.all_gene_ids = {}
         self.all_transcript_ids = {}
         for chr, genes in self.chrs.items():
@@ -2145,7 +2112,20 @@ class Annotation():
             for o in self.orphaned_features:
                 o.source = new_source
         
-    def rename_ids(self, custom_path:str="", features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
+    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, quiet:bool=False,
+    #deprecated arguments
+    custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'correspondences_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if correspondences_output_dir is None:
+                correspondences_output_dir = custom_path
+
+        if correspondences_subfolder_name != "out_gffs":
+            correspondences_subfolder = True
+
+        if correspondences_output_dir is not None or correspondences_subfolder or correspondences_filepath is not None or correspondences_filename is not None:
+            correspondences = True
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -2176,22 +2156,10 @@ class Annotation():
             warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.", category=UserWarning)
 
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
         changed_features = set()
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;156;42;42m\033[1mRenaming {self.id} Gene Ids:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;156;42;42m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Renaming {self.id} gene ids", colour="38;2;156;42;42", quiet=quiet)
 
         correspondences_d = {}
 
@@ -2343,19 +2311,17 @@ class Annotation():
             self.feature_tags.add("full_renamed_ids")
 
         if correspondences:
-
-            export_folder = Path(custom_path or self.path) / "out_gffs"
-            export_folder.mkdir(parents=True, exist_ok=True)
-            export_folder = str(export_folder) + "/"
-
+        
             if "gene" in changed_features:
-                out_text = ["old_gene_id\tnew_gene_id"]
-                for k, v in correspondences_d.items():
-                    out_text.append(f"{k}\t{v}")
-                f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
-                out_text = "\n".join(out_text)
-                f_out.write(out_text)
-                f_out.close()
+
+                extra_suffixes = ["rename_eqs"]
+
+                final_correspondences_path = self._resolve_output_path(output_dir=correspondences_output_dir, extension=correspondences_extension, extra_suffixes=extra_suffixes, suffix=self.feature_suffix, filename=correspondences_filename, use_annot_dir=correspondences_use_annot_dir, subfolder=correspondences_subfolder, filepath=correspondences_filepath)
+
+                with open(str(final_correspondences_path), "w", encoding="utf-8") as f_out:
+                    f_out.write("old_gene_id\tnew_gene_id\n")
+                    for k, v in correspondences_d.items():
+                        f_out.write(f"{k}\t{v}\n")
 
             else:
                 warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.", category=UserWarning)
@@ -2366,9 +2332,6 @@ class Annotation():
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
     def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
         for chrom, genes_dict in self.chrs.items():
             new_genes = {}
@@ -2385,8 +2348,7 @@ class Annotation():
                     gene.transcripts = new_transcripts
 
                 new_genes[gene.id] = gene
-                
-            # Replace the chromosome's gene dict with the updated version
+
             if gene_keys:
                 self.chrs[chrom] = new_genes
 
@@ -2600,27 +2562,12 @@ class Annotation():
         if to_remove is None:
             to_remove = set()
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
         total_count = 0
 
         for genes in self.chrs.values():
             total_count += len(genes)
-        
-        progress_bar = tqdm(total=total_count, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving {self.id} genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        progress_bar = start_progress_bar(total=total_count, description=f"Removing {self.id} genes", colour="91", quiet=quiet)
         
         for gene in to_remove:
             if gene in self.all_gene_ids:
@@ -2648,26 +2595,13 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
 
     def remove_missing_genes_in_overlaps(self, quiet:bool=True):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         total_count = 0
         for genes in self.chrs.values():
             total_count += len(genes)
 
-        progress_bar = tqdm(total=total_count, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving {self.id} missing genes in overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=total_count, description=f"Removing {self.id} missing genes in overlaps", colour="91", quiet=quiet)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -2679,21 +2613,9 @@ class Annotation():
         progress_bar.close()              
 
     def remove_duplicate_transcripts(self, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving repeat transcripts per gene of {self.id}:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Removing {self.id} duplicate transcripts", colour="91", quiet=quiet)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)

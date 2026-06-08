@@ -22,6 +22,9 @@ def main(
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output folder."
     )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, without extension."
+    )] = "{annotation-names}.gff3",
     max_gene_overlap: Annotated[float, typer.Option(
         "-g", "--max-gene-overlap",
         help="Max gene overlap percentage. Maximum allowed gene overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of gene overlap)."
@@ -60,6 +63,9 @@ def main(
     else:
         subfolder = False
 
+    if output_file == "{annotation-names}.gff3":
+        output_file = None #type: ignore
+
     if skip_renaming:
         features = []
     else:
@@ -83,7 +89,7 @@ def main(
         )
 
     print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export.gff(output_dir=output_dir, quiet=quiet, subfolder=subfolder)
+    base_annotation.export.gff(output_dir=output_dir, quiet=quiet, subfolder=subfolder, filename=output_file)
 
     print("Done.")
 

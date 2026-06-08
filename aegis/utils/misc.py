@@ -12,10 +12,12 @@ if TYPE_CHECKING:
 import pickle
 import re
 import subprocess
+import sys
+import gzip
 
 from pathlib import Path
 from collections import Counter
-import gzip
+from tqdm import tqdm
 
 def pickle_load(file):
     f = open(file, "rb")
@@ -38,6 +40,15 @@ def find_all_occurrences(pattern, text):
         matches.append((match.start(), match.end(), match.group()))
 
     return matches
+
+def start_progress_bar(total: int, description: str, quiet: bool = False, colour: str = "92"):
+    disable = quiet or not sys.stderr.isatty()
+
+    return tqdm(total=total, disable=disable, bar_format=(
+            f'\033[1;{colour}m{description}:\033[0m '
+            '{percentage:3.0f}%|'
+            f'\033[1;{colour}m{{bar}}\033[0m| '
+            '{n}/{total} [{elapsed}<{remaining}]'))
 
 def run_command(working_directory: Path, command: list):
     """

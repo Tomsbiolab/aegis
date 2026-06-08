@@ -72,8 +72,8 @@ def genes(
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     annotation.export.gene_list(
-        custom_path=output_dir,
-        output_file=output_file,
+        output_dir=output_dir,
+        filename=output_file,
         lengths=lengths,
         coordinates=coordinates,
         chromosomes=chromosomes,
@@ -149,8 +149,8 @@ def transcripts(
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
 
     annotation.export.transcript_list(
-        custom_path=output_dir,
-        output_file=output_file,
+        output_dir=output_dir,
+        filename=output_file,
         lengths=lengths,
         coordinates=coordinates,
         chromosomes=chromosomes,
