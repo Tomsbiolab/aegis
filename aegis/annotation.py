@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from .genome import Genome
     from .utils.gtf_gff import GffEntry
 
-import sys
 import copy
 import random
 import time
@@ -145,7 +144,7 @@ class Annotation():
 
         self.contains_protein_sequences = False
 
-        self.promoter_types = "standard"
+        self.promoter_type = "standard"
 
         keys = [
             "repeated_gene_IDs", "1bp_gene", "1bp_transcript", "subfeature_to_gene",
@@ -439,6 +438,72 @@ class Annotation():
         if combined_suffixes:
             combined_suffixes = "_" + combined_suffixes
         return combined_suffixes
+
+    def _resolve_output_path(self, filepath: str | None, output_dir: str | None, filename: str | None, 
+        suffix:str = "", extra_suffixes: list[str] | None = None, 
+        extension: str = ".fasta", use_annot_dir: bool = False, 
+        subfolder_name: str = "features", subfolder: bool = False, use_name_not_id: bool = False, prefix:str ="", create_dir:bool=True
+    ) -> Path:
+        
+        # Exact same logic as your original code
+        if filepath:
+            p = Path(filepath)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            if (output_dir is not None) or subfolder or filename or use_annot_dir:
+                warnings.warn(f"Exact output file path ({filepath}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
+            return p
+        else:
+            if use_annot_dir:
+                export_folder = Path(self.path)
+                if output_dir is not None:
+                    warnings.warn(f"Both 'use_annot_dir={use_annot_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the annotation directory ({self.path}).")
+            else:
+                export_folder = Path(output_dir or ".")
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+
+
+            if create_dir:
+
+                export_folder.mkdir(parents=True, exist_ok=True)
+
+            if extension and not extension.startswith("."):
+                extension = f".{extension}"
+
+            if not filename:
+
+                if prefix and not prefix.endswith("_"):
+                    prefix = f"{prefix}_"
+
+                tag_str = "".join([f"_{t}" for t in (extra_suffixes or []) if t])
+                if use_name_not_id:
+                    filename = f"{prefix}{self.name}{suffix}{tag_str}{extension}"
+                else:
+                    filename = f"{prefix}{self.id}{suffix}{tag_str}{extension}"
+            
+            if not Path(filename).suffix:
+                filename = f"{filename}{extension}"
+
+            return export_folder / filename
+
+    def _resolve_output_dir(self, output_dir: str | None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:
+
+        if use_annot_dir:
+            export_folder = Path(self.path)
+            if output_dir is not None:
+                warnings.warn(f"Both 'use_annot_dir={use_annot_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the annotation directory ({self.path}).")
+        else:
+            export_folder = Path(output_dir or ".")
+
+        if subfolder:
+            export_folder = export_folder / subfolder_name.strip("/")
+
+        if create_dir:
+
+            export_folder.mkdir(parents=True, exist_ok=True)
+
+        return export_folder
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):
         
@@ -1313,7 +1378,7 @@ class Annotation():
             - upstream_ATG : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard.
             - standard_plus_up_to_ATG : Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.
         """
-        self.promoter_types = promoter_type
+        self.promoter_type = promoter_type
         self.promoter_size = promoter_size
 
         self.contains_promoters = True
@@ -2047,7 +2112,20 @@ class Annotation():
             for o in self.orphaned_features:
                 o.source = new_source
         
-    def rename_ids(self, custom_path:str="", features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
+    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, quiet:bool=False,
+    #deprecated arguments
+    custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'correspondences_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if correspondences_output_dir is None:
+                correspondences_output_dir = custom_path
+
+        if correspondences_subfolder_name != "out_gffs":
+            correspondences_subfolder = True
+
+        if correspondences_output_dir is not None or correspondences_subfolder or correspondences_filepath is not None or correspondences_filename is not None:
+            correspondences = True
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -2233,19 +2311,17 @@ class Annotation():
             self.feature_tags.add("full_renamed_ids")
 
         if correspondences:
-
-            export_folder = Path(custom_path or self.path) / "out_gffs"
-            export_folder.mkdir(parents=True, exist_ok=True)
-            export_folder = str(export_folder) + "/"
-
+        
             if "gene" in changed_features:
-                out_text = ["old_gene_id\tnew_gene_id"]
-                for k, v in correspondences_d.items():
-                    out_text.append(f"{k}\t{v}")
-                f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
-                out_text = "\n".join(out_text)
-                f_out.write(out_text)
-                f_out.close()
+
+                extra_suffixes = ["rename_eqs"]
+
+                final_correspondences_path = self._resolve_output_path(output_dir=correspondences_output_dir, extension=correspondences_extension, extra_suffixes=extra_suffixes, suffix=self.feature_suffix, filename=correspondences_filename, use_annot_dir=correspondences_use_annot_dir, subfolder=correspondences_subfolder, filepath=correspondences_filepath)
+
+                with open(str(final_correspondences_path), "w", encoding="utf-8") as f_out:
+                    f_out.write("old_gene_id\tnew_gene_id\n")
+                    for k, v in correspondences_d.items():
+                        f_out.write(f"{k}\t{v}\n")
 
             else:
                 warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.", category=UserWarning)
@@ -2256,9 +2332,6 @@ class Annotation():
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
     def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
         for chrom, genes_dict in self.chrs.items():
             new_genes = {}
@@ -2275,8 +2348,7 @@ class Annotation():
                     gene.transcripts = new_transcripts
 
                 new_genes[gene.id] = gene
-                
-            # Replace the chromosome's gene dict with the updated version
+
             if gene_keys:
                 self.chrs[chrom] = new_genes
 

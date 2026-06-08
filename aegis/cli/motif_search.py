@@ -63,7 +63,10 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_dir, exist_ok=True)
+    if output_dir == "./aegis_output/":
+        subfolder = True
+    else:
+        subfolder = False
 
     if header:
         if genelist.endswith(".xlsx"):
@@ -85,7 +88,7 @@ def main(
 
     annotation.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
 
-    annotation.motifs.find_and_plot(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, custom_path=output_dir, quiet=quiet)
+    annotation.motifs.find_and_plot(query_genes=genes, motif=motif, motif_length=motif_length, glistname=query_tag, tf_motif_tag=motif_tag, output_dir=output_dir, subfolder=subfolder, quiet=quiet)
     
 if __name__ == "__main__":
     app()

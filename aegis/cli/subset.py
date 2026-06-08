@@ -113,7 +113,7 @@ def main(
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)
-        g.export(output_folder=output_dir, file=output_genome_file, quiet=quiet)
+        g.export(output_dir=output_dir, filename=output_genome_file, quiet=quiet)
 
 if __name__ == "__main__":
     app()

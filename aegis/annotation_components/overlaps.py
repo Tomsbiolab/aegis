@@ -614,7 +614,7 @@ class AnnotationOverlaps(AnnotationComponent):
             for g in genes.values():
                 g.quality.overlap_with_selected_exon = False
 
-    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t",
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t", extension: str = "", use_name_not_id: bool = False,
                # Deprecated arguments
                output_file: str | None = None, custom_path: str | None = None, export_csv: bool | None = None
                ) -> pd.DataFrame:
@@ -635,24 +635,26 @@ class AnnotationOverlaps(AnnotationComponent):
             warnings.warn("'export_csv' is deprecated. Please use 'save_csv' instead.", DeprecationWarning, stacklevel=2)
             save_csv = export_csv
 
-        if output_dir is None:
-            output_dir = "."
-        
         if subfolder_name != "overlaps":
             subfolder = True
+            save_csv = True
+
+        elif filepath or filename or output_dir:
+            save_csv = True
+
+        if sep == "\t" and extension == "":
+            extension = ".tsv"
+        elif sep == "," and extension == "":
+            extension = ".csv"
 
         if export_self:
             export_mode = "self"
-            export_tag = "self_"
+            prefix = "self"
         else:
             export_mode = "other"
-            export_tag = ""
+            prefix = ""
 
-        
-        if not filename:
-            tag = f"{export_tag}{self._annot.id}{self._annot.feature_suffix}_overlap_t{overlap_threshold}"
-        else:
-            tag = filename
+        extra_suffixes = [f"overlap_t{overlap_threshold}"]
 
         correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
 
@@ -738,8 +740,9 @@ class AnnotationOverlaps(AnnotationComponent):
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
-            if not filename:
-                tag += "_gene_id_A_NAs"
+
+            extra_suffixes.append("gene_id_A_NAs")
+
             if export_mode == "self":
                 overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
             else:
@@ -816,39 +819,6 @@ class AnnotationOverlaps(AnnotationComponent):
             if na_rows:
                 eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
 
-        
-        if filepath:
-            save_csv = True
-            final_output_path = Path(filepath)
-            final_output_path.parent.mkdir(parents=True, exist_ok=True)
-            if (output_dir != ".") or subfolder or filename or use_annot_dir:
-                warnings.warn(f"Exact output file path ({final_output_path}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
-
-        elif save_csv:
-
-            if use_annot_dir:
-                export_folder = Path(self._annot.path)
-                if output_dir != ".":
-                    warnings.warn(f"Both 'use_annot_dir=True' and 'output_dir' were provided. Defaulting to the annotation directory ({self._annot.path}).")
-            else:
-                export_folder = Path(output_dir)
-
-            if subfolder:
-                export_folder = export_folder / subfolder_name.strip("/")
-
-            tag_path = Path(tag)
-
-            if tag_path.suffix:
-                final_output_path = export_folder / tag
-            else:
-                if sep == "\t":
-                    extension = ".tsv"
-                else:
-                    extension = ".csv"
-                final_output_path = export_folder / f"{tag}{extension}"
-
-            export_folder.mkdir(parents=True, exist_ok=True)
-
         eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
 
         if synteny:
@@ -865,7 +835,10 @@ class AnnotationOverlaps(AnnotationComponent):
         eq_df.reset_index(drop=True, inplace=True)
         
         if save_csv:
-            eq_df.to_csv(final_output_path, sep=sep, index=False, na_rep="NA")
+
+            final_output_path = self._resolve_output_path(prefix=prefix, filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+            eq_df.to_csv(str(final_output_path), sep=sep, index=False, na_rep="NA")
 
             now = time.time()
             lapse = now - start_time

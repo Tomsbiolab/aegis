@@ -1,3 +1,4 @@
+from odf.draw import G
 import typer
 import os
 
@@ -20,7 +21,7 @@ def main(
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
         "-g", "--genome-name", help="Genome assembly version, name or tag."
-    )] = "{genome-fasta}",
+    )] = "{genome-file}",
     remove_scaffolds: Annotated[bool, typer.Option(
         "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome."
     )] = False,
@@ -35,7 +36,13 @@ def main(
     )] = "",
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the directory where output files will be saved."
-    )] = "./aegis_output/"
+    )] = "./aegis_output/",
+    output_genome_file: Annotated[str, typer.Option(
+        "-og", "--output-genome-file", help="Path to the output genome filename, with or without extension."
+    )] = "{genome-name}_tidy.fasta",
+    output_annot_file: Annotated[str, typer.Option(
+        "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension."
+    )] = "{annotation-name}_tidy.gff3"
 ):
     """
     Processes and cleans a genome FASTA file and its corresponding annotation (GFF/GTF).
@@ -45,10 +52,8 @@ def main(
     - Remove scaffolds, unplaced contigs, and organellar DNA.
     """
 
-    if genome_name == "{genome-fasta}" and genome_file != "":
+    if genome_name == "{genome-file}":
         genome_name = os.path.splitext(os.path.basename(genome_file))[0]
-    elif genome_file == "":
-        genome_name = "genome"
 
     if (annotation_name == "{annotation-file}") and (annotation_file != ""):
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -58,11 +63,11 @@ def main(
     else:
         subfolder = False
         
-    genome = Genome(name = genome_name, genome_file_path = genome_file)
+    g = Genome(name = genome_name, genome_file_path = genome_file)
 
     if annotation_file:
         
-        annotation = Annotation(annotation_file, annotation_name, genome=genome)
+        a = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=g)
     
     os.makedirs(output_dir, exist_ok=True)
 
@@ -70,16 +75,23 @@ def main(
         with open(rename_map, encoding='utf-8') as f:
             chromosome_rename_map = {linea.split('\t')[0]: linea.split('\t')[1].strip() for linea in f}
 
-        chromosome_equivalences = genome.rename_features_from_dic(rename_map=chromosome_rename_map)
+        chromosome_equivalences = g.rename_features_from_dic(rename_map=chromosome_rename_map)
 
     if remove_scaffolds:
-        genome.remove_scaffolds(remove_00=remove_chr00, remove_organelles=remove_organelles)
+        g.remove_scaffolds(remove_00=remove_chr00, remove_organelles=remove_organelles)
 
-    genome.export(output_folder = output_dir)
+
+    if output_genome_file == "{genome-name}_tidy.fasta":
+        output_genome_file = f"{genome_name}_tidy.fasta"
+
+    if output_annot_file == "{annotation-name}_tidy.gff3":
+        output_annot_file = f"{annotation_name}_matching_genome_tidy.gff3"
+
+    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder)
 
     if annotation_file and rename_map != "":
-        annotation.rename_chromosomes(equivalences=chromosome_equivalences)
-        annotation.export.gff(output_dir=output_dir, subfolder=subfolder)
+        a.rename_chromosomes(equivalences=chromosome_equivalences)
+        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file)
 
 
 if __name__ == "__main__":

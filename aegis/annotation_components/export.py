@@ -8,7 +8,6 @@ if TYPE_CHECKING:
 import time
 import warnings
 
-from pathlib import Path
 from typing import Literal
 
 from ..utils.misc import start_progress_bar
@@ -20,12 +19,22 @@ class AnnotationExport(AnnotationComponent):
     Accessed via 'annotation_object.export'.
     """
 
-    def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):
+    def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, most_specific_id_level = "promoter", output_dir: str | None = None, use_annot_dir:bool=False, subfolder:bool=False, subfolder_name:str="features", extension:str=".fasta", quiet: bool = False,
+        #deprecated arguments
+        path:str=""):
         """
         The "output" parameter can be both, main or all. This parameter only 
         affects promoter, transcript, CDS and protein sequences. If both is selected
         a "main features" file and and "all features" file will be produced.
         """
+
+        if path != "":
+            warnings.warn("'path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = path
+
+        if subfolder_name != "features":
+            subfolder = True
 
         feature_output_choices = ["main", "all", "both"]
         if feature_output not in feature_output_choices:
@@ -38,7 +47,7 @@ class AnnotationExport(AnnotationComponent):
 
         start_time = time.time()
 
-        self.genes(verbose, path)
+        self.genes(verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
 
         if feature_output == "both":
             modes = [True, False]
@@ -50,60 +59,65 @@ class AnnotationExport(AnnotationComponent):
         for b in modes:
 
             if most_specific_id_level == "promoter" or most_specific_id_level == "protein":
-                self.proteins(b, verbose, path)
-                self.CDSs(b, verbose, path)
-                self.transcripts(b, verbose, path)
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
                 if promoters:
-                    self.promoters(b, verbose, path)
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
 
             elif most_specific_id_level == "CDS":
-                self.proteins(b, verbose, path, used_id="CDS")
-                self.CDSs(b, verbose, path)
-                self.transcripts(b, verbose, path)
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="CDS")
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
                 if promoters:
-                    self.promoters(b, verbose, path)
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
 
             elif most_specific_id_level == "transcript":
-                self.proteins(b, verbose, path, used_id="transcript")
-                self.CDSs(b, verbose, path, used_id="transcript")
-                self.transcripts(b, verbose, path)
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="transcript")
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="transcript")
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
                 if promoters:
-                    self.promoters(b, verbose, path, used_id="transcript")
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="transcript")
 
             elif most_specific_id_level == "gene":
-                self.proteins(b, verbose, path, used_id="gene")
-                self.CDSs(b, verbose, path, used_id="gene")
-                self.transcripts(b, verbose, path, used_id="gene")
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
                 if promoters:
-                    self.promoters(b, verbose, path, used_id="gene")
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
 
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, custom_filename: str=""):
-        
+    def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
+
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
         final_cs: list[CDS]
 
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
-
-        output_file = output_path
-
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_proteins"
+        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
             self._annot.generate_proteins(mode=mode)
+
+        extra_suffixes = ["proteins"]
 
         if unique_proteins_per_gene:
             only_main = False
@@ -115,39 +129,31 @@ class AnnotationExport(AnnotationComponent):
         if used_id == "gene":
             only_main = True
             only_cds_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         else:
             if used_id == "transcript":
                 only_cds_main = True
-                output_file += "_t_id"
+                extra_suffixes.append("t_id")
                 if unique_proteins_per_gene:
                     warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' or 'protein' if all CDSs are to be considered.", category=UserWarning)
             elif used_id == "CDS":
-                output_file += "_c_id"
+                extra_suffixes.append("c_id")
             elif used_id == "protein":
-                output_file += "_p_id"
+                extra_suffixes.append("p_id")
 
             if unique_proteins_per_gene:
-                output_file += "_unique_per_gene"
+                extra_suffixes.append("unique_per_gene")
             elif only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-            
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
         
-        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
-        
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
@@ -206,20 +212,27 @@ class AnnotationExport(AnnotationComponent):
 
                         f_out.write(f"\n{c.protein.seq}\n")
 
-    def unique_proteins(self, custom_path: str = "", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end"):
+    def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end",
+        #deprecated arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
         start_time = time.time()
 
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_proteins.fasta"
+        extra_suffixes = ["unique_proteins"]
+
+        if subfolder_name != "features":
+            subfolder = True
 
         self._annot.generate_protein_equivalences(mode=mode, quiet=quiet)
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for protein_id in self._annot.protein_equivalences:
                 chrom, g, t, c = self._annot.all_protein_ids[protein_id]
                 sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
@@ -230,16 +243,21 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} proteins took {round(lapse/60, 1)} minutes")
 
-    def unique_transcripts(self, custom_path: str = "", quiet: bool = False, rna_classes: list = []):
+    def unique_transcripts(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, rna_classes: list = [],
+        #deprecated arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
         start_time = time.time()
 
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_transcripts.fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=["unique_transcripts"], use_name_not_id=use_name_not_id)
         
         all_transcript_seqs = {}
         for genes in self._annot.chrs.values():
@@ -258,7 +276,7 @@ class AnnotationExport(AnnotationComponent):
             if sequence not in unique_sequences:
                 unique_sequences[sequence] = transcript_id
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for sequence, transcript_id in unique_sequences.items():
                 f_out.write(f">{transcript_id}\n{sequence}\n")
 
@@ -269,16 +287,22 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
 
-    def unique_CDSs(self, custom_path: str = "", quiet: bool = False):
+    def unique_CDSs(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False,
+        #deprecated arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+        
         start_time = time.time()
 
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_CDSs.fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=["unique_CDSs"], use_name_not_id=use_name_not_id)
+
         all_CDS_seqs = {}
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -297,7 +321,7 @@ class AnnotationExport(AnnotationComponent):
             if sequence not in unique_sequences:
                 unique_sequences[sequence] = CDS_id
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for sequence, CDS_id in unique_sequences.items():
                 f_out.write(f">{CDS_id}\n{sequence}\n")
 
@@ -308,7 +332,9 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
 
-    def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, custom_filename: str=""):
+    def CDSs(self, only_main: bool = True, verbose: bool = True, used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -323,21 +349,24 @@ class AnnotationExport(AnnotationComponent):
         valid_id_choices = ["gene", "transcript", "CDS"]
         """
 
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        output_file = output_path
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_CDSs"
+        valid_id_choices = ["gene", "transcript", "CDS"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export CDSs.")
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        extra_suffixes = ["CDSs"]
 
         if unique_CDSs_per_gene:
             only_main = False
@@ -349,37 +378,29 @@ class AnnotationExport(AnnotationComponent):
         if used_id == "gene":
             only_main = True
             only_cds_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         else:
             if used_id == "transcript":
                 only_cds_main = True
-                output_file += "_t_id"
+                extra_suffixes.append("t_id")
                 if unique_CDSs_per_gene:
                     warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' if all CDSs are to be considered.", category=UserWarning)
             elif used_id == "CDS":
-                output_file += "_c_id"
+                extra_suffixes.append("c_id")
 
             if unique_CDSs_per_gene:
-                output_file += "_unique_per_gene"
+                extra_suffixes.append("unique_per_gene")
             elif only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-            
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
-        
-        valid_id_choices = ["gene", "transcript", "CDS"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export CDSs.")
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
@@ -434,7 +455,9 @@ class AnnotationExport(AnnotationComponent):
                         f_out.write(f"\n{c.seq}\n")
 
 
-    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, custom_filename: str=""):
+    def transcripts(self, only_main: bool = True, verbose: bool = True, used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
         """
         Main means only main transcript sequences are exported.
 
@@ -447,21 +470,25 @@ class AnnotationExport(AnnotationComponent):
 
         valid_id_choices = ["gene", "transcript"]
         """
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
 
-        output_file = output_path
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_transcripts"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        valid_id_choices = ["gene", "transcript"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export transcripts.")
+
+        extra_suffixes = ["transcripts"]
 
         if unique_transcripts_per_gene:
             only_main = False
@@ -471,30 +498,22 @@ class AnnotationExport(AnnotationComponent):
 
         if used_id == "gene":
             only_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         elif used_id == "transcript":
-            output_file += "_t_id"
+            extra_suffixes.append("t_id")
             if unique_transcripts_per_gene:
-                output_file += "_unique_per_gene"
+                extra_suffixes.append("unique_per_gene")
             elif only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-            
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
-        valid_id_choices = ["gene", "transcript"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export transcripts.")
-        
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
 
             for genes in self._annot.chrs.values():
                 for g in genes.values():
@@ -534,33 +553,31 @@ class AnnotationExport(AnnotationComponent):
                             f_out.write(f"|{t.strand}|{t.ch}|{t.start}:{t.end}")
                         f_out.write(f"\n{t.seq}\n")
 
-    def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False, custom_filename: str=""):
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
+    def genes(self, verbose: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
 
-        output_file = output_path
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_genes"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
+        if subfolder_name != "features":
+            subfolder = True
+
+        extra_suffixes = ["genes"]
+        
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
-
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     if g.seq != "":
@@ -569,62 +586,58 @@ class AnnotationExport(AnnotationComponent):
                             f_out.write(f"|{g.strand}|{g.ch}|{g.start}:{g.end}")
                         f_out.write(f"\n{g.seq}\n")
 
-    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, custom_filename: str=""):
+    def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
         """
-
         Verbose will include promoter type, strand, chromosome, and coordinates.
-
         """
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
 
-        output_file = output_path
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_promoters"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        valid_id_choices = ["gene", "transcript", "promoter"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
+
+
+        extra_suffixes = ["promoters"]
 
         if used_id == "gene":
             only_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         else:
             if used_id == "transcript":
-                output_file += "_t_id"
+                extra_suffixes.append("t_id")
             if used_id == "promoter":
-                output_file += "_prom_id"
+                extra_suffixes.append("prom_id")
             if only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-
-        else:
-            output_file += f"_{self._annot.promoter_size}_{self._annot.promoter_types}.fasta"
-
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
-
-        valid_id_choices = ["gene", "transcript", "promoter"]
-
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
+        extra_suffixes.append(str(self._annot.promoter_size))
+        extra_suffixes.append(self._annot.promoter_type)
 
         if not self._annot.contains_promoters:
             self._annot.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     for t in g.transcripts.values():
@@ -650,28 +663,54 @@ class AnnotationExport(AnnotationComponent):
                         else:
                             print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter.\n")
 
-    def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):
-        equivalences = genome.rename_features_dap(output_folder=genome_out_folder, return_equivalences=True, export=True)
+    def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False,
+        #deprecated arguments
+        genome_out_folder:str="", gff_out_folder:str="", tag:str="_for_dap.gff3"):
+
+
+        if genome_out_folder != "":
+            warnings.warn("'genome_out_folder' is deprecated. Please use 'genome_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if genome_output_dir is None:
+                genome_output_dir = genome_out_folder
+
+        if gff_out_folder != "":
+            warnings.warn("'gff_out_folder' is deprecated. Please use 'gff_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if gff_output_dir is None:
+                gff_output_dir = gff_out_folder
+
+        if genome_subfolder_name != "out_genomes":
+            genome_subfolder = True
+
+        if gff_subfolder_name != "out_gffs":
+            gff_subfolder = True
+
+        if tag != "_for_dap.gff3":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'gff_filename' instead or 'gff_filepath' for the whole path.", DeprecationWarning, stacklevel=2)
+            if gff_filename is None:
+                gff_filename = tag
+
+        equivalences = genome.rename_features_dap(output_dir=genome_output_dir, filename=genome_filename, filepath=genome_filepath, extension=genome_extension, use_genome_dir=use_genome_dir, subfolder_name=genome_subfolder_name, subfolder=genome_subfolder, return_equivalences=True, export=True)
+
         self._annot.rename_chromosomes(equivalences)
-        self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
+
+        extra_suffixes = ["for_dap"]
+
+        final_output_path = self._resolve_output_path(filepath=gff_filepath, output_dir=gff_output_dir, filename=gff_filename, suffix=self._annot.all_suffixes, extension=gff_extension, use_annot_dir=use_annot_dir, subfolder_name=gff_subfolder_name, subfolder=gff_subfolder, extra_suffixes=extra_suffixes, use_name_not_id=gff_use_name_not_id)
+
+        self.gff(filepath=str(final_output_path), skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
     def gff(self, 
-            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gffs", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes: bool = False, clean_attributes: bool = True, aliases: bool = False, symbols: bool = False, symbols_as_description: bool = False, print_empty_attributes: bool = False, miRNAs: bool = True, clean_header: bool = False,
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gffs", extension:str=".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes: bool = False, clean_attributes: bool = True, aliases: bool = False, symbols: bool = False, symbols_as_description: bool = False, print_empty_attributes: bool = False, miRNAs: bool = True, clean_header: bool = False,
             # Deprecated arguments
-            output_file: str | None = None, custom_path: str | None = None, tag: str | None = ".gff3"):
+            custom_path: str = "", tag: str = ".gff3"):
 
-        if output_file is not None:
-            warnings.warn("'output_file' is deprecated. Please use 'filepath' instead.", DeprecationWarning, stacklevel=2)
-            if filepath is None:
-                filepath = output_file
-
-        if custom_path is not None:
+        if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
             if output_dir is None:
                 output_dir = custom_path
 
-        if tag is not None and tag != ".gff3":
-            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+        if tag != ".gff3":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead or 'filepath' for the whole path.", DeprecationWarning, stacklevel=2)
             if filename is None:
                 filename = tag
 
@@ -696,7 +735,7 @@ class AnnotationExport(AnnotationComponent):
         if just_genes:
             extra_suffixes.append("just_genes")
 
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, feature_type="", suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=".gff3", use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
         if not quiet:
             print(f"Exporting {self._annot.id} gff to {final_output_path}.")
@@ -834,63 +873,33 @@ class AnnotationExport(AnnotationComponent):
                         f_out.write("###\n")
 
     def gtf(self, 
-            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False,
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False,
             # Deprecated arguments
-            output_file: str | None = None, custom_path: str | None = None, tag: str | None = ".gtf"):
+            custom_path: str = "", tag: str = ".gtf"):
 
-        if output_file is not None:
-            warnings.warn("'output_file' is deprecated. Please use 'filepath' instead.", DeprecationWarning, stacklevel=2)
-            if filepath is None:
-                filepath = output_file
-
-        if custom_path is not None and custom_path != "":
+        if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
             if output_dir is None:
                 output_dir = custom_path
 
-        if tag is not None and tag != ".gtf":
-            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+        if tag != ".gtf":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead or 'filepath' for the whole path.", DeprecationWarning, stacklevel=2)
             if filename is None:
                 filename = tag
+
+        if subfolder_name != "out_gtfs":
+            subfolder = True
 
         self._annot.create_gtf_attributes()
 
         progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Exporting gtf for {self._annot.id} annotation", quiet=quiet, colour="38;2;46;204;113")
 
-        if output_dir is None:
-            output_dir = "."
-        
-        if subfolder_name != "out_gtfs":
-            subfolder = True
+        extra_suffixes = []
 
-        if filepath:
-            final_output_path = Path(filepath)
-            final_output_path.parent.mkdir(parents=True, exist_ok=True)
+        if just_genes:
+            extra_suffixes.append("just_genes")
 
-            if (output_dir != ".") or subfolder or filename or use_annot_dir:
-                warnings.warn(f"Exact output file path ({final_output_path}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
-
-        else:
-            if use_annot_dir:
-                export_folder = Path(self._annot.path)
-                if output_dir != ".":
-                    warnings.warn(f"Both 'use_annot_dir=True' and 'output_dir' were provided. Defaulting to the annotation directory ({self._annot.path}).")
-            else:
-                export_folder = Path(output_dir)
-
-            if subfolder:
-                export_folder = export_folder / subfolder_name.strip("/")
-            
-            export_folder.mkdir(parents=True, exist_ok=True)
-
-            if not filename:
-                suffix = "_just_genes" if just_genes else ""
-                filename = f"{self._annot.id}{self._annot.all_suffixes}{suffix}.gtf"
-
-            if Path(filename).suffix:
-                final_output_path = export_folder / filename
-            else:
-                final_output_path = export_folder / f"{filename}.gtf"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
         if not quiet:
             print(f"Exporting {self._annot.id} gtf to {final_output_path}.")
@@ -951,25 +960,35 @@ class AnnotationExport(AnnotationComponent):
 
             progress_bar.close()
 
-    def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False):
+    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False, quiet:bool=False,
+        #deprecated arguments
+        custom_path: str = "", output_file: str = ""):
 
-        if not custom_path:
-            export_folder = Path(self._annot.path) / "lists"
-        else:
-            export_folder = Path(custom_path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+        if output_file != "":
+            warnings.warn("'output_file' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = output_file
 
-        if not output_file:
-            output_file = f"{export_folder}{self._annot.name}_genes.txt"
-        else:
-            output_file = f"{export_folder}{output_file}"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "lists":
+            subfolder = True
+
+        extra_suffixes = ["genes"]
 
         if skip_coding and skip_non_coding:
             print("Warning: Both skip_coding and skip_non_coding are set to True. No genes will be listed.")
             return
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+
+        if not quiet:
+            print(f"Exporting {self._annot.id} gene list to {final_output_path}.")
+
+        with open(final_output_path, "w", encoding="utf-8") as f_out:
 
             header = ["gene_id"]
             if chromosomes or coordinates:
@@ -1022,24 +1041,35 @@ class AnnotationExport(AnnotationComponent):
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):
-        if not custom_path:
-            export_folder = Path(self._annot.path) / "lists"
-        else:
-            export_folder = Path(custom_path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False,
+        #deprecated arguments
+        custom_path: str = "", output_file: str = ""):
 
-        if not output_file:
-            output_file = f"{export_folder}{self._annot.name}_transcripts.txt"
-        else:
-            output_file = f"{export_folder}{output_file}"
+        if output_file != "":
+            warnings.warn("'output_file' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = output_file
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "lists":
+            subfolder = True
+
+        extra_suffixes = ["transcripts"]
 
         if skip_coding and skip_non_coding:
             print("Warning: Both skip_coding and skip_non_coding are set to True. No transcripts will be listed.")
             return
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+
+        if not quiet:
+            print(f"Exporting {self._annot.id} transcript list to {final_output_path}.")
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
 
             header = ["transcript_id"]
             if chromosomes or coordinates:
