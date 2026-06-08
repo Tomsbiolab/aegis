@@ -639,7 +639,7 @@ class AnnotationOverlaps(AnnotationComponent):
             subfolder = True
             save_csv = True
 
-        elif filepath or filename or output_dir:
+        elif filepath or filename or output_dir or subfolder:
             save_csv = True
 
         if sep == "\t" and extension == "":
@@ -744,9 +744,9 @@ class AnnotationOverlaps(AnnotationComponent):
             extra_suffixes.append("gene_id_A_NAs")
 
             if export_mode == "self":
-                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
+                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna()) if not eq_df.empty else set()
             else:
-                overlapping_genes = set(eq_df["gene_id_A"].dropna())
+                overlapping_genes = set(eq_df["gene_id_A"].dropna()) if not eq_df.empty else set()
 
             na_rows = []
 
