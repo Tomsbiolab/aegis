@@ -35,8 +35,8 @@
       - `def iter_features(self, include_atypical: bool = True, include_orphaned: bool = True):`
       - `def feature_suffix(self) -> str:`
       - `def all_suffixes(self) -> str:`
-      - `def _resolve_output_path(self, filepath: str | None, output_dir: str | None, filename: str | None,`
-      - `def _resolve_output_dir(self, output_dir: str | None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:`
+      - `def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None,`
+      - `def _resolve_output_dir(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):`
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`

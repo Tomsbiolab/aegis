@@ -439,7 +439,7 @@ class Annotation():
             combined_suffixes = "_" + combined_suffixes
         return combined_suffixes
 
-    def _resolve_output_path(self, filepath: str | None, output_dir: str | None, filename: str | None, 
+    def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None, 
         suffix:str = "", extra_suffixes: list[str] | None = None, 
         extension: str = ".fasta", use_annot_dir: bool = False, 
         subfolder_name: str = "features", subfolder: bool = False, use_name_not_id: bool = False, prefix:str ="", create_dir:bool=True
@@ -487,7 +487,7 @@ class Annotation():
 
             return export_folder / filename
 
-    def _resolve_output_dir(self, output_dir: str | None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:
+    def _resolve_output_dir(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:
 
         if use_annot_dir:
             export_folder = Path(self.path)
