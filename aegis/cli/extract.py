@@ -2,7 +2,6 @@ import typer
 import os
 
 from typing_extensions import Annotated
-from textwrap import dedent
 
 from ..genome import Genome
 from ..annotation import Annotation

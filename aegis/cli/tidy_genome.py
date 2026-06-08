@@ -1,4 +1,3 @@
-from odf.draw import G
 import typer
 import os
 

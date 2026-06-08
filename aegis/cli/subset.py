@@ -3,7 +3,6 @@ import os
 import random
 import warnings
 
-from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
