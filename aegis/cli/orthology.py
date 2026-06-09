@@ -86,12 +86,12 @@ def get_tiered_cardinality(df, allowed_scores):
     final_deg_B = np.nan_to_num(final_deg_B).astype(int)
 
     condlist = [
-        (final_deg_A == 0),
-        (final_deg_A == 1) & (final_deg_B == 1),
-        (final_deg_A == 1) & (final_deg_B > 1),
-        (final_deg_A > 1) & (final_deg_B == 1),
-        (final_deg_A > 1) & (final_deg_B > 1)
-    ]
+            (final_deg_A == 0),
+            (final_deg_A == 1) & (final_deg_B == 1),
+            (final_deg_A > 1) & (final_deg_B == 1),
+            (final_deg_A == 1) & (final_deg_B > 1),
+            (final_deg_A > 1) & (final_deg_B > 1)
+        ]
     choicelist = ['NA', '1:1', '1:N', 'N:1', 'N:N']
     
     return np.select(condlist, choicelist, default='NA')
@@ -622,8 +622,8 @@ def main(
                     a1_mcscan_name = a1.name.replace(".", "_")
                     a2_mcscan_name = a2.name.replace(".", "_")
 
-                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2_mcscan_name, group_names[n2])
-                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2_mcscan_name, group_names[n2])
+                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2.name, group_names[n2])
+                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2.name, group_names[n2])
 
                 if not skip_orthofinder:
                     if pairwise_orthofinder:
@@ -665,6 +665,9 @@ def main(
             final_df = df.copy()
         else:
             final_df = pd.concat([final_df, df], ignore_index=True)
+
+
+    post_processing_start = time()
 
     if not include_duplicates and not final_df.empty:
 
@@ -794,6 +797,8 @@ def main(
             final_df.iloc[:, col_idx + 1:]
         ], axis=1)
 
+    print(f"\nPost processing took: {round((time() - post_processing_start) / 60, 2)} minutes.")
+
     final_df.to_csv(final_output_file, sep="\t", encoding="utf-8", index=False)
 
     if not keep_intermediate:
@@ -802,7 +807,7 @@ def main(
 
     end = time()
 
-    print(f"aegis orthology command ('{' '.join(sys.argv)}') complete. Total time: {round((end - start) / 60, 2)} minutes.")
+    print(f"\naegis orthology command ('{' '.join(sys.argv)}') complete. Total time: {round((end - start) / 60, 2)} minutes.")
 
 if __name__ == "__main__":
     try:
