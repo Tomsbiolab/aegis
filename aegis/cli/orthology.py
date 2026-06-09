@@ -5,6 +5,7 @@ import numpy as np
 import warnings
 import shutil
 import sys
+import re
 
 from pathlib import Path
 from typing_extensions import Annotated
@@ -16,6 +17,84 @@ from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 from time import time
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+def parse_score_column(score_str):
+    if pd.isna(score_str) or score_str == "NA":
+        return pd.Series({
+            "Liftoff": "NA", "LiftOn": "NA", "AEGIS_Overlap": "NA", 
+            "MCscan": "NA", "BLAST": "NA", "OrthoFinder": "NA"
+        })
+    
+    res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLAST": [], "OrthoFinder": []}
+    
+    pattern = re.compile(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]')
+    matches = pattern.findall(str(score_str))
+    
+    for tool, val in matches:
+        entry = f"{tool} [{val}]"
+        if "liftoff" in tool:
+            res["Liftoff"].append(entry)
+        elif "lifton" in tool:
+            res["LiftOn"].append(entry)
+        elif tool == "aegis_overlap":
+            res["AEGIS_Overlap"].append(entry)
+        elif "mcscan" in tool:
+            res["MCscan"].append(entry)
+        elif "blast" in tool or "rbh" in tool or "rbbh" in tool:
+            res["BLAST"].append(entry)
+        elif "orthofinder" in tool:
+            res["OrthoFinder"].append(entry)
+
+    return pd.Series({k: (", ".join(v) if v else "NA") for k, v in res.items()})
+
+
+def get_tiered_cardinality(df, allowed_scores):
+    if df.empty:
+        return pd.Series(dtype=str)
+    
+    is_ordered = df['annotation_A'] <= df['annotation_B']
+    base_df = pd.DataFrame({
+        'a1': np.where(is_ordered, df['annotation_A'], df['annotation_B']),
+        'a2': np.where(is_ordered, df['annotation_B'], df['annotation_A']),
+        'g1': np.where(is_ordered, df['gene_id_A'], df['gene_id_B']),
+        'g2': np.where(is_ordered, df['gene_id_B'], df['gene_id_A']),
+        'score': df['summary_score']
+    })
+    
+    sub_df = base_df[base_df['score'].isin(allowed_scores)].copy()
+    sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2'], inplace=True)
+    
+    if sub_df.empty:
+        return pd.Series(['NA'] * len(df), index=df.index)
+
+    c1 = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].count().reset_index(name='d1')
+    c2 = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].count().reset_index(name='d2')
+    
+    t1 = sub_df.merge(c2, on=['a1', 'a2', 'g2']).groupby(['a1', 'a2', 'g1'])['d2'].max().reset_index(name='max_d2')
+    t2 = sub_df.merge(c1, on=['a1', 'a2', 'g1']).groupby(['a1', 'a2', 'g2'])['d1'].max().reset_index(name='max_d1')
+
+    status_1 = c1.merge(t1, on=['a1', 'a2', 'g1'])
+    status_2 = c2.merge(t2, on=['a1', 'a2', 'g2'])
+
+    base_df = base_df.merge(status_1, on=['a1', 'a2', 'g1'], how='left')
+    base_df = base_df.merge(status_2, on=['a1', 'a2', 'g2'], how='left')
+    
+    final_deg_A = np.where(is_ordered, base_df['d1'], base_df['d2'])
+    final_deg_B = np.where(is_ordered, base_df['max_d2'], base_df['max_d1'])
+    
+    final_deg_A = np.nan_to_num(final_deg_A).astype(int)
+    final_deg_B = np.nan_to_num(final_deg_B).astype(int)
+
+    condlist = [
+        (final_deg_A == 0),
+        (final_deg_A == 1) & (final_deg_B == 1),
+        (final_deg_A == 1) & (final_deg_B > 1),
+        (final_deg_A > 1) & (final_deg_B == 1),
+        (final_deg_A > 1) & (final_deg_B > 1)
+    ]
+    choicelist = ['NA', '1:1', '1:N', 'N:1', 'N:N']
+    
+    return np.select(condlist, choicelist, default='NA')
 
 def split_callback(value:str):
     if value:
@@ -85,7 +164,7 @@ def main(
     )] = False,
     skip_mcscan: Annotated[bool, typer.Option(
         "--skip-mcscan", 
-        help="Skip the JCVI toolkit synteny and collinearity analysis (MCScan). Useful when JCVI is causing compatibility issues.",
+        help="Skip the JCVI toolkit synteny and collinearity analysis (MCscan). Useful when JCVI is causing compatibility issues.",
         rich_help_panel="Orthology Tool Options"
     )] = False,
     skip_synteny: Annotated[bool, typer.Option(
@@ -168,6 +247,11 @@ def main(
         help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
         rich_help_panel="Output Options"
     )] = False,
+    split_scores: Annotated[bool, typer.Option(
+        "--split-scores", 
+        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLAST, and OrthoFinder.",
+        rich_help_panel="Output Options"
+    )] = False,
 
     # ==========================================
     # Execution/Debugging
@@ -189,7 +273,7 @@ def main(
     )] = False,
 ):
     """
-    Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCScan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
+    Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCscan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
 
     Script to perform gene correspondence analysis between multiple genomes.
 
@@ -594,46 +678,7 @@ def main(
 
         final_df.drop(subset_for_duplicates, axis=1, inplace=True)
 
-    def get_tiered_cardinality(df, allowed_scores):
-        if df.empty:
-            return pd.Series(dtype=str)
-        
-        is_ordered = df['annotation_A'] <= df['annotation_B']
-        
-        base_df = pd.DataFrame({
-            'a1': np.where(is_ordered, df['annotation_A'], df['annotation_B']),
-            'a2': np.where(is_ordered, df['annotation_B'], df['annotation_A']),
-            'g1': np.where(is_ordered, df['gene_id_A'], df['gene_id_B']),
-            'g2': np.where(is_ordered, df['gene_id_B'], df['gene_id_A']),
-            'score': df['summary_score']
-        })
-        
-        sub_df = base_df[base_df['score'].isin(allowed_scores)].copy()
-
-        sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2'], inplace=True)
-
-        c1 = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].count().reset_index(name='d1')
-        c2 = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].count().reset_index(name='d2')
-        
-        base_df = base_df.merge(c1, on=['a1', 'a2', 'g1'], how='left')
-        base_df = base_df.merge(c2, on=['a1', 'a2', 'g2'], how='left')
-        
-        d1 = base_df['d1'].fillna(0)
-        d2 = base_df['d2'].fillna(0)
-        
-        deg_A = np.where(is_ordered, d1, d2)
-        deg_B = np.where(is_ordered, d2, d1)
-        
-        condlist = [
-            (deg_A == 1) & (deg_B == 1),
-            (deg_A == 1) & (deg_B > 1),
-            (deg_A > 1) & (deg_B == 1),
-            (deg_A > 1) & (deg_B > 1),
-            (deg_A == 0) | (deg_B == 0)
-        ]
-        choicelist = ['1:1', '1:N', 'N:1', 'N:N', 'NA']
-        
-        return np.select(condlist, choicelist, default='NA')
+    
 
     if not final_df.empty and not skip_cardinality:
         final_df['cardinality_strict'] = get_tiered_cardinality(final_df, ['high_confidence'])
@@ -713,17 +758,41 @@ def main(
                     final_df.loc[mask, col] = final_df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
 
         confidence_order = ["high_confidence", "medium_confidence", "lower_confidence", "NA"]
-        
         final_df['summary_score'] = pd.Categorical(final_df['summary_score'], categories=confidence_order, ordered=True)
         
+        species_order = sorted([s for s in final_df['annotation_B'].unique() if s != "NA"]) + ["NA"]
+        final_df['annotation_B'] = pd.Categorical(final_df['annotation_B'], categories=species_order, ordered=True)
+
         sort_cols = ['annotation_A', 'annotation_B', 'gene_id_A', 'summary_score', 'gene_id_B']
         final_df.sort_values(by=sort_cols, inplace=True)
         
         final_df['summary_score'] = final_df['summary_score'].astype(str)
+        final_df['annotation_B'] = final_df['annotation_B'].astype(str)
 
     if not final_df.empty and "species_A" in final_df.columns and "species_B" in final_df.columns:
         if (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all():
             final_df.drop(columns=["species_A", "species_B"], inplace=True)
+
+    if not final_df.empty and split_scores:
+
+        if not quiet:
+            print("\nSplitting aggregate scores into individual tool columns.")
+
+        score_data = [parse_score_column(s) for s in final_df["score"]]
+        split_df = pd.DataFrame(score_data, index=final_df.index)
+
+        split_df = split_df.loc[:, (split_df != "NA").any(axis=0)]
+        
+        try:
+            col_idx = list(final_df.columns).index("score")
+        except ValueError:
+            col_idx = 0
+
+        final_df = pd.concat([
+            final_df.iloc[:, :col_idx],
+            split_df,  
+            final_df.iloc[:, col_idx + 1:]
+        ], axis=1)
 
     final_df.to_csv(final_output_file, sep="\t", encoding="utf-8", index=False)
 
