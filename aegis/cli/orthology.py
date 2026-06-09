@@ -20,10 +20,10 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 def parse_score_column(score_str):
     if pd.isna(score_str) or score_str == "NA":
-        return pd.Series({
+        return {
             "Liftoff": "NA", "LiftOn": "NA", "AEGIS_Overlap": "NA", 
             "MCscan": "NA", "BLAST": "NA", "OrthoFinder": "NA"
-        })
+        }
     
     res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLAST": [], "OrthoFinder": []}
     
@@ -45,24 +45,24 @@ def parse_score_column(score_str):
         elif "orthofinder" in tool:
             res["OrthoFinder"].append(entry)
 
-    return pd.Series({k: (", ".join(v) if v else "NA") for k, v in res.items()})
-
+    return {k: (", ".join(v) if v else "NA") for k, v in res.items()}
 
 def get_tiered_cardinality(df, allowed_scores):
     if df.empty:
         return pd.Series(dtype=str)
     
     is_ordered = df['annotation_A'] <= df['annotation_B']
+    
     base_df = pd.DataFrame({
-        'a1': np.where(is_ordered, df['annotation_A'], df['annotation_B']),
-        'a2': np.where(is_ordered, df['annotation_B'], df['annotation_A']),
-        'g1': np.where(is_ordered, df['gene_id_A'], df['gene_id_B']),
-        'g2': np.where(is_ordered, df['gene_id_B'], df['gene_id_A']),
+        'a1': np.where(is_ordered.to_numpy(), df['annotation_A'].to_numpy(), df['annotation_B'].to_numpy()),
+        'a2': np.where(is_ordered.to_numpy(), df['annotation_B'].to_numpy(), df['annotation_A'].to_numpy()),
+        'g1': np.where(is_ordered.to_numpy(), df['gene_id_A'].to_numpy(), df['gene_id_B'].to_numpy()),
+        'g2': np.where(is_ordered.to_numpy(), df['gene_id_B'].to_numpy(), df['gene_id_A'].to_numpy()),
         'score': df['summary_score']
     })
     
     sub_df = base_df[base_df['score'].isin(allowed_scores)].copy()
-    sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2'], inplace=True)
+    sub_df = sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2'])
     
     if sub_df.empty:
         return pd.Series(['NA'] * len(df), index=df.index)
@@ -71,30 +71,33 @@ def get_tiered_cardinality(df, allowed_scores):
     c2 = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].count().reset_index(name='d2')
     
     t1 = sub_df.merge(c2, on=['a1', 'a2', 'g2']).groupby(['a1', 'a2', 'g1'])['d2'].max().reset_index(name='max_d2')
-    t2 = sub_df.merge(c1, on=['a1', 'a2', 'g1']).groupby(['a1', 'a2', 'g2'])['d1'].max().reset_index(name='max_d1')
-
-    status_1 = c1.merge(t1, on=['a1', 'a2', 'g1'])
-    status_2 = c2.merge(t2, on=['a1', 'a2', 'g2'])
-
-    base_df = base_df.merge(status_1, on=['a1', 'a2', 'g1'], how='left')
-    base_df = base_df.merge(status_2, on=['a1', 'a2', 'g2'], how='left')
     
-    final_deg_A = np.where(is_ordered, base_df['d1'], base_df['d2'])
-    final_deg_B = np.where(is_ordered, base_df['max_d2'], base_df['max_d1'])
+    sub_df = sub_df.merge(c1, on=['a1', 'a2', 'g1'])
+    sub_df = sub_df.merge(t1, on=['a1', 'a2', 'g1'])
     
-    final_deg_A = np.nan_to_num(final_deg_A).astype(int)
-    final_deg_B = np.nan_to_num(final_deg_B).astype(int)
-
+    deg_A = sub_df['d1'].to_numpy()
+    deg_B = sub_df['max_d2'].to_numpy()
+    
     condlist = [
-            (final_deg_A == 0),
-            (final_deg_A == 1) & (final_deg_B == 1),
-            (final_deg_A > 1) & (final_deg_B == 1),
-            (final_deg_A == 1) & (final_deg_B > 1),
-            (final_deg_A > 1) & (final_deg_B > 1)
-        ]
-    choicelist = ['NA', '1:1', '1:N', 'N:1', 'N:N']
+        (deg_A == 1) & (deg_B == 1),
+        (deg_A > 1) & (deg_B == 1),
+        (deg_A == 1) & (deg_B > 1),
+        (deg_A > 1) & (deg_B > 1)
+    ]
     
-    return np.select(condlist, choicelist, default='NA')
+    sub_df['label_ordered'] = np.select(condlist, ['1:1', '1:N', 'N:1', 'N:N'], default='NA')
+    sub_df['label_reversed'] = np.select(condlist, ['1:1', 'N:1', '1:N', 'N:N'], default='NA')
+    
+    sub_df = sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2']).set_index(['a1', 'a2', 'g1', 'g2'])
+    base_df = base_df.join(sub_df[['label_ordered', 'label_reversed']], on=['a1', 'a2', 'g1', 'g2'])
+    
+    final_labels = np.where(
+        is_ordered.to_numpy(),
+        base_df['label_ordered'].fillna('NA'),
+        base_df['label_reversed'].fillna('NA')
+    )
+    
+    return pd.Series(final_labels, index=df.index)
 
 def split_callback(value:str):
     if value:
@@ -239,7 +242,12 @@ def main(
     )] = False,
     skip_cardinality: Annotated[bool, typer.Option(
         "-sc", "--skip-cardinality", 
-        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1 at different confidence thresholds).",
+        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
+        rich_help_panel="Output Options"
+    )] = False,
+    tiered_cardinality: Annotated[bool, typer.Option(
+        "--tiered-cardinality", 
+        help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
         rich_help_panel="Output Options"
     )] = False,
     include_duplicates: Annotated[bool, typer.Option(
@@ -666,7 +674,6 @@ def main(
         else:
             final_df = pd.concat([final_df, df], ignore_index=True)
 
-
     post_processing_start = time()
 
     if not include_duplicates and not final_df.empty:
@@ -677,24 +684,35 @@ def main(
 
         subset_for_duplicates = ["gene_id_tuple", "annotation_tuple", "species_tuple"]
 
-        final_df.drop_duplicates(subset=subset_for_duplicates, keep='first', inplace=True)
+        final_df = final_df.drop_duplicates(subset=subset_for_duplicates, keep='first')
 
-        final_df.drop(subset_for_duplicates, axis=1, inplace=True)
-
-    
-
-    if not final_df.empty and not skip_cardinality:
-        final_df['cardinality_strict'] = get_tiered_cardinality(final_df, ['high_confidence'])
-        final_df['cardinality_moderate'] = get_tiered_cardinality(final_df, ['high_confidence', 'medium_confidence'])
-        final_df['cardinality_relaxed'] = get_tiered_cardinality(final_df, ['high_confidence', 'medium_confidence', 'lower_confidence'])
+        final_df = final_df.drop(subset_for_duplicates, axis=1)
 
     clean_confidences = [c.strip().lower().replace('_confidence', '') for c in confidence]
     conf_set = set(clean_confidences)
     conf_order = {"high": 1, "medium": 2, "lower": 3}
     sorted_confs = sorted(list(conf_set), key=lambda x: conf_order.get(x, 4))
 
+    standard_sets = [
+        {"high"},
+        {"high", "medium"},
+        {"high", "medium", "lower"}
+    ]
+
     valid_confidences = [f"{c}_confidence" for c in sorted_confs]
 
+    if not final_df.empty and not skip_cardinality:
+        if tiered_cardinality:
+            if conf_set not in standard_sets:
+                final_df['cardinality'] = get_tiered_cardinality(final_df, valid_confidences)
+
+            final_df['cardinality_strict'] = get_tiered_cardinality(final_df, ['high_confidence'])
+            final_df['cardinality_moderate'] = get_tiered_cardinality(final_df, ['high_confidence', 'medium_confidence'])
+            final_df['cardinality_relaxed'] = get_tiered_cardinality(final_df, ['high_confidence', 'medium_confidence', 'lower_confidence'])
+            
+        else:
+            final_df['cardinality'] = get_tiered_cardinality(final_df, valid_confidences)
+        
     if conf_set != {"high", "medium", "lower"}:
         final_df = final_df[final_df["summary_score"].isin(valid_confidences)].copy()
         extra_tag += f"_confidence{'_'.join(sorted_confs)}"
@@ -721,6 +739,8 @@ def main(
                         "species_A": a.species,
                         "species_B": "NA"
                     }
+                    if "cardinality" in final_df.columns:
+                        row_dict["cardinality"] = "NA"
                     if "cardinality_strict" in final_df.columns:
                         row_dict["cardinality_strict"] = "NA"
                         row_dict["cardinality_moderate"] = "NA"
@@ -756,7 +776,7 @@ def main(
             if "species_A" in final_df.columns:
                 final_df.loc[mask, ['species_A', 'species_B']] = final_df.loc[mask, ['species_B', 'species_A']].values
             
-            for col in ['cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
+            for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
                 if col in final_df.columns:
                     final_df.loc[mask, col] = final_df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
 
@@ -767,14 +787,14 @@ def main(
         final_df['annotation_B'] = pd.Categorical(final_df['annotation_B'], categories=species_order, ordered=True)
 
         sort_cols = ['annotation_A', 'annotation_B', 'gene_id_A', 'summary_score', 'gene_id_B']
-        final_df.sort_values(by=sort_cols, inplace=True)
+        final_df = final_df.sort_values(by=sort_cols)
         
         final_df['summary_score'] = final_df['summary_score'].astype(str)
         final_df['annotation_B'] = final_df['annotation_B'].astype(str)
 
     if not final_df.empty and "species_A" in final_df.columns and "species_B" in final_df.columns:
         if (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all():
-            final_df.drop(columns=["species_A", "species_B"], inplace=True)
+            final_df = final_df.drop(columns=["species_A", "species_B"])
 
     if not final_df.empty and split_scores:
 
@@ -796,6 +816,19 @@ def main(
             split_df,  
             final_df.iloc[:, col_idx + 1:]
         ], axis=1)
+
+
+    cols = list(final_df.columns)
+    card_cols = [c for c in cols if 'cardinality' in c]
+
+    for col in card_cols:
+        cols.remove(col)
+    idx = cols.index('summary_score') + 1
+
+    for i, col in enumerate(card_cols):
+        cols.insert(idx + i, col)
+
+    final_df = final_df[cols]
 
     print(f"\nPost processing took: {round((time() - post_processing_start) / 60, 2)} minutes.")
 
