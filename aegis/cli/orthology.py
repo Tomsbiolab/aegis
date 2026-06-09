@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import warnings
 import shutil
+import sys
+import re
 
 from pathlib import Path
 from typing_extensions import Annotated
@@ -12,8 +14,90 @@ from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
+from time import time
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+def parse_score_column(score_str):
+    if pd.isna(score_str) or score_str == "NA":
+        return {
+            "Liftoff": "NA", "LiftOn": "NA", "AEGIS_Overlap": "NA", 
+            "MCscan": "NA", "BLAST": "NA", "OrthoFinder": "NA"
+        }
+    
+    res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLAST": [], "OrthoFinder": []}
+    
+    pattern = re.compile(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]')
+    matches = pattern.findall(str(score_str))
+    
+    for tool, val in matches:
+        entry = f"{tool} [{val}]"
+        if "liftoff" in tool:
+            res["Liftoff"].append(entry)
+        elif "lifton" in tool:
+            res["LiftOn"].append(entry)
+        elif tool == "aegis_overlap":
+            res["AEGIS_Overlap"].append(entry)
+        elif "mcscan" in tool:
+            res["MCscan"].append(entry)
+        elif "blast" in tool or "rbh" in tool or "rbbh" in tool:
+            res["BLAST"].append(entry)
+        elif "orthofinder" in tool:
+            res["OrthoFinder"].append(entry)
+
+    return {k: (", ".join(v) if v else "NA") for k, v in res.items()}
+
+def get_tiered_cardinality(df, allowed_scores):
+    if df.empty:
+        return pd.Series(dtype=str)
+    
+    is_ordered = df['annotation_A'] <= df['annotation_B']
+    
+    base_df = pd.DataFrame({
+        'a1': np.where(is_ordered.to_numpy(), df['annotation_A'].to_numpy(), df['annotation_B'].to_numpy()),
+        'a2': np.where(is_ordered.to_numpy(), df['annotation_B'].to_numpy(), df['annotation_A'].to_numpy()),
+        'g1': np.where(is_ordered.to_numpy(), df['gene_id_A'].to_numpy(), df['gene_id_B'].to_numpy()),
+        'g2': np.where(is_ordered.to_numpy(), df['gene_id_B'].to_numpy(), df['gene_id_A'].to_numpy()),
+        'score': df['summary_score']
+    })
+    
+    sub_df = base_df[base_df['score'].isin(allowed_scores)].copy()
+    sub_df = sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2'])
+    
+    if sub_df.empty:
+        return pd.Series(['NA'] * len(df), index=df.index)
+
+    c1 = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].count().reset_index(name='d1')
+    c2 = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].count().reset_index(name='d2')
+    
+    t1 = sub_df.merge(c2, on=['a1', 'a2', 'g2']).groupby(['a1', 'a2', 'g1'])['d2'].max().reset_index(name='max_d2')
+    
+    sub_df = sub_df.merge(c1, on=['a1', 'a2', 'g1'])
+    sub_df = sub_df.merge(t1, on=['a1', 'a2', 'g1'])
+    
+    deg_A = sub_df['d1'].to_numpy()
+    deg_B = sub_df['max_d2'].to_numpy()
+    
+    condlist = [
+        (deg_A == 1) & (deg_B == 1),
+        (deg_A > 1) & (deg_B == 1),
+        (deg_A == 1) & (deg_B > 1),
+        (deg_A > 1) & (deg_B > 1)
+    ]
+    
+    sub_df['label_ordered'] = np.select(condlist, ['1:1', '1:N', 'N:1', 'N:N'], default='NA')
+    sub_df['label_reversed'] = np.select(condlist, ['1:1', 'N:1', '1:N', 'N:N'], default='NA')
+    
+    sub_df = sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2']).set_index(['a1', 'a2', 'g1', 'g2'])
+    base_df = base_df.join(sub_df[['label_ordered', 'label_reversed']], on=['a1', 'a2', 'g1', 'g2'])
+    
+    final_labels = np.where(
+        is_ordered.to_numpy(),
+        base_df['label_ordered'].fillna('NA'),
+        base_df['label_reversed'].fillna('NA')
+    )
+    
+    return pd.Series(final_labels, index=df.index)
 
 def split_callback(value:str):
     if value:
@@ -25,86 +109,179 @@ def main(
     annotation_files: Annotated[list[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
+    
+    # ==========================================
+    # CORE INPUT / OUTPUT CONFIGURATION
+    # ==========================================
     genome_files: Annotated[str, typer.Option(
-        "-g", "--genome-fastas", help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g genomefile1,genomefile2,genomefile3,genomefile4",
-        callback=split_callback
+        "-g", "--genome-fastas", 
+        help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g genomefile1,genomefile2,genomefile3,genomefile4",
+        callback=split_callback,
+        rich_help_panel="Core Input/Output Configuration"
     )] = "",
     annotation_names: Annotated[str, typer.Option(
-        "-a", "--annotation-names", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
-        callback=split_callback
+        "-a", "--annotation-names", 
+        help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
+        callback=split_callback,
+        rich_help_panel="Core Input/Output Configuration"
     )] = "{annotation-filename(s)}",
+    group_names: Annotated[str, typer.Option(
+        "-gn", "--group-names", 
+        help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
+        callback=split_callback,
+        rich_help_panel="Core Input/Output Configuration"
+    )] = "",
+    reference_annotation: Annotated[str, typer.Option(
+        "--reference-annotation", 
+        help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
+        rich_help_panel="Core Input/Output Configuration"
+    )] = "None",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", 
+        help="Path to the output folder.",
+        rich_help_panel="Core Input/Output Configuration"
     )] = "./aegis_output/",
     output_filename: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename."
+        "-o", "--output-file", 
+        help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
+        rich_help_panel="Core Input/Output Configuration"
     )] = "equivalences{other_tags}.tsv",
-    group_names: Annotated[str, typer.Option(
-        "-gn", "--group-names", help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
-        callback=split_callback
-    )] = "",
-    skip_synteny: Annotated[bool, typer.Option(
-        "--skip-synteny", help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome."
-    )] = False,
-    reference_annotation: Annotated[str, typer.Option(
-        "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations."
-    )] = "None",
-    include_single_blasts: Annotated[bool, typer.Option(
-        "-b", "--include-single-blasts", help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary."
-    )] = False,
-    threads: Annotated[int, typer.Option(
-        "-t", "--threads", help="Number of threads."
-    )] = 1,
-    skip_rbhs: Annotated[bool, typer.Option(
-        "--skip-RBHs", help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary."
-    )] = False,
-    lift_feature_types: Annotated[str, typer.Option(
-        "--lift-feature-types", help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", callback=split_callback
-    )] = "ALL",
-    skip_lifton: Annotated[bool, typer.Option(
-        "--skip-lifton", help="Skip LiftOn."
-    )] = False,
+
+    # ==========================================
+    # Orthology Tool Options
+    # ==========================================
     skip_liftoff: Annotated[bool, typer.Option(
-        "--skip-liftoff", help="Skip Liftoff."
+        "--skip-liftoff", 
+        help="Skip Liftoff.",
+        rich_help_panel="Orthology Tool Options"
+    )] = False,
+    skip_lifton: Annotated[bool, typer.Option(
+        "--skip-lifton", 
+        help="Skip LiftOn.",
+        rich_help_panel="Orthology Tool Options"
     )] = False,
     skip_copies: Annotated[bool, typer.Option(
-        "--skip-copies", help="Liftoff and LiftOn are run in copies mode my default, flag to deactivate."
+        "--skip-copies", 
+        help="Liftoff and LiftOn are run in copies mode by default, flag to deactivate.",
+        rich_help_panel="Orthology Tool Options"
     )] = False,
     skip_mcscan: Annotated[bool, typer.Option(
-        "--skip-mcscan", help="Skip the JCVI toolkit synteny and collinearity analysis (MCScan). Useful when JCVI is causing compatibility issues."
+        "--skip-mcscan", 
+        help="Skip the JCVI toolkit synteny and collinearity analysis (MCscan). Useful when JCVI is causing compatibility issues.",
+        rich_help_panel="Orthology Tool Options"
+    )] = False,
+    skip_synteny: Annotated[bool, typer.Option(
+        "--skip-synteny", 
+        help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome.",
+        rich_help_panel="Orthology Tool Options"
     )] = False,
     skip_orthofinder: Annotated[bool, typer.Option(
-        "--skip-orthofinder", help="Skip the OrthoFinder analysis."
+        "--skip-orthofinder", 
+        help="Skip the OrthoFinder analysis.",
+        rich_help_panel="Orthology Tool Options"
     )] = False,
     pairwise_orthofinder: Annotated[bool, typer.Option(
-        "--pairwise-orthofinder", help="Execute OrthoFinder on independent annotation pairs. Overrides the default multi-annotation bulk analysis. Recommended for highly divergent taxa or targeted 1:1 orthologue mapping."
+        "--pairwise-orthofinder", 
+        help="Execute OrthoFinder on independent annotation pairs. Overrides the default multi-annotation bulk analysis. Recommended for highly divergent taxa or targeted 1:1 orthologue mapping.",
+        rich_help_panel="Orthology Tool Options"
+    )] = False,
+    lift_feature_types: Annotated[str, typer.Option(
+        "--lift-feature-types", 
+        help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", 
+        callback=split_callback,
+        rich_help_panel="Orthology Tool Options"
+    )] = "ALL",
+    include_single_blasts: Annotated[bool, typer.Option(
+        "-b", "--include-single-blasts", 
+        help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary.",
+        rich_help_panel="Orthology Tool Options"
+    )] = False,
+    skip_rbhs: Annotated[bool, typer.Option(
+        "--skip-RBHs", 
+        help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary.",
+        rich_help_panel="Orthology Tool Options"
     )] = False,
     skip_all_blasts: Annotated[bool, typer.Option(
-        "--skip-all-blasts", help="Skip all BLASTs."
+        "--skip-all-blasts", 
+        help="Skip all BLASTs.",
+        rich_help_panel="Orthology Tool Options"
     )] = False,
-    keep_intermediate: Annotated[bool, typer.Option(
-        "-k", "--keep-intermediate", help="Keep intermediate files, useful for identifying errors."
-    )] = False,
-    include_duplicates: Annotated[bool, typer.Option(
-        "--include-duplicates", help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default."
-    )] = False,
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error."
-    )] = False,
+
+    # ==========================================
+    # BLAST Options
+    # ==========================================
     identity: Annotated[float, typer.Option(
-        "-i", "--identity", help="Minimum identity threshold for BLAST hits."
+        "-i", "--identity", 
+        help="Minimum identity threshold for BLAST hits.",
+        rich_help_panel="BLAST Options"
     )] = 30.0,
     coverage: Annotated[float, typer.Option(
-        "-c", "--coverage", help="Minimum coverage threshold for BLAST hits."
+        "-c", "--coverage", 
+        help="Minimum coverage threshold for BLAST hits.",
+        rich_help_panel="BLAST Options"
     )] = 30.0,
     evalue: Annotated[float, typer.Option(
-        "-e", "--evalue", help="Maximum e-value threshold for BLAST hits."
-    )] = 0.00001
+        "-e", "--evalue", 
+        help="Maximum e-value threshold for BLAST hits.",
+        rich_help_panel="BLAST Options"
+    )] = 0.00001,
 
+    # ==========================================
+    # Output Options
+    # ==========================================
+    confidence: Annotated[str, typer.Option(
+        "--confidence", 
+        help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
+        callback=split_callback,
+        rich_help_panel="Output Options"
+    )] = "high,medium,lower",
+    include_NAs: Annotated[bool, typer.Option(
+        "-na", "--include-NAs", 
+        help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",
+        rich_help_panel="Output Options"
+    )] = False,
+    skip_cardinality: Annotated[bool, typer.Option(
+        "-sc", "--skip-cardinality", 
+        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
+        rich_help_panel="Output Options"
+    )] = False,
+    tiered_cardinality: Annotated[bool, typer.Option(
+        "--tiered-cardinality", 
+        help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
+        rich_help_panel="Output Options"
+    )] = False,
+    include_duplicates: Annotated[bool, typer.Option(
+        "--include-duplicates", 
+        help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
+        rich_help_panel="Output Options"
+    )] = False,
+    split_scores: Annotated[bool, typer.Option(
+        "--split-scores", 
+        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLAST, and OrthoFinder.",
+        rich_help_panel="Output Options"
+    )] = False,
 
+    # ==========================================
+    # Execution/Debugging
+    # ==========================================
+    threads: Annotated[int, typer.Option(
+        "-t", "--threads", 
+        help="Number of threads.",
+        rich_help_panel="Execution/Debugging"
+    )] = 1,
+    keep_intermediate: Annotated[bool, typer.Option(
+        "-k", "--keep-intermediate", 
+        help="Keep intermediate files, useful for identifying errors.",
+        rich_help_panel="Execution/Debugging"
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", 
+        help="Verbose logging, useful if encountering a problem or error.",
+        rich_help_panel="Execution/Debugging"
+    )] = False,
 ):
     """
-    Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCScan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
+    Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCscan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
 
     Script to perform gene correspondence analysis between multiple genomes.
 
@@ -130,9 +307,13 @@ def main(
     environment.
     """
 
+    start = time()
+
+    print(f"Running command: {' '.join(sys.argv)}")
+
     quiet=not(verbose)
     synteny=not(skip_synteny)
-
+    
     if len(annotation_files) < 2:
         raise typer.BadParameter(f"At least 2 annotation-files must be provided.")
     
@@ -449,8 +630,8 @@ def main(
                     a1_mcscan_name = a1.name.replace(".", "_")
                     a2_mcscan_name = a2.name.replace(".", "_")
 
-                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2_mcscan_name, group_names[n2])
-                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2_mcscan_name, group_names[n2])
+                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.anchors", "0", a2.name, group_names[n2])
+                    a1.add_mcscan_equivalences(f"{mcscan_path}/{a1_mcscan_name}.{a2_mcscan_name}.last.filtered", "0", a2.name, group_names[n2])
 
                 if not skip_orthofinder:
                     if pairwise_orthofinder:
@@ -493,16 +674,9 @@ def main(
         else:
             final_df = pd.concat([final_df, df], ignore_index=True)
 
-    if output_filename != "equivalences{other_tags}.tsv":
-        final_output_file = f"{output_dir}{output_filename}.tsv"
-    elif skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
-        final_output_file = f"{output_dir}equivalences_just_rbbhs{extra_tag}.tsv"
-    elif skip_unidirectional_blasts and not skip_all_blasts:
-        final_output_file = f"{output_dir}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
-    else:
-        final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
+    post_processing_start = time()
 
-    if not include_duplicates:
+    if not include_duplicates and not final_df.empty:
 
         final_df['gene_id_tuple'] = pd.DataFrame(np.sort(final_df[['gene_id_A', 'gene_id_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
         final_df['annotation_tuple'] = pd.DataFrame(np.sort(final_df[['annotation_A', 'annotation_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
@@ -510,9 +684,153 @@ def main(
 
         subset_for_duplicates = ["gene_id_tuple", "annotation_tuple", "species_tuple"]
 
-        final_df.drop_duplicates(subset=subset_for_duplicates, keep='first', inplace=True)
+        final_df = final_df.drop_duplicates(subset=subset_for_duplicates, keep='first')
 
-        final_df.drop(subset_for_duplicates, axis=1, inplace=True)
+        final_df = final_df.drop(subset_for_duplicates, axis=1)
+
+    clean_confidences = [c.strip().lower().replace('_confidence', '') for c in confidence]
+    conf_set = set(clean_confidences)
+    conf_order = {"high": 1, "medium": 2, "lower": 3}
+    sorted_confs = sorted(list(conf_set), key=lambda x: conf_order.get(x, 4))
+
+    standard_sets = [
+        {"high"},
+        {"high", "medium"},
+        {"high", "medium", "lower"}
+    ]
+
+    valid_confidences = [f"{c}_confidence" for c in sorted_confs]
+
+    if not final_df.empty and not skip_cardinality:
+        if tiered_cardinality:
+            if conf_set not in standard_sets:
+                final_df['cardinality'] = get_tiered_cardinality(final_df, valid_confidences)
+
+            final_df['cardinality_strict'] = get_tiered_cardinality(final_df, ['high_confidence'])
+            final_df['cardinality_moderate'] = get_tiered_cardinality(final_df, ['high_confidence', 'medium_confidence'])
+            final_df['cardinality_relaxed'] = get_tiered_cardinality(final_df, ['high_confidence', 'medium_confidence', 'lower_confidence'])
+            
+        else:
+            final_df['cardinality'] = get_tiered_cardinality(final_df, valid_confidences)
+        
+    if conf_set != {"high", "medium", "lower"}:
+        final_df = final_df[final_df["summary_score"].isin(valid_confidences)].copy()
+        extra_tag += f"_confidence{'_'.join(sorted_confs)}"
+
+    if include_NAs:
+        extra_tag += "_with_NAs"
+        matched_set = set()
+        if not final_df.empty:
+            matched_set.update(zip(final_df['annotation_A'], final_df['gene_id_A']))
+            matched_set.update(zip(final_df['annotation_B'], final_df['gene_id_B']))
+        
+        na_rows = []
+
+        for a in simple_annotations:
+            for gene in a.genes.keys():
+                if (a.name, gene) not in matched_set:
+                    row_dict = {
+                        "gene_id_A": gene,
+                        "gene_id_B": "NA",
+                        "score": "NA",
+                        "summary_score": "NA",
+                        "annotation_A": a.name,
+                        "annotation_B": "NA",
+                        "species_A": a.species,
+                        "species_B": "NA"
+                    }
+                    if "cardinality" in final_df.columns:
+                        row_dict["cardinality"] = "NA"
+                    if "cardinality_strict" in final_df.columns:
+                        row_dict["cardinality_strict"] = "NA"
+                        row_dict["cardinality_moderate"] = "NA"
+                        row_dict["cardinality_relaxed"] = "NA"
+                    if "reliability" in final_df.columns:
+                        row_dict["reliability"] = "NA"
+                    na_rows.append(row_dict)
+        
+        if na_rows:
+            na_df = pd.DataFrame(na_rows)
+            final_df = pd.concat([final_df, na_df], ignore_index=True)
+
+    if output_filename != "equivalences{other_tags}.tsv":
+        final_output_file = f"{output_dir}{output_filename}"
+        if not final_output_file.endswith(".tsv"):
+            final_output_file += ".tsv"
+    elif skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
+        final_output_file = f"{output_dir}equivalences_just_rbbhs{extra_tag}.tsv"
+    elif skip_unidirectional_blasts and not skip_all_blasts:
+        final_output_file = f"{output_dir}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+    else:
+        final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
+
+    if not final_df.empty:
+        if reference_annotation != "None":
+            mask = (final_df['annotation_B'] == reference_annotation) & (final_df['annotation_A'] != "NA")
+        else:
+            mask = (final_df['annotation_A'] > final_df['annotation_B']) & (final_df['annotation_B'] != "NA")
+
+        if mask.any():
+            final_df.loc[mask, ['gene_id_A', 'gene_id_B']] = final_df.loc[mask, ['gene_id_B', 'gene_id_A']].values
+            final_df.loc[mask, ['annotation_A', 'annotation_B']] = final_df.loc[mask, ['annotation_B', 'annotation_A']].values
+            if "species_A" in final_df.columns:
+                final_df.loc[mask, ['species_A', 'species_B']] = final_df.loc[mask, ['species_B', 'species_A']].values
+            
+            for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
+                if col in final_df.columns:
+                    final_df.loc[mask, col] = final_df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
+
+        confidence_order = ["high_confidence", "medium_confidence", "lower_confidence", "NA"]
+        final_df['summary_score'] = pd.Categorical(final_df['summary_score'], categories=confidence_order, ordered=True)
+        
+        species_order = sorted([s for s in final_df['annotation_B'].unique() if s != "NA"]) + ["NA"]
+        final_df['annotation_B'] = pd.Categorical(final_df['annotation_B'], categories=species_order, ordered=True)
+
+        sort_cols = ['annotation_A', 'annotation_B', 'gene_id_A', 'summary_score', 'gene_id_B']
+        final_df = final_df.sort_values(by=sort_cols)
+        
+        final_df['summary_score'] = final_df['summary_score'].astype(str)
+        final_df['annotation_B'] = final_df['annotation_B'].astype(str)
+
+    if not final_df.empty and "species_A" in final_df.columns and "species_B" in final_df.columns:
+        if (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all():
+            final_df = final_df.drop(columns=["species_A", "species_B"])
+
+    if not final_df.empty and split_scores:
+
+        if not quiet:
+            print("\nSplitting aggregate scores into individual tool columns.")
+
+        score_data = [parse_score_column(s) for s in final_df["score"]]
+        split_df = pd.DataFrame(score_data, index=final_df.index)
+
+        split_df = split_df.loc[:, (split_df != "NA").any(axis=0)]
+        
+        try:
+            col_idx = list(final_df.columns).index("score")
+        except ValueError:
+            col_idx = 0
+
+        final_df = pd.concat([
+            final_df.iloc[:, :col_idx],
+            split_df,  
+            final_df.iloc[:, col_idx + 1:]
+        ], axis=1)
+
+
+    cols = list(final_df.columns)
+    card_cols = [c for c in cols if 'cardinality' in c]
+
+    for col in card_cols:
+        cols.remove(col)
+    idx = cols.index('summary_score') + 1
+
+    for i, col in enumerate(card_cols):
+        cols.insert(idx + i, col)
+
+    final_df = final_df[cols]
+
+    print(f"\nPost processing took: {round((time() - post_processing_start) / 60, 2)} minutes.")
 
     final_df.to_csv(final_output_file, sep="\t", encoding="utf-8", index=False)
 
@@ -520,7 +838,9 @@ def main(
         if os.path.exists(str(results_directory)):
             shutil.rmtree(str(results_directory))
 
-    print(f"aegis orthology run complete.")
+    end = time()
+
+    print(f"\naegis orthology command ('{' '.join(sys.argv)}') complete. Total time: {round((end - start) / 60, 2)} minutes.")
 
 if __name__ == "__main__":
     try:

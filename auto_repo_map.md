@@ -377,6 +377,8 @@
       - motif_search.py
         - `def main(`
       - orthology.py
+        - `def parse_score_column(score_str):`
+        - `def get_tiered_cardinality(df, allowed_scores):`
         - `def split_callback(value:str):`
         - `def main(`
       - overlap.py
