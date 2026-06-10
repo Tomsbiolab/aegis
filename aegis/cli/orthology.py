@@ -114,17 +114,23 @@ def main(
     # CORE INPUT / OUTPUT CONFIGURATION
     # ==========================================
     genome_files: Annotated[str, typer.Option(
-        "-g", "--genome-fastas", 
+        "-g", "--genome-files", 
         help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g genomefile1,genomefile2,genomefile3,genomefile4",
         callback=split_callback,
         rich_help_panel="Core Input/Output Configuration"
-    )] = "",
+    )],
     annotation_names: Annotated[str, typer.Option(
         "-a", "--annotation-names", 
-        help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
+        help="Annotation versions, names or tags otherwise they will just be the annotation file basename without the extension. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
         callback=split_callback,
         rich_help_panel="Core Input/Output Configuration"
     )] = "{annotation-filename(s)}",
+    genome_names: Annotated[str, typer.Option(
+        "--genome-names", 
+        help="Genome versions, names or tags otherwise they will just be the genome file basename without the extension. Provide them in the same number and order as the corresponding genome files, separated by commas. e.g. --genome-names name1,name2,name3,name4",
+        callback=split_callback,
+        rich_help_panel="Core Input/Output Configuration"
+    )] = "{genome-filename(s)}",
     group_names: Annotated[str, typer.Option(
         "-gn", "--group-names", 
         help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
@@ -311,6 +317,34 @@ def main(
 
     print(f"Running command: {' '.join(sys.argv)}")
 
+    valid_confidence_levels = {"high", "medium", "lower", "high_confidence", "medium_confidence", "lower_confidence", "highest"}
+    for conf in confidence:
+        if conf.strip().lower() not in valid_confidence_levels:
+            raise typer.BadParameter(
+                f"Invalid confidence level: '{conf}'. Allowed options are 'high', 'medium', 'lower', 'high_confidence', 'medium_confidence', or 'lower_confidence' (separated by commas)."
+            )
+
+    expected_extensions = {".gff", ".gtf", ".gff3", ".fasta", ".fa"}
+    files_to_check = []
+    
+    if annotation_files and annotation_names == ["{annotation-filename(s)}"]:
+        files_to_check.extend(annotation_files)
+    if genome_files and genome_names == ["{genome-filename(s)}"]:
+        files_to_check.extend(genome_files)
+        
+    invalid_extensions = []
+    for f in files_to_check:
+        _, ext = os.path.splitext(f)
+        if ext.lower() not in expected_extensions:
+            invalid_extensions.append(f)
+            
+    if invalid_extensions:
+        print("\nWarning: Proper file extensions were not found for the following file(s):")
+        for f in invalid_extensions:
+            print(f"  - {os.path.basename(f)}")
+        print("Expected extensions: .gff, .gtf, .gff3, .fasta, .fa\n"
+              "Some naming or downstream processing functionality may be compromised if extensions are missing.\n")
+
     quiet=not(verbose)
     synteny=not(skip_synteny)
     
@@ -330,12 +364,48 @@ def main(
         for annotation_file in annotation_files:
             annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0]) # type: ignore
 
+    if genome_names == ["{genome-filename(s)}"]:
+        genome_names = [] # type: ignore
+        for genome_file in genome_files:
+            genome_names.append(os.path.splitext(os.path.basename(genome_file))[0]) # type: ignore
+
+    genome_files = [str(Path(g).resolve()) for g in genome_files] # type: ignore
+    annotation_files = [str(Path(g).resolve()) for g in annotation_files] # type: ignore
+
     if len(annotation_files) != len(annotation_names):
         raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+
+    if len(genome_files) != len(genome_names):
+        raise typer.BadParameter(f"The provided number of genome name(s)/tag(s) do not match the number of genome file(s).")
+
+    name_to_files = {}
+    file_to_names = {}
+    for g_file, g_name in zip(genome_files, genome_names):
+        name_to_files.setdefault(g_name, set()).add(g_file)
+        file_to_names.setdefault(g_file, set()).add(g_name)
+
+    for name, files in name_to_files.items():
+        if len(files) > 1:
+            base_files = [os.path.basename(f) for f in files]
+            raise typer.BadParameter(
+                f"The genome tag '{name}' is mapped to multiple distinct genome files: {base_files}. "
+                "Each distinct assembly file must have a unique tag."
+            )
+
+    for g_file, names in file_to_names.items():
+        if len(names) > 1:
+            raise typer.BadParameter(
+                f"The genome file '{os.path.basename(g_file)}' is mapped to multiple different tags: {list(names)}. "
+                "The same assembly file must use a single consistent tag."
+            )
 
     for annotation_name in annotation_names:
         if "__to__" in annotation_name:
             raise typer.BadParameter(f"The provided annotation name/tag '{annotation_name}' has an incompatible term: '__to__' as it is used internally for temporary file naming.")
+
+    for genome_name in genome_names:
+        if "__to__" in genome_name:
+            raise typer.BadParameter(f"The provided genome name/tag '{genome_name}' has an incompatible term: '__to__' as it is used internally for temporary file naming.")
 
     if skip_mcscan and skip_liftoff and skip_all_blasts and skip_orthofinder and skip_lifton:
         raise typer.BadParameter("No analysis methods selected. Please select at least one analysis method. Run 'aegis orthology --help' for more information.")
@@ -348,10 +418,10 @@ def main(
 
     if len(genome_files) != len(annotation_files):
         raise typer.BadParameter(f"A single genome file must be provided for each annotation file. Genome files: {genome_files}. Annotation files: {annotation_files}")
-    
-    if len(genome_files) != len(set(genome_files)):
+
+    if len(genome_names) != len(set(genome_names)):
         repeated_genomes = {}
-        for idx, genome in enumerate(genome_files):
+        for idx, genome in enumerate(genome_names):
             repeated_genomes.setdefault(genome, []).append(annotation_names[idx])
             
         repeated_msg = []
@@ -381,7 +451,10 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
-    genomes:dict[str, Genome] = { g: Genome(name=g, genome_file_path=g, quiet=quiet) for g in set(genome_files) }
+
+    genome_name_map = {path: name for path, name in zip(genome_files, genome_names)}    
+
+    genomes:dict[str, Genome] = { g: Genome(name=genome_name_map[g], genome_file_path=g, quiet=quiet) for g in set(genome_files) }
 
     annotations:list[Annotation] = []
 
