@@ -884,12 +884,8 @@ def main(
         except ValueError:
             col_idx = 0
 
-        final_df = pd.concat([
-            final_df.iloc[:, :col_idx],
-            split_df,  
-            final_df.iloc[:, col_idx + 1:]
-        ], axis=1)
-
+        final_df = final_df.drop(columns=["score"], errors="ignore")
+        final_df = pd.concat([final_df, split_df], axis=1)
 
     cols = list(final_df.columns)
     card_cols = [c for c in cols if 'cardinality' in c]
