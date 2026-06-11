@@ -183,7 +183,7 @@ For further and more detailed information on how to use the **AEGIS** package, i
 ## Citation
 
 If you use AEGIS in your research, please cite the following journal article:
-[> Navarro-Payá, D., Santiago, A., Velt, A., Moretto, M., Rustenholz, C., & Matus, J. T. (2026). AEGIS: An annotation extraction and genomic integration resource. Bioinformatics, btag363. https://doi.org/10.1093/bioinformatics/btag363]
+> Navarro-Payá, D., Santiago, A., Velt, A., Moretto, M., Rustenholz, C., & Matus, J. T. (2026). *AEGIS: An annotation extraction and genomic integration resource.* Bioinformatics. doi: [10.1093/bioinformatics/btag363](https://doi.org/10.1093/bioinformatics/btag363)
 
 ## License
 
