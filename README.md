@@ -1,3 +1,8 @@
+---
+title: "AEGIS: Annotation Extraction Genomic Integration Suite"
+output: html_document
+bibliography: CITATION.bib
+---
 <p align="center">
   <img src="https://raw.githubusercontent.com/Tomsbiolab/aegis/main/images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
 </p>
@@ -177,8 +182,8 @@ For further and more detailed information on how to use the **AEGIS** package, i
 
 ## Citation
 
-If you use AEGIS in your research, please cite the following preprint:
-> Navarro-Payá, D., Santiago, A., Velt, A., Moretto, M., Rustenholz, C., & Matus, J. T. (2025). *AEGIS: an annotation extraction and genomic integration resource*. bioRxiv. doi: [10.64898/2025.12.04.692274v1](https://www.biorxiv.org/content/10.64898/2025.12.04.692274v1)
+If you use AEGIS in your research, please cite the following journal article:
+[> Navarro-Payá, D., Santiago, A., Velt, A., Moretto, M., Rustenholz, C., & Matus, J. T. (2026). AEGIS: An annotation extraction and genomic integration resource. Bioinformatics, btag363. https://doi.org/10.1093/bioinformatics/btag363]
 
 ## License
 
