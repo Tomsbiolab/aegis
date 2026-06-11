@@ -1,8 +1,4 @@
----
-title: "AEGIS: Annotation Extraction Genomic Integration Suite"
-output: html_document
-bibliography: CITATION.bib
----
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/Tomsbiolab/aegis/main/images/AEGIS_full_logo_white.png" alt="AEGIS Logo" width="400"/>
 </p>
