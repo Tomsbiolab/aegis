@@ -445,6 +445,7 @@
     - coverage_html_cb_dd2e7eb5.js
   - **images/**
   - **notebook/**
+    - **tidy_output/**
   - **scripts/**
     - generate_map.py
       - `def generate_map():`

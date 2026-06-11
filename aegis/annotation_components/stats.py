@@ -145,7 +145,7 @@ class AnnotationStats(AnnotationComponent):
 
         if export:
             export_folder = self._resolve_output_dir(output_dir=output_dir, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
-            export_folder = str(export_folder)
+            export_folder = str(export_folder) + "/"
 
         to_tally = ["coding_genes", "noncoding_genes", "CDSs_without_stop", "CDSs_with_stop"]
 
