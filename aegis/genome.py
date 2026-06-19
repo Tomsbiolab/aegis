@@ -398,9 +398,7 @@ class Genome():
 
         return final_equivalences
 
-    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False,
-        #deprecated argument
-        output_folder:str=""):
+    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):
         
         if self.non_chromosomal_scaffolds:
             new_scaffolds = {}
@@ -417,17 +415,15 @@ class Genome():
             self.update()
 
             if remove_organelles:
-                self.remove_organelles(export=export, output_folder=output_folder)
+                self.remove_organelles(export=export, output_dir=output_dir)
 
             elif export:
                 self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
         elif remove_organelles:
-            self.remove_organelles(export=export, output_folder=output_folder)
+            self.remove_organelles(export=export, output_dir=output_dir)
 
-    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True,
-        #deprecated argument
-        output_folder:str=""):
+    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):
 
         new_scaffolds = {}
 
