@@ -202,9 +202,9 @@ def main(
             used_id = "promoter"
 
         if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
-            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
+            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet)
         else:
-            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size)
+            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_siz, quiet=quiet)
 
 if __name__ == "__main__":
     app()

@@ -58,6 +58,7 @@ class Annotation():
     _gene_info:dict[str, set[str]]
     _transcript_info:dict[str, set[str]]
     _miRNA_info:set[str]
+    contains_promoters:bool
 
     tags:set[str]
 
@@ -95,6 +96,7 @@ class Annotation():
         self.overlapped_annotations = set()
         self.merged = False
         self.sorted = False
+        self.contains_promoters = False
 
         self.genome = genome
         
