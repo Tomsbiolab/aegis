@@ -26,6 +26,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
     mcscan_dir = working_directory / "mcscan"
     orthofinder_dir = protein_dir / f"orthofinder_{annot1.name}__to__{annot2.name}"
 
+    liftoff_pair_dir = liftoff_dir / f"{annot1.name}__to__{annot2.name}"
+    lifton_pair_dir = lifton_dir / f"{annot1.name}__to__{annot2.name}"
+
     print(f"\n\n{annot1.name} vs {annot2.name}:")
 
     if genome1.file == genome2.file:
@@ -39,153 +42,214 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
     if not skip_liftoff:
 
-        print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
+        liftoff_pair_dir.mkdir(parents=True, exist_ok=True)
 
-        liftoff_gff = liftoff_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
-        liftoff_cmd = [
-            "liftoff", str(genome2.file), str(genome1.file),
-            "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types
-        ]
-        if copies:
-            liftoff_cmd.append("-copies")
+        liftoff_overlaps_tsv = liftoff_dir / f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv"
+        liftoff_gff = liftoff_pair_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
 
-        run_command(liftoff_dir, liftoff_cmd)
 
-        to_remove = liftoff_dir / "intermediate_files"
-
-        if os.path.exists(str(to_remove)):
-            shutil.rmtree(str(to_remove))
-            unmapped_file = f"{str(liftoff_dir)}/unmapped_features.txt"
-            if os.path.isfile(unmapped_file):
-                os.remove(unmapped_file)
-
-        print(f"\t\tRunning aegis overlap on liftoff result.")
-
-        if synteny:
-            a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet)
+        if liftoff_overlaps_tsv.exists():
+            print(f"\n\tExisting Liftoff overlap output found for {annot1.name} on {annot2.name}. Skipping Liftoff and overlaps calculation.")
         else:
-            a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet)
 
-        a_liftoff.overlaps.detect(annot2, quiet=quiet)
+            if liftoff_gff.exists():
+                print(f"\n\tExisting Liftoff output found for {annot1.name} on {annot2.name}. Reusing liftoff output for aegis overlap calculation.")
+            else:
+                print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
-        _ = a_liftoff.overlaps.export(output_dir=str(liftoff_dir), filename=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+                liftoff_cmd = [
+                    "liftoff", str(genome2.file), str(genome1.file),
+                    "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types, "-p", str(num_threads)
+                ]
+                if copies:
+                    liftoff_cmd.append("-copies")
 
-        del a_liftoff
+                try:
+                    run_command(liftoff_pair_dir , liftoff_cmd)
+                except subprocess.CalledProcessError:
+                    print(f"\n\t⚠️  Liftoff failed to map annotations from {annot1.name} on {annot2.name}.")
+                    print("\tThis can happen with highly divergent genomes. Skipping Liftoff mapping...")
+
+                to_remove = liftoff_pair_dir  / "intermediate_files"
+
+                if os.path.exists(str(to_remove)):
+                    shutil.rmtree(str(to_remove))
+
+                unmapped_file = f"{str(liftoff_pair_dir)}/unmapped_features.txt"
+                if os.path.isfile(unmapped_file):
+                    os.remove(unmapped_file)
+
+                if not os.path.isfile(liftoff_gff):
+                    with open(liftoff_gff, "w") as f:
+                        f.write("##gff-version 3\n")
+
+            print(f"\t\tRunning aegis overlap on liftoff result.")
+
+            if synteny:
+                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet)
+            else:
+                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet)
+
+            a_liftoff.overlaps.detect(annot2, quiet=quiet)
+
+            _ = a_liftoff.overlaps.export(output_dir=str(liftoff_dir), filename=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+
+            del a_liftoff
 
     elif liftless_overlaps:
-        annot1.overlaps.detect(annot2, quiet=quiet)
-        _ = annot1.overlaps.export(output_dir=str(litfless_overlaps_dir), filename=f"{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=False, copies_info=False)
+
+        liftless_overlaps_tsv = litfless_overlaps_dir / f"{annot1.name}__to__{annot2.name}_overlaps.tsv"
+
+        if liftless_overlaps_tsv.exists():
+            print(f"\n\tExisting aegis overlap output found for {annot1.name} on {annot2.name}. Skipping.")
+        else:
+            annot1.overlaps.detect(annot2, quiet=quiet)
+            _ = annot1.overlaps.export(output_dir=str(litfless_overlaps_dir), filename=f"{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=False, copies_info=False)
 
     if not skip_lifton:
 
-        print(f"\n\tRunning Lifton to map annotations from {annot1.name} on {annot2.name}")
+        lifton_pair_dir.mkdir(parents=True, exist_ok=True)
 
-        lifton_gff = lifton_dir / f"lifton__{annot1.name}__to__{annot2.name}.gff3"
-        lifton_cmd = [
-            "lifton", "-g", f"{working_directory}/gffs/{annot1.name}__for__lifton.gff3", "-o", str(lifton_gff),
-            "-flank",  "0.1", "-f", types
-        ]
-        if copies:
-            lifton_cmd.append("-copies")
+        lifton_overlaps_tsv = lifton_dir / f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv"
+        lifton_gff = lifton_pair_dir / f"lifton__{annot1.name}__to__{annot2.name}.gff3"
 
-        lifton_cmd.append(str(genome2.file))
-        lifton_cmd.append(str(genome1.file))
-
-        run_command(lifton_dir, lifton_cmd)
-
-        to_remove = lifton_dir / "lifton_output"
-
-        if os.path.exists(str(to_remove)):
-            shutil.rmtree(str(to_remove))
-
-        if not os.path.isfile(lifton_gff):
-            with open(lifton_gff, "w") as f:
-                f.write("##gff-version 3\n")
-
-        print(f"\t\tRunning aegis overlap on lifton result.")
-
-        if synteny:
-            a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet)
+        if lifton_overlaps_tsv.exists():
+            print(f"\n\tExisting LiftOn overlap output found for {annot1.name} on {annot2.name}. Skipping LiftOn and overlaps calculation.")
         else:
-            a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet)
+            if lifton_gff.exists():
+                print(f"\n\tExisting LiftOn output found for {annot1.name} on {annot2.name}. Reusing lifton output for aegis overlap calculation.")
+            else:
+                print(f"\n\tRunning LiftOn to map annotations from {annot1.name} on {annot2.name}")
+                
+                lifton_cmd = [
+                    "lifton", "-g", f"{working_directory}/gffs/{annot1.name}__for__lifton.gff3", "-o", str(lifton_gff),
+                    "-flank",  "0.1", "-f", types, "-t", str(num_threads)
+                ]
+                if copies:
+                    lifton_cmd.append("-copies")
 
-        a_lifton.overlaps.detect(annot2, quiet=quiet)
+                lifton_cmd.append(str(genome2.file))
+                lifton_cmd.append(str(genome1.file))
 
-        _ = a_lifton.overlaps.export(output_dir=str(lifton_dir), filename=f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+                try:
+                    run_command(lifton_pair_dir, lifton_cmd)
+                except subprocess.CalledProcessError:
+                    print(f"\n\t⚠️  LiftOn failed to map annotations from {annot1.name} on {annot2.name}.")
+                    print("\tThis can happen with highly divergent genomes. Skipping LiftOn mapping...")
 
-        del a_lifton
+                to_remove = lifton_pair_dir / "lifton_output"
+
+                if os.path.exists(str(to_remove)):
+                    shutil.rmtree(str(to_remove))
+
+                if not os.path.isfile(lifton_gff):
+                    with open(lifton_gff, "w") as f:
+                        f.write("##gff-version 3\n")
+
+            print(f"\t\tRunning aegis overlap on lifton result.")
+
+            if synteny:
+                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet)
+            else:
+                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet)
+
+            a_lifton.overlaps.detect(annot2, quiet=quiet)
+
+            _ = a_lifton.overlaps.export(output_dir=str(lifton_dir), filename=f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
+
+            del a_lifton
 
     protein_fasta = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
 
     if not skip_blasts:
 
-        diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
-
         diamond_result = diamond_dir / f"single_{annot1.name}__to__{annot2.name}.txt"
         diamond_result_best = diamond_dir / f"single_best_{annot1.name}__to__{annot2.name}.txt"
+        diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
 
-        print(f"\n\tRunning DIAMOND search ({annot1.name} -> {annot2.name})")
-        blastp_cmd = [
-            "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
-            "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-            "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
-            "--evalue", str(evalue), "--max-hsps", str(max_hsps), "--query-cover", str(coverage)
-        ]
+        if diamond_result.exists():
+            print(f"\n\tExisting standard DIAMOND results found for {annot1.name} on {annot2.name}. Skipping standard search.")
+        else:
+            print(f"\n\tRunning standard DIAMOND search ({annot1.name} on {annot2.name})")
+            blastp_cmd = [
+                "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+                "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+                "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
+                "--evalue", str(evalue), "--max-hsps", str(max_hsps), "--query-cover", str(coverage)
+            ]
+            run_command(diamond_dir, blastp_cmd)
 
-        run_command(diamond_dir, blastp_cmd)
-
-        blastp_cmd = [
-            "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
-            "--out", str(diamond_result_best), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
-            "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
-            "--max-target-seqs", "1", "--evalue", str(evalue), "--max-hsps", str(max_hsps)
-        ]
-
-        run_command(diamond_dir, blastp_cmd)
+        if diamond_result_best.exists():
+            print(f"\n\tExisting 'best' DIAMOND results found for {annot1.name} on {annot2.name}. Skipping 'best' search.")
+        else:
+            print(f"\n\tRunning 'best' DIAMOND search ({annot1.name} on {annot2.name})")
+            blastp_cmd = [
+                "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
+                "--out", str(diamond_result_best), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
+                "qlen", "slen", "length", "bitscore", "evalue", "--query", str(protein_fasta), 
+                "--max-target-seqs", "1", "--evalue", str(evalue), "--max-hsps", str(max_hsps)
+            ]
+            run_command(diamond_dir, blastp_cmd)
     
     if not skip_mcscan:
-        print(f"\n\tRunning JCVI ortholog analysis (this may take a while) between {annot1.name} and {annot2.name}")
+        print(f"\n\tRunning JCVI ortholog analysis between {annot1.name} and {annot2.name}")
 
         mcscan_name1 = annot1.name.replace(".", "_")
         mcscan_name2 = annot2.name.replace(".", "_")
 
-        jcvi_ortho_cmd = [
-            "python", "-m", "jcvi.compara.catalog", "ortholog",
-            mcscan_name1, mcscan_name2, "--no_strip_names"
-        ]
-        
-        try:
-            run_command(mcscan_dir, jcvi_ortho_cmd)
-        except subprocess.CalledProcessError as e:
-            # Intercept the specific 0-anchor error string from stderr or stdout
-            error_msg = f"{e.stdout} {e.stderr}"
-            if "0 anchor was found" in error_msg:
-                print(f"\n\t⚠️  JCVI found 0 syntenic anchors between {annot1.name} and {annot2.name}.")
-                print("\tThis is a normal biological result. Skipping anchor generation and continuing pipeline...")
-            else:
-                # If it's an actual systemic failure (e.g., Docker died, out of memory), crash normally
-                raise
+        anchors_file = mcscan_dir / f"{mcscan_name1}.{mcscan_name2}.anchors"
+        filtered_file = mcscan_dir / f"{mcscan_name1}.{mcscan_name2}.last.filtered"
+
+        if anchors_file.exists() and filtered_file.exists():
+            print(f"\n\tExisting MCscan output files found for {annot1.name} and {annot2.name}. Skipping MCscan step.")
+        else:
+            print(f"\n\tRunning JCVI ortholog analysis between {annot1.name} and {annot2.name}")
+
+            jcvi_ortho_cmd = [
+                "python", "-m", "jcvi.compara.catalog", "ortholog",
+                mcscan_name1, mcscan_name2, "--no_strip_names", "--cpus", str(num_threads)
+            ]
+            
+            try:
+                run_command(mcscan_dir, jcvi_ortho_cmd)
+            except subprocess.CalledProcessError as e:
+                # Intercept the specific 0-anchor error string from stderr or stdout
+                error_msg = f"{e.stdout} {e.stderr}"
+                if "0 anchor was found" in error_msg:
+                    print(f"\n\t⚠️  JCVI found 0 syntenic anchors between {annot1.name} and {annot2.name}.")
+                    print("\tThis is a normal biological result. Skipping anchor generation and continuing pipeline...")
+                else:
+                    # If it's an actual systemic failure (e.g., Docker died, out of memory), crash normally
+                    raise
 
     if pairwise_orthofinder and not skip_orthofinder:
-        print(f"\nRunning OrthoFinder between {annot1.name} and {annot2.name}")
 
-        orthofinder_dir.mkdir(parents=True, exist_ok=True)
 
-        protein_fasta_1 = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
-        protein_fasta_2 = protein_dir / f"{annot2.name}_proteins_g_id_main.fasta"
+        orthofinder_results_dir = orthofinder_dir / "orthofinder"
+        existing_results = list(orthofinder_results_dir.glob("Results*")) if orthofinder_results_dir.exists() else []
 
-        shutil.copy(protein_fasta_1, orthofinder_dir / protein_fasta_1.name)
-        if protein_fasta_1 != protein_fasta_2:
-            shutil.copy(protein_fasta_2, orthofinder_dir / protein_fasta_2.name)
+        if existing_results:
+            print(f"\n\tExisting pairwise OrthoFinder results found for {annot1.name} and {annot2.name}. Skipping.")
+        else:
+            print(f"\nRunning OrthoFinder between {annot1.name} and {annot2.name}")
 
-        orthofinder_cmd = [
-            "orthofinder",
-            "-f", str(orthofinder_dir),
-            "-t", str(num_threads),
-            "-a", str(num_threads),
-            "-o", f"{str(orthofinder_dir)}/orthofinder/"
-        ]
-        run_command(orthofinder_dir, orthofinder_cmd)
+            orthofinder_dir.mkdir(parents=True, exist_ok=True)
+
+            protein_fasta_1 = protein_dir / f"{annot1.name}_proteins_g_id_main.fasta"
+            protein_fasta_2 = protein_dir / f"{annot2.name}_proteins_g_id_main.fasta"
+
+            shutil.copy(protein_fasta_1, orthofinder_dir / protein_fasta_1.name)
+            if protein_fasta_1 != protein_fasta_2:
+                shutil.copy(protein_fasta_2, orthofinder_dir / protein_fasta_2.name)
+
+            orthofinder_cmd = [
+                "orthofinder",
+                "-f", str(orthofinder_dir),
+                "-t", str(num_threads),
+                "-a", str(num_threads),
+                "-o", f"{str(orthofinder_dir)}/orthofinder/"
+            ]
+            run_command(orthofinder_dir, orthofinder_cmd)
 
 class Equivalence():
 

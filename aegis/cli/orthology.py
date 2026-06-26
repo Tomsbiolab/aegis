@@ -146,7 +146,7 @@ def main(
         "-d", "--output-dir", 
         help="Path to the output folder.",
         rich_help_panel="Core Input/Output Configuration"
-    )] = "./aegis_output/",
+    )] = "./aegis_output/orthologues/",
     output_filename: Annotated[str, typer.Option(
         "-o", "--output-file", 
         help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
@@ -275,6 +275,11 @@ def main(
         help="Number of threads.",
         rich_help_panel="Execution/Debugging"
     )] = 1,
+    parallel_pairs: Annotated[bool, typer.Option(
+        "--parallel-pairs", 
+        help="Run independent pairwise comparisons concurrently. Strongly recommended for multiple genomes to optimize CPU scaling. The threads parameter will be distributed across the pairwise comparisons.",
+        rich_help_panel="Execution/Debugging"
+    )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep-intermediate", 
         help="Keep intermediate files, useful for identifying errors.",
@@ -451,6 +456,11 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
+    if parallel_pairs and threads == 1:
+        print("\n⚠️  Warning: '--parallel-pairs' is enabled but '--threads' is set to 1.")
+        print("   Under this configuration, tasks will still execute sequentially (one at a time)")
+        print("   because only 1 worker can run. To run multiple pairwise comparisons concurrently,")
+        print("   please set '--threads' (or '-t') to a value greater than 1 (e.g., -t 4).\n")
 
     genome_name_map = {path: name for path, name in zip(genome_files, genome_names)}    
 
@@ -467,15 +477,29 @@ def main(
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-    output_dir_path = Path(output_dir).resolve() / "orthologues"
-    output_dir = str(output_dir_path) + "/"
+    output_dir_path = Path(output_dir).resolve()
 
     if output_dir_path.exists():
-        warnings.warn(f"The folder '{output_dir}' already exists. Please be aware that conflict may arise with existing output and/or temp folder files.")
+        if any(output_dir_path.iterdir()):
+            warnings.warn(f"The folder '{output_dir_path}' already exists and is not empty. Conflict may arise with existing output and/or temp folder files.")
 
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    results_directory = Path(f"{output_dir}temp/")
+    results_directory = output_dir_path / "temp"
+    
+    if results_directory.exists() and any(results_directory.iterdir()):
+        print("\n" + "!" * 80)
+        print("⚠️  NOTICE: Existing intermediate files detected in the temporary directory:")
+        print(f"   {results_directory}")
+        print("\n   The pipeline is configured to resume analysis by reusing matching files.")
+        print("   At the user's discretion: if the previous run was aborted, cancelled,")
+        print("   or crashed, some intermediate files may be incomplete or corrupted.")
+        print("   This tool does not validate the internal completeness of pre-existing")
+        print("   intermediates.")
+        print("\n   👉 To guarantee a completely clean run, manually delete the 'temp/' folder")
+        print("      before executing.")
+        print("!" * 80 + "\n")
+
     protein_path = results_directory / "proteins"
     protein_path.mkdir(parents=True, exist_ok=True)
 
@@ -522,48 +546,76 @@ def main(
     for n, a in enumerate(annotations):
 
         mcscan_name = a.name.replace(".", "_")
-        a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
-        a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
 
+        gff_file1 = gff_path / f"{a.name}.gff3"
+        gff_file2 = gff_path / f"{mcscan_name}.gff3"
+
+        if not gff_file1.exists():
+            a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
+        else:
+            print(f"\n\tExisting GFF file for {a.name}. Skipping.")
+        if not gff_file2.exists():
+            a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
+        else:
+            print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
+            
         if not skip_lifton:
-
-            a_lifton = a.copy()
-            a_lifton.CDS_to_CDS_segment_ids(override=True)
-            a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
-
-            del a_lifton
+            lifton_prep_file = gff_path / f"{a.name}__for__lifton.gff3"
+            if not lifton_prep_file.exists():
+                a_lifton = a.copy()
+                a_lifton.CDS_to_CDS_segment_ids(override=True)
+                a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
+                del a_lifton
+            else:
+                print(f"\n\tExisting lifton prep file for {a.name}. Skipping.")
 
         Feature._ACTIVE_GENOME = a.genome
 
-        a.export.proteins(only_main=True, output_dir=str(protein_path), used_id="gene", verbose=False, filename=f"{a.name}_proteins_g_id_main.fasta")
+        protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
+        if not protein_fasta.exists():
+            a.export.proteins(only_main=True, output_dir=str(protein_path), used_id="gene", verbose=False, filename=f"{a.name}_proteins_g_id_main.fasta")
+        else:
+            print(f"\n\tExisting protein fasta for {a.name}. Skipping.")
         a.clear_proteins()
         
-        a.export.CDSs(only_main=True, output_dir=str(CDS_path), used_id="gene", verbose=False, filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
-        protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
+        cds_fasta = CDS_path / f"{mcscan_name}_CDSs_g_id_main.fasta"
+        if not cds_fasta.exists():
+            a.export.CDSs(only_main=True, output_dir=str(CDS_path), used_id="gene", verbose=False, filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
+        else:
+            print(f"\n\tExisting CDS fasta for {a.name}. Skipping.")
 
 
         if not skip_all_blasts:
-            diamond_db_file = diamond_path / f"{a.name}_diamond_db"
-            makedb_cmd = [
-                "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
-            ]
-            run_command(diamond_path, makedb_cmd)
+            diamond_db_file = diamond_path / f"{a.name}_diamond_db.dmnd"
+            if not diamond_db_file.exists():
+                makedb_cmd = [
+                    "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_path / f"{a.name}_diamond_db")
+                ]
+                run_command(diamond_path, makedb_cmd)
+            else:
+                print(f"\n\tExisting DIAMOND database for {a.name}. Skipping.")
 
         if not skip_mcscan:
-            cds_fasta = CDS_path / f"{mcscan_name}_CDSs_g_id_main.fasta"            
-
             cleaned_cds = mcscan_path / Path(f"{mcscan_name}.cds")
-
-            jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
-            run_command(mcscan_path, jcvi_format_cmd_1)
-
             bed_file = mcscan_path / Path(f"{mcscan_name}.bed")
-            gff_to_bed_cmd_1 = [
-                "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-                "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
-            ]
-            run_command(mcscan_path, gff_to_bed_cmd_1)
 
+            if not cleaned_cds.exists():
+                jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
+                run_command(mcscan_path, jcvi_format_cmd_1)
+            else:
+                print(f"\n\tExisting cleaned CDS for {a.name}. Skipping.")
+
+            if not bed_file.exists():
+                gff_to_bed_cmd_1 = [
+                    "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
+                    "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
+                ]
+                run_command(mcscan_path, gff_to_bed_cmd_1)
+            else:
+                print(f"\n\tExisting BED file for {a.name}. Skipping.")
+
+
+    tasks = []
 
     for n1, a1 in enumerate(annotations):
 
@@ -572,7 +624,75 @@ def main(
             if n1 == n2:
                 continue
 
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[genome_files[n1]], genome2=genomes[genome_files[n2]], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_liftoff=skip_liftoff, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, skip_blasts=skip_all_blasts, pairwise_orthofinder=pairwise_orthofinder, skip_orthofinder=skip_orthofinder,quiet=quiet)
+            if reference_annotation != "None" and not a1.target and not a2.target:
+                continue
+
+            tasks.append((a1, a2, genomes[genome_files[n1]], genomes[genome_files[n2]]))
+
+    if parallel_pairs and len(tasks) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Dynamically split total threads among concurrent workers
+        num_workers = min(threads, len(tasks))
+        threads_per_task = max(1, threads // num_workers)
+
+        print(f"\nRunning {len(tasks)} pairwise comparisons in parallel using {num_workers} workers "
+            f"({threads_per_task} thread(s) per worker)...")
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = []
+            for ta1, ta2, tg1, tg2 in tasks:
+                f = executor.submit(
+                    pairwise_orthology,
+                    annot1=ta1,
+                    annot2=ta2,
+                    genome1=tg1,
+                    genome2=tg2,
+                    working_directory=results_directory,
+                    num_threads=threads_per_task,
+                    copies=not(skip_copies),
+                    synteny=synteny,
+                    skip_liftoff=skip_liftoff,
+                    skip_lifton=skip_lifton,
+                    skip_mcscan=skip_mcscan,
+                    types=lift_feature_types_file,
+                    coverage=coverage,
+                    evalue=evalue,
+                    skip_blasts=skip_all_blasts,
+                    pairwise_orthofinder=pairwise_orthofinder,
+                    skip_orthofinder=skip_orthofinder,
+                    quiet=True
+                )
+                futures.append(f)
+
+            # Gather results to raise any exceptions that occurred
+            for f in futures:
+                f.result()
+    else:
+        # Standard sequential execution
+        print(f"\nRunning pairwise comparisons sequentially ({threads} thread(s) per run)...")
+        for ta1, ta2, tg1, tg2 in tasks:
+            pairwise_orthology(
+                annot1=ta1,
+                annot2=ta2,
+                genome1=tg1,
+                genome2=tg2,
+                working_directory=results_directory,
+                num_threads=threads,
+                copies=not(skip_copies),
+                synteny=synteny,
+                skip_liftoff=skip_liftoff,
+                skip_lifton=skip_lifton,
+                skip_mcscan=skip_mcscan,
+                types=lift_feature_types_file,
+                coverage=coverage,
+                evalue=evalue,
+                skip_blasts=skip_all_blasts,
+                pairwise_orthofinder=pairwise_orthofinder,
+                skip_orthofinder=skip_orthofinder,
+                quiet=quiet
+            )
+
 
     if not skip_all_blasts:
         # Obtaining RBHs and RBBHs from single blast results
@@ -587,15 +707,22 @@ def main(
                     continue
                 checked_pairs.append(pair)
 
+                rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
+                rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
+
+
+                if rbh_out.exists() and rbbh_out.exists():
+                    if not quiet:
+                        print(f"\n\tExisting RBH/RBBH tables found for {a1.name} and {a2.name}. Skipping generation.")
+                    continue
+
                 print(f"\nProcessing RBH and RBBHs for {a1.name} and {a2.name}")
 
                 fwd_in = diamond_path / f"single_{a1.name}__to__{a2.name}.txt"
                 rev_in = diamond_path / f"single_{a2.name}__to__{a1.name}.txt"
                 fwd_best_in = diamond_path / f"single_best_{a1.name}__to__{a2.name}.txt"
                 rev_best_in = diamond_path / f"single_best_{a2.name}__to__{a1.name}.txt"
-                rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
-                rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
-
+                
                 fwd_results = pd.read_csv(fwd_in, sep="\t", header=None)
                 rev_results = pd.read_csv(rev_in, sep="\t", header=None)
 
@@ -666,15 +793,21 @@ def main(
 
     if not skip_orthofinder:
         if not pairwise_orthofinder:
-            print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
-            orthofinder_cmd = [
-                "orthofinder",
-                "-f", str(protein_path),
-                "-t", str(threads),
-                "-a", str(threads),
-                "-o", f"{str(protein_path)}/orthofinder/"
-            ]
-            run_command(results_directory, orthofinder_cmd)
+            orthofinder_results_parent = protein_path / "orthofinder"
+            existing_results = list(orthofinder_results_parent.glob("Results*")) if orthofinder_results_parent.exists() else []
+
+            if existing_results:
+                print(f"\n\tExisting global OrthoFinder results folder found in '{orthofinder_results_parent}'. Skipping OrthoFinder execution.")
+            else:
+                print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
+                orthofinder_cmd = [
+                    "orthofinder",
+                    "-f", str(protein_path),
+                    "-t", str(threads),
+                    "-a", str(threads),
+                    "-o", f"{str(protein_path)}/orthofinder/"
+                ]
+                run_command(results_directory, orthofinder_cmd)
 
     simple_annotations = []
 
