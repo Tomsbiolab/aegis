@@ -47,7 +47,6 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         liftoff_overlaps_tsv = liftoff_dir / f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv"
         liftoff_gff = liftoff_pair_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
 
-
         if liftoff_overlaps_tsv.exists():
             print(f"\n\tExisting Liftoff overlap output found for {annot1.name} on {annot2.name}. Skipping Liftoff and overlaps calculation.")
         else:
@@ -57,9 +56,13 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             else:
                 print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
+                shared_gff_path = Path(working_directory) / "gffs" / f"{annot1.name}.gff3"
+                local_gff_path = liftoff_pair_dir / f"{annot1.name}.gff3"
+                shutil.copy(shared_gff_path, local_gff_path)
+
                 liftoff_cmd = [
                     "liftoff", str(genome2.file), str(genome1.file),
-                    "-g", f"{working_directory}/gffs/{annot1.name}.gff3", "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types, "-p", str(num_threads)
+                    "-g", str(local_gff_path), "-o", str(liftoff_gff), "-flank",  "0.1", "-f", types, "-p", str(num_threads)
                 ]
                 if copies:
                     liftoff_cmd.append("-copies")
@@ -78,6 +81,10 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
                 unmapped_file = f"{str(liftoff_pair_dir)}/unmapped_features.txt"
                 if os.path.isfile(unmapped_file):
                     os.remove(unmapped_file)
+
+                if local_gff_path.exists():
+                    os.remove(local_gff_path)
+
 
                 if not os.path.isfile(liftoff_gff):
                     with open(liftoff_gff, "w") as f:
@@ -121,8 +128,12 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             else:
                 print(f"\n\tRunning LiftOn to map annotations from {annot1.name} on {annot2.name}")
                 
+                shared_lifton_gff_path = Path(working_directory) / "gffs" / f"{annot1.name}__for__lifton.gff3"
+                local_lifton_gff_path = lifton_pair_dir / f"{annot1.name}__for__lifton.gff3"
+                shutil.copy(shared_lifton_gff_path, local_lifton_gff_path)
+
                 lifton_cmd = [
-                    "lifton", "-g", f"{working_directory}/gffs/{annot1.name}__for__lifton.gff3", "-o", str(lifton_gff),
+                    "lifton", "-g", str(local_lifton_gff_path), "-o", str(lifton_gff),
                     "-flank",  "0.1", "-f", types, "-t", str(num_threads)
                 ]
                 if copies:
@@ -141,6 +152,10 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
                 if os.path.exists(str(to_remove)):
                     shutil.rmtree(str(to_remove))
+
+                if local_lifton_gff_path.exists():
+                    os.remove(local_lifton_gff_path)
+
 
                 if not os.path.isfile(lifton_gff):
                     with open(lifton_gff, "w") as f:
