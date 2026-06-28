@@ -22,10 +22,10 @@ def parse_score_column(score_str):
     if pd.isna(score_str) or score_str == "NA":
         return {
             "Liftoff": "NA", "LiftOn": "NA", "AEGIS_Overlap": "NA", 
-            "MCscan": "NA", "BLAST": "NA", "OrthoFinder": "NA"
+            "MCscan": "NA", "BLASTp": "NA", "OrthoFinder": "NA"
         }
     
-    res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLAST": [], "OrthoFinder": []}
+    res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLASTp": [], "OrthoFinder": []}
     
     pattern = re.compile(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]')
     matches = pattern.findall(str(score_str))
@@ -41,7 +41,7 @@ def parse_score_column(score_str):
         elif "mcscan" in tool:
             res["MCscan"].append(entry)
         elif "blast" in tool or "rbh" in tool or "rbbh" in tool:
-            res["BLAST"].append(entry)
+            res["BLASTp"].append(entry)
         elif "orthofinder" in tool:
             res["OrthoFinder"].append(entry)
 
@@ -99,6 +99,175 @@ def get_tiered_cardinality(df, allowed_scores):
     
     return pd.Series(final_labels, index=df.index)
 
+def flip_score_string(score_str):
+    if pd.isna(score_str) or score_str == "NA":
+        return score_str
+    
+    def replace_tool(match):
+        tool = match.group(1)
+        vals = match.group(2)
+        
+        if tool.startswith("fwd_"):
+            tool = tool.replace("fwd_", "rev_", 1)
+        elif tool.startswith("rev_"):
+            tool = tool.replace("rev_", "fwd_", 1)
+            
+        if "rbh" in tool or "rbbh" in tool:
+            new_vals_list = []
+            for metric in vals.split(", "):
+
+                if "=" in metric:
+                    k, v = metric.split("=", 1)
+                    if "/" in v:
+                        parts = v.split("/")
+                        if len(parts) == 2:
+                            v = f"{parts[1]}/{parts[0]}"
+                    new_vals_list.append(f"{k}={v}")
+                else:
+                    new_vals_list.append(metric)
+            vals = ", ".join(new_vals_list)
+        
+        elif tool.startswith("rec_"):
+            if "/" in vals:
+                parts = vals.split("/")
+                if len(parts) == 2:
+                    vals = f"{parts[1]}/{parts[0]}"
+
+        return f"{tool} [{vals}]"
+        
+    return re.sub(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]', replace_tool, str(score_str))
+
+def flip_masked_rows(df, mask):
+    if not mask.any():
+        return df
+        
+    df.loc[mask, ['gene_id_A', 'gene_id_B']] = df.loc[mask, ['gene_id_B', 'gene_id_A']].values
+    df.loc[mask, ['annotation_A', 'annotation_B']] = df.loc[mask, ['annotation_B', 'annotation_A']].values
+    
+    if "species_A" in df.columns and "species_B" in df.columns:
+        df.loc[mask, ['species_A', 'species_B']] = df.loc[mask, ['species_B', 'species_A']].values
+        
+    for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
+        if col in df.columns:
+            df.loc[mask, col] = df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
+            
+    if 'score' in df.columns:
+        df.loc[mask, 'score'] = df.loc[mask, 'score'].apply(flip_score_string)
+        
+    return df
+
+def merge_score_strings(series):
+    """Combines the score strings of identical edges so no tool evidence is lost,
+    and cleanly merges multiple scores from the same tool."""
+    tool_to_vals = {}
+    for s in series:
+        if pd.isna(s) or s == "NA":
+            continue
+        # Extract every "tool_name [values]" block and group by tool name
+        for match in re.finditer(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]', str(s)):
+            tool = match.group(1)
+            val = match.group(2)
+            tool_to_vals.setdefault(tool, []).append(val)
+            
+    if not tool_to_vals:
+        return "NA"
+        
+    merged_entries = []
+    for tool, vals in tool_to_vals.items():
+        # Deduplicate exact duplicate values
+        unique_vals = list(dict.fromkeys(vals))
+        
+        if len(unique_vals) == 1:
+            merged_entries.append(f"{tool} [{unique_vals[0]}]")
+            continue
+            
+        if "aegis" in tool or "liftoff" in tool or "lifton" in tool:
+            best_score_nums = None
+            best_score_str = ""
+            has_synteny = False
+            has_copies = False
+            max_multiple = 0
+            
+            for val in unique_vals:
+                if "synteny" in val:
+                    has_synteny = True
+                if "copies" in val:
+                    has_copies = True
+                
+                mult_match = re.search(r'multiple\s+(\d+)', val)
+                if mult_match:
+                    max_multiple = max(max_multiple, int(mult_match.group(1)))
+                    
+                core = re.sub(r'\(.*?\)', '', val).strip()
+                core = " ".join(core.split())
+                
+                try:
+                    if "/" in core:
+                        parts = [float(x) for x in core.split("/")]
+                        score_val = sum(parts)
+                    else:
+                        score_val = float(core)
+                except ValueError:
+                    score_val = 0
+                    
+                if best_score_nums is None or score_val > best_score_nums:
+                    best_score_nums = score_val
+                    best_score_str = core
+            
+            modifiers = []
+            if has_synteny and has_copies:
+                modifiers.append("synteny and copies")
+            elif has_synteny:
+                modifiers.append("synteny")
+            elif has_copies:
+                modifiers.append("copies")
+                
+            res_val = best_score_str
+            if modifiers:
+                res_val += f" ({modifiers[0]})"
+            if max_multiple > 0:
+                res_val += f" (multiple {max_multiple})"
+                
+            merged_entries.append(f"{tool} [{res_val}]")
+            
+        elif "rbh" in tool or "rbbh" in tool or "blast" in tool:
+            best_val = unique_vals[0]
+            best_bitscore = -1.0
+            
+            for val in unique_vals:
+                bitscore_match = re.search(r'norm_bitscore=([0-9.]+)(?:/([0-9.]+))?', val)
+                if bitscore_match:
+                    val1 = float(bitscore_match.group(1))
+                    val2 = float(bitscore_match.group(2)) if bitscore_match.group(2) else val1
+                    avg_bitscore = (val1 + val2) / 2.0
+                    if avg_bitscore > best_bitscore:
+                        best_bitscore = avg_bitscore
+                        best_val = val
+                        
+            merged_entries.append(f"{tool} [{best_val}]")
+        else:
+            best_val = unique_vals[0]
+            best_num = -1.0
+            for val in unique_vals:
+                try:
+                    num = float(val)
+                    if num > best_num:
+                        best_num = num
+                        best_val = val
+                except ValueError:
+                    pass
+            merged_entries.append(f"{tool} [{best_val}]")
+            
+    return ", ".join(sorted(merged_entries))
+
+def best_summary_score(series):
+    """When merging twins, keeps the highest confidence tier found."""
+    vals = set(series.dropna().values)
+    if "high_confidence" in vals: return "high_confidence"
+    if "medium_confidence" in vals: return "medium_confidence"
+    if "lower_confidence" in vals: return "lower_confidence"
+    return "NA"
+
 def split_callback(value:str):
     if value:
         return [item.strip() for item in value.split(",")]
@@ -146,7 +315,7 @@ def main(
         "-d", "--output-dir", 
         help="Path to the output folder.",
         rich_help_panel="Core Input/Output Configuration"
-    )] = "./aegis_output/",
+    )] = "./aegis_output/orthologues/",
     output_filename: Annotated[str, typer.Option(
         "-o", "--output-file", 
         help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
@@ -209,7 +378,7 @@ def main(
     )] = False,
     skip_all_blasts: Annotated[bool, typer.Option(
         "--skip-all-blasts", 
-        help="Skip all BLASTs.",
+        help="Skip all protein BLASTs.",
         rich_help_panel="Orthology Tool Options"
     )] = False,
 
@@ -218,18 +387,18 @@ def main(
     # ==========================================
     identity: Annotated[float, typer.Option(
         "-i", "--identity", 
-        help="Minimum identity threshold for BLAST hits.",
-        rich_help_panel="BLAST Options"
+        help="Minimum identity threshold for protein BLAST hits.",
+        rich_help_panel="BLASTp Options"
     )] = 30.0,
     coverage: Annotated[float, typer.Option(
         "-c", "--coverage", 
-        help="Minimum coverage threshold for BLAST hits.",
-        rich_help_panel="BLAST Options"
+        help="Minimum coverage threshold for protein BLAST hits.",
+        rich_help_panel="BLASTp Options"
     )] = 30.0,
     evalue: Annotated[float, typer.Option(
         "-e", "--evalue", 
-        help="Maximum e-value threshold for BLAST hits.",
-        rich_help_panel="BLAST Options"
+        help="Maximum e-value threshold for protein BLAST hits.",
+        rich_help_panel="BLASTp Options"
     )] = 0.00001,
 
     # ==========================================
@@ -263,7 +432,7 @@ def main(
     )] = False,
     split_scores: Annotated[bool, typer.Option(
         "--split-scores", 
-        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLAST, and OrthoFinder.",
+        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
         rich_help_panel="Output Options"
     )] = False,
 
@@ -275,6 +444,11 @@ def main(
         help="Number of threads.",
         rich_help_panel="Execution/Debugging"
     )] = 1,
+    parallel_pairs: Annotated[bool, typer.Option(
+        "--parallel-pairs", 
+        help="Run independent pairwise comparisons concurrently. Strongly recommended for multiple genomes to optimize CPU scaling. The threads parameter will be distributed across the pairwise comparisons.",
+        rich_help_panel="Execution/Debugging"
+    )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep-intermediate", 
         help="Keep intermediate files, useful for identifying errors.",
@@ -451,6 +625,11 @@ def main(
     if skip_rbhs and not skip_unidirectional_blasts:
         raise typer.BadParameter(f"Do not include single blasts if rbhs are to be skipped as these provide higher support for orthology.")
 
+    if parallel_pairs and threads == 1:
+        print("\n⚠️  Warning: '--parallel-pairs' is enabled but '--threads' is set to 1.")
+        print("   Under this configuration, tasks will still execute sequentially (one at a time)")
+        print("   because only 1 worker can run. To run multiple pairwise comparisons concurrently,")
+        print("   please set '--threads' (or '-t') to a value greater than 1 (e.g., -t 4).\n")
 
     genome_name_map = {path: name for path, name in zip(genome_files, genome_names)}    
 
@@ -460,22 +639,36 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
 
-    output_dir_path = Path(output_dir).resolve() / "orthologues"
-    output_dir = str(output_dir_path) + "/"
+    output_dir_path = Path(output_dir).resolve()
 
     if output_dir_path.exists():
-        warnings.warn(f"The folder '{output_dir}' already exists. Please be aware that conflict may arise with existing output and/or temp folder files.")
+        if any(output_dir_path.iterdir()):
+            warnings.warn(f"The folder '{output_dir_path}' already exists and is not empty. Conflict may arise with existing output and/or temp folder files.")
 
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    results_directory = Path(f"{output_dir}temp/")
+    results_directory = output_dir_path / "temp"
+    
+    if results_directory.exists() and any(results_directory.iterdir()):
+        print("\n" + "!" * 80)
+        print("⚠️  NOTICE: Existing intermediate files detected in the temporary directory:")
+        print(f"   {results_directory}")
+        print("\n   The pipeline is configured to resume analysis by reusing matching files.")
+        print("   At the user's discretion: if the previous run was aborted, cancelled,")
+        print("   or crashed, some intermediate files may be incomplete or corrupted.")
+        print("   This tool does not validate the internal completeness of pre-existing")
+        print("   intermediates.")
+        print("\n   👉 To guarantee a completely clean run, manually delete the 'temp/' folder")
+        print("      before executing.")
+        print("!" * 80 + "\n")
+
     protein_path = results_directory / "proteins"
     protein_path.mkdir(parents=True, exist_ok=True)
 
@@ -522,48 +715,76 @@ def main(
     for n, a in enumerate(annotations):
 
         mcscan_name = a.name.replace(".", "_")
-        a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
-        a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
 
+        gff_file1 = gff_path / f"{a.name}.gff3"
+        gff_file2 = gff_path / f"{mcscan_name}.gff3"
+
+        if not gff_file1.exists():
+            a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
+        else:
+            print(f"\n\tExisting GFF file for {a.name}. Skipping.")
+        if not gff_file2.exists():
+            a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
+        else:
+            print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
+            
         if not skip_lifton:
-
-            a_lifton = a.copy()
-            a_lifton.CDS_to_CDS_segment_ids(override=True)
-            a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
-
-            del a_lifton
+            lifton_prep_file = gff_path / f"{a.name}__for__lifton.gff3"
+            if not lifton_prep_file.exists():
+                a_lifton = a.copy()
+                a_lifton.CDS_to_CDS_segment_ids(override=True)
+                a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
+                del a_lifton
+            else:
+                print(f"\n\tExisting lifton prep file for {a.name}. Skipping.")
 
         Feature._ACTIVE_GENOME = a.genome
 
-        a.export.proteins(only_main=True, output_dir=str(protein_path), used_id="gene", verbose=False, filename=f"{a.name}_proteins_g_id_main.fasta")
+        protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
+        if not protein_fasta.exists():
+            a.export.proteins(only_main=True, output_dir=str(protein_path), used_id="gene", verbose=False, filename=f"{a.name}_proteins_g_id_main.fasta")
+        else:
+            print(f"\n\tExisting protein fasta for {a.name}. Skipping.")
         a.clear_proteins()
         
-        a.export.CDSs(only_main=True, output_dir=str(CDS_path), used_id="gene", verbose=False, filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
-        protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
+        cds_fasta = CDS_path / f"{mcscan_name}_CDSs_g_id_main.fasta"
+        if not cds_fasta.exists():
+            a.export.CDSs(only_main=True, output_dir=str(CDS_path), used_id="gene", verbose=False, filename=f"{mcscan_name}_CDSs_g_id_main.fasta")
+        else:
+            print(f"\n\tExisting CDS fasta for {a.name}. Skipping.")
 
 
         if not skip_all_blasts:
-            diamond_db_file = diamond_path / f"{a.name}_diamond_db"
-            makedb_cmd = [
-                "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_db_file)
-            ]
-            run_command(diamond_path, makedb_cmd)
+            diamond_db_file = diamond_path / f"{a.name}_diamond_db.dmnd"
+            if not diamond_db_file.exists():
+                makedb_cmd = [
+                    "diamond", "makedb", "-p", str(threads), "--in", str(protein_fasta), "--db", str(diamond_path / f"{a.name}_diamond_db")
+                ]
+                run_command(diamond_path, makedb_cmd)
+            else:
+                print(f"\n\tExisting DIAMOND database for {a.name}. Skipping.")
 
         if not skip_mcscan:
-            cds_fasta = CDS_path / f"{mcscan_name}_CDSs_g_id_main.fasta"            
-
             cleaned_cds = mcscan_path / Path(f"{mcscan_name}.cds")
-
-            jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
-            run_command(mcscan_path, jcvi_format_cmd_1)
-
             bed_file = mcscan_path / Path(f"{mcscan_name}.bed")
-            gff_to_bed_cmd_1 = [
-                "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-                "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
-            ]
-            run_command(mcscan_path, gff_to_bed_cmd_1)
 
+            if not cleaned_cds.exists():
+                jcvi_format_cmd_1 = ["python", "-m", "jcvi.formats.fasta", "format", str(cds_fasta), str(cleaned_cds)]
+                run_command(mcscan_path, jcvi_format_cmd_1)
+            else:
+                print(f"\n\tExisting cleaned CDS for {a.name}. Skipping.")
+
+            if not bed_file.exists():
+                gff_to_bed_cmd_1 = [
+                    "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
+                    "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
+                ]
+                run_command(mcscan_path, gff_to_bed_cmd_1)
+            else:
+                print(f"\n\tExisting BED file for {a.name}. Skipping.")
+
+
+    tasks = []
 
     for n1, a1 in enumerate(annotations):
 
@@ -572,7 +793,75 @@ def main(
             if n1 == n2:
                 continue
 
-            pairwise_orthology(annot1=a1, annot2=a2, genome1=genomes[genome_files[n1]], genome2=genomes[genome_files[n2]], working_directory=results_directory, num_threads=threads, copies=not(skip_copies), synteny=synteny, skip_liftoff=skip_liftoff, skip_lifton=skip_lifton, skip_mcscan=skip_mcscan, types=lift_feature_types_file, coverage=coverage, evalue=evalue, skip_blasts=skip_all_blasts, pairwise_orthofinder=pairwise_orthofinder, skip_orthofinder=skip_orthofinder,quiet=quiet)
+            if reference_annotation != "None" and not a1.target and not a2.target:
+                continue
+
+            tasks.append((a1, a2, genomes[genome_files[n1]], genomes[genome_files[n2]]))
+
+    if parallel_pairs and len(tasks) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Dynamically split total threads among concurrent workers
+        num_workers = min(threads, len(tasks))
+        threads_per_task = max(1, threads // num_workers)
+
+        print(f"\nRunning {len(tasks)} pairwise comparisons in parallel using {num_workers} workers "
+            f"({threads_per_task} thread(s) per worker)...")
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = []
+            for ta1, ta2, tg1, tg2 in tasks:
+                f = executor.submit(
+                    pairwise_orthology,
+                    annot1=ta1,
+                    annot2=ta2,
+                    genome1=tg1,
+                    genome2=tg2,
+                    working_directory=results_directory,
+                    num_threads=threads_per_task,
+                    copies=not(skip_copies),
+                    synteny=synteny,
+                    skip_liftoff=skip_liftoff,
+                    skip_lifton=skip_lifton,
+                    skip_mcscan=skip_mcscan,
+                    types=lift_feature_types_file,
+                    coverage=coverage,
+                    evalue=evalue,
+                    skip_blasts=skip_all_blasts,
+                    pairwise_orthofinder=pairwise_orthofinder,
+                    skip_orthofinder=skip_orthofinder,
+                    quiet=True
+                )
+                futures.append(f)
+
+            # Gather results to raise any exceptions that occurred
+            for f in futures:
+                f.result()
+    else:
+        # Standard sequential execution
+        print(f"\nRunning pairwise comparisons sequentially ({threads} thread(s) per run)...")
+        for ta1, ta2, tg1, tg2 in tasks:
+            pairwise_orthology(
+                annot1=ta1,
+                annot2=ta2,
+                genome1=tg1,
+                genome2=tg2,
+                working_directory=results_directory,
+                num_threads=threads,
+                copies=not(skip_copies),
+                synteny=synteny,
+                skip_liftoff=skip_liftoff,
+                skip_lifton=skip_lifton,
+                skip_mcscan=skip_mcscan,
+                types=lift_feature_types_file,
+                coverage=coverage,
+                evalue=evalue,
+                skip_blasts=skip_all_blasts,
+                pairwise_orthofinder=pairwise_orthofinder,
+                skip_orthofinder=skip_orthofinder,
+                quiet=quiet
+            )
+
 
     if not skip_all_blasts:
         # Obtaining RBHs and RBBHs from single blast results
@@ -587,15 +876,22 @@ def main(
                     continue
                 checked_pairs.append(pair)
 
+                rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
+                rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
+
+
+                if rbh_out.exists() and rbbh_out.exists():
+                    if not quiet:
+                        print(f"\n\tExisting RBH/RBBH tables found for {a1.name} and {a2.name}. Skipping generation.")
+                    continue
+
                 print(f"\nProcessing RBH and RBBHs for {a1.name} and {a2.name}")
 
                 fwd_in = diamond_path / f"single_{a1.name}__to__{a2.name}.txt"
                 rev_in = diamond_path / f"single_{a2.name}__to__{a1.name}.txt"
                 fwd_best_in = diamond_path / f"single_best_{a1.name}__to__{a2.name}.txt"
                 rev_best_in = diamond_path / f"single_best_{a2.name}__to__{a1.name}.txt"
-                rbh_out = diamond_path / f"rbh_{a1.name}__to__{a2.name}.txt"
-                rbbh_out = diamond_path / f"rbbh_{a1.name}__to__{a2.name}.txt"
-
+                
                 fwd_results = pd.read_csv(fwd_in, sep="\t", header=None)
                 rev_results = pd.read_csv(rev_in, sep="\t", header=None)
 
@@ -666,15 +962,21 @@ def main(
 
     if not skip_orthofinder:
         if not pairwise_orthofinder:
-            print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
-            orthofinder_cmd = [
-                "orthofinder",
-                "-f", str(protein_path),
-                "-t", str(threads),
-                "-a", str(threads),
-                "-o", f"{str(protein_path)}/orthofinder/"
-            ]
-            run_command(results_directory, orthofinder_cmd)
+            orthofinder_results_parent = protein_path / "orthofinder"
+            existing_results = list(orthofinder_results_parent.glob("Results*")) if orthofinder_results_parent.exists() else []
+
+            if existing_results:
+                print(f"\n\tExisting global OrthoFinder results folder found in '{orthofinder_results_parent}'. Skipping OrthoFinder execution.")
+            else:
+                print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
+                orthofinder_cmd = [
+                    "orthofinder",
+                    "-f", str(protein_path),
+                    "-t", str(threads),
+                    "-a", str(threads),
+                    "-o", f"{str(protein_path)}/orthofinder/"
+                ]
+                run_command(results_directory, orthofinder_cmd)
 
     simple_annotations = []
 
@@ -722,9 +1024,9 @@ def main(
                         a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
                 if not skip_liftoff:
-                    a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
+                    a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet, synteny_present=synteny)
                 if not skip_lifton:
-                    a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet)
+                    a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet, synteny_present=synteny)
 
             if not skip_all_blasts:
                 a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
@@ -749,17 +1051,30 @@ def main(
 
     post_processing_start = time()
 
-    if not include_duplicates and not final_df.empty:
+    if not final_df.empty:
+        mask_standardize = (final_df['annotation_A'] > final_df['annotation_B']) & (final_df['annotation_B'] != "NA")
+        final_df = flip_masked_rows(final_df, mask_standardize)
 
-        final_df['gene_id_tuple'] = pd.DataFrame(np.sort(final_df[['gene_id_A', 'gene_id_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
-        final_df['annotation_tuple'] = pd.DataFrame(np.sort(final_df[['annotation_A', 'annotation_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
-        final_df['species_tuple'] = pd.DataFrame(np.sort(final_df[['species_A', 'species_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
+        groupby_cols = ['annotation_A', 'annotation_B', 'gene_id_A', 'gene_id_B']
+        agg_dict = {col: 'first' for col in final_df.columns if col not in groupby_cols}
+        
+        if 'score' in agg_dict:
+            agg_dict['score'] = merge_score_strings
+        if 'summary_score' in agg_dict:
+            agg_dict['summary_score'] = best_summary_score
+        
+        final_df = final_df.groupby(groupby_cols, as_index=False, dropna=False).agg(agg_dict)
 
-        subset_for_duplicates = ["gene_id_tuple", "annotation_tuple", "species_tuple"]
-
-        final_df = final_df.drop_duplicates(subset=subset_for_duplicates, keep='first')
-
-        final_df = final_df.drop(subset_for_duplicates, axis=1)
+        if include_duplicates:
+            df_cloned = final_df.copy()
+            mask_all = pd.Series([True] * len(df_cloned), index=df_cloned.index)
+            df_cloned = flip_masked_rows(df_cloned, mask_all)
+            
+            final_df = pd.concat([final_df, df_cloned], ignore_index=True)
+        else:
+            if reference_annotation != "None":
+                mask_ref = (final_df['annotation_B'] == reference_annotation) & (final_df['annotation_A'] != "NA")
+                final_df = flip_masked_rows(final_df, mask_ref)
 
     clean_confidences = [c.strip().lower().replace('_confidence', '') for c in confidence]
     conf_set = set(clean_confidences)
@@ -838,20 +1153,6 @@ def main(
         final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
 
     if not final_df.empty:
-        if reference_annotation != "None":
-            mask = (final_df['annotation_B'] == reference_annotation) & (final_df['annotation_A'] != "NA")
-        else:
-            mask = (final_df['annotation_A'] > final_df['annotation_B']) & (final_df['annotation_B'] != "NA")
-
-        if mask.any():
-            final_df.loc[mask, ['gene_id_A', 'gene_id_B']] = final_df.loc[mask, ['gene_id_B', 'gene_id_A']].values
-            final_df.loc[mask, ['annotation_A', 'annotation_B']] = final_df.loc[mask, ['annotation_B', 'annotation_A']].values
-            if "species_A" in final_df.columns:
-                final_df.loc[mask, ['species_A', 'species_B']] = final_df.loc[mask, ['species_B', 'species_A']].values
-            
-            for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
-                if col in final_df.columns:
-                    final_df.loc[mask, col] = final_df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
 
         confidence_order = ["high_confidence", "medium_confidence", "lower_confidence", "NA"]
         final_df['summary_score'] = pd.Categorical(final_df['summary_score'], categories=confidence_order, ordered=True)
@@ -887,17 +1188,34 @@ def main(
         final_df = final_df.drop(columns=["score"], errors="ignore")
         final_df = pd.concat([final_df, split_df], axis=1)
 
-    cols = list(final_df.columns)
-    card_cols = [c for c in cols if 'cardinality' in c]
+    desired_column_order = [
+        "gene_id_A",
+        "gene_id_B",
+        "summary_score",
+        "cardinality",
+        "annotation_A",
+        "annotation_B",
+        "species_A",
+        "species_B",
+        "cardinality_strict",
+        "cardinality_moderate",
+        "cardinality_relaxed",
+        "score",
+        "Liftoff",
+        "LiftOn",
+        "AEGIS_Overlap",
+        "MCscan",
+        "BLASTp",
+        "OrthoFinder",
+        "reliability"
+    ]
 
-    for col in card_cols:
-        cols.remove(col)
-    idx = cols.index('summary_score') + 1
+    final_cols = [col for col in desired_column_order if col in final_df.columns]
+    
+    extra_cols = [col for col in final_df.columns if col not in final_cols]
+    final_cols.extend(extra_cols)
 
-    for i, col in enumerate(card_cols):
-        cols.insert(idx + i, col)
-
-    final_df = final_df[cols]
+    final_df = final_df[final_cols]
 
     print(f"\nPost processing took: {round((time() - post_processing_start) / 60, 2)} minutes.")
 
