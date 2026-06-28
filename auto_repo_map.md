@@ -379,6 +379,11 @@
       - orthology.py
         - `def parse_score_column(score_str):`
         - `def get_tiered_cardinality(df, allowed_scores):`
+        - `def flip_score_string(score_str):`
+        - `def replace_tool(match):`
+        - `def flip_masked_rows(df, mask):`
+        - `def merge_score_strings(series):`
+        - `def best_summary_score(series):`
         - `def split_callback(value:str):`
         - `def main(`
       - overlap.py

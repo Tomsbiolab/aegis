@@ -99,6 +99,82 @@ def get_tiered_cardinality(df, allowed_scores):
     
     return pd.Series(final_labels, index=df.index)
 
+def flip_score_string(score_str):
+    if pd.isna(score_str) or score_str == "NA":
+        return score_str
+    
+    def replace_tool(match):
+        tool = match.group(1)
+        vals = match.group(2)
+        
+        if tool.startswith("fwd_"):
+            tool = tool.replace("fwd_", "rev_", 1)
+        elif tool.startswith("rev_"):
+            tool = tool.replace("rev_", "fwd_", 1)
+            
+        if "rbh" in tool or "rbbh" in tool:
+            new_vals_list = []
+            for metric in vals.split(", "):
+
+                if "=" in metric:
+                    k, v = metric.split("=", 1)
+                    if "/" in v:
+                        parts = v.split("/")
+                        if len(parts) == 2:
+                            v = f"{parts[1]}/{parts[0]}"
+                    new_vals_list.append(f"{k}={v}")
+                else:
+                    new_vals_list.append(metric)
+            vals = ", ".join(new_vals_list)
+        
+        elif tool.startswith("rec_"):
+            if "/" in vals:
+                parts = vals.split("/")
+                if len(parts) == 2:
+                    vals = f"{parts[1]}/{parts[0]}"
+
+        return f"{tool} [{vals}]"
+        
+    return re.sub(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]', replace_tool, str(score_str))
+
+def flip_masked_rows(df, mask):
+    if not mask.any():
+        return df
+        
+    df.loc[mask, ['gene_id_A', 'gene_id_B']] = df.loc[mask, ['gene_id_B', 'gene_id_A']].values
+    df.loc[mask, ['annotation_A', 'annotation_B']] = df.loc[mask, ['annotation_B', 'annotation_A']].values
+    
+    if "species_A" in df.columns and "species_B" in df.columns:
+        df.loc[mask, ['species_A', 'species_B']] = df.loc[mask, ['species_B', 'species_A']].values
+        
+    for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
+        if col in df.columns:
+            df.loc[mask, col] = df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
+            
+    if 'score' in df.columns:
+        df.loc[mask, 'score'] = df.loc[mask, 'score'].apply(flip_score_string)
+        
+    return df
+
+def merge_score_strings(series):
+    """Combines the score strings of identical edges so no tool evidence is lost."""
+    combined = set()
+    for s in series:
+        if pd.isna(s) or s == "NA":
+            continue
+        # Extract every "tool_name [values]" block and add it to a set
+        for match in re.finditer(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]', str(s)):
+            combined.add(match.group(0))
+    return ", ".join(sorted(list(combined))) if combined else "NA"
+
+def best_summary_score(series):
+    """When merging twins, keeps the highest confidence tier found."""
+    vals = set(series.dropna().values)
+    if "high_confidence" in vals: return "high_confidence"
+    if "medium_confidence" in vals: return "medium_confidence"
+    if "lower_confidence" in vals: return "lower_confidence"
+    return "NA"
+
 def split_callback(value:str):
     if value:
         return [item.strip() for item in value.split(",")]
@@ -882,17 +958,30 @@ def main(
 
     post_processing_start = time()
 
-    if not include_duplicates and not final_df.empty:
+    if not final_df.empty:
+        mask_standardize = (final_df['annotation_A'] > final_df['annotation_B']) & (final_df['annotation_B'] != "NA")
+        final_df = flip_masked_rows(final_df, mask_standardize)
 
-        final_df['gene_id_tuple'] = pd.DataFrame(np.sort(final_df[['gene_id_A', 'gene_id_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
-        final_df['annotation_tuple'] = pd.DataFrame(np.sort(final_df[['annotation_A', 'annotation_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
-        final_df['species_tuple'] = pd.DataFrame(np.sort(final_df[['species_A', 'species_B']], axis=1), index=final_df.index).agg(tuple, axis=1)
+        groupby_cols = ['annotation_A', 'annotation_B', 'gene_id_A', 'gene_id_B']
+        agg_dict = {col: 'first' for col in final_df.columns if col not in groupby_cols}
+        
+        if 'score' in agg_dict:
+            agg_dict['score'] = merge_score_strings
+        if 'summary_score' in agg_dict:
+            agg_dict['summary_score'] = best_summary_score
+        
+        final_df = final_df.groupby(groupby_cols, as_index=False, dropna=False).agg(agg_dict)
 
-        subset_for_duplicates = ["gene_id_tuple", "annotation_tuple", "species_tuple"]
-
-        final_df = final_df.drop_duplicates(subset=subset_for_duplicates, keep='first')
-
-        final_df = final_df.drop(subset_for_duplicates, axis=1)
+        if include_duplicates:
+            df_cloned = final_df.copy()
+            mask_all = pd.Series([True] * len(df_cloned), index=df_cloned.index)
+            df_cloned = flip_masked_rows(df_cloned, mask_all)
+            
+            final_df = pd.concat([final_df, df_cloned], ignore_index=True)
+        else:
+            if reference_annotation != "None":
+                mask_ref = (final_df['annotation_B'] == reference_annotation) & (final_df['annotation_A'] != "NA")
+                final_df = flip_masked_rows(final_df, mask_ref)
 
     clean_confidences = [c.strip().lower().replace('_confidence', '') for c in confidence]
     conf_set = set(clean_confidences)
@@ -971,20 +1060,6 @@ def main(
         final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
 
     if not final_df.empty:
-        if reference_annotation != "None":
-            mask = (final_df['annotation_B'] == reference_annotation) & (final_df['annotation_A'] != "NA")
-        else:
-            mask = (final_df['annotation_A'] > final_df['annotation_B']) & (final_df['annotation_B'] != "NA")
-
-        if mask.any():
-            final_df.loc[mask, ['gene_id_A', 'gene_id_B']] = final_df.loc[mask, ['gene_id_B', 'gene_id_A']].values
-            final_df.loc[mask, ['annotation_A', 'annotation_B']] = final_df.loc[mask, ['annotation_B', 'annotation_A']].values
-            if "species_A" in final_df.columns:
-                final_df.loc[mask, ['species_A', 'species_B']] = final_df.loc[mask, ['species_B', 'species_A']].values
-            
-            for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
-                if col in final_df.columns:
-                    final_df.loc[mask, col] = final_df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
 
         confidence_order = ["high_confidence", "medium_confidence", "lower_confidence", "NA"]
         final_df['summary_score'] = pd.Categorical(final_df['summary_score'], categories=confidence_order, ordered=True)
