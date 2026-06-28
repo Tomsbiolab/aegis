@@ -22,10 +22,10 @@ def parse_score_column(score_str):
     if pd.isna(score_str) or score_str == "NA":
         return {
             "Liftoff": "NA", "LiftOn": "NA", "AEGIS_Overlap": "NA", 
-            "MCscan": "NA", "BLAST": "NA", "OrthoFinder": "NA"
+            "MCscan": "NA", "BLASTp": "NA", "OrthoFinder": "NA"
         }
     
-    res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLAST": [], "OrthoFinder": []}
+    res = {"Liftoff": [], "LiftOn": [], "AEGIS_Overlap": [], "MCscan": [], "BLASTp": [], "OrthoFinder": []}
     
     pattern = re.compile(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]')
     matches = pattern.findall(str(score_str))
@@ -41,7 +41,7 @@ def parse_score_column(score_str):
         elif "mcscan" in tool:
             res["MCscan"].append(entry)
         elif "blast" in tool or "rbh" in tool or "rbbh" in tool:
-            res["BLAST"].append(entry)
+            res["BLASTp"].append(entry)
         elif "orthofinder" in tool:
             res["OrthoFinder"].append(entry)
 
@@ -157,15 +157,108 @@ def flip_masked_rows(df, mask):
     return df
 
 def merge_score_strings(series):
-    """Combines the score strings of identical edges so no tool evidence is lost."""
-    combined = set()
+    """Combines the score strings of identical edges so no tool evidence is lost,
+    and cleanly merges multiple scores from the same tool."""
+    tool_to_vals = {}
     for s in series:
         if pd.isna(s) or s == "NA":
             continue
-        # Extract every "tool_name [values]" block and add it to a set
+        # Extract every "tool_name [values]" block and group by tool name
         for match in re.finditer(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]', str(s)):
-            combined.add(match.group(0))
-    return ", ".join(sorted(list(combined))) if combined else "NA"
+            tool = match.group(1)
+            val = match.group(2)
+            tool_to_vals.setdefault(tool, []).append(val)
+            
+    if not tool_to_vals:
+        return "NA"
+        
+    merged_entries = []
+    for tool, vals in tool_to_vals.items():
+        # Deduplicate exact duplicate values
+        unique_vals = list(dict.fromkeys(vals))
+        
+        if len(unique_vals) == 1:
+            merged_entries.append(f"{tool} [{unique_vals[0]}]")
+            continue
+            
+        if "aegis" in tool or "liftoff" in tool or "lifton" in tool:
+            best_score_nums = None
+            best_score_str = ""
+            has_synteny = False
+            has_copies = False
+            max_multiple = 0
+            
+            for val in unique_vals:
+                if "synteny" in val:
+                    has_synteny = True
+                if "copies" in val:
+                    has_copies = True
+                
+                mult_match = re.search(r'multiple\s+(\d+)', val)
+                if mult_match:
+                    max_multiple = max(max_multiple, int(mult_match.group(1)))
+                    
+                core = re.sub(r'\(.*?\)', '', val).strip()
+                core = " ".join(core.split())
+                
+                try:
+                    if "/" in core:
+                        parts = [float(x) for x in core.split("/")]
+                        score_val = sum(parts)
+                    else:
+                        score_val = float(core)
+                except ValueError:
+                    score_val = 0
+                    
+                if best_score_nums is None or score_val > best_score_nums:
+                    best_score_nums = score_val
+                    best_score_str = core
+            
+            modifiers = []
+            if has_synteny and has_copies:
+                modifiers.append("synteny and copies")
+            elif has_synteny:
+                modifiers.append("synteny")
+            elif has_copies:
+                modifiers.append("copies")
+                
+            res_val = best_score_str
+            if modifiers:
+                res_val += f" ({modifiers[0]})"
+            if max_multiple > 0:
+                res_val += f" (multiple {max_multiple})"
+                
+            merged_entries.append(f"{tool} [{res_val}]")
+            
+        elif "rbh" in tool or "rbbh" in tool or "blast" in tool:
+            best_val = unique_vals[0]
+            best_bitscore = -1.0
+            
+            for val in unique_vals:
+                bitscore_match = re.search(r'norm_bitscore=([0-9.]+)(?:/([0-9.]+))?', val)
+                if bitscore_match:
+                    val1 = float(bitscore_match.group(1))
+                    val2 = float(bitscore_match.group(2)) if bitscore_match.group(2) else val1
+                    avg_bitscore = (val1 + val2) / 2.0
+                    if avg_bitscore > best_bitscore:
+                        best_bitscore = avg_bitscore
+                        best_val = val
+                        
+            merged_entries.append(f"{tool} [{best_val}]")
+        else:
+            best_val = unique_vals[0]
+            best_num = -1.0
+            for val in unique_vals:
+                try:
+                    num = float(val)
+                    if num > best_num:
+                        best_num = num
+                        best_val = val
+                except ValueError:
+                    pass
+            merged_entries.append(f"{tool} [{best_val}]")
+            
+    return ", ".join(sorted(merged_entries))
 
 def best_summary_score(series):
     """When merging twins, keeps the highest confidence tier found."""
@@ -285,7 +378,7 @@ def main(
     )] = False,
     skip_all_blasts: Annotated[bool, typer.Option(
         "--skip-all-blasts", 
-        help="Skip all BLASTs.",
+        help="Skip all protein BLASTs.",
         rich_help_panel="Orthology Tool Options"
     )] = False,
 
@@ -294,18 +387,18 @@ def main(
     # ==========================================
     identity: Annotated[float, typer.Option(
         "-i", "--identity", 
-        help="Minimum identity threshold for BLAST hits.",
-        rich_help_panel="BLAST Options"
+        help="Minimum identity threshold for protein BLAST hits.",
+        rich_help_panel="BLASTp Options"
     )] = 30.0,
     coverage: Annotated[float, typer.Option(
         "-c", "--coverage", 
-        help="Minimum coverage threshold for BLAST hits.",
-        rich_help_panel="BLAST Options"
+        help="Minimum coverage threshold for protein BLAST hits.",
+        rich_help_panel="BLASTp Options"
     )] = 30.0,
     evalue: Annotated[float, typer.Option(
         "-e", "--evalue", 
-        help="Maximum e-value threshold for BLAST hits.",
-        rich_help_panel="BLAST Options"
+        help="Maximum e-value threshold for protein BLAST hits.",
+        rich_help_panel="BLASTp Options"
     )] = 0.00001,
 
     # ==========================================
@@ -339,7 +432,7 @@ def main(
     )] = False,
     split_scores: Annotated[bool, typer.Option(
         "--split-scores", 
-        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLAST, and OrthoFinder.",
+        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
         rich_help_panel="Output Options"
     )] = False,
 
@@ -546,7 +639,7 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny))
 
         annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
@@ -931,9 +1024,9 @@ def main(
                         a1.add_orthofinder_equivalences(str(ortho_file_path), a2.name, group_names[n2])
 
                 if not skip_liftoff:
-                    a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet)
+                    a1.add_reciprocal_overlap_equivalences(liftoff_path, a1.name, a2.name, group_names[n2], quiet=quiet, synteny_present=synteny)
                 if not skip_lifton:
-                    a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet)
+                    a1.add_reciprocal_overlap_equivalences(lifton_path, a1.name, a2.name, group_names[n2], liftoff=False, quiet=quiet, synteny_present=synteny)
 
             if not skip_all_blasts:
                 a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
@@ -1095,17 +1188,34 @@ def main(
         final_df = final_df.drop(columns=["score"], errors="ignore")
         final_df = pd.concat([final_df, split_df], axis=1)
 
-    cols = list(final_df.columns)
-    card_cols = [c for c in cols if 'cardinality' in c]
+    desired_column_order = [
+        "gene_id_A",
+        "gene_id_B",
+        "summary_score",
+        "cardinality",
+        "annotation_A",
+        "annotation_B",
+        "species_A",
+        "species_B",
+        "cardinality_strict",
+        "cardinality_moderate",
+        "cardinality_relaxed",
+        "score",
+        "Liftoff",
+        "LiftOn",
+        "AEGIS_Overlap",
+        "MCscan",
+        "BLASTp",
+        "OrthoFinder",
+        "reliability"
+    ]
 
-    for col in card_cols:
-        cols.remove(col)
-    idx = cols.index('summary_score') + 1
+    final_cols = [col for col in desired_column_order if col in final_df.columns]
+    
+    extra_cols = [col for col in final_df.columns if col not in final_cols]
+    final_cols.extend(extra_cols)
 
-    for i, col in enumerate(card_cols):
-        cols.insert(idx + i, col)
-
-    final_df = final_df[cols]
+    final_df = final_df[final_cols]
 
     print(f"\nPost processing took: {round((time() - post_processing_start) / 60, 2)} minutes.")
 

@@ -93,9 +93,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             print(f"\t\tRunning aegis overlap on liftoff result.")
 
             if synteny:
-                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet)
+                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny)
             else:
-                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet)
+                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny)
 
             a_liftoff.overlaps.detect(annot2, quiet=quiet)
 
@@ -164,9 +164,9 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             print(f"\t\tRunning aegis overlap on lifton result.")
 
             if synteny:
-                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet)
+                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny)
             else:
-                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet)
+                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny)
 
             a_lifton.overlaps.detect(annot2, quiet=quiet)
 
@@ -897,205 +897,199 @@ class Simple_annotation():
         if os.path.isfile(fwd_file) and os.path.isfile(rev_file):
             start = time.time()
 
-            go_ahead = True
-
             fwd_df = pd.read_csv(fwd_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
 
             duplicates = fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
 
             if not duplicates.empty:
-                print(f"Error: Duplicate query and target id pairs for fwd {program}:")
-                print(duplicates)
-                go_ahead = False
+                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for fwd {program}: \n{duplicates}")
 
             rev_df = pd.read_csv(rev_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
 
             duplicates = rev_df[rev_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
 
             if not duplicates.empty:
-                print(f"Error: Duplicate query and target id pairs for rev {program}:")
-                print(duplicates)
-                go_ahead = False
+                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for rev {program}: \n{duplicates}")
 
-            if go_ahead:
+            fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
+            rev_df = rev_df[rev_df["gene_id_A"] != "NA"]
 
-                fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
-                rev_df = rev_df[rev_df["gene_id_A"] != "NA"]
+            fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
+            rev_df = rev_df[rev_df["gene_id_B"] != "NA"]
 
-                fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
-                rev_df = rev_df[rev_df["gene_id_B"] != "NA"]
+            fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == f"{program}_{self.name}"]
+            rev_df = rev_df[rev_df["gene_id_B_origin"] == self.name]
 
-                fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
-                rev_df = rev_df[rev_df["gene_id_B_origin"] == self.name]
+            if liftoff:
+                equivalence_suffix = "liftoff_aegis"
+            else:
+                equivalence_suffix = "lifton_aegis"
 
-                if liftoff:
-                    equivalence_suffix = "liftoff_aegis"
+            fwd_hits = {}
+        
+            for index, row in fwd_df.iterrows():
+
+                gene_query = row["gene_id_A"]
+                gene_target = row["gene_id_B"]
+
+                copies = False
+                if row["gene_id_A_copy"] == "True":
+                    copies = True
+                    gene_query = gene_query.split("_")[:-1]
+                    gene_query = "_".join(gene_query)
+
+                if row["gene_id_B_copy"] == "True":
+                    copies = True
+                    gene_target = gene_target.split("_")[:-1]
+                    gene_target = "_".join(gene_target)
+
+                pair = f"{gene_query}---{gene_target}"
+
+                if synteny_present:
+                    if row["gene_id_A_synteny_conserved"] == "True":
+                        synteny = True
+                    else:
+                        synteny = False
                 else:
-                    equivalence_suffix = "lifton_aegis"
+                    synteny = False
 
-                fwd_hits = {}
-            
-                for index, row in fwd_df.iterrows():
+                score = row["overlap_score"]
 
-                    gene_query = row["gene_id_A"]
-                    gene_target = row["gene_id_B"]
+                if synteny and copies:
+                    score = f"{score} (synteny and copies)"
+                elif synteny:
+                    score = f"{score} (synteny)"
+                elif copies:
+                    score = f"{score} (copies)"
+
+                if pair not in fwd_hits:
+                    fwd_hits[pair] = score
+                else:
+
+                    old_score = int(fwd_hits[pair].split(" (")[0])
+                    new_score = int(score.split(" (")[0])
+
+                    if old_score > new_score:
+                        new_score = old_score
+
+                    if "multiple " in fwd_hits[pair]:
+                        match_num = int(fwd_hits[pair].split("multiple ")[-1].split(")")[0])
+                        match_num += 1
+                    else:
+                        match_num = 2
+
+                    synteny = False
+                    if "synteny" in fwd_hits[pair] or "synteny" in score:
+                        synteny = True
 
                     copies = False
-                    if row["gene_id_A_copy"] == "True":
+                    if "copies" in fwd_hits[pair] or "copies" in score:
                         copies = True
-                        gene_query = gene_query.split("_")[:-1]
-                        gene_query = "_".join(gene_query)
-
-                    if row["gene_id_B_copy"] == "True":
-                        copies = True
-                        gene_target = gene_target.split("_")[:-1]
-                        gene_target = "_".join(gene_target)
-
-                    pair = f"{gene_query}---{gene_target}"
-
-                    if synteny_present:
-                        synteny = True
-                        if row["gene_id_A_synteny_conserved"] == "False" or row["gene_id_B_synteny_conserved"] == "False":
-                            synteny = False
-                    else:
-                        synteny = False
-
-                    score = row["overlap_score"]
-
-                    if synteny and copies:
-                        score = f"{score} (synteny and copies)"
-                    elif synteny:
-                        score = f"{score} (synteny)"
+                    
+                    if copies and synteny:
+                        fwd_hits[pair] = f"{new_score} (synteny and copies) (multiple {match_num})"
                     elif copies:
-                        score = f"{score} (copies)"
-
-                    if pair not in fwd_hits:
-                        fwd_hits[pair] = score
+                        fwd_hits[pair] = f"{new_score} (copies) (multiple {match_num})"
                     else:
+                        raise ValueError(f"{pair} with score {score} should not have been already added to fwd_hits dictionary since at least one extra match should have been found through copies. The previous pair entry was already added with score {fwd_hits[pair]}. Query={query_tag} and Target={target_tag}.")
 
-                        old_score = int(fwd_hits[pair].split(" (")[0])
-                        new_score = int(score.split(" (")[0])
+            rev_hits = {}
+        
+            for index, row in rev_df.iterrows():
 
-                        if old_score > new_score:
-                            new_score = old_score
+                gene_query = row["gene_id_B"]
+                gene_target = row["gene_id_A"]
 
-                        if "multiple " in fwd_hits[pair]:
-                            match_num = int(fwd_hits[pair].split("multiple ")[-1].split(")")[0])
-                            match_num += 1
-                        else:
-                            match_num = 2
+                copies = False
+                if row["gene_id_B_copy"] == "True":
+                    copies = True
+                    gene_query = gene_query.split("_")[:-1]
+                    gene_query = "_".join(gene_query)
 
+                if row["gene_id_A_copy"] == "True":
+                    copies = True
+                    gene_target = gene_target.split("_")[:-1]
+                    gene_target = "_".join(gene_target)
+
+                pair = f"{gene_query}---{gene_target}"
+
+                if synteny_present:
+                    if row["gene_id_B_synteny_conserved"] == "True":
+                        synteny = True
+                    else:
                         synteny = False
-                        if "synteny" in fwd_hits[pair] or "synteny" in score:
-                            synteny = True
+                else:
+                    synteny = False
 
-                        copies = False
-                        if "copies" in fwd_hits[pair] or "copies" in score:
-                            copies = True
-                        
-                        if copies and synteny:
-                            fwd_hits[pair] = f"{new_score} (synteny and copies) (multiple {match_num})"
-                        elif copies:
-                            fwd_hits[pair] = f"{new_score} (copies) (multiple {match_num})"
-                        else:
-                            raise ValueError(f"{pair} with score {score} should not have been already added to fwd_hits dictionary since at least one extra match should have been found through copies. The previous pair entry was already added with score {fwd_hits[pair]}. Query={query_tag} and Target={target_tag}.")
+                score = row["overlap_score"]
 
-                rev_hits = {}
-            
-                for index, row in rev_df.iterrows():
+                if synteny and copies:
+                    score = f"{score} (synteny and copies)"
+                elif synteny:
+                    score = f"{score} (synteny)"
+                elif copies:
+                    score = f"{score} (copies)"
 
-                    gene_query = row["gene_id_B"]
-                    gene_target = row["gene_id_A"]
+                if pair not in rev_hits:
+                    rev_hits[pair] = score
+                else:
+
+                    old_score = int(rev_hits[pair].split(" (")[0])
+                    new_score = int(score.split(" (")[0])
+
+                    if old_score > new_score:
+                        new_score = old_score
+
+                    if "multiple " in rev_hits[pair]:
+                        match_num = int(rev_hits[pair].split("multiple ")[-1].split(")")[0])
+                        match_num += 1
+                    else:
+                        match_num = 2
+
+                    synteny = False
+                    if "synteny" in rev_hits[pair] or "synteny" in score:
+                        synteny = True
 
                     copies = False
-                    if row["gene_id_B_copy"] == "True":
+                    if "copies" in rev_hits[pair] or "copies" in score:
                         copies = True
-                        gene_query = gene_query.split("_")[:-1]
-                        gene_query = "_".join(gene_query)
-
-                    if row["gene_id_A_copy"] == "True":
-                        copies = True
-                        gene_target = gene_target.split("_")[:-1]
-                        gene_target = "_".join(gene_target)
-
-                    pair = f"{gene_query}---{gene_target}"
-
-                    if synteny_present:
-                        synteny = True
-                        if row["gene_id_B_synteny_conserved"] == "False" or row["gene_id_A_synteny_conserved"] == "False":
-                            synteny = False
-                    else:
-                        synteny = False
-
-                    score = row["overlap_score"]
-
-                    if synteny and copies:
-                        score = f"{score} (synteny and copies)"
-                    elif synteny:
-                        score = f"{score} (synteny)"
+                    
+                    if copies and synteny:
+                        rev_hits[pair] = f"{new_score} (synteny and copies) (multiple {match_num})"
                     elif copies:
-                        score = f"{score} (copies)"
-
-                    if pair not in rev_hits:
-                        rev_hits[pair] = score
+                        rev_hits[pair] = f"{new_score} (copies) (multiple {match_num})"
                     else:
+                        raise ValueError(f"{pair} with score {score} should not have been already added to rev_hits dictionary since at least one extra match should have been found through copies. The previous pair entry was already added with score {rev_hits[pair]}. Query={query_tag} and Target={target_tag}.")
 
-                        old_score = int(rev_hits[pair].split(" (")[0])
-                        new_score = int(score.split(" (")[0])
+            for fwd_pair in fwd_hits:
 
-                        if old_score > new_score:
-                            new_score = old_score
+                if fwd_pair in rev_hits:
+                    equivalence_type = f"rec_{equivalence_suffix}"
+                    score = f"{fwd_hits[fwd_pair]}/{rev_hits[fwd_pair]}"
+                else:
+                    equivalence_type = f"fwd_{equivalence_suffix}"
+                    score = f"{fwd_hits[fwd_pair]}"
 
-                        if "multiple " in rev_hits[pair]:
-                            match_num = int(rev_hits[pair].split("multiple ")[-1].split(")")[0])
-                            match_num += 1
-                        else:
-                            match_num = 2
+                gene_query = fwd_pair.split("---")[0]
+                gene_target = fwd_pair.split("---")[1]
 
-                        synteny = False
-                        if "synteny" in rev_hits[pair] or "synteny" in score:
-                            synteny = True
+                self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
 
-                        copies = False
-                        if "copies" in rev_hits[pair] or "copies" in score:
-                            copies = True
-                        
-                        if copies and synteny:
-                            rev_hits[pair] = f"{new_score} (synteny and copies) (multiple {match_num})"
-                        elif copies:
-                            rev_hits[pair] = f"{new_score} (copies) (multiple {match_num})"
-                        else:
-                            raise ValueError(f"{pair} with score {score} should not have been already added to rev_hits dictionary since at least one extra match should have been found through copies. The previous pair entry was already added with score {rev_hits[pair]}. Query={query_tag} and Target={target_tag}.")
 
-                for fwd_pair in fwd_hits:
+            for rev_pair in rev_hits:
+                if rev_pair not in fwd_hits:
+                    equivalence_type = f"rev_{equivalence_suffix}"
+                    score = f"{rev_hits[rev_pair]}"
 
-                    if fwd_pair in rev_hits:
-                        equivalence_type = f"rec_{equivalence_suffix}"
-                        score = f"{fwd_hits[fwd_pair]}/{rev_hits[fwd_pair]}"
-                    else:
-                        equivalence_type = f"fwd_{equivalence_suffix}"
-                        score = f"{fwd_hits[fwd_pair]}"
-
-                    gene_query = fwd_pair.split("---")[0]
-                    gene_target = fwd_pair.split("---")[1]
-
+                    gene_query = rev_pair.split("---")[0]
+                    gene_target = rev_pair.split("---")[1]
+                    
                     self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
 
-
-                for rev_pair in rev_hits:
-                    if rev_pair not in fwd_hits:
-                        equivalence_type = f"rev_{equivalence_suffix}"
-                        score = f"{rev_hits[rev_pair]}"
-
-                        gene_query = rev_pair.split("---")[0]
-                        gene_target = rev_pair.split("---")[1]
-                        
-                        self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
-
-                end = time.time()
-                lapse = end - start
-                if not quiet:
-                    print(f"Adding {program} overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
+            end = time.time()
+            lapse = end - start
+            if not quiet:
+                print(f"Adding {program} overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
 
         else:
             print(f"Warning: {fwd_file} or {rev_file} is missing.")
@@ -1107,69 +1101,50 @@ class Simple_annotation():
         if os.path.isfile(fwd_file):
             start = time.time()
 
-            go_ahead = True
-
             fwd_df = pd.read_csv(fwd_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
 
             duplicates = fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
 
             if not duplicates.empty:
-                print(f"Error: Duplicate query and target id pairs for aegis_overlap:")
-                print(duplicates)
-                go_ahead = False
+                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for aegis_overlap:\n{duplicates}")
 
-            if go_ahead:
+            fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
+            fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
 
-                fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
-                fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
+            fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
 
-                fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == self.name]
+            equivalence_suffix = "aegis_overlap"
 
-                equivalence_suffix = "aegis_overlap"
+            hits = {}
+        
+            for index, row in fwd_df.iterrows():
 
-                hits = {}
-            
-                for index, row in fwd_df.iterrows():
+                gene_query = row["gene_id_A"]
+                gene_target = row["gene_id_B"]
 
-                    gene_query = row["gene_id_A"]
-                    gene_target = row["gene_id_B"]
+                pair = f"{gene_query}---{gene_target}"
 
-                    pair = f"{gene_query}---{gene_target}"
+                score = row["overlap_score"]
 
-                    score = row["overlap_score"]
+                if pair not in hits:
+                    hits[pair] = score
+                else:
+                    raise ValueError(f"There should not be repeated {query_tag} and {target_tag} id pairs within '{query_tag}__to__{target_tag}_overlaps.tsv' file. The pair: {pair} was already found.")
 
-                    if pair not in hits:
-                        hits[pair] = score
-                    else:
+            for pair in hits:
 
-                        old_score = int(hits[pair].split(" (")[0])
-                        new_score = int(score.split(" (")[0])
+                equivalence_type = equivalence_suffix
+                score = f"{hits[pair]}"
 
-                        if old_score > new_score:
-                            new_score = old_score
+                gene_query = pair.split("---")[0]
+                gene_target = pair.split("---")[1]
 
-                        if "multiple " in hits[pair]:
-                            match_num = int(hits[pair].split("multiple ")[-1].split(")")[0])
-                            match_num += 1
-                        else:
-                            match_num = 2
+                self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
 
-                        hits[pair] = f"{new_score} (multiple {match_num})"
-
-                for pair in hits:
-
-                    equivalence_type = equivalence_suffix
-                    score = f"{hits[pair]}"
-
-                    gene_query = pair.split("---")[0]
-                    gene_target = pair.split("---")[1]
-
-                    self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
-
-                end = time.time()
-                lapse = end - start
-                if not quiet:
-                    print(f"Adding aegis overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
+            end = time.time()
+            lapse = end - start
+            if not quiet:
+                print(f"Adding aegis overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
 
         else:
             print(f"Warning: {fwd_file} is missing.")
