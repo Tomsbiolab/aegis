@@ -67,13 +67,9 @@ def get_tiered_cardinality(df, allowed_scores):
     if sub_df.empty:
         return pd.Series(['NA'] * len(df), index=df.index)
 
-    c1 = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].count().reset_index(name='d1')
-    c2 = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].count().reset_index(name='d2')
-    
-    t1 = sub_df.merge(c2, on=['a1', 'a2', 'g2']).groupby(['a1', 'a2', 'g1'])['d2'].max().reset_index(name='max_d2')
-    
-    sub_df = sub_df.merge(c1, on=['a1', 'a2', 'g1'])
-    sub_df = sub_df.merge(t1, on=['a1', 'a2', 'g1'])
+    sub_df['d1'] = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].transform('count')
+    sub_df['d2'] = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].transform('count')
+    sub_df['max_d2'] = sub_df.groupby(['a1', 'a2', 'g1'])['d2'].transform('max')
     
     deg_A = sub_df['d1'].to_numpy()
     deg_B = sub_df['max_d2'].to_numpy()
@@ -88,7 +84,7 @@ def get_tiered_cardinality(df, allowed_scores):
     sub_df['label_ordered'] = np.select(condlist, ['1:1', '1:N', 'N:1', 'N:N'], default='NA')
     sub_df['label_reversed'] = np.select(condlist, ['1:1', 'N:1', '1:N', 'N:N'], default='NA')
     
-    sub_df = sub_df.drop_duplicates(subset=['a1', 'a2', 'g1', 'g2']).set_index(['a1', 'a2', 'g1', 'g2'])
+    sub_df = sub_df.set_index(['a1', 'a2', 'g1', 'g2'])
     base_df = base_df.join(sub_df[['label_ordered', 'label_reversed']], on=['a1', 'a2', 'g1', 'g2'])
     
     final_labels = np.where(
@@ -98,6 +94,8 @@ def get_tiered_cardinality(df, allowed_scores):
     )
     
     return pd.Series(final_labels, index=df.index)
+
+SCORE_PATTERN = re.compile(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]')
 
 def flip_score_string(score_str):
     if pd.isna(score_str) or score_str == "NA":
@@ -135,7 +133,7 @@ def flip_score_string(score_str):
 
         return f"{tool} [{vals}]"
         
-    return re.sub(r'([a-zA-Z0-9_]+)\s+\[(.*?)\]', replace_tool, str(score_str))
+    return SCORE_PATTERN.sub(replace_tool, str(score_str))
 
 def flip_masked_rows(df, mask):
     if not mask.any():
@@ -147,9 +145,10 @@ def flip_masked_rows(df, mask):
     if "species_A" in df.columns and "species_B" in df.columns:
         df.loc[mask, ['species_A', 'species_B']] = df.loc[mask, ['species_B', 'species_A']].values
         
+    flip_map = {'1:N': 'N:1', 'N:1': '1:N'}
     for col in ['cardinality', 'cardinality_strict', 'cardinality_moderate', 'cardinality_relaxed']:
         if col in df.columns:
-            df.loc[mask, col] = df.loc[mask, col].replace({'1:N': 'tmp', 'N:1': '1:N'}).replace({'tmp': 'N:1'})
+            df.loc[mask, col] = df.loc[mask, col].map(lambda x: flip_map.get(x, x))
             
     if 'score' in df.columns:
         df.loc[mask, 'score'] = df.loc[mask, 'score'].apply(flip_score_string)
@@ -714,6 +713,8 @@ def main(
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
 
+        Feature._ACTIVE_GENOME = a.genome
+
         mcscan_name = a.name.replace(".", "_")
 
         gff_file1 = gff_path / f"{a.name}.gff3"
@@ -737,8 +738,6 @@ def main(
                 del a_lifton
             else:
                 print(f"\n\tExisting lifton prep file for {a.name}. Skipping.")
-
-        Feature._ACTIVE_GENOME = a.genome
 
         protein_fasta = protein_path / f"{a.name}_proteins_g_id_main.fasta"
         if not protein_fasta.exists():
@@ -784,6 +783,11 @@ def main(
                 print(f"\n\tExisting BED file for {a.name}. Skipping.")
 
 
+    simple_annotations = []
+
+    for n, a in enumerate(annotations):
+        simple_annotations.append(Simple_annotation(a.name, a, group_names[n]))
+
     tasks = []
 
     for n1, a1 in enumerate(annotations):
@@ -796,7 +800,9 @@ def main(
             if reference_annotation != "None" and not a1.target and not a2.target:
                 continue
 
-            tasks.append((a1, a2, genomes[genome_files[n1]], genomes[genome_files[n2]]))
+            tasks.append((a1.name, a2.name,a1.file, a2.file, genomes[genome_files[n1]], genomes[genome_files[n2]]))
+
+    del annotations
 
     if parallel_pairs and len(tasks) > 1:
         from concurrent.futures import ThreadPoolExecutor
@@ -810,11 +816,13 @@ def main(
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = []
-            for ta1, ta2, tg1, tg2 in tasks:
+            for tn1, tn2, ta1, ta2, tg1, tg2 in tasks:
                 f = executor.submit(
                     pairwise_orthology,
-                    annot1=ta1,
-                    annot2=ta2,
+                    annot1_name=tn1,
+                    annot2_name=tn2,
+                    annot1_file=ta1,
+                    annot2_file=ta2,
                     genome1=tg1,
                     genome2=tg2,
                     working_directory=results_directory,
@@ -840,10 +848,12 @@ def main(
     else:
         # Standard sequential execution
         print(f"\nRunning pairwise comparisons sequentially ({threads} thread(s) per run)...")
-        for ta1, ta2, tg1, tg2 in tasks:
+        for tn1, tn2, ta1, ta2, tg1, tg2 in tasks:
             pairwise_orthology(
-                annot1=ta1,
-                annot2=ta2,
+                annot1_name=tn1,
+                annot2_name=tn2,
+                annot1_file=ta1,
+                annot2_file=ta2,
                 genome1=tg1,
                 genome2=tg2,
                 working_directory=results_directory,
@@ -866,8 +876,8 @@ def main(
     if not skip_all_blasts:
         # Obtaining RBHs and RBBHs from single blast results
         checked_pairs = []
-        for n1, a1 in enumerate(annotations):
-            for n2, a2 in enumerate(annotations):
+        for n1, a1 in enumerate(simple_annotations):
+            for n2, a2 in enumerate(simple_annotations):
                 if n1 == n2:
                     continue
                 pair = [n1, n2]
@@ -960,30 +970,22 @@ def main(
 
                 del rbbh
 
-    if not skip_orthofinder:
-        if not pairwise_orthofinder:
-            orthofinder_results_parent = protein_path / "orthofinder"
-            existing_results = list(orthofinder_results_parent.glob("Results*")) if orthofinder_results_parent.exists() else []
+    if not skip_orthofinder and not pairwise_orthofinder:
+        orthofinder_results_parent = protein_path / "orthofinder"
+        existing_results = list(orthofinder_results_parent.glob("Results*")) if orthofinder_results_parent.exists() else []
 
-            if existing_results:
-                print(f"\n\tExisting global OrthoFinder results folder found in '{orthofinder_results_parent}'. Skipping OrthoFinder execution.")
-            else:
-                print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
-                orthofinder_cmd = [
-                    "orthofinder",
-                    "-f", str(protein_path),
-                    "-t", str(threads),
-                    "-a", str(threads),
-                    "-o", f"{str(protein_path)}/orthofinder/"
-                ]
-                run_command(results_directory, orthofinder_cmd)
-
-    simple_annotations = []
-
-    for n, a in enumerate(annotations):
-        simple_annotations.append(Simple_annotation(a.name, a, group_names[n]))
-
-    del annotations
+        if existing_results:
+            print(f"\n\tExisting global OrthoFinder results folder found in '{orthofinder_results_parent}'. Skipping OrthoFinder execution.")
+        else:
+            print(f"\nRunning OrthoFinder (this can take a very long time) between all annotations {annotation_names}")
+            orthofinder_cmd = [
+                "orthofinder",
+                "-f", str(protein_path),
+                "-t", str(threads),
+                "-a", str(threads),
+                "-o", f"{str(protein_path)}/orthofinder/"
+            ]
+            run_command(results_directory, orthofinder_cmd)
 
     extra_tag = ""
 

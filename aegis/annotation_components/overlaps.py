@@ -138,7 +138,8 @@ class AnnotationOverlaps(AnnotationComponent):
                                     if target_exons and query_exons:
                                         exons_in_both = True
                                         if gene_orientation != exon_orientation:
-                                            print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}.")
+                                            if not quiet:
+                                                print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}.")
                                         if overlapping:
                                             exon_query_percent = (best_exon_overlap / exon_query_size) * 100
                                             exon_target_percent = (best_exon_overlap / exon_target_size) * 100
@@ -189,7 +190,8 @@ class AnnotationOverlaps(AnnotationComponent):
                                     if target_CDS and query_CDS:
                                         CDSs_in_both = True
                                         if gene_orientation != CDS_orientation:
-                                            print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}.")
+                                            if not quiet:
+                                                print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}.")
                                         if overlapping:
                                             CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
                                             CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
@@ -363,7 +365,8 @@ class AnnotationOverlaps(AnnotationComponent):
                             if target_exons and query_exons:
                                 exons_in_both = True
                                 if gene_orientation != exon_orientation:
-                                    print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}")
+                                    if not quiet:
+                                        print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}")
                                 if overlapping:
                                     exon_query_percent = (best_exon_overlap / exon_query_size) * 100
                                     exon_target_percent = (best_exon_overlap / exon_target_size) * 100
@@ -413,7 +416,8 @@ class AnnotationOverlaps(AnnotationComponent):
                             if target_CDS and query_CDS:
                                 CDSs_in_both = True
                                 if gene_orientation != CDS_orientation:
-                                    print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}")
+                                    if not quiet:
+                                        print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}")
                                 if overlapping:
                                     CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
                                     CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
