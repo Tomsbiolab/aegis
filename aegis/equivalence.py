@@ -10,13 +10,22 @@ import os
 import shutil
 import subprocess
 
+from collections import defaultdict
 from pathlib import Path
 
 from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue
 
-def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, quiet:bool=True):
+def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, annot2_file: str, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, quiet:bool=True):
+
+    print(f"\n\tRunning pairwise orthology for {annot1_name} and {annot2_name}...")
+
+    annot1: Annotation
+    annot2: Annotation
+
+    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny)
+    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny)
 
     litfless_overlaps_dir = working_directory / "litfless_overlaps"
     liftoff_dir = working_directory / "liftoff"
@@ -28,8 +37,6 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
 
     liftoff_pair_dir = liftoff_dir / f"{annot1.name}__to__{annot2.name}"
     lifton_pair_dir = lifton_dir / f"{annot1.name}__to__{annot2.name}"
-
-    print(f"\n\n{annot1.name} vs {annot2.name}:")
 
     if genome1.file == genome2.file:
         skip_mcscan = True
@@ -48,13 +55,16 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         liftoff_gff = liftoff_pair_dir / f"liftoff__{annot1.name}__to__{annot2.name}.gff"
 
         if liftoff_overlaps_tsv.exists():
-            print(f"\n\tExisting Liftoff overlap output found for {annot1.name} on {annot2.name}. Skipping Liftoff and overlaps calculation.")
+            if not quiet:
+                print(f"\n\tExisting Liftoff overlap output found for {annot1.name} on {annot2.name}. Skipping Liftoff and overlaps calculation.")
         else:
 
             if liftoff_gff.exists():
-                print(f"\n\tExisting Liftoff output found for {annot1.name} on {annot2.name}. Reusing liftoff output for aegis overlap calculation.")
+                if not quiet:
+                    print(f"\n\tExisting Liftoff output found for {annot1.name} on {annot2.name}. Reusing liftoff output for aegis overlap calculation.")
             else:
-                print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
+                if not quiet:
+                    print(f"\n\tRunning Liftoff to map annotations from {annot1.name} on {annot2.name}")
 
                 shared_gff_path = Path(working_directory) / "gffs" / f"{annot1.name}.gff3"
                 local_gff_path = liftoff_pair_dir / f"{annot1.name}.gff3"
@@ -90,14 +100,15 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
                     with open(liftoff_gff, "w") as f:
                         f.write("##gff-version 3\n")
 
-            print(f"\t\tRunning aegis overlap on liftoff result.")
+            if not quiet:
+                print(f"\t\tRunning aegis overlap on liftoff result.")
 
             if synteny:
                 a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny)
             else:
                 a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny)
 
-            a_liftoff.overlaps.detect(annot2, quiet=quiet)
+            a_liftoff.overlaps.detect(annot2, quiet=quiet, clear=True)
 
             _ = a_liftoff.overlaps.export(output_dir=str(liftoff_dir), filename=f"liftoff__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
@@ -108,9 +119,10 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         liftless_overlaps_tsv = litfless_overlaps_dir / f"{annot1.name}__to__{annot2.name}_overlaps.tsv"
 
         if liftless_overlaps_tsv.exists():
-            print(f"\n\tExisting aegis overlap output found for {annot1.name} on {annot2.name}. Skipping.")
+            if not quiet:
+                print(f"\n\tExisting aegis overlap output found for {annot1.name} on {annot2.name}. Skipping.")
         else:
-            annot1.overlaps.detect(annot2, quiet=quiet)
+            annot1.overlaps.detect(annot2, quiet=quiet, clear=True)
             _ = annot1.overlaps.export(output_dir=str(litfless_overlaps_dir), filename=f"{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=False, copies_info=False)
 
     if not skip_lifton:
@@ -121,12 +133,15 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         lifton_gff = lifton_pair_dir / f"lifton__{annot1.name}__to__{annot2.name}.gff3"
 
         if lifton_overlaps_tsv.exists():
-            print(f"\n\tExisting LiftOn overlap output found for {annot1.name} on {annot2.name}. Skipping LiftOn and overlaps calculation.")
+            if not quiet:
+                print(f"\n\tExisting LiftOn overlap output found for {annot1.name} on {annot2.name}. Skipping LiftOn and overlaps calculation.")
         else:
             if lifton_gff.exists():
-                print(f"\n\tExisting LiftOn output found for {annot1.name} on {annot2.name}. Reusing lifton output for aegis overlap calculation.")
+                if not quiet:
+                    print(f"\n\tExisting LiftOn output found for {annot1.name} on {annot2.name}. Reusing lifton output for aegis overlap calculation.")
             else:
-                print(f"\n\tRunning LiftOn to map annotations from {annot1.name} on {annot2.name}")
+                if not quiet:
+                    print(f"\n\tRunning LiftOn to map annotations from {annot1.name} on {annot2.name}")
                 
                 shared_lifton_gff_path = Path(working_directory) / "gffs" / f"{annot1.name}__for__lifton.gff3"
                 local_lifton_gff_path = lifton_pair_dir / f"{annot1.name}__for__lifton.gff3"
@@ -161,14 +176,15 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
                     with open(lifton_gff, "w") as f:
                         f.write("##gff-version 3\n")
 
-            print(f"\t\tRunning aegis overlap on lifton result.")
+            if not quiet:
+                print(f"\t\tRunning aegis overlap on lifton result.")
 
             if synteny:
                 a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny)
             else:
                 a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny)
 
-            a_lifton.overlaps.detect(annot2, quiet=quiet)
+            a_lifton.overlaps.detect(annot2, quiet=quiet, clear=True)
 
             _ = a_lifton.overlaps.export(output_dir=str(lifton_dir), filename=f"lifton__{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=synteny, copies_info=True)
 
@@ -183,9 +199,11 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         diamond_db = diamond_dir / f"{annot2.name}_diamond_db"
 
         if diamond_result.exists():
-            print(f"\n\tExisting standard DIAMOND results found for {annot1.name} on {annot2.name}. Skipping standard search.")
+            if not quiet:
+                print(f"\n\tExisting standard DIAMOND results found for {annot1.name} on {annot2.name}. Skipping standard search.")
         else:
-            print(f"\n\tRunning standard DIAMOND search ({annot1.name} on {annot2.name})")
+            if not quiet:
+                print(f"\n\tRunning standard DIAMOND search ({annot1.name} on {annot2.name})")
             blastp_cmd = [
                 "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
                 "--out", str(diamond_result), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
@@ -195,9 +213,11 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             run_command(diamond_dir, blastp_cmd)
 
         if diamond_result_best.exists():
-            print(f"\n\tExisting 'best' DIAMOND results found for {annot1.name} on {annot2.name}. Skipping 'best' search.")
+            if not quiet:
+                print(f"\n\tExisting 'best' DIAMOND results found for {annot1.name} on {annot2.name}. Skipping 'best' search.")
         else:
-            print(f"\n\tRunning 'best' DIAMOND search ({annot1.name} on {annot2.name})")
+            if not quiet:
+                print(f"\n\tRunning 'best' DIAMOND search ({annot1.name} on {annot2.name})")
             blastp_cmd = [
                 "diamond", "blastp", "--threads", str(num_threads), "--db", str(diamond_db), "--ultra-sensitive", 
                 "--out", str(diamond_result_best), "--outfmt", "6", "qseqid", "sseqid", "pident", "qcovhsp", 
@@ -207,7 +227,8 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             run_command(diamond_dir, blastp_cmd)
     
     if not skip_mcscan:
-        print(f"\n\tRunning JCVI ortholog analysis between {annot1.name} and {annot2.name}")
+        if not quiet:
+            print(f"\n\tRunning JCVI ortholog analysis between {annot1.name} and {annot2.name}")
 
         mcscan_name1 = annot1.name.replace(".", "_")
         mcscan_name2 = annot2.name.replace(".", "_")
@@ -216,26 +237,49 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         filtered_file = mcscan_dir / f"{mcscan_name1}.{mcscan_name2}.last.filtered"
 
         if anchors_file.exists() and filtered_file.exists():
-            print(f"\n\tExisting MCscan output files found for {annot1.name} and {annot2.name}. Skipping MCscan step.")
+            if not quiet:
+                print(f"\n\tExisting MCscan output files found for {annot1.name} and {annot2.name}. Skipping MCscan step.")
         else:
-            print(f"\n\tRunning JCVI ortholog analysis between {annot1.name} and {annot2.name}")
+            if not quiet:
+                print(f"\n\tRunning JCVI ortholog analysis between {annot1.name} and {annot2.name}")
 
-            jcvi_ortho_cmd = [
-                "python", "-m", "jcvi.compara.catalog", "ortholog",
-                mcscan_name1, mcscan_name2, "--no_strip_names", "--cpus", str(num_threads)
-            ]
-            
+            pair_tmp_dir = mcscan_dir / f"tmp_{mcscan_name1}_v_{mcscan_name2}"
+            pair_tmp_dir.mkdir(parents=True, exist_ok=True)
+
             try:
-                run_command(mcscan_dir, jcvi_ortho_cmd)
+                for name in [mcscan_name1, mcscan_name2]:
+                    for ext in [".cds", ".bed"]:
+                        src = mcscan_dir / f"{name}{ext}"
+                        dst = pair_tmp_dir / f"{name}{ext}"
+                        if src.exists() and not dst.exists():
+                            try:
+                                dst.symlink_to(src)
+                            except OSError:
+                                shutil.copy(src, dst)
+
+                jcvi_ortho_cmd = [
+                    "python", "-m", "jcvi.compara.catalog", "ortholog",
+                    mcscan_name1, mcscan_name2, "--no_strip_names", "--cpus", str(num_threads)
+                ]
+                
+                run_command(pair_tmp_dir, jcvi_ortho_cmd)
+
+                for ext in [".anchors", ".last", ".last.filtered"]:
+                    generated_file = pair_tmp_dir / f"{mcscan_name1}.{mcscan_name2}{ext}"
+                    target_file = mcscan_dir / f"{mcscan_name1}.{mcscan_name2}{ext}"
+                    if generated_file.exists():
+                        shutil.copy(generated_file, target_file)
+
             except subprocess.CalledProcessError as e:
-                # Intercept the specific 0-anchor error string from stderr or stdout
                 error_msg = f"{e.stdout} {e.stderr}"
                 if "0 anchor was found" in error_msg:
                     print(f"\n\t⚠️  JCVI found 0 syntenic anchors between {annot1.name} and {annot2.name}.")
                     print("\tThis is a normal biological result. Skipping anchor generation and continuing pipeline...")
                 else:
-                    # If it's an actual systemic failure (e.g., Docker died, out of memory), crash normally
                     raise
+            finally:
+                if pair_tmp_dir.exists():
+                    shutil.rmtree(pair_tmp_dir)
 
     if pairwise_orthofinder and not skip_orthofinder:
 
@@ -244,9 +288,11 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
         existing_results = list(orthofinder_results_dir.glob("Results*")) if orthofinder_results_dir.exists() else []
 
         if existing_results:
-            print(f"\n\tExisting pairwise OrthoFinder results found for {annot1.name} and {annot2.name}. Skipping.")
+            if not quiet:
+                print(f"\n\tExisting pairwise OrthoFinder results found for {annot1.name} and {annot2.name}. Skipping.")
         else:
-            print(f"\nRunning OrthoFinder between {annot1.name} and {annot2.name}")
+            if not quiet:
+                print(f"\nRunning OrthoFinder between {annot1.name} and {annot2.name}")
 
             orthofinder_dir.mkdir(parents=True, exist_ok=True)
 
@@ -267,6 +313,13 @@ def pairwise_orthology(annot1: Annotation, annot2: Annotation, genome1: Genome, 
             run_command(orthofinder_dir, orthofinder_cmd)
 
 class Equivalence():
+
+    __slots__ = (
+        'id', 'type', 'species', 'score', 'target_annotation', 'reliability',
+        'aegis_score', 'aegis_synteny', 'aegis_copies', 'match_num',
+        'aegis_score_rev', 'aegis_synteny_rev', 'aegis_copies_rev', 'match_num_rev',
+        'coverage', 'identity', 'coverage_rev', 'identity_rev', 'evalue'
+    )
 
     preferred_type_order = ["aegis_overlap", "rec_liftoff_aegis", "rec_lifton_aegis", "fwd_liftoff_aegis", "rev_liftoff_aegis", "fwd_lifton_aegis", "rev_lifton_aegis", "mcscan_anchors", "mcscan_last_filtered", "rbbh", "rbh", "orthofinder", "fwd_blastp", "rev_blastp", "fwd_blast", "rev_blast"]
     reliability_order = ["vvvtop_reliable", "vvtop_reliable", "vtop_reliable", "top_reliable", "vvvvv_reliable", "vvvv_reliable", "vvv_reliable", "vv_reliable", "v_reliable", "reliable", "NA"]
@@ -509,6 +562,7 @@ class Equivalence():
         return f"{self.id}\t{self.type}\t{self.score}\t{self.target_annotation}\t{self.species}\t{self.reliability}"
 
 class Simple_gene():
+    __slots__ = ('id', 'equivalences', 'filtered_equivalences')
     def __init__(self, id):
         self.id = id
         self.equivalences = []
@@ -523,106 +577,98 @@ class Simple_gene():
 
             self.filtered_equivalences = []
 
-            equivalent_genes_temp_d = {}
+            grouped_eqs = defaultdict(list)
 
             for equivalence in self.equivalences:
-                if equivalence.target_annotation not in equivalent_genes_temp_d:
-                    equivalent_genes_temp_d[equivalence.target_annotation] = []
-            
-            for equivalence in self.equivalences:
-                if equivalence.id not in equivalent_genes_temp_d[equivalence.target_annotation]:
-                    equivalent_genes_temp_d[equivalence.target_annotation].append(equivalence.id)
+                grouped_eqs[(equivalence.target_annotation, equivalence.id)].append(equivalence)
 
-            for target_annotation, equivalent_genes in equivalent_genes_temp_d.items():
-                for equivalent_gene in equivalent_genes:
+            for (target_annotation, equivalent_gene), eqs in grouped_eqs.items():
+                evidences = []
+                liftoff_score = 0
+                lifton_score = 0
 
-                    evidences = []
-                    liftoff_score = 0
-                    lifton_score = 0
+                lowest_evalue = float('inf')
+                found_evalue = False
+                species = ""
 
-                    lowest_evalue = float('inf')
-                    found_evalue = False
-                    species = ""
+                for equivalence in eqs:
+                    species = equivalence.species
+                    if "aegis" in equivalence.type:
+                        if "rec_" in equivalence.type:
+                            score = max(equivalence.aegis_score, equivalence.aegis_score_rev)
+                        else:
+                            score = equivalence.aegis_score
+                        if "lifton" in equivalence.type:
+                            if score > lifton_score:
+                                lifton_score = score
+                        else:
+                            if score > liftoff_score:
+                                liftoff_score = score
+                    elif "rbbh" in equivalence.type or "rbh" in equivalence.type or "blast" in equivalence.type:
 
-                    for equivalence in self.equivalences:
-                        if equivalence.id == equivalent_gene:
-                            species = equivalence.species
-                            if "aegis" in equivalence.type:
-                                if "rec_" in equivalence.type:
-                                    score = max(equivalence.aegis_score, equivalence.aegis_score_rev)
-                                else:
-                                    score = equivalence.aegis_score
-                                if "lifton" in equivalence.type:
-                                    if score > lifton_score:
-                                        lifton_score = score
-                                else:
-                                    if score > liftoff_score:
-                                        liftoff_score = score
-                            elif "rbbh" in equivalence.type or "rbh" in equivalence.type or "blast" in equivalence.type:
+                        if not unidirectional_blasts and "blast" in equivalence.type:
+                            continue
 
-                                if not unidirectional_blasts and "blast" in equivalence.type:
-                                    continue
+                        if not simple_rbh_blasts and "rbh" in equivalence.type:
+                            continue
 
-                                if not simple_rbh_blasts and "rbh" in equivalence.type:
-                                    continue
+                        if "blast" in equivalence.type or "rbh" in equivalence.type:
+                            if equivalence.identity < identity_threshold:
+                                continue
+                            if equivalence.coverage < coverage_threshold:
+                                continue
+                            if equivalence.evalue > evalue_threshold:
+                                continue
 
-                                if "blast" in equivalence.type or "rbh" in equivalence.type:
-                                    if equivalence.identity < identity_threshold:
-                                        continue
-                                    if equivalence.coverage < coverage_threshold:
-                                        continue
-                                    if equivalence.evalue > evalue_threshold:
-                                        continue
+                        if equivalence.evalue < lowest_evalue:
+                            lowest_evalue = equivalence.evalue
+                        found_evalue = True
 
-                                if equivalence.evalue < lowest_evalue:
-                                    lowest_evalue = equivalence.evalue
-                                found_evalue = True
+                    evidences.append(f"{equivalence.type} [{equivalence.score}]")
 
-                            evidences.append(f"{equivalence.type} [{equivalence.score}]")
+                summary_evidence = ", ".join(evidences)
 
-                    summary_evidence = ", ".join(evidences)
+                if (liftoff_score >= 9 or lifton_score >= 9) and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
+                    reliability = "vvvtop_reliable"
+                elif liftoff_score >= 9 or lifton_score >= 9:
+                    reliability = "vvtop_reliable"
 
-                    if (liftoff_score >= 9 or lifton_score >= 9) and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
-                        reliability = "vvvtop_reliable"
-                    elif liftoff_score >= 9 or lifton_score >= 9:
-                        reliability = "vvtop_reliable"
+                elif liftoff_score >= 7 or lifton_score >= 7 and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
+                    reliability = "vtop_reliable"
+                elif liftoff_score >= 7 or lifton_score >= 7:
+                    reliability = "top_reliable"
 
-                    elif liftoff_score >= 7 or lifton_score >= 7 and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
-                        reliability = "vtop_reliable"
-                    elif liftoff_score >= 7 or lifton_score >= 7:
-                        reliability = "top_reliable"
+                elif liftoff_score >= 6 or lifton_score >= 6 and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
+                    reliability = "vvvvv_reliable"
+                elif "rbbh" in summary_evidence or (liftoff_score >= 6 or lifton_score >= 6 and "rbh" in summary_evidence and "mcscan_anchors" in summary_evidence):
+                    reliability = "vvvv_reliable"
+                elif liftoff_score >= 6 or lifton_score >= 6 and "rbh" in summary_evidence in summary_evidence:
+                    reliability = "vvv_reliable"
 
-                    elif liftoff_score >= 6 or lifton_score >= 6 and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
-                        reliability = "vvvvv_reliable"
-                    elif "rbbh" in summary_evidence or (liftoff_score >= 6 or lifton_score >= 6 and "rbh" in summary_evidence and "mcscan_anchors" in summary_evidence):
-                        reliability = "vvvv_reliable"
-                    elif liftoff_score >= 6 or lifton_score >= 6 and "rbh" in summary_evidence in summary_evidence:
-                        reliability = "vvv_reliable"
+                elif "mcscan_anchors" in summary_evidence and "rbh" in summary_evidence:
+                    reliability = "vv_reliable"
 
-                    elif "mcscan_anchors" in summary_evidence and "rbh" in summary_evidence:
-                        reliability = "vv_reliable"
+                elif "mcscan_anchors" in summary_evidence or "rbh" in summary_evidence:
+                    reliability = "v_reliable"                   
 
-                    elif "mcscan_anchors" in summary_evidence or "rbh" in summary_evidence:
-                        reliability = "v_reliable"                   
+                else:
+                    reliability = "reliable"
 
-                    else:
-                        reliability = "reliable"
+                if found_evalue:
+                    evalue = str(lowest_evalue)
+                else:
+                    evalue = "NA"
 
-                    if found_evalue:
-                        evalue = str(lowest_evalue)
-                    else:
-                        evalue = "NA"
+                if "top_reliable" in reliability:
+                    score = "high_confidence"
+                elif "vv_reliable" in reliability:
+                    score = "medium_confidence"
+                else:
+                    score = "lower_confidence"
 
-                    if "top_reliable" in reliability:
-                        score = "high_confidence"
-                    elif "vv_reliable" in reliability:
-                        score = "medium_confidence"
-                    else:
-                        score = "lower_confidence"
+                if evidences != []:
 
-                    if evidences != []:
-
-                        self.filtered_equivalences.append(Equivalence(equivalent_gene, summary_evidence, target_annotation, species, score, evalue, reliability))
+                    self.filtered_equivalences.append(Equivalence(equivalent_gene, summary_evidence, target_annotation, species, score, evalue, reliability))
 
 
 class Simple_annotation():
@@ -712,11 +758,10 @@ class Simple_annotation():
                 df.columns = ["0", "1", "2"]
                 score_col = "2"
 
-            for index, row in df.iterrows():
-                gene_query = row[key_col]
-                gene_target = row[target_col]
-                score = row[score_col]
-                self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_annotation, species, score))
+            for gene_query, gene_target, score in zip(df[key_col], df[target_col], df[score_col]):
+                self.genes[gene_query].equivalences.append(
+                    Equivalence(gene_target, equivalence_type, target_annotation, species, score)
+                )
 
 
     def add_orthofinder_equivalences(self, file, target_annotation, species):
@@ -724,13 +769,14 @@ class Simple_annotation():
         if os.path.isfile(file):
             df = pd.read_csv(file, sep="\t", dtype=str)
             df.columns = ["orthogroup", "query", "target"]
-            for index, row in df.iterrows():
-                gene_queries = row["query"].split(", ")
-                gene_targets = row["target"].split(", ")
-                score = row["orthogroup"]
+            for queries_str, targets_str, score in zip(df["query"], df["target"], df["orthogroup"]):
+                gene_queries = queries_str.split(", ")
+                gene_targets = targets_str.split(", ")
                 for gene_query in gene_queries:
                     for gene_target in gene_targets:
-                        self.genes[gene_query].equivalences.append(Equivalence(gene_target, "orthofinder", target_annotation, species, score))
+                        self.genes[gene_query].equivalences.append(
+                            Equivalence(gene_target, "orthofinder", target_annotation, species, score)
+                        )
 
     def add_blast_equivalences(self, blast_folder, query_annotation, target_annotation, species, skip_rbhs:bool=False, skip_unidirectional_blasts:bool=False, proteins:bool=True, quiet:bool=False):
 
@@ -778,18 +824,21 @@ class Simple_annotation():
 
             if os.path.isfile(rbbh_file):
                 df = pd.read_csv(rbbh_file, sep="\t", dtype=str)
-                for index, row in df.iterrows():
-                    gene_query = row[query_col]
-                    gene_target = row[target_col]
-                    evalue = row[query_col_evalue]
-                    score = f"evalue={row[query_col_evalue]}/{row[target_col_evalue]}"
-                    score += f", norm_bitscore={round(float(row[query_col_normbit]), 1)}/{round(float(row[target_col_normbit]), 1)}"
-                    score += f", coverage={round(float(row[query_col_coverage]), 1)}/{round(float(row[target_col_coverage]), 1)}"
-                    score += f", identity={round(float(row[query_col_identity]), 1)}/{round(float(row[target_col_identity]), 1)}"
+                for gene_query, gene_target, q_ev, t_ev, q_nb, t_nb, q_cov, t_cov, q_id, t_id in zip(
+                    df[query_col], df[target_col], df[query_col_evalue], df[target_col_evalue],
+                    df[query_col_normbit], df[target_col_normbit], df[query_col_coverage], df[target_col_coverage],
+                    df[query_col_identity], df[target_col_identity]
+                ):
+                    score = f"evalue={q_ev}/{t_ev}"
+                    score += f", norm_bitscore={round(float(q_nb), 1)}/{round(float(t_nb), 1)}"
+                    score += f", coverage={round(float(q_cov), 1)}/{round(float(t_cov), 1)}"
+                    score += f", identity={round(float(q_id), 1)}/{round(float(t_id), 1)}"
                     pair = sorted([gene_query, gene_target])
                     pair = "-".join(pair)
                     rbbh_hits.add(pair)
-                    self.genes[gene_query].equivalences.append(Equivalence(gene_target, "rbbh", target_annotation, species, score, evalue))
+                    self.genes[gene_query].equivalences.append(
+                        Equivalence(gene_target, "rbbh", target_annotation, species, score, q_ev)
+                    )
 
             end = time.time()
             lapse = end - temp_start
@@ -804,19 +853,22 @@ class Simple_annotation():
 
                 if os.path.isfile(rbh_file):
                     df = pd.read_csv(rbh_file, sep="\t", dtype=str)
-                    for index, row in df.iterrows():
-                        gene_query = row[query_col]
-                        gene_target = row[target_col]
-                        evalue = row[query_col_evalue]
-                        score = f"evalue={row[query_col_evalue]}/{row[target_col_evalue]}"
-                        score += f", norm_bitscore={round(float(row[query_col_normbit]), 1)}/{round(float(row[target_col_normbit]), 1)}"
-                        score += f", coverage={round(float(row[query_col_coverage]), 1)}/{round(float(row[target_col_coverage]), 1)}"
-                        score += f", identity={round(float(row[query_col_identity]), 1)}/{round(float(row[target_col_identity]), 1)}"
+                    for gene_query, gene_target, q_ev, t_ev, q_nb, t_nb, q_cov, t_cov, q_id, t_id in zip(
+                        df[query_col], df[target_col], df[query_col_evalue], df[target_col_evalue],
+                        df[query_col_normbit], df[target_col_normbit], df[query_col_coverage], df[target_col_coverage],
+                        df[query_col_identity], df[target_col_identity]
+                    ):
+                        score = f"evalue={q_ev}/{t_ev}"
+                        score += f", norm_bitscore={round(float(q_nb), 1)}/{round(float(t_nb), 1)}"
+                        score += f", coverage={round(float(q_cov), 1)}/{round(float(t_cov), 1)}"
+                        score += f", identity={round(float(q_id), 1)}/{round(float(t_id), 1)}"
                         pair = sorted([gene_query, gene_target])
                         pair = "-".join(pair)
                         if pair not in rbbh_hits:
                             rbh_hits.add(pair)
-                            self.genes[gene_query].equivalences.append(Equivalence(gene_target, "rbh", target_annotation, species, score, evalue))
+                            self.genes[gene_query].equivalences.append(
+                                Equivalence(gene_target, "rbh", target_annotation, species, score, q_ev)
+                            )
 
                 end = time.time()
                 lapse = end - temp_start
@@ -835,19 +887,18 @@ class Simple_annotation():
                     if os.path.isfile(fwd_file):
                         df = pd.read_csv(fwd_file, sep="\t", dtype=str, header=None)
                         df.columns = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
-                        for index, row in df.iterrows():
-                            gene_query = row["0"]
-                            gene_target = row["1"]
-                            norm_bitscore = round((float(row["7"]) / float(row["4"])), 1)
-                            evalue = row['8']
+                        for q, s, pident, qcov, qlen, _, _, bitscore, evalue in zip(
+                            df["0"], df["1"], df["2"], df["3"], df["4"], df["5"], df["6"], df["7"], df["8"]
+                        ):
+                            norm_bitscore = round((float(bitscore) / float(qlen)), 1)
                             score = f"evalue={evalue}"
                             score += f", norm_bitscore={norm_bitscore}"
-                            score += f", coverage={round(float(row['3']), 1)}"
-                            score += f", identity={round(float(row['2']), 1)}"
-                            pair = sorted([gene_query, gene_target])
+                            score += f", coverage={round(float(qcov), 1)}"
+                            score += f", identity={round(float(pident), 1)}"
+                            pair = sorted([q, s])
                             pair = "-".join(pair)
                             if pair not in rbh_hits and pair not in rbbh_hits:
-                                self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_annotation, species, score, evalue))
+                                self.genes[q].equivalences.append(Equivalence(s, equivalence_type, target_annotation, species, score, evalue))
 
                     if proteins:
                         equivalence_type = "rev_blastp"
@@ -857,15 +908,16 @@ class Simple_annotation():
                     if os.path.isfile(rev_file):
                         df = pd.read_csv(rev_file, sep="\t", dtype=str, header=None)
                         df.columns = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
-                        for index, row in df.iterrows():
-                            gene_query = row["1"]
-                            gene_target = row["0"]
-                            norm_bitscore = round((float(row["7"]) / float(row["4"])), 1)
-                            evalue = row['8']
+                        for q, s, pident, qcov, qlen, _, _, bitscore, evalue in zip(
+                            df["0"], df["1"], df["2"], df["3"], df["4"], df["5"], df["6"], df["7"], df["8"]
+                        ):
+                            gene_query = s
+                            gene_target = q
+                            norm_bitscore = round((float(bitscore) / float(qlen)), 1)
                             score = f"evalue={evalue}"
                             score += f", norm_bitscore={norm_bitscore}"
-                            score += f", coverage={round(float(row['3']), 1)}"
-                            score += f", identity={round(float(row['2']), 1)}"
+                            score += f", coverage={round(float(qcov), 1)}"
+                            score += f", identity={round(float(pident), 1)}"
                             pair = sorted([gene_query, gene_target])
                             pair = "-".join(pair)
                             if pair not in rbh_hits and pair not in rbbh_hits:
@@ -887,10 +939,7 @@ class Simple_annotation():
 
     def add_reciprocal_overlap_equivalences(self, folder, query_tag, target_tag, species, liftoff:bool=True, quiet:bool=False, synteny_present:bool=False):
 
-        program = "liftoff"
-        if not liftoff:
-            program = "lifton"
-
+        program = "liftoff" if liftoff else "lifton"
         fwd_file = f"{folder}/{program}__{query_tag}__to__{target_tag}_overlaps.tsv"
         rev_file = f"{folder}/{program}__{target_tag}__to__{query_tag}_overlaps.tsv"
 
@@ -898,199 +947,118 @@ class Simple_annotation():
             start = time.time()
 
             fwd_df = pd.read_csv(fwd_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
-
-            duplicates = fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
-
-            if not duplicates.empty:
-                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for fwd {program}: \n{duplicates}")
+            if not fwd_df[fwd_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)].empty:
+                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for fwd {program}.")
 
             rev_df = pd.read_csv(rev_file, sep="\t", encoding="utf-8", dtype=str, na_filter=False)
+            if not rev_df[rev_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)].empty:
+                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for rev {program}.")
 
-            duplicates = rev_df[rev_df.duplicated(subset=["gene_id_A", "gene_id_B"], keep=False)]
-
-            if not duplicates.empty:
-                raise ValueError(f"Duplicate query {query_tag} and target {target_tag} id pairs for rev {program}: \n{duplicates}")
-
-            fwd_df = fwd_df[fwd_df["gene_id_A"] != "NA"]
-            rev_df = rev_df[rev_df["gene_id_A"] != "NA"]
-
-            fwd_df = fwd_df[fwd_df["gene_id_B"] != "NA"]
-            rev_df = rev_df[rev_df["gene_id_B"] != "NA"]
+            fwd_df = fwd_df[(fwd_df["gene_id_A"] != "NA") & (fwd_df["gene_id_B"] != "NA")]
+            rev_df = rev_df[(rev_df["gene_id_A"] != "NA") & (rev_df["gene_id_B"] != "NA")]
 
             fwd_df = fwd_df[fwd_df["gene_id_A_origin"] == f"{program}_{self.name}"]
             rev_df = rev_df[rev_df["gene_id_B_origin"] == self.name]
 
-            if liftoff:
-                equivalence_suffix = "liftoff_aegis"
-            else:
-                equivalence_suffix = "lifton_aegis"
+            equivalence_suffix = "liftoff_aegis" if liftoff else "lifton_aegis"
 
             fwd_hits = {}
-        
-            for index, row in fwd_df.iterrows():
-
-                gene_query = row["gene_id_A"]
-                gene_target = row["gene_id_B"]
-
-                copies = False
-                if row["gene_id_A_copy"] == "True":
-                    copies = True
-                    gene_query = gene_query.split("_")[:-1]
-                    gene_query = "_".join(gene_query)
-
-                if row["gene_id_B_copy"] == "True":
-                    copies = True
-                    gene_target = gene_target.split("_")[:-1]
-                    gene_target = "_".join(gene_target)
+            fwd_synteny_col = fwd_df["gene_id_A_synteny_conserved"] if (synteny_present and "gene_id_A_synteny_conserved" in fwd_df.columns) else [None] * len(fwd_df)
+            
+            for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
+                fwd_df["gene_id_A"], fwd_df["gene_id_B"], fwd_df["gene_id_A_copy"], fwd_df["gene_id_B_copy"], fwd_synteny_col, fwd_df["overlap_score"]
+            ):
+                copies = (q_cp == "True" or t_cp == "True")
+                gene_query = "_".join(g_q.split("_")[:-1]) if q_cp == "True" else g_q
+                gene_target = "_".join(g_t.split("_")[:-1]) if t_cp == "True" else g_t
 
                 pair = f"{gene_query}---{gene_target}"
+                synteny = (synt_val == "True") if synt_val is not None else False
 
-                if synteny_present:
-                    if row["gene_id_A_synteny_conserved"] == "True":
-                        synteny = True
-                    else:
-                        synteny = False
-                else:
-                    synteny = False
-
-                score = row["overlap_score"]
-
-                if synteny and copies:
-                    score = f"{score} (synteny and copies)"
-                elif synteny:
-                    score = f"{score} (synteny)"
-                elif copies:
-                    score = f"{score} (copies)"
+                modifiers = []
+                if synteny: modifiers.append("synteny")
+                if copies: modifiers.append("copies")
+                modifier_str = f" ({' and '.join(modifiers)})" if modifiers else ""
+                score = f"{score_val}{modifier_str}"
 
                 if pair not in fwd_hits:
                     fwd_hits[pair] = score
                 else:
-
                     old_score = int(fwd_hits[pair].split(" (")[0])
-                    new_score = int(score.split(" (")[0])
-
-                    if old_score > new_score:
-                        new_score = old_score
-
-                    if "multiple " in fwd_hits[pair]:
-                        match_num = int(fwd_hits[pair].split("multiple ")[-1].split(")")[0])
-                        match_num += 1
-                    else:
-                        match_num = 2
-
-                    synteny = False
-                    if "synteny" in fwd_hits[pair] or "synteny" in score:
-                        synteny = True
-
-                    copies = False
-                    if "copies" in fwd_hits[pair] or "copies" in score:
-                        copies = True
+                    new_score = max(old_score, int(score_val))
                     
-                    if copies and synteny:
-                        fwd_hits[pair] = f"{new_score} (synteny and copies) (multiple {match_num})"
-                    elif copies:
-                        fwd_hits[pair] = f"{new_score} (copies) (multiple {match_num})"
-                    else:
-                        raise ValueError(f"{pair} with score {score} should not have been already added to fwd_hits dictionary since at least one extra match should have been found through copies. The previous pair entry was already added with score {fwd_hits[pair]}. Query={query_tag} and Target={target_tag}.")
+                    match_num = 2
+                    if "multiple " in fwd_hits[pair]:
+                        match_num = int(fwd_hits[pair].split("multiple ")[-1].split(")")[0]) + 1
+
+                    has_copies = "copies" in fwd_hits[pair] or copies
+                    has_synteny = "synteny" in fwd_hits[pair] or synteny
+
+                    mods = []
+                    if has_synteny: mods.append("synteny")
+                    if has_copies: mods.append("copies")
+                    mod_str = f" ({' and '.join(mods)})" if mods else ""
+                    fwd_hits[pair] = f"{new_score}{mod_str} (multiple {match_num})"
 
             rev_hits = {}
-        
-            for index, row in rev_df.iterrows():
-
-                gene_query = row["gene_id_B"]
-                gene_target = row["gene_id_A"]
-
-                copies = False
-                if row["gene_id_B_copy"] == "True":
-                    copies = True
-                    gene_query = gene_query.split("_")[:-1]
-                    gene_query = "_".join(gene_query)
-
-                if row["gene_id_A_copy"] == "True":
-                    copies = True
-                    gene_target = gene_target.split("_")[:-1]
-                    gene_target = "_".join(gene_target)
+            rev_synteny_col = rev_df["gene_id_B_synteny_conserved"] if (synteny_present and "gene_id_B_synteny_conserved" in rev_df.columns) else [None] * len(rev_df)
+            
+            for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
+                rev_df["gene_id_B"], rev_df["gene_id_A"], rev_df["gene_id_B_copy"], rev_df["gene_id_A_copy"], rev_synteny_col, rev_df["overlap_score"]
+            ):
+                copies = (q_cp == "True" or t_cp == "True")
+                gene_query = "_".join(g_q.split("_")[:-1]) if q_cp == "True" else g_q
+                gene_target = "_".join(g_t.split("_")[:-1]) if t_cp == "True" else g_t
 
                 pair = f"{gene_query}---{gene_target}"
+                synteny = (synt_val == "True") if synt_val is not None else False
 
-                if synteny_present:
-                    if row["gene_id_B_synteny_conserved"] == "True":
-                        synteny = True
-                    else:
-                        synteny = False
-                else:
-                    synteny = False
-
-                score = row["overlap_score"]
-
-                if synteny and copies:
-                    score = f"{score} (synteny and copies)"
-                elif synteny:
-                    score = f"{score} (synteny)"
-                elif copies:
-                    score = f"{score} (copies)"
+                modifiers = []
+                if synteny: modifiers.append("synteny")
+                if copies: modifiers.append("copies")
+                modifier_str = f" ({' and '.join(modifiers)})" if modifiers else ""
+                score = f"{score_val}{modifier_str}"
 
                 if pair not in rev_hits:
                     rev_hits[pair] = score
                 else:
-
                     old_score = int(rev_hits[pair].split(" (")[0])
-                    new_score = int(score.split(" (")[0])
-
-                    if old_score > new_score:
-                        new_score = old_score
-
-                    if "multiple " in rev_hits[pair]:
-                        match_num = int(rev_hits[pair].split("multiple ")[-1].split(")")[0])
-                        match_num += 1
-                    else:
-                        match_num = 2
-
-                    synteny = False
-                    if "synteny" in rev_hits[pair] or "synteny" in score:
-                        synteny = True
-
-                    copies = False
-                    if "copies" in rev_hits[pair] or "copies" in score:
-                        copies = True
+                    new_score = max(old_score, int(score_val))
                     
-                    if copies and synteny:
-                        rev_hits[pair] = f"{new_score} (synteny and copies) (multiple {match_num})"
-                    elif copies:
-                        rev_hits[pair] = f"{new_score} (copies) (multiple {match_num})"
-                    else:
-                        raise ValueError(f"{pair} with score {score} should not have been already added to rev_hits dictionary since at least one extra match should have been found through copies. The previous pair entry was already added with score {rev_hits[pair]}. Query={query_tag} and Target={target_tag}.")
+                    match_num = 2
+                    if "multiple " in rev_hits[pair]:
+                        match_num = int(rev_hits[pair].split("multiple ")[-1].split(")")[0]) + 1
 
-            for fwd_pair in fwd_hits:
+                    has_copies = "copies" in rev_hits[pair] or copies
+                    has_synteny = "synteny" in rev_hits[pair] or synteny
 
+                    mods = []
+                    if has_synteny: mods.append("synteny")
+                    if has_copies: mods.append("copies")
+                    mod_str = f" ({' and '.join(mods)})" if mods else ""
+                    rev_hits[pair] = f"{new_score}{mod_str} (multiple {match_num})"
+
+            for fwd_pair, f_score in fwd_hits.items():
+                gene_query, gene_target = fwd_pair.split("---")
                 if fwd_pair in rev_hits:
                     equivalence_type = f"rec_{equivalence_suffix}"
-                    score = f"{fwd_hits[fwd_pair]}/{rev_hits[fwd_pair]}"
+                    score = f"{f_score}/{rev_hits[fwd_pair]}"
                 else:
                     equivalence_type = f"fwd_{equivalence_suffix}"
-                    score = f"{fwd_hits[fwd_pair]}"
-
-                gene_query = fwd_pair.split("---")[0]
-                gene_target = fwd_pair.split("---")[1]
+                    score = f_score
 
                 self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
 
-
-            for rev_pair in rev_hits:
+            for rev_pair, r_score in rev_hits.items():
                 if rev_pair not in fwd_hits:
                     equivalence_type = f"rev_{equivalence_suffix}"
-                    score = f"{rev_hits[rev_pair]}"
-
-                    gene_query = rev_pair.split("---")[0]
-                    gene_target = rev_pair.split("---")[1]
-                    
-                    self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
+                    gene_query, gene_target = rev_pair.split("---")
+                    self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, r_score))
 
             end = time.time()
             lapse = end - start
             if not quiet:
                 print(f"Adding {program} overlap equivalences for tags = [{query_tag}, {target_tag}] to {self.name} took {round(lapse/60, 2)} minutes")
-
         else:
             print(f"Warning: {fwd_file} or {rev_file} is missing.")
 
@@ -1117,29 +1085,16 @@ class Simple_annotation():
 
             hits = {}
         
-            for index, row in fwd_df.iterrows():
-
-                gene_query = row["gene_id_A"]
-                gene_target = row["gene_id_B"]
-
+            for gene_query, gene_target, score in zip(fwd_df["gene_id_A"], fwd_df["gene_id_B"], fwd_df["overlap_score"]):
                 pair = f"{gene_query}---{gene_target}"
-
-                score = row["overlap_score"]
-
                 if pair not in hits:
                     hits[pair] = score
                 else:
                     raise ValueError(f"There should not be repeated {query_tag} and {target_tag} id pairs within '{query_tag}__to__{target_tag}_overlaps.tsv' file. The pair: {pair} was already found.")
 
-            for pair in hits:
-
-                equivalence_type = equivalence_suffix
-                score = f"{hits[pair]}"
-
-                gene_query = pair.split("---")[0]
-                gene_target = pair.split("---")[1]
-
-                self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, score))
+            for pair, score in hits.items():
+                gene_query, gene_target = pair.split("---")
+                self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_suffix, target_tag, species, score))
 
             end = time.time()
             lapse = end - start
