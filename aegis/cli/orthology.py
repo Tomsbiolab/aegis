@@ -987,6 +987,10 @@ def main(
             ]
             run_command(results_directory, orthofinder_cmd)
 
+    output_dir_str = str(output_dir)
+    if not output_dir_str.endswith("/"):
+        output_dir_str += "/"
+
     extra_tag = ""
 
     for n1, a1 in enumerate(simple_annotations):
@@ -1033,9 +1037,9 @@ def main(
             if not skip_all_blasts:
                 a1.add_blast_equivalences(str(diamond_path), a1.name, a2.name, group_names[n2], skip_rbhs=skip_rbhs, skip_unidirectional_blasts=skip_unidirectional_blasts, quiet=quiet)
 
-        output_file = f"{output_dir}{a1.name}_equivalences{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs_and_rbhs = f"{output_dir}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
-        output_file_filtered_just_rbbhs = f"{output_dir}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
+        output_file = f"{output_dir_str}{a1.name}_equivalences{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs_and_rbhs = f"{output_dir_str}{a1.name}_equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        output_file_filtered_just_rbbhs = f"{output_dir_str}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
 
         if skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
             df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=quiet, return_df=True, export_csv=False)
@@ -1144,15 +1148,15 @@ def main(
             final_df = pd.concat([final_df, na_df], ignore_index=True)
 
     if output_filename != "equivalences{other_tags}.tsv":
-        final_output_file = f"{output_dir}{output_filename}"
+        final_output_file = f"{output_dir_str}{output_filename}"
         if not final_output_file.endswith(".tsv"):
             final_output_file += ".tsv"
     elif skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
-        final_output_file = f"{output_dir}equivalences_just_rbbhs{extra_tag}.tsv"
+        final_output_file = f"{output_dir_str}equivalences_just_rbbhs{extra_tag}.tsv"
     elif skip_unidirectional_blasts and not skip_all_blasts:
-        final_output_file = f"{output_dir}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
+        final_output_file = f"{output_dir_str}equivalences_just_rbbhs_and_rbhs{extra_tag}.tsv"
     else:
-        final_output_file = f"{output_dir}equivalences{extra_tag}.tsv"
+        final_output_file = f"{output_dir_str}equivalences{extra_tag}.tsv"
 
     if not final_df.empty:
 
