@@ -62,7 +62,7 @@ class GeneSynteny():
         self.liftover_conserved = False
 
 class FeatureQuality():
-    __slots__ = ('_feature', 'remove', 'rescue', 'reliable', 'reliable_score', 'overlap_reliable', 'unrescuable', 'overlap_with_selected_CDS', 'overlap_with_selected_exon', 'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single', 'UTR_intron_nested', 'transcriptomic_evidence', 'abinitio_evidence', 'gc_content', 'masked_fraction', '_blast_hits', '_alternative_transcript_rescue')
+    __slots__ = ('_feature', 'remove', 'rescue', 'reliable', 'reliable_score', 'overlap_reliable', 'unrescuable', 'overlap_with_selected_CDS', 'overlap_with_selected_exon', 'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single', 'UTR_intron_nested', 'transcriptomic_evidence', 'abinitio_evidence', 'gc_content', 'masked_fraction', '_blast_hits', '_alternative_transcript_rescue', 'potential_alt_transcript_group')
 
     _feature:Feature|Gene|Transcript|CDS
     remove:bool
@@ -82,6 +82,7 @@ class FeatureQuality():
     abinitio_evidence:bool
     gc_content:float
     masked_fraction:float
+    potential_alt_transcript_group:int|None
     _blast_hits:list[BlastHit]|None
 
     def __init__(self, feature:Gene|Feature|Transcript|CDS):
@@ -109,6 +110,8 @@ class FeatureQuality():
 
         self.transcriptomic_evidence = False
         self.abinitio_evidence = False
+
+        self.potential_alt_transcript_group = None
 
     def calculate_masking(self):
         self.masked_fraction = round(((count_occurrences(self._feature.hard_seq, "X") + (count_occurrences(self._feature.hard_seq, "N"))) / self._feature.size), 2)

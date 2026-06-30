@@ -17,6 +17,75 @@ class AnnotationRedundancy:
     _annot: Annotation
     def __init__(self, annotation: Annotation):
         self._annot = annotation
+        self._pairwise_decisions: list[dict] = []
+        self._current_filter_step: str = ""
+
+    def label_potential_alt_transcript_groups(self, min_overlap_score: int = 5, quiet: bool = False):
+        """
+        Label genes that could be alternative transcripts of each other.
+        Same-strand overlapping genes (score >= min_overlap_score) are grouped
+        using a union-find approach so transitive overlaps are handled correctly.
+        Filtering functions should then skip competitions within the same group.
+        """
+        gene_to_group = {}   # gene_id -> group_id
+        groups = {}          # group_id -> set of gene_ids
+        next_group_id = 0
+
+        for genes in self._annot.chrs.values():
+            for g in genes.values():
+                if g.quality.remove and not g.quality.rescue:
+                    continue
+                for o in g.overlaps["self"]:
+                    # Same-strand significant overlap
+                    if o.score < min_overlap_score:
+                        continue
+
+                    other_g = self._annot.chrs[g.ch][o.id]
+                    if other_g.quality.remove and not other_g.quality.rescue:
+                        continue
+
+                    g_id = g.id
+                    o_id = o.id
+
+                    g_has = g_id in gene_to_group
+                    o_has = o_id in gene_to_group
+
+                    if g_has and o_has:
+                        # Both already in groups — merge if different
+                        if gene_to_group[g_id] != gene_to_group[o_id]:
+                            old_gid = gene_to_group[o_id]
+                            new_gid = gene_to_group[g_id]
+                            for member in groups[old_gid]:
+                                gene_to_group[member] = new_gid
+                            groups[new_gid] |= groups[old_gid]
+                            del groups[old_gid]
+                    elif g_has:
+                        gene_to_group[o_id] = gene_to_group[g_id]
+                        groups[gene_to_group[g_id]].add(o_id)
+                    elif o_has:
+                        gene_to_group[g_id] = gene_to_group[o_id]
+                        groups[gene_to_group[o_id]].add(g_id)
+                    else:
+                        gene_to_group[g_id] = next_group_id
+                        gene_to_group[o_id] = next_group_id
+                        groups[next_group_id] = {g_id, o_id}
+                        next_group_id += 1
+
+        # Assign group IDs back to gene objects
+        for genes in self._annot.chrs.values():
+            for g in genes.values():
+                g.quality.potential_alt_transcript_group = gene_to_group.get(g.id, None)
+
+        if not quiet:
+            n_grouped = sum(1 for _ in gene_to_group.values())
+            n_groups = len(groups)
+            print(f"Labeled {n_grouped} genes into {n_groups} potential alt-transcript groups")
+
+    def _same_alt_transcript_group(self, g1, g2):
+        """Return True if both genes belong to the same potential alt transcript group."""
+        if g1.quality.potential_alt_transcript_group is None:
+            return False
+        return g1.quality.potential_alt_transcript_group == g2.quality.potential_alt_transcript_group
 
     def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
@@ -94,7 +163,7 @@ class AnnotationRedundancy:
                                     g.quality.transcriptomic_evidence = True
         progress_bar.close()
 
-    def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark"], quiet:bool=False):
+    def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -217,16 +286,12 @@ class AnnotationRedundancy:
                         for o in g.overlaps["self"]:
                             if o.score >= 5 or (o.score == 1 and o.antiscore >= 5):
                                 if not self._annot.chrs[g.ch][o.id].quality.remove and not g.quality.remove:
-                                    if g.quality.reliable_score > self._annot.chrs[g.ch][o.id].quality.reliable_score:
-                                        self._annot.chrs[g.ch][o.id].quality.remove = True
-                                    elif self._annot.chrs[g.ch][o.id].quality.reliable_score > g.quality.reliable_score:
-                                        g.quality.remove = True
-                                    else:
-                                        query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                        if query_best:
-                                            self._annot.chrs[g.ch][o.id].quality.remove = True
-                                        else:
-                                            g.quality.remove = True
+                                    # Skip if same alt-transcript group
+                                    if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                        continue
+                                    self._compete_overlap_pair(
+                                        g, self._annot.chrs[g.ch][o.id], o, source_priority, blast=True,
+                                    )
 
         else:
             for genes in self._annot.chrs.values():
@@ -250,14 +315,24 @@ class AnnotationRedundancy:
 
                             if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.overlap_reliable and self._annot.chrs[g.ch][o.id].quality.transcriptomic_evidence and not self._annot.chrs[g.ch][o.id].quality.unrescuable and not g.quality.unrescuable:
                                 if o.score >= 5 or (o.score == 1 and o.antiscore >= 5):
-                                    query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
+                                    # Skip if same alt-transcript group
+                                    if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                        continue
+                                    other = self._annot.chrs[g.ch][o.id]
+                                    query_best = g.compare_protein_blast_hits(other, source_priority)
                                     if query_best:
+                                        self._record_pairwise_decision(
+                                            other.id, g.id, g.id, "rescue_better_protein_blast", o,
+                                        )
                                         g.quality.rescue = True
-                                        self._annot.chrs[g.ch][o.id].quality.rescue = False
-                                        self._annot.chrs[g.ch][o.id].quality.remove = True
-                                        self._annot.chrs[g.ch][o.id].quality.unrescuable = True
+                                        other.quality.rescue = False
+                                        other.quality.remove = True
+                                        other.quality.unrescuable = True
                                     else:
-                                        self._annot.chrs[g.ch][o.id].quality.rescue = True
+                                        self._record_pairwise_decision(
+                                            g.id, other.id, g.id, "rescue_worse_protein_blast", o,
+                                        )
+                                        other.quality.rescue = True
                                         g.quality.rescue = False
                                         g.quality.remove = True
                                         g.quality.unrescuable = True
@@ -367,6 +442,10 @@ class AnnotationRedundancy:
                 else:
                     best_unreliable = g_id
             
+            # Skip this group if no reliable gene was found
+            if not best_reliable:
+                continue
+
             for g_id in gene_set:
                 chrom = self._annot.all_gene_ids[g_id]
                 if not self._annot.chrs[chrom][g_id].quality.remove or self._annot.chrs[chrom][g_id].quality.rescue:
@@ -374,8 +453,11 @@ class AnnotationRedundancy:
                     if query_best:
                         best_reliable = g_id
                 else:
-                    query_best = self._annot.chrs[chrom][g_id].compare_protein_blast_hits(self._annot.chrs[chrom][best_unreliable], source_priority)
-                    if query_best:
+                    if best_unreliable:
+                        query_best = self._annot.chrs[chrom][g_id].compare_protein_blast_hits(self._annot.chrs[chrom][best_unreliable], source_priority)
+                        if query_best:
+                            best_unreliable = g_id
+                    else:
                         best_unreliable = g_id
 
             for g_id in gene_set:
@@ -423,7 +505,7 @@ class AnnotationRedundancy:
         progress_bar.close()
         self._annot.update(rename_features=("transcript", "CDS", "exon", "UTR"))
 
-    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus", "genemark"], quiet:bool=False):
+    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus.hints", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet:bool=False):
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -496,16 +578,13 @@ class AnnotationRedundancy:
 
                         if overlapping_CDS:
                             if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
-                                if blast:
-                                    query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                else:
-                                    query_best = g.longer_CDS(self._annot.chrs[g.ch][o.id])
-                                if query_best:
-                                    self._annot.chrs[g.ch][o.id].quality.remove = True
-                                    self._annot.chrs[g.ch][o.id].quality.rescue = False
-                                else:
-                                    g.quality.remove = True
-                                    g.quality.rescue = False
+                                # Skip if same alt-transcript group
+                                if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                    continue
+                                self._compete_overlap_pair(
+                                    g, self._annot.chrs[g.ch][o.id], o, source_priority,
+                                    blast=blast, clear_rescue=True,
+                                )
 
     def mark_intron_nesting(self, ignore_removed:bool=True):
         for genes in self._annot.chrs.values():
@@ -647,6 +726,11 @@ class AnnotationRedundancy:
                                                         break
         progress_bar.close()        
 
+    def _longest_transcript_size(self, g):
+        if not g.transcripts:
+            return g.size
+        return max(t.size for t in g.transcripts.values())
+
     def select_best_possible_non_overlapping_UTR(self, exon=False, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -670,7 +754,7 @@ class AnnotationRedundancy:
                     g.update()
                     progress_bar.update(1)
                     if not g.quality.overlap_with_selected_CDS:
-                        sizes = [g.size]
+                        sizes = [self._longest_transcript_size(g)]
                     else:
                         sizes = []
                     if not g.quality.remove or g.quality.rescue:
@@ -678,26 +762,26 @@ class AnnotationRedundancy:
                             for o in g.overlaps["self"]:
                                 if o.score == 11:
                                     if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_CDS:
-                                        sizes.append(self._annot.chrs[g.ch][o.id].size)
+                                        sizes.append(self._longest_transcript_size(self._annot.chrs[g.ch][o.id]))
 
                             rescue_transcripts = {}
                             if sizes != []:
-                                max_gene_size = max(sizes)
+                                max_transcript_size = max(sizes)
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_CDS and self._annot.chrs[g.ch][o.id].size == max_gene_size and rescue_transcripts == {}:
+                                        if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_CDS and self._longest_transcript_size(self._annot.chrs[g.ch][o.id]) == max_transcript_size and rescue_transcripts == {}:
                                             for t in self._annot.chrs[g.ch][o.id].transcripts.values():
                                                 rescue_transcripts[t.id] = t.copy()
 
                             else:
-                                sizes = [g.size]
+                                sizes = [self._longest_transcript_size(g)]
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        sizes.append(self._annot.chrs[g.ch][o.id].size)
-                                min_gene_size = min(sizes)
+                                        sizes.append(self._longest_transcript_size(self._annot.chrs[g.ch][o.id]))
+                                min_transcript_size = min(sizes)
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        if self._annot.chrs[g.ch][o.id].size == min_gene_size and rescue_transcripts == {}:
+                                        if self._longest_transcript_size(self._annot.chrs[g.ch][o.id]) == min_transcript_size and rescue_transcripts == {}:
                                             for t in self._annot.chrs[g.ch][o.id].transcripts.values():
                                                 rescue_transcripts[t.id] = t.copy()
 
@@ -710,7 +794,7 @@ class AnnotationRedundancy:
                     g.update()
                     progress_bar.update(1)
                     if not g.quality.overlap_with_selected_exon:
-                        sizes = [g.size]
+                        sizes = [self._longest_transcript_size(g)]
                     else:
                         sizes = []
                     if not g.quality.remove or g.quality.rescue:
@@ -718,26 +802,26 @@ class AnnotationRedundancy:
                             for o in g.overlaps["self"]:
                                 if o.score == 11:
                                     if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_exon:
-                                        sizes.append(self._annot.chrs[g.ch][o.id].size)
+                                        sizes.append(self._longest_transcript_size(self._annot.chrs[g.ch][o.id]))
 
                             rescue_transcripts = {}
                             if sizes != []:
-                                max_gene_size = max(sizes)
+                                max_transcript_size = max(sizes)
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_exon and self._annot.chrs[g.ch][o.id].size == max_gene_size and rescue_transcripts == {}:
+                                        if not self._annot.chrs[g.ch][o.id].quality.overlap_with_selected_exon and self._longest_transcript_size(self._annot.chrs[g.ch][o.id]) == max_transcript_size and rescue_transcripts == {}:
                                             for t in self._annot.chrs[g.ch][o.id].transcripts.values():
                                                 rescue_transcripts[t.id] = t.copy()
 
                             else:
-                                sizes = [g.size]
+                                sizes = [self._longest_transcript_size(g)]
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        sizes.append(self._annot.chrs[g.ch][o.id].size)
-                                min_gene_size = min(sizes)
+                                        sizes.append(self._longest_transcript_size(self._annot.chrs[g.ch][o.id]))
+                                min_transcript_size = min(sizes)
                                 for o in g.overlaps["self"]:
                                     if o.score == 11:
-                                        if self._annot.chrs[g.ch][o.id].size == min_gene_size and rescue_transcripts == {}:
+                                        if self._longest_transcript_size(self._annot.chrs[g.ch][o.id]) == min_transcript_size and rescue_transcripts == {}:
                                             for t in self._annot.chrs[g.ch][o.id].transcripts.values():
                                                 rescue_transcripts[t.id] = t.copy()
 
@@ -761,16 +845,13 @@ class AnnotationRedundancy:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
                             if o.gene_query_percent >= 100 or o.gene_target_percent >= 100:
                                 if o.exon_query_percent > 0:
-                                    if blast:
-                                        query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                    else:
-                                        query_best = g.longer_CDS(self._annot.chrs[g.ch][o.id])
-                                    if query_best:
-                                        self._annot.chrs[g.ch][o.id].quality.remove = True
-                                        self._annot.chrs[g.ch][o.id].quality.rescue = False
-                                    else:
-                                        g.quality.remove = True
-                                        g.quality.rescue = False
+                                    # Skip if same alt-transcript group
+                                    if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                        continue
+                                    self._compete_overlap_pair(
+                                        g, self._annot.chrs[g.ch][o.id], o, source_priority,
+                                        blast=blast, clear_rescue=True,
+                                    )
 
     def find_best_gene_model_exon_num_overlaps(self, source_priority, blast:bool=False, exon_num:int=2):
         """
@@ -782,16 +863,13 @@ class AnnotationRedundancy:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
                             if o.full_exon_overlaps >= exon_num:
-                                if blast:
-                                    query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                else:
-                                    query_best = g.longer_CDS(self._annot.chrs[g.ch][o.id])
-                                if query_best:
-                                    self._annot.chrs[g.ch][o.id].quality.remove = True
-                                    self._annot.chrs[g.ch][o.id].quality.rescue = False
-                                else:
-                                    g.quality.remove = True
-                                    g.quality.rescue = False
+                                # Skip if same alt-transcript group
+                                if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                    continue
+                                self._compete_overlap_pair(
+                                    g, self._annot.chrs[g.ch][o.id], o, source_priority,
+                                    blast=blast, clear_rescue=True,
+                                )
 
     def remove_exon_overlaps(self, source_priority, blast:bool=False):
         for genes in self._annot.chrs.values():
@@ -800,16 +878,13 @@ class AnnotationRedundancy:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
                             if o.exon_query_percent > 0 or o.exon_target_percent > 0:
-                                if blast:
-                                    query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                else:
-                                    query_best = g.longer_CDS(self._annot.chrs[g.ch][o.id])
-                                if query_best:
-                                    self._annot.chrs[g.ch][o.id].quality.remove = True
-                                    self._annot.chrs[g.ch][o.id].quality.rescue = False
-                                else:
-                                    g.quality.remove = True
-                                    g.quality.rescue = False
+                                # Skip if same alt-transcript group
+                                if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                    continue
+                                self._compete_overlap_pair(
+                                    g, self._annot.chrs[g.ch][o.id], o, source_priority,
+                                    blast=blast, clear_rescue=True,
+                                )
 
     def remove_UTRs_from_exon_overlaps(self):
 
@@ -819,39 +894,112 @@ class AnnotationRedundancy:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
                             if o.exon_query_percent > 0 or o.exon_target_percent > 0:
+                                # Skip if same alt-transcript group
+                                if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]) and o.score != 11:
+                                    continue
                                 self._annot.chrs[g.ch][o.id].clear_UTRs()
                                 g.clear_UTRs()
 
         self._annot.sorted = False
 
+    def _snapshot_genes(self, snapshot):
+        if isinstance(snapshot, dict) and "genes" in snapshot:
+            return snapshot["genes"]
+        return snapshot
+
+    def _overlap_hit_summary(self, o):
+        return {
+            "score": o.score,
+            "antiscore": getattr(o, "antiscore", None),
+            "orientation": o.orientation,
+            "CDSs_in_both": o.CDSs_in_both,
+            "min_CDS_percent": o.min_CDS_percent,
+            "min_exon_percent": o.min_exon_percent,
+            "min_gene_percent": o.min_gene_percent,
+        }
+
+    def _record_pairwise_decision(self, removed_id, winner_id, queried_id, reason, o):
+        self._pairwise_decisions.append({
+            "step": self._current_filter_step,
+            "removed": removed_id,
+            "winner": winner_id,
+            "queried": queried_id,
+            "reason": reason,
+            "overlap": self._overlap_hit_summary(o),
+        })
+
+    def _compete_overlap_pair(self, g, other, o, source_priority, blast=False, clear_rescue=False):
+        if g.quality.reliable_score > other.quality.reliable_score:
+            self._record_pairwise_decision(
+                other.id, g.id, g.id,
+                f"higher_reliable_score ({g.quality.reliable_score}>{other.quality.reliable_score})",
+                o,
+            )
+            other.quality.remove = True
+            if clear_rescue:
+                other.quality.rescue = False
+        elif other.quality.reliable_score > g.quality.reliable_score:
+            self._record_pairwise_decision(
+                g.id, other.id, g.id,
+                f"higher_reliable_score ({other.quality.reliable_score}>{g.quality.reliable_score})",
+                o,
+            )
+            g.quality.remove = True
+            if clear_rescue:
+                g.quality.rescue = False
+        else:
+            if blast:
+                query_best = g.compare_protein_blast_hits(other, source_priority)
+                reason = "better_protein_blast"
+            else:
+                query_best = g.longer_CDS(other)
+                reason = "longer_CDS"
+            if query_best:
+                self._record_pairwise_decision(other.id, g.id, g.id, reason, o)
+                other.quality.remove = True
+                if clear_rescue:
+                    other.quality.rescue = False
+            else:
+                self._record_pairwise_decision(g.id, other.id, g.id, reason, o)
+                g.quality.remove = True
+                if clear_rescue:
+                    g.quality.rescue = False
+
     def _take_snapshot(self):
-        snapshot = {}
-        for chrom, genes in self._annot.chrs.items():
-            for g_id, g in genes.items():
-                snapshot[g_id] = {
+        genes = {}
+        for chrom, chrom_genes in self._annot.chrs.items():
+            for g_id, g in chrom_genes.items():
+                genes[g_id] = {
                     attr: getattr(g.quality, attr, None) for attr in [
                         'remove', 'rescue', 'reliable', 'reliable_score', 'overlap_reliable', 'unrescuable', 
                         'intron_nested', 'intron_nested_fully_contained', 'intron_nested_single', 'UTR_intron_nested', 
-                        'overlap_with_selected_CDS', 'overlap_with_selected_exon', 'transcriptomic_evidence', 'abinitio_evidence'
+                        'overlap_with_selected_CDS', 'overlap_with_selected_exon', 'transcriptomic_evidence', 'abinitio_evidence',
+                        'potential_alt_transcript_group'
                     ]
                 }
-                snapshot[g_id]['transcripts'] = tuple(sorted(g.transcripts.keys()))
-        return snapshot
+                genes[g_id]['transcripts'] = tuple(sorted(g.transcripts.keys()))
+        return {
+            "genes": genes,
+            "pairwise_decisions": tuple(self._pairwise_decisions),
+        }
 
     def _print_changes(self, step_name, prev_snapshot, quiet=False):
         current_snapshot = self._take_snapshot()
         if quiet:
             return current_snapshot
-        
+
+        prev_genes = self._snapshot_genes(prev_snapshot)
+        curr_genes = current_snapshot["genes"]
+
         # Find deleted genes
-        deleted_genes = set(prev_snapshot.keys()) - set(current_snapshot.keys())
+        deleted_genes = set(prev_genes.keys()) - set(curr_genes.keys())
         # Find new genes
-        new_genes = set(current_snapshot.keys()) - set(prev_snapshot.keys())
+        new_genes = set(curr_genes.keys()) - set(prev_genes.keys())
         # Find changed genes
         changed_genes = {}
-        for g_id in set(prev_snapshot.keys()) & set(current_snapshot.keys()):
-            prev_vals = prev_snapshot[g_id]
-            curr_vals = current_snapshot[g_id]
+        for g_id in set(prev_genes.keys()) & set(curr_genes.keys()):
+            prev_vals = prev_genes[g_id]
+            curr_vals = curr_genes[g_id]
             diffs = {}
             for attr, val in curr_vals.items():
                 if val != prev_vals[attr]:
@@ -859,7 +1007,12 @@ class AnnotationRedundancy:
             if diffs:
                 changed_genes[g_id] = diffs
 
-        if deleted_genes or new_genes or changed_genes:
+        prev_decisions = ()
+        if isinstance(prev_snapshot, dict) and "pairwise_decisions" in prev_snapshot:
+            prev_decisions = prev_snapshot["pairwise_decisions"]
+        new_decisions = current_snapshot["pairwise_decisions"][len(prev_decisions):]
+
+        if deleted_genes or new_genes or changed_genes or new_decisions:
             print(f"--- [Filter Step: {step_name}] Changes ---")
             if new_genes:
                 print(f"  New genes: {', '.join(sorted(new_genes))}")
@@ -869,10 +1022,23 @@ class AnnotationRedundancy:
                 for g_id, diffs in sorted(changed_genes.items()):
                     diff_str = ", ".join(f"{attr}: {prev} -> {curr}" for attr, (prev, curr) in diffs.items())
                     print(f"  Gene {g_id}: {diff_str}")
+            if new_decisions:
+                print("  Pairwise removal decisions:")
+                for d in new_decisions:
+                    ov = d["overlap"]
+                    print(
+                        f"    {d['removed']} removed vs {d['winner']} ({d['reason']}); "
+                        f"queried={d['queried']}; "
+                        f"score={ov['score']} antiscore={ov['antiscore']} "
+                        f"CDSs_in_both={ov['CDSs_in_both']} min_CDS%={ov['min_CDS_percent']} "
+                        f"min_exon%={ov['min_exon_percent']} same_strand={ov['orientation']}"
+                    )
             print("------------------------------------------")
         return current_snapshot
 
     def filter(self, source_priority:list, quiet:bool=False):
+        self._pairwise_decisions = []
+        self._current_filter_step = ""
         if not quiet:
             print("=== Initial BLAST values ===")
             for chrom, genes in self._annot.chrs.items():
@@ -908,6 +1074,10 @@ class AnnotationRedundancy:
         self._annot.overlaps.detect(quiet=quiet)
         snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
+        # Label potential alt-transcript groups BEFORE any filtering
+        self.label_potential_alt_transcript_groups(quiet=quiet)
+        snapshot = self._print_changes("label_potential_alt_transcript_groups", snapshot, quiet=quiet)
+
         self._annot.stats.calculate_transcript_masking()
         snapshot = self._print_changes("calculate_transcript_masking", snapshot, quiet=quiet)
 
@@ -916,6 +1086,13 @@ class AnnotationRedundancy:
 
         self._annot.remove_genes(quiet=quiet)
         snapshot = self._print_changes("remove_genes", snapshot, quiet=quiet)
+
+        # Re-label after noisy genes removed
+        self._annot.overlaps.detect(quiet=quiet)
+        snapshot = self._print_changes("overlaps.detect (post noisy)", snapshot, quiet=quiet)
+
+        self.label_potential_alt_transcript_groups(quiet=quiet)
+        snapshot = self._print_changes("label_potential_alt_transcript_groups", snapshot, quiet=quiet)
 
         self.mark_transcriptomic_supported_genes(quiet=quiet)
         snapshot = self._print_changes("mark_transcriptomic_supported_genes", snapshot, quiet=quiet)
@@ -926,16 +1103,18 @@ class AnnotationRedundancy:
         self.add_reliable_CDS_evidence_score(quiet=quiet)
         snapshot = self._print_changes("add_reliable_CDS_evidence_score", snapshot, quiet=quiet)
 
+        self._current_filter_step = "find_best_gene_model (with reliables)"
         self.find_best_gene_model(source_priority, quiet=quiet)
         snapshot = self._print_changes("find_best_gene_model (with reliables)", snapshot, quiet=quiet)
 
         self.mark_overlap_with_reliable_genes(quiet=quiet)
         snapshot = self._print_changes("mark_overlap_with_reliable_genes", snapshot, quiet=quiet)
 
+        self._current_filter_step = "find_best_gene_model (without reliables)"
         self.find_best_gene_model(source_priority, just_with_reliables=False, quiet=quiet)
         snapshot = self._print_changes("find_best_gene_model (without reliables)", snapshot, quiet=quiet)
 
-        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["augustus", "Liftoff", "genemark"], quiet=quiet)
+        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["augustus.hints", "Liftoff", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet=quiet)
         snapshot = self._print_changes("add_better_ab_initio_models_as_alternative_transcripts", snapshot, quiet=quiet)
 
         self._annot.overlaps.detect(quiet=quiet)
@@ -947,6 +1126,11 @@ class AnnotationRedundancy:
         self._annot.overlaps.detect(quiet=quiet)
         snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
+        # Re-label after rescue cycle
+        self.label_potential_alt_transcript_groups(quiet=quiet)
+        snapshot = self._print_changes("label_potential_alt_transcript_groups", snapshot, quiet=quiet)
+
+        self._current_filter_step = "remove_CDS_overlaps"
         self.remove_CDS_overlaps(source_priority)
         snapshot = self._print_changes("remove_CDS_overlaps", snapshot, quiet=quiet)
 
@@ -961,6 +1145,10 @@ class AnnotationRedundancy:
 
         self._annot.overlaps.detect(quiet=quiet)
         snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
+
+        # Re-label after make_alternative_transcripts_into_genes
+        self.label_potential_alt_transcript_groups(quiet=quiet)
+        snapshot = self._print_changes("label_potential_alt_transcript_groups", snapshot, quiet=quiet)
 
         self.mark_overlap_with_other_selected_CDSs(quiet=quiet)
         snapshot = self._print_changes("mark_overlap_with_other_selected_CDSs", snapshot, quiet=quiet)
@@ -988,17 +1176,19 @@ class AnnotationRedundancy:
         self._annot.overlaps.detect(quiet=quiet)
         snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
-        self._annot.make_alternative_genes_into_transcripts(quiet=quiet)
-        snapshot = self._print_changes("make_alternative_genes_into_transcripts", snapshot, quiet=quiet)
-        self._annot.overlaps.detect(quiet=quiet)
-        snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
+        # Re-label before final filtering batch
+        self.label_potential_alt_transcript_groups(quiet=quiet)
+        snapshot = self._print_changes("label_potential_alt_transcript_groups", snapshot, quiet=quiet)
 
+        self._current_filter_step = "find_best_gene_model_nested_overlaps"
         self.find_best_gene_model_nested_overlaps(source_priority)
         snapshot = self._print_changes("find_best_gene_model_nested_overlaps", snapshot, quiet=quiet)
 
+        self._current_filter_step = "find_best_gene_model_exon_num_overlaps"
         self.find_best_gene_model_exon_num_overlaps(source_priority)
         snapshot = self._print_changes("find_best_gene_model_exon_num_overlaps", snapshot, quiet=quiet)
 
+        self._current_filter_step = "remove_exon_overlaps"
         self.remove_exon_overlaps(source_priority)
         snapshot = self._print_changes("remove_exon_overlaps", snapshot, quiet=quiet)
 
@@ -1006,8 +1196,10 @@ class AnnotationRedundancy:
         snapshot = self._print_changes("remove_UTRs_from_exon_overlaps", snapshot, quiet=quiet)
 
         self._annot.remove_genes(quiet=quiet)
-
         snapshot = self._print_changes("remove_genes", snapshot, quiet=quiet)
+
+        self._annot.make_alternative_genes_into_transcripts(quiet=quiet)
+        snapshot = self._print_changes("make_alternative_genes_into_transcripts", snapshot, quiet=quiet)
 
         self._annot.update(rename_features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
 
