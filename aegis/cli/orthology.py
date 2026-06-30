@@ -691,7 +691,7 @@ def main(
         mcscan_path = results_directory / "mcscan"
         mcscan_path.mkdir(parents=True, exist_ok=True)
 
-    liftless_overlaps_dir = results_directory / "litfless_overlaps"
+    liftless_overlaps_dir = results_directory / "liftless_overlaps"
 
     if len(genome_files) != len(set(genome_files)):
         liftless_overlaps_dir.mkdir(parents=True, exist_ok=True)
@@ -724,10 +724,12 @@ def main(
             a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
         else:
             print(f"\n\tExisting GFF file for {a.name}. Skipping.")
-        if not gff_file2.exists():
-            a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
-        else:
-            print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
+
+        if gff_file1 != gff_file2:
+            if not gff_file2.exists():
+                a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
+            else:
+                print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
             
         if not skip_lifton:
             lifton_prep_file = gff_path / f"{a.name}__for__lifton.gff3"
