@@ -17,7 +17,7 @@ from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue
 
-def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, annot2_file: str, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, quiet:bool=True):
+def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, annot2_file: str, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, strip_gene_tags:bool=False, quiet:bool=True):
 
     print(f"\n\tRunning pairwise orthology for {annot1_name} and {annot2_name}...")
 
@@ -26,6 +26,9 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
 
     annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny)
     annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny)
+    if strip_gene_tags:
+        annot1.rename_ids(strip_gene_tag=True, quiet=quiet)
+        annot2.rename_ids(strip_gene_tag=True, quiet=quiet)
 
     liftless_overlaps_dir = working_directory / "liftless_overlaps"
     liftoff_dir = working_directory / "liftoff"
