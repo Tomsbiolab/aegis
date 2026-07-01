@@ -17,7 +17,7 @@ from .annotation import Annotation
 from .utils.misc import run_command
 from .utils.evalue import parse_evalue
 
-def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, annot2_file: str, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, quiet:bool=True):
+def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, annot2_file: str, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, strip_gene_tags:bool=False, quiet:bool=True):
 
     print(f"\n\tRunning pairwise orthology for {annot1_name} and {annot2_name}...")
 
@@ -26,8 +26,11 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
 
     annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny)
     annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny)
+    if strip_gene_tags:
+        annot1.rename_ids(strip_gene_tag=True, quiet=quiet)
+        annot2.rename_ids(strip_gene_tag=True, quiet=quiet)
 
-    litfless_overlaps_dir = working_directory / "litfless_overlaps"
+    liftless_overlaps_dir = working_directory / "liftless_overlaps"
     liftoff_dir = working_directory / "liftoff"
     lifton_dir = working_directory / "lifton"
     protein_dir = working_directory / "proteins"
@@ -116,14 +119,14 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
 
     elif liftless_overlaps:
 
-        liftless_overlaps_tsv = litfless_overlaps_dir / f"{annot1.name}__to__{annot2.name}_overlaps.tsv"
+        liftless_overlaps_tsv = liftless_overlaps_dir / f"{annot1.name}__to__{annot2.name}_overlaps.tsv"
 
         if liftless_overlaps_tsv.exists():
             if not quiet:
                 print(f"\n\tExisting aegis overlap output found for {annot1.name} on {annot2.name}. Skipping.")
         else:
             annot1.overlaps.detect(annot2, quiet=quiet, clear=True)
-            _ = annot1.overlaps.export(output_dir=str(litfless_overlaps_dir), filename=f"{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=False, copies_info=False)
+            _ = annot1.overlaps.export(output_dir=str(liftless_overlaps_dir), filename=f"{annot1.name}__to__{annot2.name}_overlaps.tsv", verbose=True, save_csv=True, NAs=False, quiet=quiet, synteny=False, copies_info=False)
 
     if not skip_lifton:
 

@@ -434,6 +434,11 @@ def main(
         help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
         rich_help_panel="Output Options"
     )] = False,
+    strip_gene_tags: Annotated[bool, typer.Option(
+        "--strip-gene-tags", 
+        help="Strip gene tags, i.e. remove 'gene-' prefix from gene IDs. e.g., 'gene-LOC100263960' to 'LOC100263960'.",
+        rich_help_panel="Output Options"
+    )] = False,
 
     # ==========================================
     # Execution/Debugging
@@ -640,7 +645,8 @@ def main(
 
         annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny))
 
-        annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
+        if strip_gene_tags:
+            annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
@@ -691,7 +697,7 @@ def main(
         mcscan_path = results_directory / "mcscan"
         mcscan_path.mkdir(parents=True, exist_ok=True)
 
-    liftless_overlaps_dir = results_directory / "litfless_overlaps"
+    liftless_overlaps_dir = results_directory / "liftless_overlaps"
 
     if len(genome_files) != len(set(genome_files)):
         liftless_overlaps_dir.mkdir(parents=True, exist_ok=True)
@@ -724,10 +730,12 @@ def main(
             a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
         else:
             print(f"\n\tExisting GFF file for {a.name}. Skipping.")
-        if not gff_file2.exists():
-            a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
-        else:
-            print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
+
+        if gff_file1 != gff_file2:
+            if not gff_file2.exists():
+                a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
+            else:
+                print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
             
         if not skip_lifton:
             lifton_prep_file = gff_path / f"{a.name}__for__lifton.gff3"
@@ -800,7 +808,7 @@ def main(
             if reference_annotation != "None" and not a1.target and not a2.target:
                 continue
 
-            tasks.append((a1.name, a2.name,a1.file, a2.file, genomes[genome_files[n1]], genomes[genome_files[n2]]))
+            tasks.append((a1.name, a2.name, a1.file, a2.file, genomes[genome_files[n1]], genomes[genome_files[n2]]))
 
     del annotations
 
@@ -838,6 +846,7 @@ def main(
                     skip_blasts=skip_all_blasts,
                     pairwise_orthofinder=pairwise_orthofinder,
                     skip_orthofinder=skip_orthofinder,
+                    strip_gene_tags=strip_gene_tags,
                     quiet=True
                 )
                 futures.append(f)
@@ -869,6 +878,7 @@ def main(
                 skip_blasts=skip_all_blasts,
                 pairwise_orthofinder=pairwise_orthofinder,
                 skip_orthofinder=skip_orthofinder,
+                strip_gene_tags=strip_gene_tags,
                 quiet=quiet
             )
 
