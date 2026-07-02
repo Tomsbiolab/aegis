@@ -480,7 +480,7 @@ class AnnotationRedundancy:
                     )
                     if incomplete_structure:
                         for o in g.overlaps["self"]:
-                            if o.score >= 5:
+                            if o.score >= 5 or (o.score == 1 and o.antiscore >= 5):
                                 if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.rescue and self._annot.chrs[g.ch][o.id].source in reliable_sources:
                                     query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
                                     if not query_best:
