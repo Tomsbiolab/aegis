@@ -25,8 +25,9 @@ class AnnotationRedundancy:
         Label genes that could be alternative transcripts of each other.
         Same-strand overlapping genes (score >= min_overlap_score) are grouped
         using a union-find approach so transitive overlaps are handled correctly.
-        Genes in the same group are reduced to one keeper by reliable_score in
-        compete_within_alt_transcript_groups; losers may be rescued later.
+        Genes in the same group compete pairwise in compete_within_alt_transcript_groups
+        only when their direct CDS overlap score is >= min_overlap_score; losers may be
+        rescued later.
         """
         gene_to_group = {}   # gene_id -> group_id
         groups = {}          # group_id -> set of gene_ids
@@ -94,18 +95,31 @@ class AnnotationRedundancy:
                 return o
         return None
 
-    def _pick_group_winner(self, group_genes, source_priority):
-        winner = group_genes[0]
-        for g in group_genes[1:]:
-            if g.quality.reliable_score > winner.quality.reliable_score:
-                winner = g
-            elif g.quality.reliable_score == winner.quality.reliable_score:
-                if g.compare_protein_blast_hits(winner, source_priority):
-                    winner = g
-        return winner
+    def _direct_significant_overlap(self, g, other_id, min_overlap_score=5):
+        """Return the overlap hit between g and other_id when CDS score >= min_overlap_score."""
+        o = self._overlap_hit_between(g, other_id)
+        if o is not None and o.score >= min_overlap_score:
+            return o
+        other_g = self._annot.chrs[g.ch][other_id]
+        o = self._overlap_hit_between(other_g, g.id)
+        if o is not None and o.score >= min_overlap_score:
+            return o
+        return None
 
-    def compete_within_alt_transcript_groups(self, source_priority, quiet:bool=False):
-        """Keep one gene per potential_alt_transcript_group (highest reliable_score)."""
+    def _gene_beats_other(self, winner, loser, source_priority):
+        """Return True when winner outranks loser by reliable_score or protein blast."""
+        if winner.quality.reliable_score > loser.quality.reliable_score:
+            return True
+        if winner.quality.reliable_score < loser.quality.reliable_score:
+            return False
+        return winner.compare_protein_blast_hits(loser, source_priority)
+
+    def compete_within_alt_transcript_groups(self, source_priority, min_overlap_score=5, quiet:bool=False):
+        """Remove group members that lose on reliable_score to a direct CDS overlap peer.
+
+        Genes linked only transitively through the alt-transcript group do not compete
+        unless their pairwise CDS overlap score is >= min_overlap_score.
+        """
         groups = {}
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -120,23 +134,30 @@ class AnnotationRedundancy:
         for group_genes in groups.values():
             if len(group_genes) < 2:
                 continue
-            winner = self._pick_group_winner(group_genes, source_priority)
             for g in group_genes:
-                if g.id == winner.id:
+                if g.quality.remove and not g.quality.rescue:
                     continue
-                o = self._overlap_hit_between(g, winner.id)
-                if o is None:
-                    o = self._overlap_hit_between(winner, g.id)
-                if winner.quality.reliable_score > g.quality.reliable_score:
-                    reason = (
-                        f"alt_transcript_group_higher_reliable_score "
-                        f"({winner.quality.reliable_score}>{g.quality.reliable_score})"
-                    )
-                else:
-                    reason = "alt_transcript_group_better_protein_blast"
-                self._record_pairwise_decision(g.id, winner.id, winner.id, reason, o)
-                g.quality.remove = True
-                g.quality.rescue = False
+                for winner in group_genes:
+                    if winner.id == g.id:
+                        continue
+                    if winner.quality.remove and not winner.quality.rescue:
+                        continue
+                    o = self._direct_significant_overlap(g, winner.id, min_overlap_score)
+                    if o is None:
+                        continue
+                    if not self._gene_beats_other(winner, g, source_priority):
+                        continue
+                    if winner.quality.reliable_score > g.quality.reliable_score:
+                        reason = (
+                            f"alt_transcript_group_higher_reliable_score "
+                            f"({winner.quality.reliable_score}>{g.quality.reliable_score})"
+                        )
+                    else:
+                        reason = "alt_transcript_group_better_protein_blast"
+                    self._record_pairwise_decision(g.id, winner.id, winner.id, reason, o)
+                    g.quality.remove = True
+                    g.quality.rescue = False
+                    break
 
     def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):
         # Check if stdout or stderr are redirected to files
