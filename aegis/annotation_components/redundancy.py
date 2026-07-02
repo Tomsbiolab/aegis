@@ -106,6 +106,25 @@ class AnnotationRedundancy:
             return o
         return None
 
+    def _incomplete_transcript_structure(self, gene):
+        """True when the main transcript looks partial: low coding ratio with non-CDS exons."""
+        for t in gene.transcripts.values():
+            if t.main:
+                for c in t.CDSs.values():
+                    if c.main:
+                        return t.coding_ratio < 0.7 and c.full_UTR_exons > 0
+        return False
+
+    def _has_score11_incomplete_transcript_overlap(self, g):
+        """True when a score-11 overlap peer has incomplete transcript structure."""
+        for o in g.overlaps["self"]:
+            if o.score != 11:
+                continue
+            other = self._annot.chrs[g.ch][o.id]
+            if self._incomplete_transcript_structure(other):
+                return True
+        return False
+
     def _gene_beats_other(self, winner, loser, source_priority):
         """Return True when winner outranks loser by reliable_score or protein blast."""
         if winner.quality.reliable_score > loser.quality.reliable_score:
@@ -454,22 +473,18 @@ class AnnotationRedundancy:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                g_coding_ratio = 0
-                full_UTR_exons = 0
-                for t in g.transcripts.values():
-                    if t.main:
-                        g_coding_ratio = t.coding_ratio
-                        for c in t.CDSs.values():
-                            if c.main:
-                                full_UTR_exons = c.full_UTR_exons
-
-                if (not g.quality.remove or g.quality.rescue) and g_coding_ratio < 0.7 and full_UTR_exons > 0:
-                    for o in g.overlaps["self"]:
-                        if o.score >= 5:
-                            if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.rescue and self._annot.chrs[g.ch][o.id].source in reliable_sources:
-                                query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                if not query_best:
-                                    g.alternative_transcript_rescue.append(o.id)
+                if not g.quality.remove or g.quality.rescue:
+                    incomplete_structure = (
+                        self._incomplete_transcript_structure(g)
+                        or self._has_score11_incomplete_transcript_overlap(g)
+                    )
+                    if incomplete_structure:
+                        for o in g.overlaps["self"]:
+                            if o.score >= 5:
+                                if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.rescue and self._annot.chrs[g.ch][o.id].source in reliable_sources:
+                                    query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
+                                    if not query_best:
+                                        g.alternative_transcript_rescue.append(o.id)
         
         # cluster genes with alternative transcript rescue
         gene_groups = []
