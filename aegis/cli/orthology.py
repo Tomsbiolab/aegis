@@ -1075,9 +1075,9 @@ def main(
         agg_dict = {col: 'first' for col in final_df.columns if col not in groupby_cols}
         
         if 'score' in agg_dict:
-            agg_dict['score'] = merge_score_strings
+            agg_dict['score'] = merge_score_strings #type: ignore
         if 'summary_score' in agg_dict:
-            agg_dict['summary_score'] = best_summary_score
+            agg_dict['summary_score'] = best_summary_score #type: ignore
         
         final_df = final_df.groupby(groupby_cols, as_index=False, dropna=False).agg(agg_dict)
 
