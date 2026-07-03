@@ -125,6 +125,24 @@ class AnnotationRedundancy:
                 return True
         return False
 
+    def _has_multi_abinitio_overlap_support(
+        self,
+        g,
+        reliable_sources: list[str],
+        min_overlap_score: int = 5,
+    ) -> bool:
+        """True when g is supported by >1 distinct ab initio source via self or CDS overlap."""
+        sources = set()
+        if g.source in reliable_sources:
+            sources.add(g.source)
+        for o in g.overlaps["self"]:
+            if o.score < min_overlap_score:
+                continue
+            other = self._annot.chrs[g.ch][o.id]
+            if other.source in reliable_sources:
+                sources.add(other.source)
+        return len(sources) > 1
+
     def _gene_beats_other(self, winner, loser, source_priority):
         """Return True when winner outranks loser by reliable_score or protein blast."""
         if winner.quality.reliable_score > loser.quality.reliable_score:
@@ -178,7 +196,21 @@ class AnnotationRedundancy:
                     g.quality.rescue = False
                     break
 
-    def mark_noisy_genes(self, protein_size:int=50, intron_size:int=100000, remove_noncoding:bool=True, remove_masked:bool=True, quiet:bool=False):
+    def mark_noisy_genes(
+        self,
+        protein_size: int = 50,
+        intron_size: int = 100000,
+        remove_noncoding: bool = True,
+        remove_masked: bool = True,
+        reliable_sources: list[str] | None = None,
+        quiet: bool = False,
+    ):
+        if reliable_sources is None:
+            reliable_sources = [
+                "augustus",
+                "genemark",
+                "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit",
+            ]
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -199,8 +231,9 @@ class AnnotationRedundancy:
                 progress_bar.update(1)
                 if remove_masked:
                     if g.quality.masked_fraction == 1:
-                        g.quality.remove = True
-                        continue
+                        if not self._has_multi_abinitio_overlap_support(g, reliable_sources):
+                            g.quality.remove = True
+                            continue
                 if remove_noncoding:
                     if not g.coding:
                         g.quality.remove = True
@@ -208,13 +241,18 @@ class AnnotationRedundancy:
                 for t in g.transcripts.values():
                     if t.main:
                         if t.quality.masked_fraction == 1:
-                            g.quality.remove = True
-                            break
+                            if not self._has_multi_abinitio_overlap_support(g, reliable_sources):
+                                g.quality.remove = True
+                                break
                         for c in t.CDSs.values():
                             if c.main:
-                                if c.size < (protein_size * 3) or c.quality.masked_fraction == 1:
+                                if c.size < (protein_size * 3):
                                     g.quality.remove = True
                                     break
+                                if c.quality.masked_fraction == 1:
+                                    if not self._has_multi_abinitio_overlap_support(g, reliable_sources):
+                                        g.quality.remove = True
+                                        break
                         if t.introns:
                             for i in t.introns:
                                 if i.size > intron_size:
