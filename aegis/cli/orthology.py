@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing_extensions import Annotated
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
@@ -851,9 +853,15 @@ def main(
                 )
                 futures.append(f)
 
-            # Gather results to raise any exceptions that occurred
-            for f in futures:
-                f.result()
+            # Gather results as they finish to immediately catch and raise exceptions
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception as e:
+                    print(f"\nFATAL ERROR in parallel execution: {e}")
+                    # This forces the whole executor to shut down immediately
+                    executor.shutdown(wait=False, cancel_futures=True) 
+                    raise e
     else:
         # Standard sequential execution
         print(f"\nRunning pairwise comparisons sequentially ({threads} thread(s) per run)...")
