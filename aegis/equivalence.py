@@ -82,9 +82,13 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
 
                 try:
                     run_command(liftoff_pair_dir , liftoff_cmd)
-                except subprocess.CalledProcessError:
+                except subprocess.CalledProcessError as e:
+                    # 137 or -9 means the OS killed the process (almost always Out of Memory)
+                    if e.returncode in (-9, 137):
+                        raise RuntimeError(f"Out Of Memory (OOM) Error: The OS killed the Liftoff process for {annot1.name} vs {annot2.name}. You need to request more RAM or reduce threads.")
+                    
                     print(f"\n\t⚠️  Liftoff failed to map annotations from {annot1.name} on {annot2.name}.")
-                    print("\tThis can happen with highly divergent genomes. Skipping Liftoff mapping...")
+                    print(f"\tExit code: {e.returncode}. This can happen with highly divergent genomes. Skipping mapping...")
 
                 to_remove = liftoff_pair_dir  / "intermediate_files"
 

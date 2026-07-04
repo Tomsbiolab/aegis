@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing_extensions import Annotated
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
@@ -851,9 +853,15 @@ def main(
                 )
                 futures.append(f)
 
-            # Gather results to raise any exceptions that occurred
-            for f in futures:
-                f.result()
+            # Gather results as they finish to immediately catch and raise exceptions
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception as e:
+                    print(f"\nFATAL ERROR in parallel execution: {e}")
+                    # This forces the whole executor to shut down immediately
+                    executor.shutdown(wait=False, cancel_futures=True) 
+                    raise e
     else:
         # Standard sequential execution
         print(f"\nRunning pairwise comparisons sequentially ({threads} thread(s) per run)...")
@@ -1075,9 +1083,9 @@ def main(
         agg_dict = {col: 'first' for col in final_df.columns if col not in groupby_cols}
         
         if 'score' in agg_dict:
-            agg_dict['score'] = merge_score_strings
+            agg_dict['score'] = merge_score_strings #type: ignore
         if 'summary_score' in agg_dict:
-            agg_dict['summary_score'] = best_summary_score
+            agg_dict['summary_score'] = best_summary_score #type: ignore
         
         final_df = final_df.groupby(groupby_cols, as_index=False, dropna=False).agg(agg_dict)
 
