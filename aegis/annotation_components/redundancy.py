@@ -501,9 +501,9 @@ class AnnotationRedundancy:
             disable = True
         else:
             disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys())*3, disable=disable,
+        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
                                 bar_format=(
-                    f'\033[1;91mSelecting {self._annot.id} alternative transcripts:\033[0m '
+                    f'\033[1;91mRescuing {self._annot.id} ab initio models:\033[0m '
                     '{percentage:3.0f}%|'
                     f'\033[1;91m{{bar}}\033[0m| '
                     '{n}/{total} [{elapsed}<{remaining}]'))
@@ -511,122 +511,47 @@ class AnnotationRedundancy:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
-                if not g.quality.remove or g.quality.rescue:
-                    incomplete_structure = (
-                        self._incomplete_transcript_structure(g)
-                        or self._has_score11_incomplete_transcript_overlap(g)
-                    )
-                    if incomplete_structure:
-                        for o in g.overlaps["self"]:
-                            if o.score >= 5 or (o.score == 1 and o.antiscore >= 5):
-                                if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.rescue and self._annot.chrs[g.ch][o.id].source in reliable_sources:
-                                    query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
-                                    if not query_best:
-                                        g.alternative_transcript_rescue.append(o.id)
-        
-        # cluster genes with alternative transcript rescue
-        gene_groups = []
-
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                progress_bar.update(1)
-                if (not g.quality.remove or g.quality.rescue) and g.alternative_transcript_rescue != []:
-                    for g2 in genes.values():
-                        if g.id == g2.id:
-                            continue
-                        if (not g2.quality.remove or g2.quality.rescue) and g2.alternative_transcript_rescue != []:
-                            if bool(set(g.alternative_transcript_rescue).intersection(set(g2.alternative_transcript_rescue))):
-                                temp_group = set(g.alternative_transcript_rescue) | set(g2.alternative_transcript_rescue)
-                                temp_group.add(g.id)
-                                temp_group.add(g2.id)
-                                found = False
-                                index = 0
-                                for n, group in enumerate(gene_groups):
-                                    if bool(temp_group.intersection(group)):
-                                        found = True
-                                        index = n
-                                        break
-                                if found:
-                                    gene_groups[index] = gene_groups[index] | temp_group
-                                else:
-                                    gene_groups.append(temp_group)
-
-
-        merge_genes = set()
-
-        for gene_set in gene_groups:
-            merge_genes = merge_genes | gene_set
-            best_reliable = ""
-            best_unreliable = ""
-            for g_id in gene_set:
-                chrom = self._annot.all_gene_ids[g_id]
-                if not self._annot.chrs[chrom][g_id].quality.remove or self._annot.chrs[chrom][g_id].quality.rescue:
-                    best_reliable = g_id
-                else:
-                    best_unreliable = g_id
-            
-            # Skip this group if no reliable gene was found
-            if not best_reliable:
-                continue
-
-            for g_id in gene_set:
-                chrom = self._annot.all_gene_ids[g_id]
-                if not self._annot.chrs[chrom][g_id].quality.remove or self._annot.chrs[chrom][g_id].quality.rescue:
-                    query_best = self._annot.chrs[chrom][g_id].compare_protein_blast_hits(self._annot.chrs[chrom][best_reliable], source_priority)
-                    if query_best:
-                        best_reliable = g_id
-                else:
-                    if best_unreliable:
-                        query_best = self._annot.chrs[chrom][g_id].compare_protein_blast_hits(self._annot.chrs[chrom][best_unreliable], source_priority)
-                        if query_best:
-                            best_unreliable = g_id
-                    else:
-                        best_unreliable = g_id
-
-            for g_id in gene_set:
-                chrom = self._annot.all_gene_ids[g_id]
-
-                if g_id == best_reliable:
+                if g.quality.remove and not g.quality.rescue:
                     continue
-                elif g_id == best_unreliable:
-                    for t in self._annot.chrs[chrom][best_unreliable].transcripts.values():
-                        if t.main:
-                            t_copy = t.copy()
-                            t_copy.id = "alternative_transcript"
-                            t_copy.parents = [g_id]
-                            t_copy.symbols = []
-                            t_copy.names = []
-                            t_copy.synonyms = []
-                    self._annot.chrs[chrom][best_reliable].transcripts["alternative_transcript"] = t_copy.copy()
-                    del t_copy
-                else:
-                    self._annot.chrs[chrom][g_id].quality.rescue = False
-                    self._annot.chrs[chrom][g_id].quality.remove = True
+                incomplete_structure = (
+                    self._incomplete_transcript_structure(g)
+                    or self._has_score11_incomplete_transcript_overlap(g)
+                )
+                if not incomplete_structure:
+                    continue
 
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                progress_bar.update(1)
-                if g.id not in merge_genes and g.alternative_transcript_rescue != []:
-                    best = g.alternative_transcript_rescue[0]
-                    for alt in g.alternative_transcript_rescue:
-                        if alt == best:
-                            continue
-                        query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][alt], source_priority)
-                        if not query_best:
-                            best = alt
+                candidate_ids = []
+                for o in g.overlaps["self"]:
+                    if not (o.score >= 5 or (o.score == 1 and o.antiscore >= 5)):
+                        continue
+                    overlap_gene = self._annot.chrs[g.ch][o.id]
+                    if not overlap_gene.quality.remove or overlap_gene.quality.rescue:
+                        continue
+                    if overlap_gene.source not in reliable_sources:
+                        continue
+                    if self._overlaps_other_selected_in_alt_group(overlap_gene, g):
+                        continue
+                    if g.compare_protein_blast_hits(overlap_gene, source_priority):
+                        continue
+                    candidate_ids.append(o.id)
 
-                    for t in self._annot.chrs[g.ch][best].transcripts.values():
-                        if t.main:
-                            t_copy = t.copy()
-                            t_copy.id = "alternative_transcript"
-                            t_copy.parents = [g.id]
-                            t_copy.symbols = []
-                            t_copy.names = []
-                            t_copy.synonyms = []
-                    g.transcripts[t_copy.id] = t_copy.copy()
-                    del t_copy
+                if not candidate_ids:
+                    continue
+
+                best_candidate_id = candidate_ids[0]
+                for alt_id in candidate_ids[1:]:
+                    best_gene = self._annot.chrs[g.ch][best_candidate_id]
+                    alt_gene = self._annot.chrs[g.ch][alt_id]
+                    if not best_gene.compare_protein_blast_hits(alt_gene, source_priority):
+                        best_candidate_id = alt_id
+
+                overlap_gene = self._annot.chrs[g.ch][best_candidate_id]
+                overlap_gene.quality.remove = False
+                overlap_gene.quality.rescue = True
+                if best_candidate_id not in g.alternative_transcript_rescue:
+                    g.alternative_transcript_rescue.append(best_candidate_id)
+
         progress_bar.close()
-        self._annot.update(rename_features=("transcript", "CDS", "exon", "UTR"))
 
     def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus.hints", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet:bool=False):
 
@@ -665,6 +590,8 @@ class AnnotationRedundancy:
                         if overlap_main_CDS_size <= main_CDS_size:
                             continue
                         if not overlap_gene.quality.remove or overlap_gene.quality.rescue:
+                            continue
+                        if self._overlaps_other_selected_in_alt_group(overlap_gene, g):
                             continue
 
                         if overlap_main_CDS_size > best_candidate_cds_size:
@@ -1125,8 +1052,25 @@ class AnnotationRedundancy:
             "overlap": self._overlap_hit_summary(o),
         })
 
+    def _overlaps_other_selected_in_alt_group(self, candidate, keeper, min_overlap_score=5):
+        """True when candidate has CDS overlap >= min_overlap_score with another selected gene in the same alt-transcript group besides keeper."""
+        group_id = candidate.quality.potential_alt_transcript_group
+        if group_id is None:
+            return False
+        for o in candidate.overlaps["self"]:
+            if o.score < min_overlap_score:
+                continue
+            other = self._annot.chrs[candidate.ch][o.id]
+            if other.id == keeper.id:
+                continue
+            if other.quality.potential_alt_transcript_group != group_id:
+                continue
+            if not other.quality.remove or other.quality.rescue:
+                return True
+        return False
+
     def _is_longer_same_frame_cds_rescue_pair(self, g, other):
-        """Keeper and its longer-CDS donor rescued by rescue_longer_same_frame_CDS."""
+        """Keeper linked to a rescued donor via alternative_transcript_rescue."""
         return other.id in g.alternative_transcript_rescue or g.id in other.alternative_transcript_rescue
 
     def _compete_overlap_pair(self, g, other, o, source_priority, blast=False, clear_rescue=False):
