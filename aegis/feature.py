@@ -58,7 +58,10 @@ class Feature():
         self.start = start
         self.end = end
         self.score = score
-        self.strand = strand
+        if strand == "+" or strand == "-":
+            self.strand = strand
+        else:
+            self.strand = "."
         self.phase = None
         self.frame = None
         self.coding = False
