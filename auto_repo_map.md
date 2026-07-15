@@ -442,6 +442,9 @@
         - `def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):`
       - plots.py
         - `def hex_to_rgb(hex_string):`
+        - `def parse_to_matplotlib_colors(colours):`
+        - `def save_pdf_pie(labels, values, colours, export_folder, tag, title):`
+        - `def save_pdf_barplot(values, min_x, max_x, export_folder, tag, title):`
         - `def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):`
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py

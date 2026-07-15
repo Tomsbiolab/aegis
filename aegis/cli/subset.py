@@ -95,10 +95,13 @@ def main(
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(chosen_chromosomes_set)}) common to both genome and annotation files. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
             else:
                 warnings.warn(f"Cap value {chr_cap} exceeds the number of available scaffolds/chrosomomes ({len(chosen_chromosomes_set)}) in annotation file. The subset, in any case, will be based on common chromosomes/scaffolds.", category=UserWarning)
-        elif chr_cap <= len(common_actual_chromosomes_minus_mt_chl):
-            chosen_chromosomes_set = set(random.sample(list(common_actual_chromosomes_minus_mt_chl), chr_cap))
-        elif chr_cap <= len(common_actual_chromosomes):
-            chosen_chromosomes_set = set(random.sample(list(common_actual_chromosomes), chr_cap))
+        elif genome_file:
+            if chr_cap <= len(common_actual_chromosomes_minus_mt_chl):
+                chosen_chromosomes_set = set(random.sample(list(common_actual_chromosomes_minus_mt_chl), chr_cap))
+            elif chr_cap <= len(common_actual_chromosomes):
+                chosen_chromosomes_set = set(random.sample(list(common_actual_chromosomes), chr_cap))
+            else:
+                chosen_chromosomes_set = set(random.sample(list(common_chromosomes), chr_cap))
         else:
             chosen_chromosomes_set = set(random.sample(list(common_chromosomes), chr_cap))
 

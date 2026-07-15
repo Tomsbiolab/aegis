@@ -96,23 +96,26 @@ class AnnotationStats(AnnotationComponent):
         self.data = {}
 
     def calculate_transcript_masking(self):
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                g.quality.calculate_masking()
-                for t in g.transcripts.values():
-                    t.quality.calculate_masking()
-                    for c in t.CDSs.values():
-                        c.quality.calculate_masking()
+        if self._annot.genome is not None:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.quality.calculate_masking()
+                    for t in g.transcripts.values():
+                        t.quality.calculate_masking()
+                        for c in t.CDSs.values():
+                            c.quality.calculate_masking()
         self._annot.update()
     
     def calculate_gc_content(self):
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                g.quality.calculate_gc_content()
-                for t in g.transcripts.values():
-                    t.quality.calculate_gc_content()
-                    for c in t.CDSs.values():
-                        c.quality.calculate_gc_content()
+        if self._annot.genome is not None:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.quality.calculate_gc_content()
+                    for t in g.transcripts.values():
+                        t.quality.calculate_gc_content()
+                        for c in t.CDSs.values():
+                            c.quality.calculate_gc_content()
+                            
     def gene_count(self):
         gene_objects = 0
         unique_gene_ids_in_overlaps = set()
