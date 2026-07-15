@@ -22,7 +22,7 @@ class Feature():
 
     __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'parents', 'renamed', 'id_number', 'original_id_number', 'extra_copy', 'coding', '_quality', '_attributes')
     
-    _ACTIVE_GENOME: Genome|None = None
+    _ACTIVE_GENOME: Genome | None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
 
     _ID_NUMBER_RE = re.compile(r'(\d+)$')

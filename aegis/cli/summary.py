@@ -15,7 +15,7 @@ def main(
     )],
     genome_file: Annotated[str, typer.Argument(
         help="Path to the input genome FASTA file."
-    )],
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
         "-a", "--annotation-name", help="Annotation version, name or tag."
     )] = "{annotation-file}",
@@ -24,7 +24,7 @@ def main(
     )] = "{genome-file}",
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output folder."
-    )] = "./aegis_output/",
+    )] = "./aegis_output/stats/",
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
@@ -41,8 +41,11 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet)
+    if genome_file:
+        genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
+        annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet)
+    else:
+        annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=None, quiet=quiet)
 
     annotation.stats.update(output_dir=output_dir, export=True, quiet=quiet)
 
