@@ -314,7 +314,7 @@ class Gene(Feature):
                     key = (e.start, e.end, e.ch, e.strand)
                     if key not in rev_exon_names:
                         if keep_numbering and e.id_number != None:
-                            rev_exon_names[key] = str(e.id_number)
+                            rev_exon_names[key] = e.id_number
                         else:
                             rev_exon_names[key] = ""
 
