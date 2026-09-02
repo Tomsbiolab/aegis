@@ -1,4 +1,5 @@
 import sys
+import os
 import re
 
 from ..conf import default_features, default_subfeatures
@@ -144,16 +145,33 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
     return parsed
 
-def parse_gtf_attributes(attr_string):
+def parse_gtf_attributes(attr_string, default_key="id"):
     """
-    Parses the GFF/GTF attribute column and returns a dictionary.
-    Handles GTF-specific format where values are quoted.
+    Parses GTF attribute strings into a dictionary.
+    Handles:
+      1. Standard GTF: key "value"
+      2. Unquoted GTF: key value
+      3. Bare/Keyless values: "value" or value (stored under default_key)
     """
+    attr_string = attr_string.strip()
+    if not attr_string:
+        return {}
+
     attributes = {}
 
-    for match in re.finditer(r'(\w+)\s+"([^"]+)"', attr_string):
-        key, value = match.groups()
-        attributes[key] = value
+    pattern = r'(?:(\w+)\s+"([^"]+)")|(?:(\w+)\s+([^\s;]+))|(?:"([^"]+)"|([^\s;]+))'
+
+    for match in re.finditer(pattern, attr_string):
+        k1, v1, k2, v2, v3_quoted, v3_unquoted = match.groups()
+
+        if k1 is not None:
+            attributes[k1] = v1
+        elif k2 is not None:
+            attributes[k2] = v2
+        else:
+            bare_val = v3_quoted if v3_quoted is not None else v3_unquoted
+            attributes[default_key] = bare_val
+
     return attributes
 
 def format_gff3_attributes(attrs, feature_type):
@@ -176,16 +194,16 @@ def format_gff3_attributes(attrs, feature_type):
             gff3_attrs.append(f"Parent={attrs['gene_id']}")
             
     elif feature_type in default_subfeatures:
-        parent_id = f"{attrs['transcript_id']}"
-        gff3_attrs.append(f"Parent={parent_id}")
+        transcript_id = attrs.get('transcript_id')
+        if transcript_id:
+            gff3_attrs.append(f"Parent={transcript_id}")
+            feature_id = f"{transcript_id}"
 
-        feature_id = f"{attrs['transcript_id']}"
-
-        if 'exon_number' in attrs:
-            feature_id += f"_e{attrs['exon_number']}"
-            gff3_attrs.append(f"ID={feature_id}")
-        elif feature_type in default_features["CDS"]:
-            gff3_attrs.append(f"ID={feature_id}_CDS1")
+            if 'exon_number' in attrs:
+                feature_id += f"_e{attrs['exon_number']}"
+                gff3_attrs.append(f"ID={feature_id}")
+            elif feature_type in default_features["CDS"]:
+                gff3_attrs.append(f"ID={feature_id}_CDS1")
 
     if 'gene_name' in attrs:
         gff3_attrs.append(f"Symbol={attrs['gene_name']}")
@@ -235,7 +253,22 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                 continue
 
             seqname, source, feature, start, end, score, strand, frame, attr_string = parts
-            attributes = parse_gtf_attributes(attr_string)
+
+            if feature in default_features["gene"]:
+                fallback_key = "gene_id"
+            elif feature in default_features["transcript"]:
+                fallback_key = "transcript_id"
+            else:
+                fallback_key = "id"
+
+            attributes = parse_gtf_attributes(attr_string, default_key=fallback_key)
+
+            if len(attributes) == 1 and fallback_key in attributes:
+                bare_val = attributes[fallback_key]
+                attributes['gene_id'] = bare_val
+                if feature not in default_features["gene"]:
+                    attributes['transcript_id'] = bare_val
+                    
             start_int = int(start)
             end_int = int(end)
 
@@ -379,15 +412,17 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
 
 def detect_file_format(file_path, encoding, lines_to_check=20):
     """
-    Detects if a file is likely GTF or GFF3 format.
+    Detects if a file is GTF or GFF3 format.
+    
+    Order of operations:
+      1. Inspect content (headers & column 9 attributes).
+      2. Fallback to file extension (.gtf vs .gff/.gff3), handling .gz/.bz2.
+      3. Default to 'gff3' if still unknown.
     """
     try:
         with open_file(file_path, 'r', encoding=encoding) as f:
-
             i = 0
-
             for line in f:
-
                 line = line.strip()
                 if not line:
                     continue
@@ -399,23 +434,38 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
                     continue
 
                 i += 1
+                parts = line.split('\t')
+
+                if len(parts) == 9:
+                    attributes = parts[8].strip()
+
+                    if re.search(r'\b\w+=', attributes):
+                        return 'gff3'
+
+                    if re.search(r'\b\w+\s+(?:"[^"]+"|[^\s;]+)', attributes):
+                        return 'gtf'
+
+                    if re.match(r'^[\w\.\-]+$', attributes):
+                        return 'gtf'
 
                 if i >= lines_to_check:
                     break
 
-                parts = line.split('\t')
-                if len(parts) == 9:
-                    attributes = parts[8]
-
-                    if re.search(r'\w+=', attributes):
-                        return 'gff3'
-
-                    if re.search(r'\w+\s+"[^"]+";', attributes):
-                        return 'gtf'
-            
-            # unknown format returns gff3
-            return 'gff3'
-            
     except Exception as e:
         sys.stderr.write(f"Error reading file for format detection: {e}\n")
         sys.exit(1)
+
+    clean_path = str(file_path).lower()
+
+    for comp_ext in ['.gz', '.bz2', '.xz']:
+        if clean_path.endswith(comp_ext):
+            clean_path = clean_path[:-len(comp_ext)]
+
+    ext = os.path.splitext(clean_path)[1]
+
+    if ext == '.gtf':
+        return 'gtf'
+    elif ext in ['.gff', '.gff3']:
+        return 'gff3'
+
+    return 'gff3'

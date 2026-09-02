@@ -21,6 +21,7 @@ import os
 import warnings
 import math
 import gc
+import re
 
 from multiprocessing import Pool
 from pathlib import Path
@@ -304,6 +305,52 @@ class Annotation():
 
         if rename_source:
             self.rename_source(rename_source)
+
+        if self.genome is not None:
+            self._check_genome_compatibility(quiet=quiet)
+
+    def _check_genome_compatibility(self, quiet: bool = False):
+        if not self.genome or not getattr(self.genome, "scaffolds", None) or not self.chrs:
+            return
+
+        annot_chrs = set(self.chrs.keys())
+        genome_scaffolds = set(self.genome.scaffolds.keys())
+        overlap = annot_chrs.intersection(genome_scaffolds)
+
+        if len(overlap) == 0:
+            # Check if any annotation chromosome matches OriSeqID in genome scaffold descriptions
+            desc_oriseq_ids = set()
+            for s in self.genome.scaffolds.values():
+                d = getattr(s, "description", "")
+                m = re.search(r"(?:^|[\s;,])OriSeqID=([^\s;,]+)", d)
+                if m:
+                    desc_oriseq_ids.add(m.group(1))
+
+            oriseq_overlap = annot_chrs.intersection(desc_oriseq_ids)
+            sample_annot = sorted(list(annot_chrs))[:3]
+            sample_scaffolds = sorted(list(genome_scaffolds))[:3]
+
+            if oriseq_overlap:
+                msg = (
+                    f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
+                    f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds}). "
+                    f"However, {len(oriseq_overlap)} chromosome IDs match 'OriSeqID' found in FASTA header descriptions (Genome Warehouse / GWH format). "
+                    f"Please use '--gwh' or '--header-id-tag OriSeqID' (or run 'aegis tidy-genome --gwh') to re-header the genome so features align."
+                )
+                raise ValueError(msg)
+            else:
+                msg = (
+                    f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
+                    f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds})."
+                )
+                raise ValueError(msg)
+        elif len(overlap) < len(annot_chrs) and not quiet:
+            missing = annot_chrs - genome_scaffolds
+            if len(missing) <= 5:
+                missing_str = ", ".join(sorted(missing))
+            else:
+                missing_str = f"{', '.join(sorted(list(missing))[:5])}... ({len(missing)} total)"
+            print(f"Notice: {len(missing)} chromosomes in annotation '{self.name}' are not present in genome '{self.genome.name}': {missing_str}")
 
     @property
     def motifs(self) -> AnnotationMotifs:
@@ -2452,7 +2499,28 @@ class Annotation():
 
         self.gff_header = new_header
 
-    def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
+    def subset(
+        self,
+        chosen_features: set[str] | list[str] | tuple[str] | None = None,
+        gene_cap: int | None = 3000,
+        common_chromosomes: set | list | tuple | None = None,
+        min_genes: int | None = None,
+        quiet: bool = False,
+        chr_cap: int | None = None,
+        no_gene_cap: bool = False,
+        no_min_genes: bool = False,
+        seed: int | None = None,
+    ):
+
+        if seed is not None:
+            random.seed(seed)
+
+        if chosen_features is None:
+            chosen_features = set()
+        elif isinstance(chosen_features, (list, tuple)):
+            chosen_features = set(chosen_features)
+        else:
+            chosen_features = chosen_features.copy()
 
         initial_chosen_features = chosen_features.copy()
 
@@ -2462,11 +2530,31 @@ class Annotation():
 
         if common_chromosomes is None:
             total_chromosomes = set(self.chrs)
-
+        elif isinstance(common_chromosomes, (list, tuple)):
+            total_chromosomes = set(common_chromosomes)
         else:
             total_chromosomes = common_chromosomes.copy()
 
-        if min_genes > 0:
+        if chr_cap is not None and chr_cap > 0 and not chosen_features:
+            if chr_cap <= len(total_chromosomes):
+                chosen_features = set(random.sample(list(total_chromosomes), chr_cap))
+            else:
+                chosen_features = total_chromosomes.copy()
+
+        if not initial_chosen_features:
+            if no_min_genes or (min_genes is not None and min_genes <= 0):
+                effective_min_genes = 0
+            elif min_genes is None:
+                effective_min_genes = 1500
+            else:
+                effective_min_genes = min_genes
+        else:
+            if no_min_genes or min_genes is None or min_genes <= 0:
+                effective_min_genes = 0
+            else:
+                effective_min_genes = min_genes
+
+        if effective_min_genes > 0:
 
             num_genes_in_chosen_features = 0
             for ft in chosen_features:
@@ -2475,7 +2563,7 @@ class Annotation():
             remaining_to_chose_from = total_chromosomes - chosen_features
             chr_cap_overriden = False
 
-            while num_genes_in_chosen_features < min_genes and remaining_to_chose_from:
+            while num_genes_in_chosen_features < effective_min_genes and remaining_to_chose_from:
                 chr_cap_overriden = True
                 
                 chosen_features.add(random.choice(list(remaining_to_chose_from)))
@@ -2486,48 +2574,53 @@ class Annotation():
                 for ft in chosen_features:
                     num_genes_in_chosen_features += len(self.chrs[ft])
 
-            if chr_cap_overriden:
-                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+            if chr_cap_overriden and not quiet:
+                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {effective_min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+
+        if not chosen_features:
+            chosen_features = total_chromosomes.copy()
 
         features_to_remove = set(self.chrs) - chosen_features
-        genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
-
         self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
-        genes_to_remove = set()
+        is_gene_cap_enabled = not no_gene_cap and gene_cap is not None and gene_cap > 0
 
-        total_deficit = 0
+        if is_gene_cap_enabled:
+            genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features)) if len(chosen_features) > 0 else 0 #type: ignore
 
-        for genes in self.chrs.values():
-            deficit = genes_to_keep_per_chromosome - len(genes)
-            if deficit < 0:
-                deficit = 0
-            total_deficit += deficit
+            genes_to_remove = set()
+            total_deficit = 0
 
-        for genes in self.chrs.values():
+            for genes in self.chrs.values():
+                deficit = genes_to_keep_per_chromosome - len(genes)
+                if deficit < 0:
+                    deficit = 0
+                total_deficit += deficit
 
-            gene_list = list(genes)
-            surplus = len(genes) - genes_to_keep_per_chromosome
+            for genes in self.chrs.values():
 
-            if surplus > 0 :
+                gene_list = list(genes)
+                surplus = len(genes) - genes_to_keep_per_chromosome
 
-                contribution_to_cover_deficit = min(surplus, total_deficit)
+                if surplus > 0 :
 
-                final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
-                
-                if len(gene_list) > final_genes_to_keep:
-                    genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                    contribution_to_cover_deficit = min(surplus, total_deficit)
+
+                    final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
                     
-                    genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
-                    genes_to_remove.update(genes_to_remove_from_this_chr)
-                    
-                total_deficit -= contribution_to_cover_deficit
+                    if len(gene_list) > final_genes_to_keep:
+                        genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                        
+                        genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
+                        genes_to_remove.update(genes_to_remove_from_this_chr)
+                        
+                    total_deficit -= contribution_to_cover_deficit
 
-        if genes_to_remove:
-            self.remove_genes(genes_to_remove, quiet=quiet)
-        else:
-            warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
-        
+            if genes_to_remove:
+                self.remove_genes(genes_to_remove, quiet=quiet)
+            else:
+                warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
+
         self.update(quiet=quiet, update_gene_and_transcript_list=True, remove_missing_transcript_parent_references=True)
 
         return chosen_features

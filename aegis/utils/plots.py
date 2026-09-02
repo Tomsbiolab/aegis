@@ -35,8 +35,10 @@ def parse_to_matplotlib_colors(colours):
 
 def save_pdf_pie(labels, values, colours, export_folder, tag, title):
     """Generates the PDF pie chart using Matplotlib."""
-    matplotlib_colors = parse_to_matplotlib_colors(colours)
     total = sum(values)
+    if total == 0:
+        return
+    matplotlib_colors = parse_to_matplotlib_colors(colours)
 
     fig, ax = plt.subplots(figsize=(6, 6))
     
@@ -82,6 +84,8 @@ def save_pdf_barplot(values, min_x, max_x, export_folder, tag, title):
 
 
 def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, title:str, hovertext_labels:list|None=None, palette_name:str="purple"):
+    if not values or sum(values) == 0:
+        return
     colours = palettes[palette_name]
     
     if len(colours) == len(labels):
@@ -112,6 +116,8 @@ def pie_chart(labels:list[str], values:list[int], export_folder:str, tag:str, ti
 
 
 def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):
+    if not values:
+        return
     if max_x == None:
         max_x = max(values) + 1
     else:

@@ -17,6 +17,7 @@
     - annotation.py
       - `class Annotation():`
       - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):`
+      - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
       - `def redundancy(self) -> AnnotationRedundancy:`
@@ -82,7 +83,7 @@
       - `def create_gtf_attributes(self):`
       - `def add_blast_hits(self, source, blastfile, mode:str="protein"):`
       - `def remove_chromosomes_from_header(self):`
-      - `def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
+      - `def subset(`
       - `def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=False, quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
       - `def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):`
@@ -184,11 +185,14 @@
       - `def alternative_transcript_rescue(self) -> list:`
     - genome.py
       - `class Scaffold():`
-      - `def __init__(self, name, sequence, original_name:str=""):`
+      - `def __init__(self, name, sequence, original_name:str="", description:str=""):`
       - `def update(self, new_name:str=""):`
       - `def copy(self):`
       - `class Genome():`
       - `def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict=`
+      - `def get_scaffold(self, scaffold_id: str) -> Scaffold | None:`
+      - `def __getitem__(self, scaffold_id: str) -> Scaffold:`
+      - `def __contains__(self, scaffold_id: str) -> bool:`
       - `def update(self, update_scaffolds:bool=False):`
       - `def _resolve_output_path(self, filepath: str | None = None, output_dir: str | None = None,`
       - `def export_feature_sizes(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "coordinates", extension=".tsv",quiet:bool=False,`
@@ -196,10 +200,10 @@
       - `def rename_features_from_dic(self, rename_map: dict) -> dict:`
       - `def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):`
       - `def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):`
-      - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False,`
+      - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool = False,`
       - `def copy(self):`
       - `def extract_peak_sequences(self, DAPseq_output_file:str, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_peak_seqs", extension=".fasta", top=600,`
-      - `def subset(self, chosen_features:set|None=None, cap:int=2, quiet:bool=False):`
+      - `def subset(self, chosen_features:set|list|tuple|None=None, cap:int=2, quiet:bool=False):`
       - `def remove_features(self, features_to_remove:set):`
     - hits.py
       - `class OverlapHit():`
@@ -396,6 +400,12 @@
       - rename.py
         - `def split_callback(value:str) -> list[str]:`
         - `def main(`
+      - split.py
+        - `def parse_split_specs(values: list[str] | str | None) -> list[tuple[str, str]]:`
+        - `def detect_file_type(filepath: str) -> str:`
+        - `def classify_feature(`
+        - `def resolve_split_filename(template: str, name: str, tag: str, default_ext: str) -> str:`
+        - `def main(`
       - subset.py
         - `def split_callback(value:str):`
         - `def main(`
@@ -427,7 +437,7 @@
         - `class GffEntry:`
         - `def parse_gff_parts(parts) -> GffEntry:`
         - `def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):`
-        - `def parse_gtf_attributes(attr_string):`
+        - `def parse_gtf_attributes(attr_string, default_key="id"):`
         - `def format_gff3_attributes(attrs, feature_type):`
         - `def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):`
         - `def detect_file_format(file_path, encoding, lines_to_check=20):`
@@ -449,6 +459,8 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
+  - **aegis_output/**
+    - **stats/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
   - **images/**
@@ -489,6 +501,7 @@
       - `def synteny_after_liftover_gff3_file():`
       - `def arabidopsis_araport11_gff3_file():`
       - `def arabidopsis_araport11_no_CDS_gff3_file():`
+      - `def keyless_attributes_gtf_file():`
       - `def arabidopsis_araport11_with_CDS_gff3_file():`
       - `def sample_fasta_file():`
       - `def transcripts_to_combine_fasta_file():`
@@ -520,12 +533,16 @@
       - `def test_gtf_format(self):`
       - `def test_gff3_with_comment_and_blank_lines(self):`
       - `def test_gtf_without_header(self):`
+      - `def test_gtf_keyless_attributes(self, keyless_attributes_gtf_file):`
       - `class TestParseGtfAttributes:`
       - `def test_standard_gtf(self):`
       - `def test_empty_string(self):`
       - `def test_single_attribute(self):`
       - `def test_multiple_attributes_with_spaces(self):`
       - `def test_trailing_whitespace(self):`
+      - `def test_keyless_attribute_unquoted(self):`
+      - `def test_keyless_attribute_quoted(self):`
+      - `def test_keyless_attribute_custom_default_key(self):`
       - `class TestFormatGff3Attributes:`
       - `def test_gene_format(self):`
       - `def test_transcript_format(self):`
@@ -562,6 +579,11 @@
       - `def test_convert_gtf_exon_cds_only(self, tmp_path):`
       - `def test_convert_gtf_exon_cds_only_gene_boundaries(self, tmp_path):`
       - `def test_annotation_from_exon_only_gtf(self, tmp_path):`
+      - `def test_convert_gtf_keyless_attributes(self, keyless_attributes_gtf_file, tmp_path):`
+      - `class TestKeylessAttributesGtf:`
+      - `def test_load_keyless_attributes_gtf(self, keyless_attributes_gtf_file):`
+      - `def test_keyless_attributes_roundtrip_export(self, keyless_attributes_gtf_file, tmp_path):`
+      - `def test_keyless_attributes_subset(self, keyless_attributes_gtf_file):`
       - `class TestAnnotationUniqueIDs:`
       - `def test_get_unique_gene_id(self, sample_gff3_file):`
       - `def test_get_unique_transcript_id(self, sample_gff3_file):`
@@ -747,10 +769,31 @@
       - `def test_synteny(self, synteny_before_liftover_gff3_file, synteny_after_liftover_gff3_file):`
       - `class TestSubset:`
       - `def test_subset(self, arabidopsis_araport11_gff3_file):`
+      - `def test_subset_no_gene_cap(self, arabidopsis_araport11_gff3_file):`
+      - `def test_subset_flexible_inputs(self, arabidopsis_araport11_gff3_file):`
+      - `def test_subset_chr_cap_and_seed(self, test_data_dir):`
       - `class TestReworkCDS:`
       - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
+    - test_cli_split.py
+      - `def populus_test_files(tmp_path):`
+      - `def test_classify_feature_smart():`
+      - `def test_classify_feature_case_sensitive():`
+      - `def test_split_coupled_genome_and_annotation(populus_test_files, tmp_path):`
+      - `def test_split_genome_only_with_keep_description(populus_test_files, tmp_path):`
+      - `def test_split_annotation_only(populus_test_files, tmp_path):`
+      - `def test_split_positional_reverse_order(populus_test_files, tmp_path):`
+      - `def test_split_with_regex(populus_test_files, tmp_path):`
+      - `def test_split_with_split_map(populus_test_files, tmp_path):`
+      - `def test_tidy_genome_keep_description(populus_test_files, tmp_path):`
+      - `def test_split_with_punctuation_and_jaawwd(tmp_path):`
+    - test_cli_subset.py
+      - `def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):`
+      - `def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):`
+      - `def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):`
+      - `def test_cli_subset_no_chr_cap(test_data_dir, tmp_path):`
+      - `def test_cli_subset_chr_cap_and_seed(test_data_dir, tmp_path):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
@@ -932,6 +975,16 @@
       - `class TestPromoter:`
       - `def test_init(self):`
       - `def test_promoter_atg_type(self):`
+    - test_reheader.py
+      - `def gwh_sample_files(tmp_path):`
+      - `def test_genome_gwh_reheader(gwh_sample_files):`
+      - `def test_genome_export_descriptions(gwh_sample_files, tmp_path):`
+      - `def test_annotation_compatibility_diagnostic(gwh_sample_files, tmp_path):`
+      - `def test_cli_tidy_genome_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_extract_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_subset_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_split_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_summary_gwh(gwh_sample_files, tmp_path):`
     - test_subfeatures.py
       - `class TestCDS:`
       - `def test_init(self, make_CDS):`

@@ -83,6 +83,10 @@ class TestDetectFileFormat:
         fmt = detect_file_format(f, "utf-8")
         assert fmt == "gtf"
 
+    def test_gtf_keyless_attributes(self, keyless_attributes_gtf_file):
+        fmt = detect_file_format(keyless_attributes_gtf_file, "utf-8")
+        assert fmt == "gtf"
+
 
 # ============================================================
 # parse_gtf_attributes
@@ -113,6 +117,18 @@ class TestParseGtfAttributes:
     def test_trailing_whitespace(self):
         attrs = parse_gtf_attributes('gene_id "GENE1";  ')
         assert attrs["gene_id"] == "GENE1"
+
+    def test_keyless_attribute_unquoted(self):
+        attrs = parse_gtf_attributes("PITA_19277")
+        assert attrs["id"] == "PITA_19277"
+
+    def test_keyless_attribute_quoted(self):
+        attrs = parse_gtf_attributes('"PITA_19277"')
+        assert attrs["id"] == "PITA_19277"
+
+    def test_keyless_attribute_custom_default_key(self):
+        attrs = parse_gtf_attributes("PITA_19277", default_key="gene_id")
+        assert attrs["gene_id"] == "PITA_19277"
 
 
 # ============================================================
@@ -397,6 +413,63 @@ class TestConvertGtfToGff3:
         assert len(t_re.exons) == 5
         t_rf = gene.transcripts["t2"]
         assert len(t_rf.exons) == 3
+
+    def test_convert_gtf_keyless_attributes(self, keyless_attributes_gtf_file, tmp_path):
+        """GTF with bare/keyless attributes should convert to valid GFF3"""
+        gff_file = tmp_path / "keyless.gff3"
+        convert_gtf_to_gff3(keyless_attributes_gtf_file, str(gff_file), "utf-8", quiet=True)
+        gff_content = gff_file.read_text()
+
+        assert "##gff-version 3" in gff_content
+        assert "ID=PITA_19277" in gff_content
+        assert "Parent=PITA_19277" in gff_content
+        assert "ID=PITA_36893" in gff_content
+        assert "ID=PITA_43071" in gff_content
+
+
+# ============================================================
+# Testing Keyless Attributes GTF (e.g. GFACS output)
+# ============================================================
+
+class TestKeylessAttributesGtf:
+    def test_load_keyless_attributes_gtf(self, keyless_attributes_gtf_file):
+        """Full integration: Annotation should load GTF with keyless attributes directly"""
+        annot = Annotation(keyless_attributes_gtf_file, quiet=True)
+
+        expected_genes = {
+            "PITA_19277", "PITA_36893", "PITA_43071",
+            "PITA_31484", "PITA_22913", "PITA_43120", "PITA_19387"
+        }
+        assert set(annot.all_gene_ids.keys()) == expected_genes
+        assert len(annot.chrs) == 7
+
+        # Verify gene features and structure on super32
+        gene_19277 = annot.chrs["super32"]["PITA_19277"]
+        assert gene_19277.start == 267921
+        assert gene_19277.end == 811217
+        assert gene_19277.strand == "+"
+        assert len(gene_19277.transcripts) == 1
+
+        transcript = list(gene_19277.transcripts.values())[0]
+        assert len(transcript.exons) == 9
+        assert len(transcript.CDSs) == 1
+
+    def test_keyless_attributes_roundtrip_export(self, keyless_attributes_gtf_file, tmp_path):
+        """Verify exporting to GFF3 and reloading preserves all genes and structure"""
+        annot = Annotation(keyless_attributes_gtf_file, quiet=True)
+        annot.export.gff(output_dir=tmp_path, filename="keyless_exported.gff3", subfolder=False, quiet=True)
+
+        reloaded = Annotation(str(tmp_path / "keyless_exported.gff3"), quiet=True)
+        assert set(reloaded.all_gene_ids.keys()) == set(annot.all_gene_ids.keys())
+        assert set(reloaded.chrs.keys()) == set(annot.chrs.keys())
+
+    def test_keyless_attributes_subset(self, keyless_attributes_gtf_file):
+        """Verify subsetting works as expected on keyless attributes annotations"""
+        annot = Annotation(keyless_attributes_gtf_file, quiet=True)
+        annot.subset(chosen_features=["super32"], no_gene_cap=True, quiet=True)
+        assert len(annot.chrs) == 1
+        assert "super32" in annot.chrs
+        assert "PITA_19277" in annot.all_gene_ids
 
 
 # ============================================================
@@ -2415,6 +2488,47 @@ class TestSubset:
         annot.subset(gene_cap=300, quiet=True)
 
         assert len(annot.all_gene_ids) == 300
+
+    def test_subset_no_gene_cap(self, arabidopsis_araport11_gff3_file):
+        # gene_cap=None should retain all genes
+        annot1 = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        assert len(annot1.all_gene_ids) == 3000
+        annot1.subset(gene_cap=None, quiet=True)
+        assert len(annot1.all_gene_ids) == 3000
+
+        # no_gene_cap=True should retain all genes
+        annot2 = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot2.subset(no_gene_cap=True, quiet=True)
+        assert len(annot2.all_gene_ids) == 3000
+
+        # gene_cap=0 should also disable the gene cap
+        annot3 = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot3.subset(gene_cap=0, quiet=True)
+        assert len(annot3.all_gene_ids) == 3000
+
+    def test_subset_flexible_inputs(self, arabidopsis_araport11_gff3_file):
+        # Passing list or tuple for chosen_features should work seamlessly
+        annot_list = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot_list.subset(chosen_features=["Chr4"], no_gene_cap=True, quiet=True)
+        assert len(annot_list.all_gene_ids) == 3000
+
+        annot_tuple = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot_tuple.subset(chosen_features=("Chr4",), gene_cap=150, quiet=True)
+        assert len(annot_tuple.all_gene_ids) == 150
+
+    def test_subset_chr_cap_and_seed(self, test_data_dir):
+        gff_path = str(test_data_dir / "input/annotation/for_merge_2.gff3")
+
+        # chr_cap=2 with seed
+        annot_a = Annotation(gff_path, quiet=True)
+        chosen_a = annot_a.subset(chr_cap=2, no_gene_cap=True, no_min_genes=True, seed=42, quiet=True)
+        assert len(chosen_a) == 2
+        assert len(annot_a.chrs) == 2
+
+        # Same seed should pick exact same chromosomes
+        annot_b = Annotation(gff_path, quiet=True)
+        chosen_b = annot_b.subset(chr_cap=2, no_gene_cap=True, no_min_genes=True, seed=42, quiet=True)
+        assert chosen_a == chosen_b
 
 
 # ============================================================

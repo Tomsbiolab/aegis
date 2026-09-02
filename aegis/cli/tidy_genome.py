@@ -41,7 +41,19 @@ def main(
     )] = "{genome-name}_tidy.fasta",
     output_annot_file: Annotated[str, typer.Option(
         "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension."
-    )] = "{annotation-name}_tidy.gff3"
+    )] = "{annotation-name}_tidy.gff3",
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file."
+    )] = False,
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+    )] = False,
 ):
     """
     Processes and cleans a genome FASTA file and its corresponding annotation (GFF/GTF).
@@ -62,7 +74,13 @@ def main(
     else:
         subfolder = False
         
-    g = Genome(name = genome_name, genome_file_path = genome_file)
+    g = Genome(
+        name=genome_name,
+        genome_file_path=genome_file,
+        header_id_tag=header_id_tag if header_id_tag != "" else None,
+        header_id_regex=header_id_regex if header_id_regex != "" else None,
+        gwh=gwh,
+    )
 
     if annotation_file:
         
@@ -86,10 +104,14 @@ def main(
     if output_annot_file == "{annotation-name}_tidy.gff3":
         output_annot_file = f"{annotation_name}_matching_genome_tidy.gff3"
 
-    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder)
+    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description)
 
-    if annotation_file and rename_map != "":
-        a.rename_chromosomes(equivalences=chromosome_equivalences)
+    if annotation_file:
+        if rename_map != "":
+            a.rename_chromosomes(equivalences=chromosome_equivalences)
+        extra_chrs = set(a.chrs.keys()) - set(g.scaffolds.keys())
+        if extra_chrs:
+            a.remove_chromosomes(extra_chrs)
         a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file)
 
 

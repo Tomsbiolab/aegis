@@ -144,6 +144,8 @@ All of the commands are called with aegis {subcommand} in a terminal:
         - Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
     - Subset
         - Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
+    - Split
+        - Split an annotation and/or genome assembly into distinct files based on genomic feature names, haplotypes, or regex patterns.
     - Prune
         - Removes features based on id lists (transcript or gene level) and solves any derived issues, i.e. remove a gene if all of its transcripts are removed
     - Reformat:

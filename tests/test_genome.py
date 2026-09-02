@@ -102,6 +102,16 @@ class TestGenome:
         g.subset(chosen_features={"chr1"})
         assert "chr1" in g.scaffolds
 
+        # Test list input
+        g_list = Genome("test_genome", sample_fasta_file, quiet=True)
+        g_list.subset(chosen_features=["chr1"])
+        assert "chr1" in g_list.scaffolds
+
+        # Test tuple input
+        g_tuple = Genome("test_genome", sample_fasta_file, quiet=True)
+        g_tuple.subset(chosen_features=("chr1",))
+        assert "chr1" in g_tuple.scaffolds
+
     def test_copy(self, sample_fasta_file):
         g = Genome("test_genome", sample_fasta_file, quiet=True)
         g2 = g.copy()
