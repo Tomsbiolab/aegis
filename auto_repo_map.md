@@ -427,7 +427,7 @@
         - `class GffEntry:`
         - `def parse_gff_parts(parts) -> GffEntry:`
         - `def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):`
-        - `def parse_gtf_attributes(attr_string):`
+        - `def parse_gtf_attributes(attr_string, default_key="id"):`
         - `def format_gff3_attributes(attrs, feature_type):`
         - `def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):`
         - `def detect_file_format(file_path, encoding, lines_to_check=20):`

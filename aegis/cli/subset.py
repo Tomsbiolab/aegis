@@ -75,6 +75,26 @@ def main(
     if output_genome_file == "{genome-name}_subset.fasta":
         output_genome_file = f"{genome_name}_subset.fasta"
 
+    fasta_exts = (".fa", ".fasta", ".fna", ".fas", ".fa.gz", ".fasta.gz", ".fna.gz")
+    annot_exts = (".gff", ".gff3", ".gtf", ".gff.gz", ".gff3.gz", ".gtf.gz")
+
+    annot_looks_like_fasta = annotation_file.lower().endswith(fasta_exts)
+    genome_looks_like_annot = genome_file and genome_file.lower().endswith(annot_exts)
+
+    if annot_looks_like_fasta or genome_looks_like_annot:
+        typer.secho("\nWARNING: It looks like the input files might be swapped based on their extensions.", fg=typer.colors.YELLOW)
+        typer.echo(f"  - Provided annotation file: {annotation_file}")
+        if genome_file:
+            typer.echo(f"  - Provided genome file:     {genome_file}")
+        
+        # Prompt the user
+        is_correct = typer.confirm(
+            "\nAre you sure the first provided file is an annotation (GFF/GTF) file and the latter an assembly (FASTA) file? (If AEGIS just did not recognise the extension names, go ahead.)"
+        )
+        if not is_correct:
+            typer.secho("Aborting. Please run the command again with the correct file order.", fg=typer.colors.RED)
+            raise typer.Abort()
+
     if genome_file:
         g = Genome(genome_name, genome_file, quiet=quiet)
         a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet)
