@@ -183,6 +183,11 @@ def arabidopsis_araport11_no_CDS_gff3_file():
     """GFF3 file with Araport11 subset annotation without CDS."""
     return str(TEST_DATA_DIR / "input/annotation/arabidopsis_araport11_no_CDS.gff3")
 
+@pytest.fixture
+def keyless_attributes_gtf_file():
+    """GTF file with keyless/bare attributes (e.g. GFACS output)."""
+    return str(TEST_DATA_DIR / "input/annotation/keyless_attributes.gtf")
+
 # ---------------------------------------------------------------------------
 # Output GFF3 files
 # ---------------------------------------------------------------------------

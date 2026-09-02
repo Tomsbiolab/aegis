@@ -2457,7 +2457,7 @@ class Annotation():
         chosen_features: set[str] | list[str] | tuple[str] | None = None,
         gene_cap: int | None = 3000,
         common_chromosomes: set | list | tuple | None = None,
-        min_genes: int | None = 1500,
+        min_genes: int | None = None,
         quiet: bool = False,
         chr_cap: int | None = None,
         no_gene_cap: bool = False,
@@ -2494,7 +2494,18 @@ class Annotation():
             else:
                 chosen_features = total_chromosomes.copy()
 
-        effective_min_genes = 0 if no_min_genes or min_genes is None or min_genes <= 0 else min_genes
+        if not initial_chosen_features:
+            if no_min_genes or (min_genes is not None and min_genes <= 0):
+                effective_min_genes = 0
+            elif min_genes is None:
+                effective_min_genes = 1500
+            else:
+                effective_min_genes = min_genes
+        else:
+            if no_min_genes or min_genes is None or min_genes <= 0:
+                effective_min_genes = 0
+            else:
+                effective_min_genes = min_genes
 
         if effective_min_genes > 0:
 

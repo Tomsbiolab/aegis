@@ -489,6 +489,7 @@
       - `def synteny_after_liftover_gff3_file():`
       - `def arabidopsis_araport11_gff3_file():`
       - `def arabidopsis_araport11_no_CDS_gff3_file():`
+      - `def keyless_attributes_gtf_file():`
       - `def arabidopsis_araport11_with_CDS_gff3_file():`
       - `def sample_fasta_file():`
       - `def transcripts_to_combine_fasta_file():`
@@ -520,12 +521,16 @@
       - `def test_gtf_format(self):`
       - `def test_gff3_with_comment_and_blank_lines(self):`
       - `def test_gtf_without_header(self):`
+      - `def test_gtf_keyless_attributes(self, keyless_attributes_gtf_file):`
       - `class TestParseGtfAttributes:`
       - `def test_standard_gtf(self):`
       - `def test_empty_string(self):`
       - `def test_single_attribute(self):`
       - `def test_multiple_attributes_with_spaces(self):`
       - `def test_trailing_whitespace(self):`
+      - `def test_keyless_attribute_unquoted(self):`
+      - `def test_keyless_attribute_quoted(self):`
+      - `def test_keyless_attribute_custom_default_key(self):`
       - `class TestFormatGff3Attributes:`
       - `def test_gene_format(self):`
       - `def test_transcript_format(self):`
@@ -562,6 +567,11 @@
       - `def test_convert_gtf_exon_cds_only(self, tmp_path):`
       - `def test_convert_gtf_exon_cds_only_gene_boundaries(self, tmp_path):`
       - `def test_annotation_from_exon_only_gtf(self, tmp_path):`
+      - `def test_convert_gtf_keyless_attributes(self, keyless_attributes_gtf_file, tmp_path):`
+      - `class TestKeylessAttributesGtf:`
+      - `def test_load_keyless_attributes_gtf(self, keyless_attributes_gtf_file):`
+      - `def test_keyless_attributes_roundtrip_export(self, keyless_attributes_gtf_file, tmp_path):`
+      - `def test_keyless_attributes_subset(self, keyless_attributes_gtf_file):`
       - `class TestAnnotationUniqueIDs:`
       - `def test_get_unique_gene_id(self, sample_gff3_file):`
       - `def test_get_unique_transcript_id(self, sample_gff3_file):`
