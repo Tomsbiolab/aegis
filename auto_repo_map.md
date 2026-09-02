@@ -979,7 +979,7 @@
       - `def gwh_sample_files(tmp_path):`
       - `def test_genome_gwh_reheader(gwh_sample_files):`
       - `def test_genome_export_descriptions(gwh_sample_files, tmp_path):`
-      - `def test_annotation_compatibility_diagnostic(gwh_sample_files):`
+      - `def test_annotation_compatibility_diagnostic(gwh_sample_files, tmp_path):`
       - `def test_cli_tidy_genome_gwh(gwh_sample_files, tmp_path):`
       - `def test_cli_extract_gwh(gwh_sample_files, tmp_path):`
       - `def test_cli_subset_gwh(gwh_sample_files, tmp_path):`

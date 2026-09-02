@@ -1,5 +1,4 @@
 import pytest
-import warnings
 from typer.testing import CliRunner
 
 from aegis.genome import Genome
@@ -95,25 +94,25 @@ def test_genome_export_descriptions(gwh_sample_files, tmp_path):
     assert "OriSeqID=chr1" in lines_keep[0]
 
 
-def test_annotation_compatibility_diagnostic(gwh_sample_files):
+def test_annotation_compatibility_diagnostic(gwh_sample_files, tmp_path):
     fasta_path, gff_path = gwh_sample_files
     
-    # Raw genome (0 overlap with GFF, but OriSeqID in header)
+    # Raw genome (0 overlap with GFF, but OriSeqID in header) raises ValueError with OriSeqID guidance
     g_raw = Genome(name="raw", genome_file_path=str(fasta_path), quiet=True)
-    
-    with pytest.warns(UserWarning, match="match 'OriSeqID' found in FASTA header descriptions"):
-        annot = Annotation(annot_file_path=str(gff_path), genome=g_raw, quiet=True)
-        assert annot is not None
+    with pytest.raises(ValueError, match="match 'OriSeqID' found in FASTA header descriptions"):
+        Annotation(annot_file_path=str(gff_path), genome=g_raw, quiet=True)
 
-    # GWH genome (perfect overlap)
+    # Raw genome (0 overlap with GFF, no OriSeqID in header) raises ValueError
+    no_overlap_fasta = tmp_path / "no_overlap.fasta"
+    no_overlap_fasta.write_text(">scaffold_999\nATGCATGCATGC\n", encoding="utf-8")
+    g_no_overlap = Genome(name="no_overlap", genome_file_path=str(no_overlap_fasta), quiet=True)
+    with pytest.raises(ValueError, match=r"None of the 3 chromosome IDs in annotation .* match the 1 scaffold IDs in genome"):
+        Annotation(annot_file_path=str(gff_path), genome=g_no_overlap, quiet=True)
+
+    # GWH genome (perfect overlap) succeeds
     g_gwh = Genome(name="gwh", genome_file_path=str(fasta_path), gwh=True, quiet=True)
-    with warnings.catch_warnings(record=True) as recorded:
-        warnings.simplefilter("always")
-        annot_ok = Annotation(annot_file_path=str(gff_path), genome=g_gwh, quiet=True)
-        assert annot_ok is not None
-        # Should not have the OriSeqID warning
-        oriseq_warnings = [w for w in recorded if "OriSeqID" in str(w.message)]
-        assert len(oriseq_warnings) == 0
+    annot_ok = Annotation(annot_file_path=str(gff_path), genome=g_gwh, quiet=True)
+    assert annot_ok is not None
 
 
 def test_cli_tidy_genome_gwh(gwh_sample_files, tmp_path):
@@ -191,6 +190,7 @@ def test_cli_subset_gwh(gwh_sample_files, tmp_path):
         str(fasta_path),
         "--gwh",
         "-c", "chr1",
+        "--no-gene-cap",
         "-d", str(out_dir),
         "-q"
     ]

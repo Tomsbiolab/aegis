@@ -17,6 +17,7 @@ def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):
         str(gff3_path),
         "-d", str(output_dir),
         "-oa", output_annot,
+        "--no-chr-cap",
         "--no-gene-cap",
         "-q",
     ]
@@ -41,6 +42,7 @@ def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):
         str(gff3_path),
         "-d", str(output_dir),
         "-oa", output_annot,
+        "--no-chr-cap",
         "--gene-cap", "0",
         "-q",
     ]
@@ -65,6 +67,7 @@ def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):
         str(gff3_path),
         "-d", str(output_dir),
         "-oa", output_annot,
+        "--no-chr-cap",
         "--gene-cap", "200",
         "-q",
     ]
