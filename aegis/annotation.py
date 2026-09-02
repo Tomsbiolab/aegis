@@ -337,17 +337,13 @@ class Annotation():
                     f"However, {len(oriseq_overlap)} chromosome IDs match 'OriSeqID' found in FASTA header descriptions (Genome Warehouse / GWH format). "
                     f"Please use '--gwh' or '--header-id-tag OriSeqID' (or run 'aegis tidy-genome --gwh') to re-header the genome so features align."
                 )
-                warnings.warn(msg, category=UserWarning)
-                if not quiet:
-                    print(f"\n[AEGIS Warning] {msg}\n")
+                raise ValueError(msg)
             else:
                 msg = (
                     f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
                     f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds})."
                 )
-                warnings.warn(msg, category=UserWarning)
-                if not quiet:
-                    print(f"\n[AEGIS Warning] {msg}\n")
+                raise ValueError(msg)
         elif len(overlap) < len(annot_chrs) and not quiet:
             missing = annot_chrs - genome_scaffolds
             if len(missing) <= 5:
