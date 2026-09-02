@@ -41,7 +41,10 @@ def main(
     )] = "{genome-name}_tidy.fasta",
     output_annot_file: Annotated[str, typer.Option(
         "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension."
-    )] = "{annotation-name}_tidy.gff3"
+    )] = "{annotation-name}_tidy.gff3",
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file."
+    )] = False,
 ):
     """
     Processes and cleans a genome FASTA file and its corresponding annotation (GFF/GTF).
@@ -86,7 +89,7 @@ def main(
     if output_annot_file == "{annotation-name}_tidy.gff3":
         output_annot_file = f"{annotation_name}_matching_genome_tidy.gff3"
 
-    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder)
+    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description)
 
     if annotation_file and rename_map != "":
         a.rename_chromosomes(equivalences=chromosome_equivalences)

@@ -184,7 +184,7 @@
       - `def alternative_transcript_rescue(self) -> list:`
     - genome.py
       - `class Scaffold():`
-      - `def __init__(self, name, sequence, original_name:str=""):`
+      - `def __init__(self, name, sequence, original_name:str="", description:str=""):`
       - `def update(self, new_name:str=""):`
       - `def copy(self):`
       - `class Genome():`
@@ -196,7 +196,7 @@
       - `def rename_features_from_dic(self, rename_map: dict) -> dict:`
       - `def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):`
       - `def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):`
-      - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False,`
+      - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool = False,`
       - `def copy(self):`
       - `def extract_peak_sequences(self, DAPseq_output_file:str, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_peak_seqs", extension=".fasta", top=600,`
       - `def subset(self, chosen_features:set|list|tuple|None=None, cap:int=2, quiet:bool=False):`
@@ -395,6 +395,12 @@
         - `def main(`
       - rename.py
         - `def split_callback(value:str) -> list[str]:`
+        - `def main(`
+      - split.py
+        - `def parse_split_specs(values: list[str] | str | None) -> list[tuple[str, str]]:`
+        - `def detect_file_type(filepath: str) -> str:`
+        - `def classify_feature(`
+        - `def resolve_split_filename(template: str, name: str, tag: str, default_ext: str) -> str:`
         - `def main(`
       - subset.py
         - `def split_callback(value:str):`
@@ -764,6 +770,18 @@
       - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
+    - test_cli_split.py
+      - `def populus_test_files(tmp_path):`
+      - `def test_classify_feature_smart():`
+      - `def test_classify_feature_case_sensitive():`
+      - `def test_split_coupled_genome_and_annotation(populus_test_files, tmp_path):`
+      - `def test_split_genome_only_with_keep_description(populus_test_files, tmp_path):`
+      - `def test_split_annotation_only(populus_test_files, tmp_path):`
+      - `def test_split_positional_reverse_order(populus_test_files, tmp_path):`
+      - `def test_split_with_regex(populus_test_files, tmp_path):`
+      - `def test_split_with_split_map(populus_test_files, tmp_path):`
+      - `def test_tidy_genome_keep_description(populus_test_files, tmp_path):`
+      - `def test_split_with_punctuation_and_jaawwd(tmp_path):`
     - test_cli_subset.py
       - `def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):`
       - `def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):`

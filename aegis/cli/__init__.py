@@ -8,6 +8,7 @@ from .overlap import main as overlap_main
 from .prune import main as prune_main
 from .reformat import main as reformat_main
 from .rename import main as rename_main
+from .split import main as split_main
 from .subset import main as subset_main
 from .summary import main as summary_main
 from .symbols import main as symbols_main
@@ -31,6 +32,7 @@ app.command(name="overlap", help="Detect overlaps between annotations associated
 app.command(name="prune", help="Remove chosen gene or transcript models from an annotation.")(prune_main)
 app.command(name="reformat", help="Reformat an annotation file between GFF and GTF formats.")(reformat_main)
 app.command(name="rename", help="Rename gene/transcript/subfeature IDs in an annotation.")(rename_main)
+app.command(name="split", short_help="Split an annotation and/or genome assembly based on genomic feature names, haplotypes, or patterns.")(split_main)
 app.command(name="subset", help="Subset an annotation, and optionally its corresponding genome assembly, in various different ways. May your testing be lite.")(subset_main)
 app.command(name="summary", help="Output summary statistics for an annotation.")(summary_main)
 app.command(name="symbols", help="Add gene symbols to an annotation.")(symbols_main)

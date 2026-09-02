@@ -17,7 +17,7 @@ class Scaffold():
     chloroplast_suffixes = ["c", "C"]
     unknown_chromosome_names = ["chrUn", "chrun", "ChrUn", "Chrun", "chr00", "Chr00", "chr0", "Chr0"]
     organelle_suffixes = mitochondria_suffixes + chloroplast_suffixes
-    def __init__(self, name, sequence, original_name:str=""):
+    def __init__(self, name, sequence, original_name:str="", description:str=""):
 
         self.name = name
         self.renamed = False
@@ -30,6 +30,7 @@ class Scaffold():
         self.seq = sequence
         self.unknown_chromosome = False
         self.size = len(self.seq)
+        self.description = description if description else name
 
         if original_name:
             self.original_name = original_name
@@ -40,6 +41,11 @@ class Scaffold():
 
     def update(self, new_name:str=""):
         if new_name:
+            if hasattr(self, "description") and self.description:
+                if self.description.startswith(self.name):
+                    self.description = new_name + self.description[len(self.name):]
+                elif hasattr(self, "original_name") and self.description.startswith(self.original_name):
+                    self.description = new_name + self.description[len(self.original_name):]
             self.name = new_name
 
         if self.name != self.original_name:
@@ -131,18 +137,19 @@ class Genome():
         with open_file(self.file, "r", encoding="utf-8") as handle:
             for record in SeqIO.parse(handle, "fasta"):
                 scaffold_id = record.id
+                desc = record.description if record.description else scaffold_id
                 count += 1
                 if scaffold_id in self.scaffolds:
                     print((f"Error: scaffold feature {scaffold_id} is repeated in {self.name}, genome (file: {self.file})"))
                 if self.dapmod:
-                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), original_name=f"unknown_dapmod_{count}")
+                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), original_name=f"unknown_dapmod_{count}", description=desc)
                     self.equivalences[scaffold_id] = scaffold_id
                 elif rename_chromosomes and scaffold_id in self.chromosome_dict:
                     self.confrenamed = True
-                    self.scaffolds[self.chromosome_dict[scaffold_id]] = Scaffold(self.chromosome_dict[scaffold_id], str(record.seq).upper(), scaffold_id)
+                    self.scaffolds[self.chromosome_dict[scaffold_id]] = Scaffold(self.chromosome_dict[scaffold_id], str(record.seq).upper(), scaffold_id, description=desc)
                     self.equivalences[scaffold_id] = self.chromosome_dict[scaffold_id]
                 else:
-                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper())
+                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), description=desc)
                     self.equivalences[scaffold_id] = scaffold_id
 
         self.update()
@@ -356,7 +363,8 @@ class Genome():
 
             for scaffold in self.scaffolds.values():
                 previous_name = scaffold.name
-                scaffold.name = self.equivalences[scaffold.original_name]
+                new_name = self.equivalences[scaffold.original_name]
+                scaffold.update(new_name=new_name)
                 if previous_name != scaffold.name:
                     scaffold.dapmod = True
                 new_scaffolds[scaffold.name] = scaffold.copy()
@@ -387,7 +395,7 @@ class Genome():
             new_name = rename_map.get(original_name, scaffold.name)
             
             copied_scaffold = scaffold.copy()
-            copied_scaffold.name = new_name
+            copied_scaffold.update(new_name=new_name)
 
             final_equivalences[original_name] = new_name
 
@@ -444,7 +452,7 @@ class Genome():
         if export:
             self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
-    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False,
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool = False,
         #deprecated arguments
         output_folder:str="", file:str=".fasta"):
 
@@ -471,7 +479,8 @@ class Genome():
         
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for scaffold in self.scaffolds.values():
-                f_out.write(f">{scaffold.name}\n{scaffold.seq}\n")
+                header = scaffold.description if (keep_description and getattr(scaffold, "description", None)) else scaffold.name
+                f_out.write(f">{header}\n{scaffold.seq}\n")
 
     def copy(self):
         return copy.deepcopy(self)
