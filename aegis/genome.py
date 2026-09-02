@@ -552,10 +552,12 @@ class Genome():
                 f_out.write(f'>{header}\n')
                 f_out.write(f'{textwrap.fill(seq, width=60)}\n')
 
-    def subset(self, chosen_features:set|None=None, cap:int=2, quiet:bool=False):
+    def subset(self, chosen_features:set|list|tuple|None=None, cap:int=2, quiet:bool=False):
 
         if chosen_features is None:
             chosen_features = set()
+        elif isinstance(chosen_features, (list, tuple)):
+            chosen_features = set(chosen_features)
 
         if chosen_features:
             for chosen_feature in chosen_features:

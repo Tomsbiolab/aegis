@@ -2416,6 +2416,47 @@ class TestSubset:
 
         assert len(annot.all_gene_ids) == 300
 
+    def test_subset_no_gene_cap(self, arabidopsis_araport11_gff3_file):
+        # gene_cap=None should retain all genes
+        annot1 = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        assert len(annot1.all_gene_ids) == 3000
+        annot1.subset(gene_cap=None, quiet=True)
+        assert len(annot1.all_gene_ids) == 3000
+
+        # no_gene_cap=True should retain all genes
+        annot2 = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot2.subset(no_gene_cap=True, quiet=True)
+        assert len(annot2.all_gene_ids) == 3000
+
+        # gene_cap=0 should also disable the gene cap
+        annot3 = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot3.subset(gene_cap=0, quiet=True)
+        assert len(annot3.all_gene_ids) == 3000
+
+    def test_subset_flexible_inputs(self, arabidopsis_araport11_gff3_file):
+        # Passing list or tuple for chosen_features should work seamlessly
+        annot_list = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot_list.subset(chosen_features=["Chr4"], no_gene_cap=True, quiet=True)
+        assert len(annot_list.all_gene_ids) == 3000
+
+        annot_tuple = Annotation(arabidopsis_araport11_gff3_file, quiet=True)
+        annot_tuple.subset(chosen_features=("Chr4",), gene_cap=150, quiet=True)
+        assert len(annot_tuple.all_gene_ids) == 150
+
+    def test_subset_chr_cap_and_seed(self, test_data_dir):
+        gff_path = str(test_data_dir / "input/annotation/for_merge_2.gff3")
+
+        # chr_cap=2 with seed
+        annot_a = Annotation(gff_path, quiet=True)
+        chosen_a = annot_a.subset(chr_cap=2, no_gene_cap=True, no_min_genes=True, seed=42, quiet=True)
+        assert len(chosen_a) == 2
+        assert len(annot_a.chrs) == 2
+
+        # Same seed should pick exact same chromosomes
+        annot_b = Annotation(gff_path, quiet=True)
+        chosen_b = annot_b.subset(chr_cap=2, no_gene_cap=True, no_min_genes=True, seed=42, quiet=True)
+        assert chosen_a == chosen_b
+
 
 # ============================================================
 # Testing rework CDS

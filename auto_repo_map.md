@@ -82,7 +82,7 @@
       - `def create_gtf_attributes(self):`
       - `def add_blast_hits(self, source, blastfile, mode:str="protein"):`
       - `def remove_chromosomes_from_header(self):`
-      - `def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):`
+      - `def subset(`
       - `def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=False, quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
       - `def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):`
@@ -199,7 +199,7 @@
       - `def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False,`
       - `def copy(self):`
       - `def extract_peak_sequences(self, DAPseq_output_file:str, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_peak_seqs", extension=".fasta", top=600,`
-      - `def subset(self, chosen_features:set|None=None, cap:int=2, quiet:bool=False):`
+      - `def subset(self, chosen_features:set|list|tuple|None=None, cap:int=2, quiet:bool=False):`
       - `def remove_features(self, features_to_remove:set):`
     - hits.py
       - `class OverlapHit():`
@@ -747,10 +747,19 @@
       - `def test_synteny(self, synteny_before_liftover_gff3_file, synteny_after_liftover_gff3_file):`
       - `class TestSubset:`
       - `def test_subset(self, arabidopsis_araport11_gff3_file):`
+      - `def test_subset_no_gene_cap(self, arabidopsis_araport11_gff3_file):`
+      - `def test_subset_flexible_inputs(self, arabidopsis_araport11_gff3_file):`
+      - `def test_subset_chr_cap_and_seed(self, test_data_dir):`
       - `class TestReworkCDS:`
       - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
+    - test_cli_subset.py
+      - `def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):`
+      - `def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):`
+      - `def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):`
+      - `def test_cli_subset_no_chr_cap(test_data_dir, tmp_path):`
+      - `def test_cli_subset_chr_cap_and_seed(test_data_dir, tmp_path):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`

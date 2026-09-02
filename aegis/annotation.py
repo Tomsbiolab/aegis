@@ -2452,7 +2452,28 @@ class Annotation():
 
         self.gff_header = new_header
 
-    def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
+    def subset(
+        self,
+        chosen_features: set[str] | list[str] | tuple[str] | None = None,
+        gene_cap: int | None = 3000,
+        common_chromosomes: set | list | tuple | None = None,
+        min_genes: int | None = 1500,
+        quiet: bool = False,
+        chr_cap: int | None = None,
+        no_gene_cap: bool = False,
+        no_min_genes: bool = False,
+        seed: int | None = None,
+    ):
+
+        if seed is not None:
+            random.seed(seed)
+
+        if chosen_features is None:
+            chosen_features = set()
+        elif isinstance(chosen_features, (list, tuple)):
+            chosen_features = set(chosen_features)
+        else:
+            chosen_features = chosen_features.copy()
 
         initial_chosen_features = chosen_features.copy()
 
@@ -2462,11 +2483,20 @@ class Annotation():
 
         if common_chromosomes is None:
             total_chromosomes = set(self.chrs)
-
+        elif isinstance(common_chromosomes, (list, tuple)):
+            total_chromosomes = set(common_chromosomes)
         else:
             total_chromosomes = common_chromosomes.copy()
 
-        if min_genes > 0:
+        if chr_cap is not None and chr_cap > 0 and not chosen_features:
+            if chr_cap <= len(total_chromosomes):
+                chosen_features = set(random.sample(list(total_chromosomes), chr_cap))
+            else:
+                chosen_features = total_chromosomes.copy()
+
+        effective_min_genes = 0 if no_min_genes or min_genes is None or min_genes <= 0 else min_genes
+
+        if effective_min_genes > 0:
 
             num_genes_in_chosen_features = 0
             for ft in chosen_features:
@@ -2475,7 +2505,7 @@ class Annotation():
             remaining_to_chose_from = total_chromosomes - chosen_features
             chr_cap_overriden = False
 
-            while num_genes_in_chosen_features < min_genes and remaining_to_chose_from:
+            while num_genes_in_chosen_features < effective_min_genes and remaining_to_chose_from:
                 chr_cap_overriden = True
                 
                 chosen_features.add(random.choice(list(remaining_to_chose_from)))
@@ -2486,48 +2516,53 @@ class Annotation():
                 for ft in chosen_features:
                     num_genes_in_chosen_features += len(self.chrs[ft])
 
-            if chr_cap_overriden:
-                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+            if chr_cap_overriden and not quiet:
+                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {effective_min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+
+        if not chosen_features:
+            chosen_features = total_chromosomes.copy()
 
         features_to_remove = set(self.chrs) - chosen_features
-        genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
-
         self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
-        genes_to_remove = set()
+        is_gene_cap_enabled = not no_gene_cap and gene_cap is not None and gene_cap > 0
 
-        total_deficit = 0
+        if is_gene_cap_enabled:
+            genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features)) if len(chosen_features) > 0 else 0 #type: ignore
 
-        for genes in self.chrs.values():
-            deficit = genes_to_keep_per_chromosome - len(genes)
-            if deficit < 0:
-                deficit = 0
-            total_deficit += deficit
+            genes_to_remove = set()
+            total_deficit = 0
 
-        for genes in self.chrs.values():
+            for genes in self.chrs.values():
+                deficit = genes_to_keep_per_chromosome - len(genes)
+                if deficit < 0:
+                    deficit = 0
+                total_deficit += deficit
 
-            gene_list = list(genes)
-            surplus = len(genes) - genes_to_keep_per_chromosome
+            for genes in self.chrs.values():
 
-            if surplus > 0 :
+                gene_list = list(genes)
+                surplus = len(genes) - genes_to_keep_per_chromosome
 
-                contribution_to_cover_deficit = min(surplus, total_deficit)
+                if surplus > 0 :
 
-                final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
-                
-                if len(gene_list) > final_genes_to_keep:
-                    genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                    contribution_to_cover_deficit = min(surplus, total_deficit)
+
+                    final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
                     
-                    genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
-                    genes_to_remove.update(genes_to_remove_from_this_chr)
-                    
-                total_deficit -= contribution_to_cover_deficit
+                    if len(gene_list) > final_genes_to_keep:
+                        genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                        
+                        genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
+                        genes_to_remove.update(genes_to_remove_from_this_chr)
+                        
+                    total_deficit -= contribution_to_cover_deficit
 
-        if genes_to_remove:
-            self.remove_genes(genes_to_remove, quiet=quiet)
-        else:
-            warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
-        
+            if genes_to_remove:
+                self.remove_genes(genes_to_remove, quiet=quiet)
+            else:
+                warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
+
         self.update(quiet=quiet, update_gene_and_transcript_list=True, remove_missing_transcript_parent_references=True)
 
         return chosen_features
