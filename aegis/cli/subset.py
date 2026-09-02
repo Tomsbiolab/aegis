@@ -2,6 +2,7 @@ import typer
 import os
 import random
 import warnings
+import re
 
 from typing import Optional
 from typing_extensions import Annotated
@@ -66,6 +67,15 @@ def main(
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+    )] = False,
 ):
     """
     Obtain subsets of an annotation file, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
@@ -121,13 +131,32 @@ def main(
             raise typer.Abort()
 
     if genome_file:
-        g = Genome(genome_name, genome_file, quiet=quiet)
+        g = Genome(
+            name=genome_name,
+            genome_file_path=genome_file,
+            quiet=quiet,
+            header_id_tag=header_id_tag if header_id_tag != "" else None,
+            header_id_regex=header_id_regex if header_id_regex != "" else None,
+            gwh=gwh,
+        )
         a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
         common_actual_chromosomes = common_chromosomes - g.scaffold_names
         common_actual_chromosomes_minus_mt_chl = common_actual_chromosomes - g.accessory_chromosome_names
 
         if not common_chromosomes:
+            desc_oriseq_ids = set()
+            for s in g.scaffolds.values():
+                d = getattr(s, "description", "")
+                m = re.search(r"(?:^|[\s;,])OriSeqID=([^\s;,]+)", d)
+                if m:
+                    desc_oriseq_ids.add(m.group(1))
+            if set(a.chrs).intersection(desc_oriseq_ids):
+                raise ValueError(
+                    f"There are no common scaffolds/chromosomes between provided annotation and genome file. "
+                    f"However, annotation chromosomes match 'OriSeqID' in FASTA header descriptions (GWH format). "
+                    f"Please run with '--gwh' or '--header-id-tag OriSeqID' to re-header the genome."
+                )
             raise ValueError(f"There are no common scaffolds/chromosomes between provided annotation and genome file.")
     else:
         a = Annotation(annotation_file, annotation_name, quiet=quiet)

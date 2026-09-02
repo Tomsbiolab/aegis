@@ -301,6 +301,15 @@ def main(
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+    )] = False,
 ):
     """
     Split an annotation (GFF/GTF) and/or genome assembly (FASTA) into distinct files
@@ -405,7 +414,14 @@ def main(
     annot_obj = None
 
     if genome_file:
-        genome_obj = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
+        genome_obj = Genome(
+            name=genome_name,
+            genome_file_path=genome_file,
+            quiet=quiet,
+            header_id_tag=header_id_tag if header_id_tag != "" else None,
+            header_id_regex=header_id_regex if header_id_regex != "" else None,
+            gwh=gwh,
+        )
 
     if annotation_file:
         if genome_obj:

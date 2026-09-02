@@ -91,7 +91,16 @@ def main(
     )] = False,
     feature_id: Annotated[str, typer.Option(
         "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}."
-    )] = "feature"
+    )] = "feature",
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+    )] = False,
 ):
     """
     Extract sequences from a genome based on an annotation file.
@@ -131,7 +140,14 @@ def main(
         if rna_class not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
-    genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
+    genome = Genome(
+        name=genome_name,
+        genome_file_path=genome_file,
+        quiet=quiet,
+        header_id_tag=header_id_tag if header_id_tag != "" else None,
+        header_id_regex=header_id_regex if header_id_regex != "" else None,
+        gwh=gwh,
+    )
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
 
     if "gene" in features:

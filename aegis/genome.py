@@ -37,6 +37,10 @@ class Scaffold():
         else:
             self.original_name = self.name
 
+        if self.description and self.original_name != self.name:
+            if self.description.startswith(self.original_name):
+                self.description = self.name + self.description[len(self.original_name):]
+
         self.update()
 
     def update(self, new_name:str=""):
@@ -88,7 +92,8 @@ class Scaffold():
         return copy.deepcopy(self)
 
 class Genome():
-    def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False, quiet:bool=False):
+    def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False, quiet:bool=False,
+                 header_id_tag:str|None=None, header_id_regex:str|None=None, gwh:bool=False):
         start = time.time()
         self.name = name
 
@@ -127,6 +132,13 @@ class Genome():
             self.unknown_chromosome = True
 
         self.scaffolds = {}
+        self.aliases = {}
+        self.header_id_tag = header_id_tag
+        self.header_id_regex = header_id_regex
+        self.gwh = gwh
+
+        if self.gwh and not self.header_id_tag and not self.header_id_regex:
+            self.header_id_tag = "OriSeqID"
 
         # Creating a dictionary with the genome sequence of each chromosome or scaffold, still referred as chromosomes in the code
         self.chromosome_dict = chromosome_dict
@@ -136,8 +148,19 @@ class Genome():
         count = 0
         with open_file(self.file, "r", encoding="utf-8") as handle:
             for record in SeqIO.parse(handle, "fasta"):
-                scaffold_id = record.id
-                desc = record.description if record.description else scaffold_id
+                raw_id = record.id
+                desc = record.description if record.description else raw_id
+                scaffold_id = raw_id
+
+                if self.header_id_regex:
+                    match = re.search(self.header_id_regex, desc)
+                    if match and match.groups():
+                        scaffold_id = match.group(1).strip()
+                elif self.header_id_tag:
+                    match = re.search(rf"(?:^|[\s;,]){re.escape(self.header_id_tag)}=([^\s;,]+)", desc)
+                    if match:
+                        scaffold_id = match.group(1).strip()
+
                 count += 1
                 if scaffold_id in self.scaffolds:
                     print((f"Error: scaffold feature {scaffold_id} is repeated in {self.name}, genome (file: {self.file})"))
@@ -149,8 +172,12 @@ class Genome():
                     self.scaffolds[self.chromosome_dict[scaffold_id]] = Scaffold(self.chromosome_dict[scaffold_id], str(record.seq).upper(), scaffold_id, description=desc)
                     self.equivalences[scaffold_id] = self.chromosome_dict[scaffold_id]
                 else:
-                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), description=desc)
+                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), original_name=raw_id, description=desc)
                     self.equivalences[scaffold_id] = scaffold_id
+
+                if raw_id != scaffold_id:
+                    self.aliases[raw_id] = scaffold_id
+                    self.equivalences[raw_id] = scaffold_id
 
         self.update()
 
@@ -159,6 +186,22 @@ class Genome():
         if not quiet:
             print(f"\n{self.name} genome chromosomes/scaffolds: {self.features[:30]} ...")
             print(f"\nCreating {self.name} genome object took {round(lapse, 1)} seconds\n")
+
+    def get_scaffold(self, scaffold_id: str) -> Scaffold | None:
+        if scaffold_id in self.scaffolds:
+            return self.scaffolds[scaffold_id]
+        if scaffold_id in self.aliases and self.aliases[scaffold_id] in self.scaffolds:
+            return self.scaffolds[self.aliases[scaffold_id]]
+        return None
+
+    def __getitem__(self, scaffold_id: str) -> Scaffold:
+        scf = self.get_scaffold(scaffold_id)
+        if scf is not None:
+            return scf
+        raise KeyError(scaffold_id)
+
+    def __contains__(self, scaffold_id: str) -> bool:
+        return scaffold_id in self.scaffolds or (scaffold_id in self.aliases and self.aliases[scaffold_id] in self.scaffolds)
 
     def update(self, update_scaffolds:bool=False):
 
@@ -392,12 +435,13 @@ class Genome():
         for scaffold in self.scaffolds.values():
             
             original_name = scaffold.original_name
-            new_name = rename_map.get(original_name, scaffold.name)
+            new_name = rename_map.get(scaffold.name, rename_map.get(original_name, scaffold.name))
             
             copied_scaffold = scaffold.copy()
             copied_scaffold.update(new_name=new_name)
 
             final_equivalences[original_name] = new_name
+            final_equivalences[scaffold.name] = new_name
 
             new_scaffolds[new_name] = copied_scaffold
 

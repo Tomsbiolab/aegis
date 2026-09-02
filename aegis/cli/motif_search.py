@@ -54,7 +54,15 @@ def main(
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
-
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+    )] = False,
 ):
     """
     Scans a set of “query” genes to locate all occurrences of a specified DNA motif within their upstream promoter regions.
@@ -83,7 +91,14 @@ def main(
     genes = df.iloc[:, 0].tolist()
     genes = [gene for gene in genes if gene != ""]
 
-    genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
+    genome = Genome(
+        name=genome_name,
+        genome_file_path=genome_file,
+        quiet=quiet,
+        header_id_tag=header_id_tag if header_id_tag != "" else None,
+        header_id_regex=header_id_regex if header_id_regex != "" else None,
+        gwh=gwh,
+    )
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet)
 
     annotation.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)

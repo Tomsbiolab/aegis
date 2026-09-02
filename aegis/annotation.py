@@ -21,6 +21,7 @@ import os
 import warnings
 import math
 import gc
+import re
 
 from multiprocessing import Pool
 from pathlib import Path
@@ -304,6 +305,56 @@ class Annotation():
 
         if rename_source:
             self.rename_source(rename_source)
+
+        if self.genome is not None:
+            self._check_genome_compatibility(quiet=quiet)
+
+    def _check_genome_compatibility(self, quiet: bool = False):
+        if not self.genome or not getattr(self.genome, "scaffolds", None) or not self.chrs:
+            return
+
+        annot_chrs = set(self.chrs.keys())
+        genome_scaffolds = set(self.genome.scaffolds.keys())
+        overlap = annot_chrs.intersection(genome_scaffolds)
+
+        if len(overlap) == 0:
+            # Check if any annotation chromosome matches OriSeqID in genome scaffold descriptions
+            desc_oriseq_ids = set()
+            for s in self.genome.scaffolds.values():
+                d = getattr(s, "description", "")
+                m = re.search(r"(?:^|[\s;,])OriSeqID=([^\s;,]+)", d)
+                if m:
+                    desc_oriseq_ids.add(m.group(1))
+
+            oriseq_overlap = annot_chrs.intersection(desc_oriseq_ids)
+            sample_annot = sorted(list(annot_chrs))[:3]
+            sample_scaffolds = sorted(list(genome_scaffolds))[:3]
+
+            if oriseq_overlap:
+                msg = (
+                    f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
+                    f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds}). "
+                    f"However, {len(oriseq_overlap)} chromosome IDs match 'OriSeqID' found in FASTA header descriptions (Genome Warehouse / GWH format). "
+                    f"Please use '--gwh' or '--header-id-tag OriSeqID' (or run 'aegis tidy-genome --gwh') to re-header the genome so features align."
+                )
+                warnings.warn(msg, category=UserWarning)
+                if not quiet:
+                    print(f"\n[AEGIS Warning] {msg}\n")
+            else:
+                msg = (
+                    f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
+                    f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds})."
+                )
+                warnings.warn(msg, category=UserWarning)
+                if not quiet:
+                    print(f"\n[AEGIS Warning] {msg}\n")
+        elif len(overlap) < len(annot_chrs) and not quiet:
+            missing = annot_chrs - genome_scaffolds
+            if len(missing) <= 5:
+                missing_str = ", ".join(sorted(missing))
+            else:
+                missing_str = f"{', '.join(sorted(list(missing))[:5])}... ({len(missing)} total)"
+            print(f"Notice: {len(missing)} chromosomes in annotation '{self.name}' are not present in genome '{self.genome.name}': {missing_str}")
 
     @property
     def motifs(self) -> AnnotationMotifs:

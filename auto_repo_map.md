@@ -17,6 +17,7 @@
     - annotation.py
       - `class Annotation():`
       - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):`
+      - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
       - `def redundancy(self) -> AnnotationRedundancy:`
@@ -189,6 +190,9 @@
       - `def copy(self):`
       - `class Genome():`
       - `def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict=`
+      - `def get_scaffold(self, scaffold_id: str) -> Scaffold | None:`
+      - `def __getitem__(self, scaffold_id: str) -> Scaffold:`
+      - `def __contains__(self, scaffold_id: str) -> bool:`
       - `def update(self, update_scaffolds:bool=False):`
       - `def _resolve_output_path(self, filepath: str | None = None, output_dir: str | None = None,`
       - `def export_feature_sizes(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "coordinates", extension=".tsv",quiet:bool=False,`
@@ -455,6 +459,8 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
+  - **aegis_output/**
+    - **stats/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
   - **images/**
@@ -969,6 +975,16 @@
       - `class TestPromoter:`
       - `def test_init(self):`
       - `def test_promoter_atg_type(self):`
+    - test_reheader.py
+      - `def gwh_sample_files(tmp_path):`
+      - `def test_genome_gwh_reheader(gwh_sample_files):`
+      - `def test_genome_export_descriptions(gwh_sample_files, tmp_path):`
+      - `def test_annotation_compatibility_diagnostic(gwh_sample_files):`
+      - `def test_cli_tidy_genome_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_extract_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_subset_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_split_gwh(gwh_sample_files, tmp_path):`
+      - `def test_cli_summary_gwh(gwh_sample_files, tmp_path):`
     - test_subfeatures.py
       - `class TestCDS:`
       - `def test_init(self, make_CDS):`
