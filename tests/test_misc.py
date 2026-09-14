@@ -354,7 +354,7 @@ class TestTranslate:
         # ATG NNA TAA = M - * (NN + A can't resolve to one AA)
         prot = translate("ATGNNATAA")
         assert prot[0] == "M"
-        assert "-" in prot # ambiguous codon rendered as gap
+        assert "X" in prot # ambiguous codon rendered as gap
         assert prot[-1] == "*"
 
     def test_longer_sequence(self):

@@ -78,7 +78,7 @@ class Protein():
 
     @property
     def gaps(self):
-        if "-" in self.seq:
+        if "X" in self.seq:
             return True
         return False
     
