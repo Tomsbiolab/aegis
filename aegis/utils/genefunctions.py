@@ -64,10 +64,10 @@ for c1, c2, c3 in itertools.product(all_iupac_chars, repeat=3):
     if len(possible_aas) == 1:
         extended_codon_dict[ambiguous_codon] = possible_aas.pop()
     else:
-        extended_codon_dict[ambiguous_codon] = "-"
+        extended_codon_dict[ambiguous_codon] = "X"
 
 byte_codon_dict = {tuple(k.encode('ascii')): v for k, v in extended_codon_dict.items()}
-byte_dict = defaultdict(lambda: "-", byte_codon_dict)
+byte_dict = defaultdict(lambda: "X", byte_codon_dict)
 
 def translate(seq: str) -> str:
     """
