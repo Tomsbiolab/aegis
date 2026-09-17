@@ -16,6 +16,7 @@ from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
+from .utils import split_callback
 from time import time
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -269,11 +270,6 @@ def best_summary_score(series):
     if "lower_confidence" in vals: return "lower_confidence"
     return "NA"
 
-def split_callback(value:str):
-    if value:
-        return [item.strip() for item in value.split(",")]
-    return []
-
 @app.command()
 def main(
     annotation_files: Annotated[list[str], typer.Argument(
@@ -283,30 +279,30 @@ def main(
     # ==========================================
     # CORE INPUT / OUTPUT CONFIGURATION
     # ==========================================
-    genome_files: Annotated[str, typer.Option(
+    genome_files: Annotated[list[str], typer.Option(
         "-g", "--genome-files", 
         help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g genomefile1,genomefile2,genomefile3,genomefile4",
         callback=split_callback,
         rich_help_panel="Core Input/Output Configuration"
     )],
-    annotation_names: Annotated[str, typer.Option(
+    annotation_names: Annotated[list[str], typer.Option(
         "-a", "--annotation-names", 
         help="Annotation versions, names or tags otherwise they will just be the annotation file basename without the extension. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
         callback=split_callback,
         rich_help_panel="Core Input/Output Configuration"
-    )] = "{annotation-filename(s)}",
-    genome_names: Annotated[str, typer.Option(
+    )] = ["{annotation-filename(s)}"],
+    genome_names: Annotated[list[str], typer.Option(
         "--genome-names", 
         help="Genome versions, names or tags otherwise they will just be the genome file basename without the extension. Provide them in the same number and order as the corresponding genome files, separated by commas. e.g. --genome-names name1,name2,name3,name4",
         callback=split_callback,
         rich_help_panel="Core Input/Output Configuration"
-    )] = "{genome-filename(s)}",
-    group_names: Annotated[str, typer.Option(
+    )] = ["{genome-filename(s)}"],
+    group_names: Annotated[list[str], typer.Option(
         "-gn", "--group-names", 
         help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
         callback=split_callback,
         rich_help_panel="Core Input/Output Configuration"
-    )] = "",
+    )] = [],
     reference_annotation: Annotated[str, typer.Option(
         "--reference-annotation", 
         help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
@@ -361,12 +357,12 @@ def main(
         help="Execute OrthoFinder on independent annotation pairs. Overrides the default multi-annotation bulk analysis. Recommended for highly divergent taxa or targeted 1:1 orthologue mapping.",
         rich_help_panel="Orthology Tool Options"
     )] = False,
-    lift_feature_types: Annotated[str, typer.Option(
+    lift_feature_types: Annotated[list[str], typer.Option(
         "--lift-feature-types", 
         help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", 
         callback=split_callback,
         rich_help_panel="Orthology Tool Options"
-    )] = "ALL",
+    )] = ["ALL"],
     include_single_blasts: Annotated[bool, typer.Option(
         "-b", "--include-single-blasts", 
         help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary.",
@@ -405,12 +401,12 @@ def main(
     # ==========================================
     # Output Options
     # ==========================================
-    confidence: Annotated[str, typer.Option(
+    confidence: Annotated[list[str], typer.Option(
         "--confidence", 
         help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
         callback=split_callback,
         rich_help_panel="Output Options"
-    )] = "high,medium,lower",
+    )] = ["high", "medium", "lower"],
     include_NAs: Annotated[bool, typer.Option(
         "-na", "--include-NAs", 
         help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",

@@ -7,11 +7,6 @@ from ..annotation import Annotation
 
 app = typer.Typer(add_completion=False)
 
-def split_callback(value:str):
-    if value:
-        return [item.strip() for item in value.split(",")]
-    return []
-
 features: list = ["gene", "transcript", "CDS", "exon", "UTR"]
 
 @app.command()

@@ -4,16 +4,12 @@ import random
 import warnings
 import re
 
-from typing import Optional
+from typing import Optional, List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
-
-def split_callback(value:str):
-    if value:
-        return [item.strip() for item in value.split(",")]
-    return []
+from .utils import split_callback
 
 app = typer.Typer(add_completion=False)
 @app.command()
@@ -30,10 +26,10 @@ def main(
     no_chr_cap: Annotated[bool, typer.Option(
         "--no-chr-cap", help="Do not enforce a chromosome cap. Selects all common chromosomes/scaffolds."
     )] = False,
-    chosen_chromosomes: Annotated[str, typer.Option(
+    chosen_chromosomes: Annotated[List[str], typer.Option(
         "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s). Add them and separate them by commas e.g. --chromosomes 'chr1,chr3'.",
         callback=split_callback
-    )] = "",
+    )] = [],
     gene_cap: Annotated[Optional[int], typer.Option(
         "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. Set to 0 to disable. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
     )] = 3000,

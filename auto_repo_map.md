@@ -383,13 +383,11 @@
       - __init__.py
     - **cli/**
       - extract.py
-        - `def split_callback(value:str):`
         - `def main(`
       - list.py
         - `def genes(`
         - `def transcripts(`
       - merge.py
-        - `def split_callback(value:str):`
         - `def main(`
       - motif_search.py
         - `def main(`
@@ -401,17 +399,14 @@
         - `def flip_masked_rows(df, mask):`
         - `def merge_score_strings(series):`
         - `def best_summary_score(series):`
-        - `def split_callback(value:str):`
         - `def main(`
       - overlap.py
-        - `def split_callback(value:str):`
         - `def main(`
       - prune.py
         - `def main(`
       - reformat.py
         - `def main(`
       - rename.py
-        - `def split_callback(value:str) -> list[str]:`
         - `def main(`
       - split.py
         - `def parse_split_specs(values: list[str] | str | None) -> list[tuple[str, str]]:`
@@ -420,7 +415,6 @@
         - `def resolve_split_filename(template: str, name: str, tag: str, default_ext: str) -> str:`
         - `def main(`
       - subset.py
-        - `def split_callback(value:str):`
         - `def main(`
       - summary.py
         - `def is_fasta_path(filepath: str) -> bool:`
@@ -449,10 +443,11 @@
       - symbols.py
         - `def main(`
       - tidy.py
-        - `def split_callback(value:str):`
         - `def main(`
       - tidy_genome.py
         - `def main(`
+      - utils.py
+        - `def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:`
       - __init__.py
       - __main__.py
     - **utils/**
@@ -848,6 +843,11 @@
       - `def test_cli_summary_genome_synonym_pairing(tmp_path):`
       - `def test_cli_summary_genome_ref_and_no_seq_options(tmp_path):`
       - `def test_cli_summary_genome_soft_masked(tmp_path):`
+    - test_cli_utils.py
+      - `def test_split_callback_string_comma():`
+      - `def test_split_callback_single_string():`
+      - `def test_split_callback_empty_and_none():`
+      - `def test_split_callback_list_inputs():`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
