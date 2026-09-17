@@ -346,6 +346,9 @@ def main(
     summary_only: Annotated[bool, typer.Option(
         "--summary-only", help="Report only assembly-level summary statistics without listing individual chromosomes."
     )] = False,
+    contigs_only: Annotated[bool, typer.Option(
+        "--contigs-only", "--scaffolds-only", help="Report only chromosome/scaffold statistics without the summary table."
+    )] = False,
     chromosomes_only: Annotated[bool, typer.Option(
         "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs."
     )] = False,
@@ -377,7 +380,7 @@ def main(
         "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode)."
     )] = "",
     diff_only: Annotated[bool, typer.Option(
-        "--diff-only", help="Report only features and summary statistics where genomes differ from reference (hides rows that are '= ref')."
+        "--diff-only", help="Report only features and summary statistics where genomes differ from reference (automatically activates reference mode; hides rows that are '= ref')."
     )] = False,
     no_seq: Annotated[bool, typer.Option(
         "--no-seq", help="Disable sequence-level hash matching (rely on name and unequivocal size matching only)."
@@ -388,6 +391,10 @@ def main(
     """
     if not genome_files:
         typer.echo("Error: At least one genome FASTA file must be provided.", err=True)
+        raise typer.Exit(code=1)
+
+    if summary_only and contigs_only:
+        typer.echo("Error: Cannot specify both --summary-only and --contigs-only.", err=True)
         raise typer.Exit(code=1)
 
     # Parse estimated genome size if provided
@@ -441,7 +448,11 @@ def main(
             if not found:
                 typer.echo(f"Warning: Reference genome '{ref_genome}' not found in genomes. Defaulting to 1st genome.", err=True)
 
-    is_ref_mode = bool(reference or ref_genome)
+    if diff_only and len(genomes) < 2:
+        typer.echo("Warning: --diff-only requires at least two genomes to compare. Ignoring.", err=True)
+        diff_only = False
+
+    is_ref_mode = bool(reference or ref_genome or diff_only)
     ref_name = genomes[ref_idx].name
 
     # Collect and pair features
@@ -617,52 +628,53 @@ def main(
     terminal_summary_rows = []
     file_summary_rows = []
 
-    for label, key, is_pct in summary_metrics:
-        term_row = [label]
-        file_key = label.upper().replace(" ", "_").replace("_(%)", "").replace("_(N%)", "")
-        file_row = [file_key]
+    if not contigs_only:
+        for label, key, is_pct in summary_metrics:
+            term_row = [label]
+            file_key = label.upper().replace(" ", "_").replace("_(%)", "").replace("_(N%)", "")
+            file_row = [file_key]
 
-        is_size = "size" in key.lower() or key.lower() in ("n50", "n90", "aun", "ng50", "aung")
-        vals = [s.get(key) for s in stats_list]
+            is_size = "size" in key.lower() or key.lower() in ("n50", "n90", "aun", "ng50", "aung")
+            vals = [s.get(key) for s in stats_list]
 
-        if not is_ref_mode:
-            for val in vals:
-                term_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
-                file_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
+            if not is_ref_mode:
+                for val in vals:
+                    term_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
+                    file_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
 
-            if is_two_genomes:
-                v1, v2 = vals[0], vals[1]
-                diff = (v2 - v1) if (v1 is not None and v2 is not None) else None
-                term_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
-                file_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
+                if is_two_genomes:
+                    v1, v2 = vals[0], vals[1]
+                    diff = (v2 - v1) if (v1 is not None and v2 is not None) else None
+                    term_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
+                    file_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
 
-        else:
-            ref_val = vals[ref_idx]
-            all_metrics_same = True
+            else:
+                ref_val = vals[ref_idx]
+                all_metrics_same = True
 
-            for idx, val in enumerate(vals):
-                if idx == ref_idx:
-                    term_row.append(format_number(ref_val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
-                    file_row.append(format_number(ref_val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
-                else:
-                    if val == ref_val:
-                        term_row.append("= ref")
-                        file_row.append("= ref")
+                for idx, val in enumerate(vals):
+                    if idx == ref_idx:
+                        term_row.append(format_number(ref_val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
+                        file_row.append(format_number(ref_val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
                     else:
-                        all_metrics_same = False
-                        diff = (val - ref_val) if (val is not None and ref_val is not None) else None
-                        t_diff = format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct)
-                        f_diff = format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct)
-                        t_val = format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct)
-                        f_val = format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct)
-                        term_row.append(f"{t_val} ({t_diff})")
-                        file_row.append(f"{f_val} ({f_diff})")
+                        if val == ref_val:
+                            term_row.append("= ref")
+                            file_row.append("= ref")
+                        else:
+                            all_metrics_same = False
+                            diff = (val - ref_val) if (val is not None and ref_val is not None) else None
+                            t_diff = format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct)
+                            f_diff = format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct)
+                            t_val = format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct)
+                            f_val = format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct)
+                            term_row.append(f"{t_val} ({t_diff})")
+                            file_row.append(f"{f_val} ({f_diff})")
 
-            if diff_only and all_metrics_same:
-                continue
+                if diff_only and all_metrics_same:
+                    continue
 
-        terminal_summary_rows.append(term_row)
-        file_summary_rows.append(file_row)
+            terminal_summary_rows.append(term_row)
+            file_summary_rows.append(file_row)
 
     # Render Terminal
     if not quiet:

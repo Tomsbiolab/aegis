@@ -390,3 +390,27 @@ def test_split_with_punctuation_and_jaawwd(tmp_path):
     g_other8 = Genome("g_other8", str(out8 / "genome_split_other.fasta"), quiet=True)
     assert "JAAWWD010000446.1" in g_other8.scaffolds
 
+
+def test_classify_feature_sweet_potato_cultivar_prefix():
+    """
+    Test the sweet potato (Ipomoea batatas) case:
+    Contigs like 'BrgdChr01A', 'BrgdChr01B', 'BrgdChr01u' should match tags A, B, u in smart mode
+    WITHOUT falsely matching 'B' in 'Brgd' or 'C' in 'Chr'.
+    """
+    tags = ["A", "B", "C", "D", "E", "F", "u"]
+
+    tag_a, warn_a = classify_feature("BrgdChr01A", "BrgdChr01A", split_tags=tags)
+    assert tag_a == "A", f"Expected A, got {tag_a}"
+    assert warn_a is None
+
+    tag_b, warn_b = classify_feature("BrgdChr01B", "BrgdChr01B", split_tags=tags)
+    assert tag_b == "B", f"Expected B, got {tag_b}"
+    assert warn_b is None
+
+    tag_c, warn_c = classify_feature("BrgdChr01C", "BrgdChr01C", split_tags=tags)
+    assert tag_c == "C", f"Expected C, got {tag_c}"
+    assert warn_c is None
+
+    tag_u, warn_u = classify_feature("BrgdChr01u", "BrgdChr01u", split_tags=tags)
+    assert tag_u == "u", f"Expected u, got {tag_u}"
+    assert warn_u is None

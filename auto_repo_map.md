@@ -823,6 +823,7 @@
       - `def test_split_with_split_map(populus_test_files, tmp_path):`
       - `def test_tidy_genome_keep_description(populus_test_files, tmp_path):`
       - `def test_split_with_punctuation_and_jaawwd(tmp_path):`
+      - `def test_classify_feature_sweet_potato_cultivar_prefix():`
     - test_cli_subset.py
       - `def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):`
       - `def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):`

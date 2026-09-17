@@ -163,13 +163,16 @@ def main(
         "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference."
     )] = "",
     diff_only: Annotated[bool, typer.Option(
-        "--diff-only", help="Report only features and summary statistics where annotations differ from reference."
+        "--diff-only", help="Report only features and summary statistics where annotations differ from reference (automatically activates reference mode; hides rows that are '= ref')."
     )] = False,
     summary_only: Annotated[bool, typer.Option(
         "--summary-only", help="Report only overall summary statistics without listing individual contigs."
     )] = False,
     contigs_only: Annotated[bool, typer.Option(
         "--contigs-only", help="Report only contig-level statistics without the summary table."
+    )] = False,
+    chromosomes_only: Annotated[bool, typer.Option(
+        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs."
     )] = False,
     human_readable: Annotated[bool, typer.Option(
         "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb)."
@@ -196,6 +199,10 @@ def main(
     """
     if not files:
         typer.echo("Error: At least one annotation GFF/GTF file must be provided.", err=True)
+        raise typer.Exit(code=1)
+
+    if summary_only and contigs_only:
+        typer.echo("Error: Cannot specify both --summary-only and --contigs-only.", err=True)
         raise typer.Exit(code=1)
 
     # 1. Disambiguate positional arguments vs genome file
@@ -298,7 +305,11 @@ def main(
             if not found:
                 typer.echo(f"Warning: Reference annotation '{ref_annotation}' not found. Defaulting to 1st annotation.", err=True)
 
-    is_ref_mode = bool(reference or ref_annotation) and is_multi
+    if diff_only and not is_multi:
+        typer.echo("Warning: --diff-only requires at least two annotations to compare. Ignoring.", err=True)
+        diff_only = False
+
+    is_ref_mode = bool(reference or ref_annotation or diff_only) and is_multi
 
     # 6. Assembly Reconciliation Warning Banner (for partial discrepancies)
     warning_banners = []
@@ -347,6 +358,21 @@ def main(
         return (cat, parts)
 
     all_contig_names.sort(key=contig_sort_key)
+
+    if chromosomes_only:
+        filtered_contigs = []
+        for cname in all_contig_names:
+            if genome_obj:
+                scf = genome_obj.get_scaffold(cname)
+                if scf:
+                    if scf.chromosome and not scf.organelle and not scf.unknown_chromosome:
+                        filtered_contigs.append(cname)
+                    continue
+            nl = cname.lower()
+            is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+            if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle:
+                filtered_contigs.append(cname)
+        all_contig_names = filtered_contigs
 
     contig_headers = []
     contig_rows = []
