@@ -7,6 +7,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
+from .summary_genome import pair_genome_features, PairedFeature, normalize_chr_name
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -139,16 +140,16 @@ def render_terminal_table(headers: list[str], rows: list[list[str]], section_tit
 @app.command()
 def main(
     files: Annotated[List[str], typer.Argument(
-        help="Path to one or more annotation GFF/GTF file(s), or an annotation followed by a genome FASTA file."
+        help="Path to one or more annotation GFF/GTF file(s). (Optional: a single genome FASTA can be provided as the last argument, or explicitly via -g/--genome)."
     )],
-    genome: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to the input genome FASTA file."
-    )] = "",
+    genome: Annotated[Optional[List[str]], typer.Option(
+        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g)."
+    )] = None,
     annotation_names: Annotated[str, typer.Option(
         "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames)."
     )] = "",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+        "-gn", "--genome-name", help="Genome assembly version, name or tag (comma-separated if multiple genomes)."
     )] = "{genome-file}",
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to output summary table (TSV/CSV)."
@@ -195,7 +196,20 @@ def main(
 ):
     """
     Outputs summary statistics and chromosome breakdown for one or more annotations,
-    with optional assembly reconciliation checks against a genome FASTA file.
+    with optional assembly reconciliation checks against one or more genome FASTA files.
+
+    USAGE SCENARIOS:
+      1. Single annotation with genome reconciliation:
+         aegis summary annot.gff -g genome.fasta
+
+      2. Comparing multiple annotations on the SAME genome assembly (e.g. NCBI vs Ensembl):
+         aegis summary ncbi.gff ensembl.gff -g genome.fasta
+
+      3. Comparing multiple annotations on SYNONYMOUS assemblies (automatic contig matching):
+         aegis summary ncbi.gff ensembl.gff -g ncbi.fa,ensembl.fa
+
+      4. Comparing annotations from DIFFERENT genomes/species (macro statistics):
+         aegis summary speciesA.gff speciesB.gff --summary-only
     """
     if not files:
         typer.echo("Error: At least one annotation GFF/GTF file must be provided.", err=True)
@@ -206,47 +220,78 @@ def main(
         raise typer.Exit(code=1)
 
     # 1. Disambiguate positional arguments vs genome file
+    raw_genome_files: list[str] = []
     if genome:
+        g_list = [genome] if isinstance(genome, str) else genome
+        for g_arg in g_list:
+            for part in g_arg.split(","):
+                part = part.strip()
+                if part:
+                    raw_genome_files.append(part)
+
+    if raw_genome_files:
         annot_files = list(files)
-        genome_file = genome
+        genome_files = raw_genome_files
     else:
         if len(files) == 1:
             annot_files = [files[0]]
-            genome_file = ""
+            genome_files = []
         elif len(files) == 2:
             if is_fasta_path(files[1]):
                 annot_files = [files[0]]
-                genome_file = files[1]
+                genome_files = [files[1]]
             else:
                 annot_files = list(files)
-                genome_file = ""
+                genome_files = []
         else:
             if is_fasta_path(files[-1]):
                 annot_files = list(files[:-1])
-                genome_file = files[-1]
+                genome_files = [files[-1]]
             else:
                 annot_files = list(files)
-                genome_file = ""
+                genome_files = []
 
+    num_annots = len(annot_files)
+    num_genomes = len(genome_files)
+
+    if num_genomes > 1 and num_genomes != num_annots:
+        typer.echo(
+            f"Error: Number of genome files ({num_genomes}) must match the number of annotation files ({num_annots}) or be exactly 1.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    is_multi_genome = (num_genomes > 1 and num_genomes == num_annots)
     os.makedirs(output_dir, exist_ok=True)
 
     # 2. Load genome assembly if specified
-    genome_obj: Genome | None = None
-    if genome_file:
-        if genome_name == "{genome-file}":
-            g_stem = Path(genome_file).stem
+    gnames = [item.strip() for item in genome_name.split(",")] if genome_name and genome_name != "{genome-file}" else []
+    genome_objs: list[Genome] = []
+
+    for g_idx, g_file in enumerate(genome_files):
+        if g_idx < len(gnames) and gnames[g_idx]:
+            cur_gname = gnames[g_idx]
+        else:
+            g_stem = Path(g_file).stem
             if g_stem.endswith(".fa") or g_stem.endswith(".fasta"):
                 g_stem = Path(g_stem).stem
-            genome_name = g_stem
+            cur_gname = g_stem
 
-        genome_obj = Genome(
-            name=genome_name,
-            genome_file_path=genome_file,
+        if any(g.name == cur_gname for g in genome_objs):
+            cur_gname = f"{cur_gname}_{g_idx + 1}"
+
+        g_obj = Genome(
+            name=cur_gname,
+            genome_file_path=g_file,
             quiet=True,
             header_id_tag=header_id_tag if header_id_tag != "" else None,
             header_id_regex=header_id_regex if header_id_regex != "" else None,
             gwh=gwh,
         )
+        genome_objs.append(g_obj)
+
+    genome_obj: Genome | None = genome_objs[0] if (num_genomes == 1) else None
+    has_genomes = bool(genome_obj is not None or (is_multi_genome and genome_objs))
 
     # 3. Parse annotation names
     names = [item.strip() for item in annotation_names.split(",")] if annotation_names else []
@@ -261,21 +306,56 @@ def main(
             if aname.endswith(".gff3") or aname.endswith(".gff") or aname.endswith(".gtf"):
                 aname = Path(aname).stem
 
+        if is_multi_genome:
+            assigned_genome = genome_objs[idx]
+        elif genome_objs:
+            assigned_genome = genome_objs[0]
+        else:
+            assigned_genome = None
+
+        def emit_mismatch_hint():
+            if len(annot_files) > 1 and not is_multi_genome:
+                typer.echo(
+                    "\nHint: 'aegis summary' applies the provided genome assembly to ALL input annotations "
+                    "(assuming they correspond to the same genome build).\n"
+                    "• If your annotations use different assemblies or contig naming conventions, pass their respective genomes: '-g g1.fa,g2.fa'.\n"
+                    "• If comparing annotations from different species without genomes, run without '-g/--genome'.\n"
+                    "• To compare overall structural metrics across different assemblies without contig matching, pass '--summary-only'.",
+                    err=True,
+                )
+            elif is_multi_genome:
+                typer.echo(
+                    f"\nHint: None of the contig identifiers in annotation '{aname}' match sequences in its assigned genome FASTA '{assigned_genome.name}'.\n"
+                    "• Check if chromosome naming differs (e.g. 'chr1' vs '1', or accession IDs vs chromosome names).\n"
+                    "• For GWH or tagged FASTA headers, try '--gwh' or '--header-id-tag'.",
+                    err=True,
+                )
+            else:
+                typer.echo(
+                    "\nHint: None of the contig identifiers in this annotation match sequences in the genome FASTA.\n"
+                    "• Check if chromosome naming differs (e.g. 'chr1' vs '1', or accession IDs vs chromosome names).\n"
+                    "• For GWH or tagged FASTA headers, try '--gwh' or '--header-id-tag'.",
+                    err=True,
+                )
+
         try:
             annot = Annotation(
                 name=aname,
                 annot_file_path=afile,
-                genome=genome_obj,
+                genome=assigned_genome,
                 quiet=True
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)
+            if "match" in str(e).lower() or "scaffold" in str(e).lower() or "chromosome" in str(e).lower():
+                emit_mismatch_hint()
             raise typer.Exit(code=1)
 
         # Check for fatal mismatch (zero matching contigs between annotation and genome)
         v = getattr(annot, "genome_validation", {})
         if v.get("fatal_mismatch"):
             typer.echo(f"Error: {v.get('summary_message')}", err=True)
+            emit_mismatch_hint()
             raise typer.Exit(code=1)
 
         # Update stats and export basic/full stats CSV files
@@ -311,15 +391,57 @@ def main(
 
     is_ref_mode = bool(reference or ref_annotation or diff_only) and is_multi
 
-    # 6. Assembly Reconciliation Warning Banner (for partial discrepancies)
+    # 6. Assembly Reconciliation & Genome Pairing
+    paired_features: list[PairedFeature] = []
+    multi_genome_warning = ""
+    if is_multi_genome:
+        paired_features = pair_genome_features(
+            genome_objs,
+            ref_idx=ref_idx,
+            check_sequence=True,
+            include_all=not chromosomes_only,
+            chromosomes_only=chromosomes_only,
+        )
+        shared_count = sum(1 for pf in paired_features if len(pf.scaffolds) > 1)
+        if shared_count == 0 and len(paired_features) > 0:
+            multi_genome_warning = (
+                "⚠️  MULTI-GENOME ASSEMBLY WARNING:\n"
+                "   Zero contigs or sequences could be matched between the provided genome assemblies.\n"
+                "   The annotations appear to be from completely different species or assemblies without synonymous contigs.\n"
+                "   Reporting summary statistics only."
+            )
+            summary_only = True
+
     warning_banners = []
-    if genome_obj is not None:
+    if not is_multi_genome and genome_obj is not None:
         for a in annotations:
             v = getattr(a, "genome_validation", {})
             if v.get("has_warning"):
                 out_of_bounds = v.get("out_of_bounds_features", [])
                 missing_chroms = v.get("missing_chromosomes", [])
                 msg_lines = [f"⚠️  ASSEMBLY RECONCILIATION WARNING for '{a.name}' on '{genome_obj.name}':"]
+                if missing_chroms:
+                    if len(missing_chroms) == 1:
+                        msg_lines.append(f"   • 1 contig in annotation not found in genome FASTA: '{missing_chroms[0]}'.")
+                    else:
+                        sample = f" ({', '.join(missing_chroms[:3])}{'...' if len(missing_chroms) > 3 else ''})"
+                        msg_lines.append(f"   • {len(missing_chroms):,} contigs in annotation not found in genome FASTA{sample}.")
+                if out_of_bounds:
+                    if len(out_of_bounds) == 1:
+                        msg_lines.append(f"   • 1 feature has coordinates exceeding contig boundaries: '{out_of_bounds[0]}'.")
+                    else:
+                        sample = f" (e.g., {', '.join(out_of_bounds[:3])}{'...' if len(out_of_bounds) > 3 else ''})"
+                        msg_lines.append(f"   • {len(out_of_bounds):,} features have coordinates exceeding contig boundaries{sample}.")
+                msg_lines.append("   Possible assembly mismatch! Please verify that annotation and genome builds correspond.")
+                warning_banners.append("\n".join(msg_lines))
+    elif is_multi_genome:
+        for idx, a in enumerate(annotations):
+            g_obj = genome_objs[idx]
+            v = getattr(a, "genome_validation", {})
+            if v.get("has_warning"):
+                out_of_bounds = v.get("out_of_bounds_features", [])
+                missing_chroms = v.get("missing_chromosomes", [])
+                msg_lines = [f"⚠️  ASSEMBLY RECONCILIATION WARNING for '{a.name}' on '{g_obj.name}':"]
                 if missing_chroms:
                     if len(missing_chroms) == 1:
                         msg_lines.append(f"   • 1 contig in annotation not found in genome FASTA: '{missing_chroms[0]}'.")
@@ -346,6 +468,19 @@ def main(
             if cname not in all_contig_names:
                 all_contig_names.append(cname)
 
+    # Check for disjoint contigs when multiple annotations are compared without a genome
+    disjoint_contig_banner = ""
+    if is_multi and not is_multi_genome and genome_obj is None and not summary_only:
+        contig_sets = [set(cmap.keys()) for cmap in contig_maps if cmap]
+        if len(contig_sets) >= 2:
+            common_contigs = set.intersection(*contig_sets)
+            if not common_contigs:
+                disjoint_contig_banner = (
+                    "ℹ️  NOTICE: Input annotations share no common contig names "
+                    "(likely from different genomes or differing chromosome naming conventions).\n"
+                    "   Tip: Pass '--summary-only' to suppress the disjoint contig breakdown and view overall comparative metrics."
+                )
+
     def contig_sort_key(name: str):
         nl = name.lower()
         if "mit" in nl or "mt" in nl or "pt" in nl or "chlor" in nl or "cp" in nl:
@@ -357,22 +492,25 @@ def main(
         parts = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', name)]
         return (cat, parts)
 
-    all_contig_names.sort(key=contig_sort_key)
+    if not is_multi_genome:
+        all_contig_names.sort(key=contig_sort_key)
 
-    if chromosomes_only:
-        filtered_contigs = []
-        for cname in all_contig_names:
-            if genome_obj:
-                scf = genome_obj.get_scaffold(cname)
-                if scf:
-                    if scf.chromosome and not scf.organelle and not scf.unknown_chromosome:
-                        filtered_contigs.append(cname)
-                    continue
-            nl = cname.lower()
-            is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
-            if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle:
-                filtered_contigs.append(cname)
-        all_contig_names = filtered_contigs
+        if chromosomes_only:
+            filtered_contigs = []
+            for cname in all_contig_names:
+                if genome_obj:
+                    scf = genome_obj.get_scaffold(cname)
+                    if scf:
+                        if scf.chromosome and not scf.organelle and not scf.unknown_chromosome:
+                            filtered_contigs.append(cname)
+                        continue
+                nl = cname.lower()
+                is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+                if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle:
+                    filtered_contigs.append(cname)
+            all_contig_names = filtered_contigs
+    else:
+        paired_features.sort(key=lambda pf: contig_sort_key(pf.primary_name))
 
     contig_headers = []
     contig_rows = []
@@ -406,7 +544,7 @@ def main(
 
         else:
             # Multi-annotation table
-            if genome_obj is not None:
+            if has_genomes:
                 contig_headers = ["Contig", "Size"]
             else:
                 contig_headers = ["Contig"]
@@ -425,58 +563,137 @@ def main(
                 for a in annotations:
                     contig_headers.append(f"{a.name} Genes")
 
-            for cname in all_contig_names:
-                term_row = [cname]
-                file_row = [cname]
+            if is_multi_genome:
+                for pf in paired_features:
+                    syn_parts = []
+                    for g_obj in genome_objs:
+                        if g_obj.name in pf.synonyms:
+                            syn_val = pf.synonyms[g_obj.name]
+                            if syn_val != pf.primary_name and syn_val not in syn_parts:
+                                syn_parts.append(syn_val)
 
-                if genome_obj is not None:
-                    scf = genome_obj.scaffolds.get(cname)
-                    scf_sz = scf.size if scf else None
+                    if len(pf.scaffolds) == 1:
+                        owner_g = next(iter(pf.scaffolds.keys()))
+                        owner_annot_name = annotations[0].name
+                        for a_idx, g_obj in enumerate(genome_objs):
+                            if g_obj.name == owner_g:
+                                owner_annot_name = annotations[a_idx].name
+                                break
+                        c_term = f"{pf.primary_name} [{owner_annot_name} only]"
+                        c_file = f"{pf.primary_name} [{owner_annot_name}]"
+                    elif syn_parts:
+                        c_term = f"{pf.primary_name} ({', '.join(syn_parts)})"
+                        c_file = f"{pf.primary_name} ({', '.join(syn_parts)})"
+                    else:
+                        c_term = pf.primary_name
+                        c_file = pf.primary_name
+
+                    term_row = [c_term]
+                    file_row = [c_file]
+
+                    ref_scf = pf.scaffolds.get(genome_objs[ref_idx].name) or next(iter(pf.scaffolds.values()))
+                    scf_sz = ref_scf.size if ref_scf else None
                     term_row.append(format_number(scf_sz, human_readable=human_readable, is_terminal=True))
                     file_row.append(format_number(scf_sz, human_readable=human_readable, is_terminal=False))
 
-                gene_counts = []
-                for cmap in contig_maps:
-                    info = cmap.get(cname)
-                    gene_counts.append(info["genes"] if info else 0)
+                    gene_counts = []
+                    for a_idx, g_obj in enumerate(genome_objs):
+                        cname_in_g = pf.synonyms.get(g_obj.name)
+                        cmap = contig_maps[a_idx]
+                        info = cmap.get(cname_in_g) if cname_in_g else None
+                        gene_counts.append(info["genes"] if info else 0)
 
-                if is_ref_mode:
-                    ref_count = gene_counts[ref_idx]
-                    all_same = True
-                    for idx, cnt in enumerate(gene_counts):
-                        if idx == ref_idx:
+                    if is_ref_mode:
+                        ref_count = gene_counts[ref_idx]
+                        all_same = True
+                        for idx, cnt in enumerate(gene_counts):
+                            if idx == ref_idx:
+                                term_row.append(str(cnt))
+                                file_row.append(str(cnt))
+                            else:
+                                diff = cnt - ref_count
+                                if diff == 0:
+                                    term_row.append("= ref")
+                                    file_row.append("= ref")
+                                else:
+                                    all_same = False
+                                    term_row.append(format_diff(diff))
+                                    file_row.append(format_diff(diff, is_terminal=False))
+                        if diff_only and all_same:
+                            continue
+
+                    elif is_two:
+                        term_row.append(str(gene_counts[0]))
+                        file_row.append(str(gene_counts[0]))
+                        term_row.append(str(gene_counts[1]))
+                        file_row.append(str(gene_counts[1]))
+                        diff = gene_counts[1] - gene_counts[0]
+                        term_row.append(format_diff(diff))
+                        file_row.append(format_diff(diff, is_terminal=False))
+                        if diff_only and diff == 0:
+                            continue
+
+                    else:
+                        for cnt in gene_counts:
                             term_row.append(str(cnt))
                             file_row.append(str(cnt))
-                        else:
-                            diff = cnt - ref_count
-                            if diff == 0:
-                                term_row.append("= ref")
-                                file_row.append("= ref")
+
+                    contig_rows.append(term_row)
+                    contig_file_rows.append(file_row)
+
+            else:
+                for cname in all_contig_names:
+                    term_row = [cname]
+                    file_row = [cname]
+
+                    if genome_obj is not None:
+                        scf = genome_obj.scaffolds.get(cname)
+                        scf_sz = scf.size if scf else None
+                        term_row.append(format_number(scf_sz, human_readable=human_readable, is_terminal=True))
+                        file_row.append(format_number(scf_sz, human_readable=human_readable, is_terminal=False))
+
+                    gene_counts = []
+                    for cmap in contig_maps:
+                        info = cmap.get(cname)
+                        gene_counts.append(info["genes"] if info else 0)
+
+                    if is_ref_mode:
+                        ref_count = gene_counts[ref_idx]
+                        all_same = True
+                        for idx, cnt in enumerate(gene_counts):
+                            if idx == ref_idx:
+                                term_row.append(str(cnt))
+                                file_row.append(str(cnt))
                             else:
-                                all_same = False
-                                term_row.append(format_diff(diff))
-                                file_row.append(format_diff(diff, is_terminal=False))
-                    if diff_only and all_same:
-                        continue
+                                diff = cnt - ref_count
+                                if diff == 0:
+                                    term_row.append("= ref")
+                                    file_row.append("= ref")
+                                else:
+                                    all_same = False
+                                    term_row.append(format_diff(diff))
+                                    file_row.append(format_diff(diff, is_terminal=False))
+                        if diff_only and all_same:
+                            continue
 
-                elif is_two:
-                    term_row.append(str(gene_counts[0]))
-                    file_row.append(str(gene_counts[0]))
-                    term_row.append(str(gene_counts[1]))
-                    file_row.append(str(gene_counts[1]))
-                    diff = gene_counts[1] - gene_counts[0]
-                    term_row.append(format_diff(diff))
-                    file_row.append(format_diff(diff, is_terminal=False))
-                    if diff_only and diff == 0:
-                        continue
+                    elif is_two:
+                        term_row.append(str(gene_counts[0]))
+                        file_row.append(str(gene_counts[0]))
+                        term_row.append(str(gene_counts[1]))
+                        file_row.append(str(gene_counts[1]))
+                        diff = gene_counts[1] - gene_counts[0]
+                        term_row.append(format_diff(diff))
+                        file_row.append(format_diff(diff, is_terminal=False))
+                        if diff_only and diff == 0:
+                            continue
 
-                else:
-                    for cnt in gene_counts:
-                        term_row.append(str(cnt))
-                        file_row.append(str(cnt))
+                    else:
+                        for cnt in gene_counts:
+                            term_row.append(str(cnt))
+                            file_row.append(str(cnt))
 
-                contig_rows.append(term_row)
-                contig_file_rows.append(file_row)
+                    contig_rows.append(term_row)
+                    contig_file_rows.append(file_row)
 
     # 8. Collect Overall Annotation Summary Metrics
     summary_metrics = [
@@ -493,7 +710,7 @@ def main(
         ("Total Gene Span", "total_length_gene", False),
         ("Total mRNA Length", "total_length_mRNA", False),
     ]
-    if genome_obj is not None:
+    if has_genomes:
         summary_metrics.extend([
             ("Out-of-bounds Features", "out_of_bounds", False),
             ("Contigs Missing in Genome", "missing_chroms", False),
@@ -626,12 +843,20 @@ def main(
     if not quiet:
         output_blocks = []
 
+        if multi_genome_warning:
+            border = "=" * 80
+            output_blocks.append(f"\n{border}\n{multi_genome_warning}\n{border}")
+
+        if disjoint_contig_banner:
+            border = "-" * 80
+            output_blocks.append(f"\n{border}\n{disjoint_contig_banner}\n{border}")
+
         for banner in warning_banners:
             border = "=" * 80
             output_blocks.append(f"\n{border}\n{banner}\n{border}")
 
         if not summary_only and contig_rows:
-            section_lbl = "Contig Breakdown (Genes & Density)" if genome_obj is not None else "Contig Breakdown"
+            section_lbl = "Contig Breakdown (Genes & Density)" if has_genomes else "Contig Breakdown"
             output_blocks.append(render_terminal_table(contig_headers, contig_rows, section_title=section_lbl))
 
         if not contigs_only and summary_table_rows:

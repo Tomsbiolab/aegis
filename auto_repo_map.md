@@ -429,6 +429,7 @@
         - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
         - `def render_terminal_table(headers: list[str], rows: list[list[str]], section_title: str = "", summary_rows: list[list[str]] | None = None) -> str:`
         - `def main(`
+        - `def emit_mismatch_hint():`
         - `def contig_sort_key(name: str):`
         - `def get_annot_metric_val(annot: Annotation, metric_key: str):`
       - summary_genome.py
@@ -494,8 +495,6 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
-  - **aegis_output/**
-    - **stats/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
   - **images/**
@@ -836,6 +835,13 @@
       - `def test_cli_summary_multi_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_export(test_data_dir, tmp_path):`
       - `def test_cli_summary_fatal_mismatch_halt(tmp_path):`
+      - `def test_cli_summary_multi_annot_fatal_mismatch_hint(tmp_path):`
+      - `def test_cli_summary_disjoint_contigs_notice(tmp_path):`
+      - `def test_cli_summary_help_text():`
+      - `def test_cli_summary_multi_genome_synonyms(tmp_path):`
+      - `def test_cli_summary_multi_genome_asymmetric_contig(tmp_path):`
+      - `def test_cli_summary_multi_genome_mismatched_count(tmp_path):`
+      - `def test_cli_summary_multi_genome_completely_different_species(tmp_path):`
     - test_cli_summary_genome.py
       - `def test_cli_summary_genome_smoke(test_data_dir):`
       - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
