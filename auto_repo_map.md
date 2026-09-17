@@ -205,6 +205,10 @@
       - `def extract_peak_sequences(self, DAPseq_output_file:str, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_peak_seqs", extension=".fasta", top=600,`
       - `def subset(self, chosen_features:set|list|tuple|None=None, cap:int=2, quiet:bool=False):`
       - `def remove_features(self, features_to_remove:set):`
+      - `def get_stats(self, estimated_genome_size: int | None = None) -> dict:`
+      - `def stats(self) -> dict:`
+      - `def get_sorted_features(self, chromosomes_only: bool = False, sort_by: str = "name") -> list[str]:`
+      - `def _sort_key(scf):`
     - hits.py
       - `class OverlapHit():`
       - `def __init__(self, ID, origin, orientation, gene_query_percent, gene_target_percent, exons_in_both, exon_query_percent, exon_target_percent, CDSs_in_both, CDS_query_percent, CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):`
@@ -411,6 +415,15 @@
         - `def main(`
       - summary.py
         - `def main(`
+      - summary_genome.py
+        - `def format_human_readable(size: int | float, is_bp: bool = True) -> str:`
+        - `def parse_size_str(size_str: str) -> int:`
+        - `def format_number(val: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def get_natural_sort_key(name: str, genomes: list[Genome]):`
+        - `def render_terminal_table(headers: list[str], rows: list[list[str]], summary_rows: list[list[str]]) -> str:`
+        - `def main(`
+        - `def avg_size(fname):`
       - symbols.py
         - `def main(`
       - tidy.py
@@ -794,6 +807,9 @@
       - `def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):`
       - `def test_cli_subset_no_chr_cap(test_data_dir, tmp_path):`
       - `def test_cli_subset_chr_cap_and_seed(test_data_dir, tmp_path):`
+    - test_cli_summary_genome.py
+      - `def test_cli_summary_genome_smoke(test_data_dir):`
+      - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
@@ -880,6 +896,10 @@
       - `def test_remove_features(self, sample_fasta_file):`
       - `def test_subset(self, sample_fasta_file):`
       - `def test_copy(self, sample_fasta_file):`
+      - `def test_get_stats(self, sample_fasta_file):`
+      - `def test_stats_property(self, sample_fasta_file):`
+      - `def test_get_sorted_features(self, sample_fasta_file):`
+      - `def test_assembly_stats_and_sorting_logic(self, tmp_path):`
     - test_gz_support.py
       - `def test_gff3_gz_support(tmp_path):`
       - `def test_gtf_gz_support(tmp_path):`

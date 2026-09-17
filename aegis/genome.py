@@ -632,3 +632,151 @@ class Genome():
         for ft in features_to_remove:
             del self.scaffolds[ft]
         self.update()
+
+    def get_stats(self, estimated_genome_size: int | None = None) -> dict:
+        """
+        Calculates and returns assembly statistics for the genome.
+
+        Args:
+            estimated_genome_size (int, optional): Expected/estimated genome size (in bp)
+                for calculating NG50, LG50, and auNG.
+        """
+        self.update()
+
+        lengths = [s.size for s in self.scaffolds.values()]
+        lengths_sorted = sorted(lengths, reverse=True)
+        total_size = sum(lengths)
+
+        # N50 and L50
+        half_size = total_size / 2.0
+        n50, l50 = 0, 0
+        running_sum = 0
+        for idx, length in enumerate(lengths_sorted, 1):
+            running_sum += length
+            if running_sum >= half_size:
+                n50 = length
+                l50 = idx
+                break
+
+        # N90 and L90
+        target_90 = total_size * 0.9
+        n90, l90 = 0, 0
+        running_sum = 0
+        for idx, length in enumerate(lengths_sorted, 1):
+            running_sum += length
+            if running_sum >= target_90:
+                n90 = length
+                l90 = idx
+                break
+
+        # auN (length-weighted mean contig length / area under Nx curve)
+        sum_sq = sum(length ** 2 for length in lengths)
+        au_n = round(sum_sq / total_size) if total_size > 0 else 0
+
+        # NG50, LG50, auNG (if estimated_genome_size is provided)
+        ng50, lg50, au_ng = None, None, None
+        if estimated_genome_size is not None and estimated_genome_size > 0:
+            ng_half = estimated_genome_size / 2.0
+            running_sum = 0
+            ng50, lg50 = 0, 0
+            for idx, length in enumerate(lengths_sorted, 1):
+                running_sum += length
+                if running_sum >= ng_half:
+                    ng50 = length
+                    lg50 = idx
+                    break
+            au_ng = round(sum_sq / estimated_genome_size)
+
+        # GC and Gap content
+        total_gc = 0
+        total_gap = 0
+        for scf in self.scaffolds.values():
+            seq = scf.seq
+            total_gc += seq.count('G') + seq.count('C') + seq.count('g') + seq.count('c')
+            total_gap += seq.count('N') + seq.count('n')
+
+        gc_content = round((total_gc / total_size * 100), 2) if total_size > 0 else 0.0
+        gap_content = round((total_gap / total_size * 100), 2) if total_size > 0 else 0.0
+
+        if self.scaffolds:
+            longest = max(self.scaffolds.values(), key=lambda s: s.size)
+            shortest = min(self.scaffolds.values(), key=lambda s: s.size)
+            longest_scaffold = (longest.name, longest.size)
+            shortest_scaffold = (shortest.name, shortest.size)
+        else:
+            longest_scaffold = ("", 0)
+            shortest_scaffold = ("", 0)
+
+        num_chromosomes = len(self.chromosome_names) + len(self.accessory_chromosome_names)
+        if self.unknown_chromosome:
+            num_chromosomes += sum(1 for s in self.scaffolds.values() if s.unknown_chromosome)
+
+        scaffold_size = total_size - self.chromosome_size
+
+        res = {
+            "total_size": total_size,
+            "chromosome_size": self.chromosome_size,
+            "nuclear_chromosome_size": self.nuclear_chromosome_size,
+            "scaffold_size": scaffold_size,
+            "num_sequences": len(self.scaffolds),
+            "num_chromosomes": num_chromosomes,
+            "num_scaffolds": len(self.scaffolds) - num_chromosomes,
+            "n50": n50,
+            "l50": l50,
+            "n90": n90,
+            "l90": l90,
+            "auN": au_n,
+            "gc_content": gc_content,
+            "gap_content": gap_content,
+            "longest_scaffold": longest_scaffold,
+            "shortest_scaffold": shortest_scaffold,
+        }
+        if estimated_genome_size is not None and estimated_genome_size > 0:
+            res["estimated_genome_size"] = estimated_genome_size
+            res["ng50"] = ng50
+            res["lg50"] = lg50
+            res["auNG"] = au_ng
+
+        return res
+
+    @property
+    def stats(self) -> dict:
+        return self.get_stats()
+
+    def get_sorted_features(self, chromosomes_only: bool = False, sort_by: str = "name") -> list[str]:
+        """
+        Returns a sorted list of scaffold/chromosome names.
+        
+        Args:
+            chromosomes_only (bool): If True, only include chromosomes (nuclear, unknown, organellar).
+            sort_by (str): 'name' (natural alphanumeric sort), 'size' (descending size), or 'order' (FASTA order).
+        """
+        self.update()
+
+        candidates = []
+        for name, scf in self.scaffolds.items():
+            is_chr = scf.chromosome or scf.unknown_chromosome or scf.organelle
+            if chromosomes_only and not is_chr:
+                continue
+            candidates.append(scf)
+
+        if sort_by == "order":
+            return [s.name for s in candidates]
+
+        if sort_by == "size":
+            return [s.name for s in sorted(candidates, key=lambda s: (-s.size, s.name))]
+
+        # sort_by == "name": category hierarchy + natural sort
+        def _sort_key(scf):
+            if scf.chromosome and not scf.organelle and not scf.unknown_chromosome:
+                category = 1
+            elif scf.unknown_chromosome:
+                category = 2
+            elif scf.organelle:
+                category = 3
+            else:
+                category = 4
+            parts = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', scf.name)]
+            return (category, parts)
+
+        return [s.name for s in sorted(candidates, key=_sort_key)]

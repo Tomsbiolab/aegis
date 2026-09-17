@@ -117,3 +117,101 @@ class TestGenome:
         g2 = g.copy()
         g2.name = "changed"
         assert g.name == "test_genome"
+
+    def test_get_stats(self, sample_fasta_file):
+        g = Genome("test_genome", sample_fasta_file, quiet=True)
+        stats = g.get_stats()
+        assert stats["total_size"] == 5800
+        assert stats["chromosome_size"] == 5800
+        assert stats["num_sequences"] == 2
+        assert stats["num_chromosomes"] == 2
+        assert stats["num_scaffolds"] == 0
+        assert stats["n50"] == 5500
+        assert stats["l50"] == 1
+        assert stats["n90"] == 5500
+        assert stats["l90"] == 1
+        assert stats["gc_content"] == 50.0
+        assert stats["gap_content"] == 0.0
+        assert stats["longest_scaffold"] == ("chr1", 5500)
+        assert stats["shortest_scaffold"] == ("chr2", 300)
+
+    def test_stats_property(self, sample_fasta_file):
+        g = Genome("test_genome", sample_fasta_file, quiet=True)
+        assert g.stats == g.get_stats()
+
+    def test_get_sorted_features(self, sample_fasta_file):
+        g = Genome("test_genome", sample_fasta_file, quiet=True)
+        sorted_feats = g.get_sorted_features(sort_by="name")
+        assert sorted_feats == ["chr1", "chr2"]
+
+        sorted_by_size = g.get_sorted_features(sort_by="size")
+        assert sorted_by_size == ["chr1", "chr2"]
+
+    def test_assembly_stats_and_sorting_logic(self, tmp_path):
+        """
+        Verify underlying biological assembly metrics (N50, L50, GC content, Gap content)
+        and natural chromosome ordering on a known synthetic genome.
+        """
+        fasta_file = tmp_path / "synthetic_genome.fasta"
+        # chr1: 400 bp (all G/C)
+        # chr10: 300 bp (all A/T)
+        # chr2: 250 bp (balanced)
+        # chrM: 150 bp (organelle)
+        # scaffold_1: 100 bp (50 Ns)
+        fasta_content = (
+            ">chr1\n" + "GC" * 200 + "\n" +
+            ">chr10\n" + "AT" * 150 + "\n" +
+            ">chr2\n" + "ATGC" * 62 + "AT\n" +
+            ">chrM\n" + "ATGC" * 37 + "AT\n" +
+            ">scaffold_1\n" + "N" * 50 + "GC" * 25 + "\n"
+        )
+        fasta_file.write_text(fasta_content, encoding="utf-8")
+
+        g = Genome("synthetic", str(fasta_file), quiet=True)
+        stats = g.get_stats()
+
+        # Assembly sizes
+        assert stats["total_size"] == 1200
+        # Nuclear chr (400 + 300 + 250 = 950) + organelle (150) = 1100
+        assert stats["chromosome_size"] == 1100
+        assert stats["nuclear_chromosome_size"] == 950
+        assert stats["scaffold_size"] == 100
+        assert stats["num_sequences"] == 5
+        assert stats["num_chromosomes"] == 4
+        assert stats["num_scaffolds"] == 1
+
+        # N50 and L50 (sorted lengths: 400, 300, 250, 150, 100; half = 600; 400+300=700 >= 600)
+        assert stats["n50"] == 300
+        assert stats["l50"] == 2
+
+        # N90 and L90 (90% = 1080; 400+300+250+150 = 1100 >= 1080)
+        assert stats["n90"] == 150
+        assert stats["l90"] == 4
+
+        # auN (length-weighted mean): sum(L^2) / total = 345,000 / 1200 = 287.5 -> 288
+        assert stats["auN"] == 288
+
+        # With estimated genome size = 1500 (threshold = 750; 400+300+250=950 >= 750)
+        stats_ng = g.get_stats(estimated_genome_size=1500)
+        assert stats_ng["ng50"] == 250
+        assert stats_ng["lg50"] == 3
+        assert stats_ng["auNG"] == 230
+
+        # With large estimated size = 3000 (threshold = 1500; assembly never reaches 50%)
+        stats_large = g.get_stats(estimated_genome_size=3000)
+        assert stats_large["ng50"] == 0
+        assert stats_large["lg50"] == 0
+        assert stats_large["auNG"] == 115
+
+        # Gap content: 50 Ns out of 1200 bp = 4.17%
+        assert stats["gap_content"] == round((50 / 1200) * 100, 2)
+
+        # Natural sorting: nuclear (chr1, chr2, chr10) -> organelle (chrM) -> scaffold (scaffold_1)
+        # Crucial: chr2 MUST precede chr10 (natural numeric sort, not lexicographical)
+        sorted_all = g.get_sorted_features(chromosomes_only=False, sort_by="name")
+        assert sorted_all == ["chr1", "chr2", "chr10", "chrM", "scaffold_1"]
+
+        sorted_chrs = g.get_sorted_features(chromosomes_only=True, sort_by="name")
+        assert sorted_chrs == ["chr1", "chr2", "chr10", "chrM"]
+
+
