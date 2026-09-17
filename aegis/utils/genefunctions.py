@@ -17,17 +17,24 @@ import pandas as pd
 import time
 import warnings
 import itertools
+import hashlib
 
 from collections import defaultdict
 from pathlib import Path
 
 # nucleotides
-_STR_FROM = "ACGTRYSWKMBDHVNX-"
-_STR_TO   = "TGCAYRSWMKVHDBNX-"
+_STR_FROM = "ACGTRYSWKMBDHVNXUacgtryswkmbdhvnxu-"
+_STR_TO   = "TGCAYRSWMKVHDBNXAtgcayrswmkvhdbnxa-"
 _BYTES_COMP_TABLE = bytes.maketrans(_STR_FROM.encode(), _STR_TO.encode())
 
 def reverse_complement(in_seq: str) -> str:
+    """Return the reverse complement of a nucleotide sequence (handles IUPAC, case, and RNA)."""
     return in_seq.encode('ascii').translate(_BYTES_COMP_TABLE)[::-1].decode('ascii')
+
+
+def sequence_hash(in_seq: str) -> str:
+    """Return a fast, deterministic MD5 checksum of an upper-cased nucleotide sequence."""
+    return hashlib.md5(in_seq.upper().encode('ascii', errors='ignore')).hexdigest()
 
 iupac_dna_nucleotides = {
     "W": ["A", "T"],
@@ -71,12 +78,13 @@ byte_dict = defaultdict(lambda: "X", byte_codon_dict)
 
 def translate(seq: str) -> str:
     """
-    Translates an uppercase DNA sequence to Amino Acids.
+    Translates a DNA sequence to Amino Acids.
     Handles all ambiguous IUPAC bases.
+    Case-insensitive.
     Assumes input is a multiple of 3
     """
 
-    it = iter(seq.encode('ascii'))
+    it = iter(seq.upper().encode('ascii'))
 
     return "".join(map(byte_dict.__getitem__, zip(it, it, it)))
 
@@ -124,9 +132,11 @@ def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[i
     if tolerated_stops is None or tolerated_stops < 0:
         tolerated_stops = float('inf')
 
-    stop_set = frozenset(stop_codons) if not isinstance(stop_codons, (set, frozenset)) else stop_codons
+    stop_set = frozenset(s.upper() for s in (stop_codons if isinstance(stop_codons, (set, frozenset, tuple, list)) else [stop_codons]))
+    start_codons = tuple(s.upper() for s in start_codons)
 
     seq_len = len(in_seq)
+    seq_upper = in_seq.upper()
     min_seq_len = min_codon_len * 3
 
     f0, f1, f2 = [], [], []
@@ -137,27 +147,27 @@ def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[i
 
     if enforce_start_codon:
         for st_codon in start_codons:
-            i = in_seq.find(st_codon)
+            i = seq_upper.find(st_codon)
             while i != -1:
                 if i <= limit_start:
                     starts_set.add(i)
-                i = in_seq.find(st_codon, i + 1)
+                i = seq_upper.find(st_codon, i + 1)
     else:
         for init_idx in range(min(3, seq_len - 2)):
             starts_set.add(init_idx)
             
         for stop in stop_set:
-            idx = in_seq.find(stop)
+            idx = seq_upper.find(stop)
             while idx != -1:
                 if idx + 3 <= limit_start:
                     starts_set.add(idx + 3)
-                idx = in_seq.find(stop, idx + 1)
+                idx = seq_upper.find(stop, idx + 1)
                 
     starts = sorted(starts_set)
     limit_stop = seq_len - 2
 
     for i in starts:
-        if not enforce_start_codon and in_seq[i:i+3] in stop_set:
+        if not enforce_start_codon and seq_upper[i:i+3] in stop_set:
             continue
             
         append_func = appends[i % 3]
@@ -166,7 +176,7 @@ def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[i
         
         for j in range(i + 3, limit_stop, 3):
             end_idx = j + 3
-            codon = in_seq[j:end_idx]
+            codon = seq_upper[j:end_idx]
             
             if codon in stop_set:
                 stops_seen += 1

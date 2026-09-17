@@ -316,11 +316,11 @@ class Intron(Feature):
     
     @property
     def splice_site_donor(self):
-        return self.seq[0:2]
+        return self.seq[0:2].upper()
     
     @property
     def splice_site_acceptor(self):
-        return self.seq[-2:]
+        return self.seq[-2:].upper()
 
     @property
     def canonical(self):

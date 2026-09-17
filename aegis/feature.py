@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 
 import copy
 import re
+import warnings
 
 from .utils.genefunctions import reverse_complement
 from .other_components import FeatureQuality, FeatureAttributes
@@ -366,27 +367,90 @@ class Feature():
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
+            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+                warnings.warn(
+                    f"Feature '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequence.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ""
+            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            start_clipped = (self.start is not None and self.start < 1)
+            end_clipped = (self.end is not None and self.end > scf_len)
+            if start_clipped or end_clipped:
+                warnings.warn(
+                    f"Feature '{self.id}' coordinates ({self.start}..{self.end}) exceed bounds for contig '{self.ch}' (length {scf_len}) in genome '{self._ACTIVE_GENOME.name}'. Sequence will be truncated.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+            start = max(0, self.start - 1) if self.start is not None else 0
+            end = min(scf_len, self.end) if self.end is not None else scf_len
+            if start >= end:
+                return ""
             if self.strand == "-":
-                return reverse_complement(self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+                return reverse_complement(scf_seq[start:end])
             else:
-                return self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+                return scf_seq[start:end]
 
     @property
     def hard_seq(self) -> str:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
+            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+                warnings.warn(
+                    f"Feature '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequence.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ""
+            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            start_clipped = (self.start is not None and self.start < 1)
+            end_clipped = (self.end is not None and self.end > scf_len)
+            if start_clipped or end_clipped:
+                warnings.warn(
+                    f"Feature '{self.id}' coordinates ({self.start}..{self.end}) exceed bounds for contig '{self.ch}' (length {scf_len}) in hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Sequence will be truncated.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+            start = max(0, self.start - 1) if self.start is not None else 0
+            end = min(scf_len, self.end) if self.end is not None else scf_len
+            if start >= end:
+                return ""
             if self.strand == "-":
-                return reverse_complement(self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end])
+                return reverse_complement(scf_seq[start:end])
             else:
-                return self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+                return scf_seq[start:end]
 
     @property
     def seqs(self) -> list[str]:
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            raw = self._ACTIVE_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+                warnings.warn(
+                    f"Feature '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            start_clipped = (self.start is not None and self.start < 1)
+            end_clipped = (self.end is not None and self.end > scf_len)
+            if start_clipped or end_clipped:
+                warnings.warn(
+                    f"Feature '{self.id}' coordinates ({self.start}..{self.end}) exceed bounds for contig '{self.ch}' (length {scf_len}) in genome '{self._ACTIVE_GENOME.name}'. Sequence will be truncated.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+            start = max(0, self.start - 1) if self.start is not None else 0
+            end = min(scf_len, self.end) if self.end is not None else scf_len
+            if start >= end:
+                return ["", ""]
+            raw = scf_seq[start:end]
             return [raw, reverse_complement(raw)]
 
     @property
@@ -394,5 +458,26 @@ class Feature():
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            raw = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq[self.start-1:self.end]
+            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+                warnings.warn(
+                    f"Feature '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            start_clipped = (self.start is not None and self.start < 1)
+            end_clipped = (self.end is not None and self.end > scf_len)
+            if start_clipped or end_clipped:
+                warnings.warn(
+                    f"Feature '{self.id}' coordinates ({self.start}..{self.end}) exceed bounds for contig '{self.ch}' (length {scf_len}) in hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Sequence will be truncated.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+            start = max(0, self.start - 1) if self.start is not None else 0
+            end = min(scf_len, self.end) if self.end is not None else scf_len
+            if start >= end:
+                return ["", ""]
+            raw = scf_seq[start:end]
             return [raw, reverse_complement(raw)]

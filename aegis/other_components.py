@@ -115,7 +115,8 @@ class FeatureQuality():
 
     def calculate_gc_content(self):
         if self._feature.seq:
-            gc_count = self._feature.seq.count('G') + self._feature.seq.count('C')
+            seq_upper = self._feature.seq.upper()
+            gc_count = seq_upper.count('G') + seq_upper.count('C')
             self.gc_content = round((gc_count / self._feature.size), 1)
 
     def get_attributes(self) -> list[str]:

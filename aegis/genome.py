@@ -5,12 +5,14 @@ import copy
 import re
 import random
 import warnings
+import hashlib
 
 from os import system
 from Bio import SeqIO
 from pathlib import Path
 
 from aegis.utils.misc import open_file
+from aegis.utils.genefunctions import reverse_complement, sequence_hash
 
 class Scaffold():
     mitochondria_suffixes = ["m", "M"]
@@ -31,6 +33,8 @@ class Scaffold():
         self.unknown_chromosome = False
         self.size = len(self.seq)
         self.description = description if description else name
+        self._seq_hash: str | None = None
+        self._rc_seq_hash: str | None = None
 
         if original_name:
             self.original_name = original_name
@@ -88,14 +92,44 @@ class Scaffold():
             if number_str.isdigit():
                 self.dapfit = True
 
+    @property
+    def seq_hash(self) -> str:
+        """Checksum of the sequence (cached)."""
+        if self._seq_hash is None:
+            self._seq_hash = sequence_hash(self.seq)
+        return self._seq_hash
+
+    @property
+    def rc_seq_hash(self) -> str:
+        """Checksum of the reverse-complemented sequence (cached)."""
+        if self._rc_seq_hash is None:
+            self._rc_seq_hash = sequence_hash(reverse_complement(self.seq))
+        return self._rc_seq_hash
+
+    @property
+    def upper_seq(self) -> str:
+        """Uppercase version of sequence."""
+        return self.seq.upper()
+
+    @property
+    def soft_masked_bp(self) -> int:
+        """Count of lowercase (soft-masked) nucleotides."""
+        return sum(1 for ch in self.seq if ch.islower())
+
+    @property
+    def soft_masked_fraction(self) -> float:
+        """Fraction of sequence that is soft-masked (0.0 to 1.0)."""
+        return round(self.soft_masked_bp / self.size, 4) if self.size > 0 else 0.0
+
     def copy(self):
         return copy.deepcopy(self)
 
 class Genome():
     def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False, quiet:bool=False,
-                 header_id_tag:str|None=None, header_id_regex:str|None=None, gwh:bool=False):
+                 header_id_tag:str|None=None, header_id_regex:str|None=None, gwh:bool=False, preserve_case:bool=True):
         start = time.time()
         self.name = name
+        self.preserve_case = preserve_case
 
         self.file = str(Path(genome_file_path).resolve())
         self.path = str(Path(genome_file_path).resolve().parent) + "/"
@@ -164,15 +198,16 @@ class Genome():
                 count += 1
                 if scaffold_id in self.scaffolds:
                     print((f"Error: scaffold feature {scaffold_id} is repeated in {self.name}, genome (file: {self.file})"))
+                raw_seq = str(record.seq) if self.preserve_case else str(record.seq).upper()
                 if self.dapmod:
-                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), original_name=f"unknown_dapmod_{count}", description=desc)
+                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, raw_seq, original_name=f"unknown_dapmod_{count}", description=desc)
                     self.equivalences[scaffold_id] = scaffold_id
                 elif rename_chromosomes and scaffold_id in self.chromosome_dict:
                     self.confrenamed = True
-                    self.scaffolds[self.chromosome_dict[scaffold_id]] = Scaffold(self.chromosome_dict[scaffold_id], str(record.seq).upper(), scaffold_id, description=desc)
+                    self.scaffolds[self.chromosome_dict[scaffold_id]] = Scaffold(self.chromosome_dict[scaffold_id], raw_seq, scaffold_id, description=desc)
                     self.equivalences[scaffold_id] = self.chromosome_dict[scaffold_id]
                 else:
-                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, str(record.seq).upper(), original_name=raw_id, description=desc)
+                    self.scaffolds[scaffold_id] = Scaffold(scaffold_id, raw_seq, original_name=raw_id, description=desc)
                     self.equivalences[scaffold_id] = scaffold_id
 
                 if raw_id != scaffold_id:
@@ -632,3 +667,156 @@ class Genome():
         for ft in features_to_remove:
             del self.scaffolds[ft]
         self.update()
+
+    def get_stats(self, estimated_genome_size: int | None = None) -> dict:
+        """
+        Calculates and returns assembly statistics for the genome.
+
+        Args:
+            estimated_genome_size (int, optional): Expected/estimated genome size (in bp)
+                for calculating NG50, LG50, and auNG.
+        """
+        self.update()
+
+        lengths = [s.size for s in self.scaffolds.values()]
+        lengths_sorted = sorted(lengths, reverse=True)
+        total_size = sum(lengths)
+
+        # N50 and L50
+        half_size = total_size / 2.0
+        n50, l50 = 0, 0
+        running_sum = 0
+        for idx, length in enumerate(lengths_sorted, 1):
+            running_sum += length
+            if running_sum >= half_size:
+                n50 = length
+                l50 = idx
+                break
+
+        # N90 and L90
+        target_90 = total_size * 0.9
+        n90, l90 = 0, 0
+        running_sum = 0
+        for idx, length in enumerate(lengths_sorted, 1):
+            running_sum += length
+            if running_sum >= target_90:
+                n90 = length
+                l90 = idx
+                break
+
+        # auN (length-weighted mean contig length / area under Nx curve)
+        sum_sq = sum(length ** 2 for length in lengths)
+        au_n = round(sum_sq / total_size) if total_size > 0 else 0
+
+        # NG50, LG50, auNG (if estimated_genome_size is provided)
+        ng50, lg50, au_ng = None, None, None
+        if estimated_genome_size is not None and estimated_genome_size > 0:
+            ng_half = estimated_genome_size / 2.0
+            running_sum = 0
+            ng50, lg50 = 0, 0
+            for idx, length in enumerate(lengths_sorted, 1):
+                running_sum += length
+                if running_sum >= ng_half:
+                    ng50 = length
+                    lg50 = idx
+                    break
+            au_ng = round(sum_sq / estimated_genome_size)
+
+        # GC and Gap content
+        total_gc = 0
+        total_gap = 0
+        total_soft_masked = 0
+        for scf in self.scaffolds.values():
+            seq = scf.seq
+            total_gc += seq.count('G') + seq.count('C') + seq.count('g') + seq.count('c')
+            total_gap += seq.count('N') + seq.count('n')
+            total_soft_masked += scf.soft_masked_bp
+
+        gc_content = round((total_gc / total_size * 100), 2) if total_size > 0 else 0.0
+        gap_content = round((total_gap / total_size * 100), 2) if total_size > 0 else 0.0
+        soft_masked_pct = round((total_soft_masked / total_size * 100), 2) if total_size > 0 else 0.0
+
+        if self.scaffolds:
+            longest = max(self.scaffolds.values(), key=lambda s: s.size)
+            shortest = min(self.scaffolds.values(), key=lambda s: s.size)
+            longest_scaffold = (longest.name, longest.size)
+            shortest_scaffold = (shortest.name, shortest.size)
+        else:
+            longest_scaffold = ("", 0)
+            shortest_scaffold = ("", 0)
+
+        num_chromosomes = len(self.chromosome_names) + len(self.accessory_chromosome_names)
+        if self.unknown_chromosome:
+            num_chromosomes += sum(1 for s in self.scaffolds.values() if s.unknown_chromosome)
+
+        scaffold_size = total_size - self.chromosome_size
+
+        res = {
+            "total_size": total_size,
+            "chromosome_size": self.chromosome_size,
+            "nuclear_chromosome_size": self.nuclear_chromosome_size,
+            "scaffold_size": scaffold_size,
+            "num_sequences": len(self.scaffolds),
+            "num_chromosomes": num_chromosomes,
+            "num_scaffolds": len(self.scaffolds) - num_chromosomes,
+            "n50": n50,
+            "l50": l50,
+            "n90": n90,
+            "l90": l90,
+            "auN": au_n,
+            "gc_content": gc_content,
+            "gap_content": gap_content,
+            "soft_masked_bp": total_soft_masked,
+            "soft_masked_pct": soft_masked_pct,
+            "longest_scaffold": longest_scaffold,
+            "shortest_scaffold": shortest_scaffold,
+        }
+        if estimated_genome_size is not None and estimated_genome_size > 0:
+            res["estimated_genome_size"] = estimated_genome_size
+            res["ng50"] = ng50
+            res["lg50"] = lg50
+            res["auNG"] = au_ng
+
+        return res
+
+    @property
+    def stats(self) -> dict:
+        return self.get_stats()
+
+    def get_sorted_features(self, chromosomes_only: bool = False, sort_by: str = "name") -> list[str]:
+        """
+        Returns a sorted list of scaffold/chromosome names.
+        
+        Args:
+            chromosomes_only (bool): If True, only include chromosomes (nuclear, unknown, organellar).
+            sort_by (str): 'name' (natural alphanumeric sort), 'size' (descending size), or 'order' (FASTA order).
+        """
+        self.update()
+
+        candidates = []
+        for name, scf in self.scaffolds.items():
+            is_chr = scf.chromosome or scf.unknown_chromosome or scf.organelle
+            if chromosomes_only and not is_chr:
+                continue
+            candidates.append(scf)
+
+        if sort_by == "order":
+            return [s.name for s in candidates]
+
+        if sort_by == "size":
+            return [s.name for s in sorted(candidates, key=lambda s: (-s.size, s.name))]
+
+        # sort_by == "name": category hierarchy + natural sort
+        def _sort_key(scf):
+            if scf.chromosome and not scf.organelle and not scf.unknown_chromosome:
+                category = 1
+            elif scf.unknown_chromosome:
+                category = 2
+            elif scf.organelle:
+                category = 3
+            else:
+                category = 4
+            parts = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', scf.name)]
+            return (category, parts)
+
+        return [s.name for s in sorted(candidates, key=_sort_key)]

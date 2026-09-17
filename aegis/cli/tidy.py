@@ -1,9 +1,11 @@
 import typer
 import os
 
+from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
+from .utils import split_callback
 
 RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
                 "miRNA_primary_transcript", "ncRNA", "lncRNA",
@@ -12,11 +14,6 @@ RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA",
                 "SRP_RNA", "RNase_MRP_RNA"]
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
-
-def split_callback(value:str):
-    if value:
-        return [item.strip() for item in value.split(",")]
-    return []
 
 @app.command()
 def main(
@@ -41,10 +38,10 @@ def main(
     just_genes: Annotated[bool, typer.Option(
         "-g", "--just-genes", help="Whether to only include gene level features."
     )] = False,
-    features: Annotated[str, typer.Option(
+    features: Annotated[List[str], typer.Option(
         "-f", "--features", help=f"Selects only certain transcripts (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
         callback=split_callback
-    )] = "",
+    )] = [],
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,

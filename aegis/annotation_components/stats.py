@@ -126,6 +126,87 @@ class AnnotationStats(AnnotationComponent):
                     unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
+    def get_contig_stats(self) -> list[dict]:
+        """
+        Computes per-contig/scaffold statistics for the annotation.
+        If an associated genome is present, contig sizes and gene densities are included.
+        Returns a list of dictionaries sorted naturally by contig name.
+        """
+        contig_dict = {}
+
+        # 1. Contigs with genes in annotation
+        for ch, genes in self._annot.chrs.items():
+            total_genes = len(genes)
+            coding_genes = sum(1 for g in genes.values() if g.coding)
+            noncoding_genes = total_genes - coding_genes
+            total_tx = sum(len(g.transcripts) for g in genes.values())
+
+            size = None
+            if self._annot.genome is not None:
+                scf = self._annot.genome.scaffolds.get(ch)
+                if scf is not None:
+                    size = scf.size
+
+            density = None
+            coverage_pct = None
+            if size is not None and size > 0:
+                density = round(total_genes / (size / 1_000_000), 2)
+                # Compute merged interval coverage
+                intervals = []
+                for g in genes.values():
+                    if g.start is not None and g.end is not None:
+                        intervals.append((max(1, g.start), min(size, g.end)))
+                intervals.sort()
+                merged = []
+                for s, e in intervals:
+                    if not merged or s > merged[-1][1]:
+                        merged.append([s, e])
+                    else:
+                        merged[-1][1] = max(merged[-1][1], e)
+                covered_bp = sum(e - s + 1 for s, e in merged)
+                coverage_pct = round((covered_bp / size) * 100, 2)
+
+            contig_dict[ch] = {
+                "contig": ch,
+                "size": size,
+                "genes": total_genes,
+                "coding_genes": coding_genes,
+                "noncoding_genes": noncoding_genes,
+                "transcripts": total_tx,
+                "density_genes_per_mb": density,
+                "coverage_pct": coverage_pct,
+            }
+
+        # 2. Contigs in genome but having zero genes
+        if self._annot.genome is not None:
+            for scf_name, scf in self._annot.genome.scaffolds.items():
+                if scf_name not in contig_dict:
+                    contig_dict[scf_name] = {
+                        "contig": scf_name,
+                        "size": scf.size,
+                        "genes": 0,
+                        "coding_genes": 0,
+                        "noncoding_genes": 0,
+                        "transcripts": 0,
+                        "density_genes_per_mb": 0.0,
+                        "coverage_pct": 0.0,
+                    }
+
+        import re
+        def sort_key(item):
+            name = item["contig"]
+            nl = name.lower()
+            if "mit" in nl or "mt" in nl or "pt" in nl or "chlor" in nl or "cp" in nl:
+                cat = 3
+            elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
+                cat = 1
+            else:
+                cat = 2
+            parts = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', name)]
+            return (cat, parts)
+
+        return sorted(contig_dict.values(), key=sort_key)
+
     def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,
         #deprecated_arguments
         custom_path:str=""):
@@ -386,6 +467,11 @@ class AnnotationStats(AnnotationComponent):
 
             warning_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}_warnings.csv", sep="\t", index=False)
             error_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}_errors.csv", sep="\t", index=False)
+
+            contig_stats = self.get_contig_stats()
+            if contig_stats:
+                contig_df = pd.DataFrame(contig_stats)
+                contig_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}_contig_stats.tsv", sep="\t", index=False)
 
             f_out = open(f"{export_folder}{out_file}", "w", encoding="utf-8")
             f_out.write("")

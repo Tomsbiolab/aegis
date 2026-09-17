@@ -159,3 +159,25 @@ class TestIntron:
             score="."
         )
         assert isinstance(i, Feature)
+
+    def test_splice_site_case_insensitivity(self, monkeypatch):
+        i = Intron(
+            feature_id="intron1",
+            ch="chr1",
+            source="aegis",
+            feature="intron",
+            strand="+",
+            start=1,
+            end=10,
+            score="."
+        )
+        class DummyScaffold:
+            seq = "gtaaaaccag"
+        class DummyGenome:
+            scaffolds = {"chr1": DummyScaffold()}
+        
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", DummyGenome())
+        assert i.splice_site_donor == "GT"
+        assert i.splice_site_acceptor == "AG"
+        assert i.boundary == "GT-AG"
+        assert i.canonical is True

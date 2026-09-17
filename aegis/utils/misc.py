@@ -34,9 +34,9 @@ def pickle_save(file, item):
 def count_occurrences(string, char):
     return Counter(string)[char]
 
-def find_all_occurrences(pattern, text):
+def find_all_occurrences(pattern, text, flags: int = 0):
     matches = []
-    for match in re.finditer(pattern, text):
+    for match in re.finditer(pattern, text, flags):
         matches.append((match.start(), match.end(), match.group()))
 
     return matches

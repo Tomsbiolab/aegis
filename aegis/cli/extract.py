@@ -1,10 +1,12 @@
 import typer
 import os
 
+from typing import List
 from typing_extensions import Annotated
 
 from ..genome import Genome
 from ..annotation import Annotation
+from .utils import split_callback
 
 FEATURES = ["gene", "transcript", "CDS", "protein", "promoter"]
 
@@ -21,11 +23,6 @@ RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA",
                 "SRP_RNA", "RNase_MRP_RNA"]
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
-
-def split_callback(value:str):
-    if value:
-        return [item.strip() for item in value.split(",")]
-    return []
 
 @app.command()
 def main(
@@ -44,12 +41,12 @@ def main(
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved."
     )] = "./aegis_output/features/",
-    features: Annotated[str, typer.Option(
+    features: Annotated[List[str], typer.Option(
         "-f", "--features", help=f"Feature type(s) to extract, as a comma-separated list. Available options: {', '.join(FEATURES)}.",
         callback=split_callback
-    )] = "gene",
+    )] = ["gene"],
 
-    mode: Annotated[str, typer.Option(
+    mode: Annotated[List[str], typer.Option(
         "-m", "--mode", help=f"""Extraction mode(s), as a comma-separated list. Controls filtering of features.\n\n
 
         - 'all': Extract all features (e.g., all transcripts for a gene).\n
@@ -57,11 +54,11 @@ def main(
         - 'main': Extract only the main variant (e.g., the longest transcript).\n
         - 'unique': Keep only one copy of each unique protein/CDS sequence across the entire output.""",
         callback=split_callback
-    )] = "all,main",
-    rna_classes: Annotated[str, typer.Option(
+    )] = ["all", "main"],
+    rna_classes: Annotated[List[str], typer.Option(
         "-r", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback
-    )] = "",
+    )] = [],
     promoter_size: Annotated[int, typer.Option(
         "-ps", "--promoter-size", help=f"Size of the promoter region in base pairs (bp). Used only if 'promoter' is a selected feature."
     )] = 2000,

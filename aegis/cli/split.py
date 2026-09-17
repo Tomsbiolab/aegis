@@ -165,7 +165,19 @@ def classify_feature(
                         return None, None
                     return captured, None
                 else:
-                    return normalized_specs[0][1] if normalized_specs else "matched", None
+                    captured = match.group(0).strip()
+                    if allowed_tags is not None:
+                        for tag in allowed_tags:
+                            if (captured.lower() == tag.lower()) if ignore_case else (captured == tag):
+                                return tag, None
+                        # If regex matched full token (e.g. "BrgdChr01A"), check if an allowed tag is at the end or boundary
+                        for tag in allowed_tags:
+                            t_cmp = tag.lower() if ignore_case else tag
+                            c_cmp = captured.lower() if ignore_case else captured
+                            if c_cmp.endswith(t_cmp) or f"_{t_cmp}" in c_cmp or f"-{t_cmp}" in c_cmp:
+                                return tag, None
+                        return None, None
+                    return captured if captured else (normalized_specs[0][1] if normalized_specs else "matched"), None
         except re.error as e:
             raise ValueError(f"Invalid regular expression pattern '{regex_pattern}': {e}")
         return None, None
@@ -199,13 +211,24 @@ def classify_feature(
             else:
                 # Discrete pattern for alphanumeric tags (like 'A', 'D', 'hap1')
                 # 1. Check feature name (ID)
-                p_name = rf"(?:^|[_\-\.])(?:chr\d*|\d+|hap(?:lotype)?\d*|scaffold\d*|contig\d*)?{re.escape(pattern)}(?:[_\-\.]|$|\b)"
-                if re.search(p_name, name, flags) or re.search(rf"\b\d*{re.escape(pattern)}\b", name, flags):
+                # Standard or cultivar-prefixed chromosome/scaffold token (e.g. chr1A, Chr01A, BrgdChr01A, Ta_chr1A, scaffold_1A, hap1)
+                p_chrom = rf"(?:^|[_\-\.]|[a-zA-Z]+?)(?:chr|chromosome|scaffold|contig|lg|linkage_group|hap(?:lotype)?)\d*[_\-\.]*{re.escape(pattern)}(?:[_\-\.]|$|\b)"
+                # Subgenome suffix directly attached to chromosome number (e.g. 1A, 01B, 2D)
+                p_digit_suffix = rf"(?:^|[_\-\.]|[a-zA-Z]*)\d+{re.escape(pattern)}(?:[_\-\.]|$|\b)" if not pattern.isdigit() else ""
+                # Word boundary for standalone words/numbers
+                p_word = rf"\b\d*{re.escape(pattern)}\b"
+
+                is_matched = bool(
+                    re.search(p_chrom, name, flags)
+                    or (p_digit_suffix and re.search(p_digit_suffix, name, flags))
+                    or re.search(p_word, name, flags)
+                )
+                if is_matched:
                     matched_labels.append(label)
                     continue
 
                 # 2. Check description context (chromosome 2A, 1D, etc.)
-                p_desc = rf"(?:chromosome\s*\d*|chr\s*\d*|scaffold\s*\d*|contig\s*\d*|hap(?:lotype)?\s*|[_\-\.]|\b\d+)\s*{re.escape(pattern)}(?:[,\s;:\._\-]|$|\b)"
+                p_desc = rf"(?:chromosome\s*\d*|chr\s*\d*|scaffold\s*\d*|contig\s*\d*|lg\s*\d*|hap(?:lotype)?\s*|[_\-\.]|\b\d+)\s*{re.escape(pattern)}(?:[,\s;:\._\-]|$|\b)"
                 if re.search(p_desc, description, flags) or re.search(rf"\b\d*{re.escape(pattern)}\b", description, flags):
                     matched_labels.append(label)
                     continue
@@ -301,6 +324,12 @@ def main(
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
+    by_chromosome: Annotated[bool, typer.Option(
+        "-c", "--by-chromosome", "--by-chr", help="Preset: automatically partition each chromosome into its own split file (unplaced scaffolds into 'other')."
+    )] = False,
+    dry_run: Annotated[bool, typer.Option(
+        "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk."
+    )] = False,
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
     )] = "",
@@ -386,8 +415,8 @@ def main(
                     if grp not in [lab for _, lab in split_specs]:
                         split_specs.append((grp, grp))
 
-    if not split_specs and not regex and not tsv_map:
-        typer.secho("Error: Please specify split criteria via --split-by, --regex, or --split-map.", fg=typer.colors.RED)
+    if not split_specs and not regex and not tsv_map and not by_chromosome:
+        typer.secho("Error: Please specify split criteria via --split-by, --regex, --by-chromosome, or --split-map.", fg=typer.colors.RED)
         raise typer.BadParameter("Missing split criteria.")
 
     # 3. Derive names
@@ -407,7 +436,8 @@ def main(
     else:
         genome_name = "genome"
 
-    os.makedirs(output_dir, exist_ok=True)
+    if not dry_run:
+        os.makedirs(output_dir, exist_ok=True)
 
     # 4. Load objects
     genome_obj = None
@@ -449,28 +479,53 @@ def main(
 
     target_allowed_tags = set(split_labels) if split_labels else None
 
-    for ft_id, desc in feature_info.items():
-        tag, warn = classify_feature(
-            name=ft_id,
-            description=desc,
-            split_specs=split_specs,
-            regex_pattern=regex,
-            match_mode=match_mode,
-            ignore_case=ignore_case,
-            split_map=tsv_map,
-            allowed_tags=target_allowed_tags,
-        )
-        if warn and not quiet:
-            warnings.warn(warn, category=UserWarning)
+    if by_chromosome:
+        for ft_id in feature_info:
+            is_chrom = False
+            if genome_obj:
+                scf = genome_obj.scaffolds.get(ft_id)
+                if scf:
+                    is_chrom = bool(scf.chromosome and not scf.organelle and not scf.unknown_chromosome)
+            else:
+                nl = ft_id.lower()
+                is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+                is_chrom = bool((nl.startswith("chr") or nl.startswith("chromosome") or ft_id.isdigit()) and not is_organelle)
 
-        if tag:
-            if tag not in tag_to_features:
-                tag_to_features[tag] = set()
-                if tag not in split_labels:
+            if is_chrom:
+                tag = ft_id
+                if tag not in tag_to_features:
+                    tag_to_features[tag] = set()
                     split_labels.append(tag)
-            tag_to_features[tag].add(ft_id)
-        else:
-            tag_to_features["other"].add(ft_id)
+                tag_to_features[tag].add(ft_id)
+            else:
+                tag_to_features["other"].add(ft_id)
+    else:
+        for ft_id, desc in feature_info.items():
+            tag, warn = classify_feature(
+                name=ft_id,
+                description=desc,
+                split_specs=split_specs,
+                regex_pattern=regex,
+                match_mode=match_mode,
+                ignore_case=ignore_case,
+                split_map=tsv_map,
+                allowed_tags=target_allowed_tags,
+            )
+            if warn and not quiet:
+                warnings.warn(warn, category=UserWarning)
+
+            if tag:
+                if tag not in tag_to_features:
+                    tag_to_features[tag] = set()
+                    if tag not in split_labels:
+                        split_labels.append(tag)
+                tag_to_features[tag].add(ft_id)
+            else:
+                tag_to_features["other"].add(ft_id)
+
+    matched_any = any(len(tag_to_features[t]) > 0 for t in split_labels)
+    if not matched_any and feature_info and not quiet:
+        typer.secho("Warning: No features matched the split criteria; all features placed in 'other'. Tip: try --match-mode substring, --regex, or check tag names.", fg=typer.colors.YELLOW, err=True)
 
     # 6. Execute partition export
     all_tags = list(split_labels)
@@ -483,6 +538,15 @@ def main(
             typer.echo(f"Genome: {genome_file} ({len(genome_obj.scaffolds)} scaffolds)")
         if annotation_file:
             typer.echo(f"Annotation: {annotation_file} ({len(annot_obj.chrs)} chromosomes, {len(annot_obj.all_gene_ids)} genes)")
+        if by_chromosome:
+            typer.echo("Criteria: By chromosome preset")
+        elif regex:
+            typer.echo(f"Criteria: Regex pattern '{regex}'")
+        elif tsv_map:
+            typer.echo(f"Criteria: TSV map file '{split_map}'")
+        elif split_specs:
+            tags_str = ", ".join([lab for _, lab in split_specs])
+            typer.echo(f"Criteria: Tag matching ({match_mode} mode) for: {tags_str}")
         typer.echo(f"Output directory: {output_dir}")
 
     for tag in all_tags:
@@ -499,7 +563,7 @@ def main(
         # Export genome subset
         if genome_obj:
             genome_fts = target_features.intersection(genome_obj.scaffolds)
-            if genome_fts or write_empty_other:
+            if (genome_fts or write_empty_other) and not dry_run:
                 g_split = copy.copy(genome_obj)
                 g_split.scaffolds = {k: v.copy() for k, v in genome_obj.scaffolds.items() if k in genome_fts}
                 g_split.update()
@@ -532,19 +596,23 @@ def main(
                         if getattr(ft, "chromosome", getattr(ft, "ch", None)) in annot_fts
                     ]
 
-                out_a_filename = resolve_split_filename(output_annot_file, annotation_name, tag, ".gff3")
-                is_gtf = out_a_filename.lower().endswith(".gtf")
-                if is_gtf:
-                    a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, subfolder=False, quiet=True)
-                else:
-                    a_split.export.gff(output_dir=output_dir, filename=out_a_filename, subfolder=False, skip_atypical_fts=False, quiet=True)
+                if not dry_run:
+                    out_a_filename = resolve_split_filename(output_annot_file, annotation_name, tag, ".gff3")
+                    is_gtf = out_a_filename.lower().endswith(".gtf")
+                    if is_gtf:
+                        a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, subfolder=False, quiet=True)
+                    else:
+                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, subfolder=False, skip_atypical_fts=False, quiet=True)
 
         if not quiet:
             label = "other (unassigned)" if tag == "other" else f"Tag '{tag}'"
             typer.echo(f"  - {label}: {num_scaffolds} scaffolds" + (f", {num_genes} genes" if annot_obj else ""))
 
     if not quiet:
-        typer.secho("\nSplit complete!\n", fg=typer.colors.GREEN)
+        if dry_run:
+            typer.secho("\nDry run complete (no files written).\n", fg=typer.colors.YELLOW)
+        else:
+            typer.secho("\nSplit complete!\n", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":

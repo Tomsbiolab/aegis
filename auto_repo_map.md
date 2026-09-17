@@ -24,6 +24,8 @@
       - `def stats(self) -> AnnotationStats:`
       - `def export(self) -> AnnotationExport:`
       - `def summary(self) -> dict:`
+      - `def genome_validation(self) -> dict:`
+      - `def validate_against_genome(self, quiet: bool = False) -> dict:`
       - `def iter_genes(self):`
       - `def iter_transcripts(self):`
       - `def iter_exons(self):`
@@ -187,6 +189,11 @@
       - `class Scaffold():`
       - `def __init__(self, name, sequence, original_name:str="", description:str=""):`
       - `def update(self, new_name:str=""):`
+      - `def seq_hash(self) -> str:`
+      - `def rc_seq_hash(self) -> str:`
+      - `def upper_seq(self) -> str:`
+      - `def soft_masked_bp(self) -> int:`
+      - `def soft_masked_fraction(self) -> float:`
       - `def copy(self):`
       - `class Genome():`
       - `def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict=`
@@ -205,6 +212,10 @@
       - `def extract_peak_sequences(self, DAPseq_output_file:str, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_peak_seqs", extension=".fasta", top=600,`
       - `def subset(self, chosen_features:set|list|tuple|None=None, cap:int=2, quiet:bool=False):`
       - `def remove_features(self, features_to_remove:set):`
+      - `def get_stats(self, estimated_genome_size: int | None = None) -> dict:`
+      - `def stats(self) -> dict:`
+      - `def get_sorted_features(self, chromosomes_only: bool = False, sort_by: str = "name") -> list[str]:`
+      - `def _sort_key(scf):`
     - hits.py
       - `class OverlapHit():`
       - `def __init__(self, ID, origin, orientation, gene_query_percent, gene_target_percent, exons_in_both, exon_query_percent, exon_target_percent, CDSs_in_both, CDS_query_percent, CDS_target_percent, protein_query_percent, protein_target_percent, target_synteny_conserved, target_copy):`
@@ -366,17 +377,17 @@
         - `def calculate_transcript_masking(self):`
         - `def calculate_gc_content(self):`
         - `def gene_count(self):`
+        - `def get_contig_stats(self) -> list[dict]:`
+        - `def sort_key(item):`
         - `def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,`
       - __init__.py
     - **cli/**
       - extract.py
-        - `def split_callback(value:str):`
         - `def main(`
       - list.py
         - `def genes(`
         - `def transcripts(`
       - merge.py
-        - `def split_callback(value:str):`
         - `def main(`
       - motif_search.py
         - `def main(`
@@ -388,17 +399,14 @@
         - `def flip_masked_rows(df, mask):`
         - `def merge_score_strings(series):`
         - `def best_summary_score(series):`
-        - `def split_callback(value:str):`
         - `def main(`
       - overlap.py
-        - `def split_callback(value:str):`
         - `def main(`
       - prune.py
         - `def main(`
       - reformat.py
         - `def main(`
       - rename.py
-        - `def split_callback(value:str) -> list[str]:`
         - `def main(`
       - split.py
         - `def parse_split_specs(values: list[str] | str | None) -> list[tuple[str, str]]:`
@@ -407,17 +415,39 @@
         - `def resolve_split_filename(template: str, name: str, tag: str, default_ext: str) -> str:`
         - `def main(`
       - subset.py
-        - `def split_callback(value:str):`
         - `def main(`
       - summary.py
+        - `def is_fasta_path(filepath: str) -> bool:`
+        - `def format_human_readable(size: int | float, is_bp: bool = True) -> str:`
+        - `def format_number(val: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def render_terminal_table(headers: list[str], rows: list[list[str]], section_title: str = "", summary_rows: list[list[str]] | None = None) -> str:`
         - `def main(`
+        - `def emit_mismatch_hint():`
+        - `def contig_sort_key(name: str):`
+        - `def get_annot_metric_val(annot: Annotation, metric_key: str):`
+      - summary_genome.py
+        - `def format_human_readable(size: int | float, is_bp: bool = True) -> str:`
+        - `def parse_size_str(size_str: str) -> int:`
+        - `def format_number(val: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def get_natural_sort_key(name: str, genomes: list[Genome]):`
+        - `def normalize_chr_name(name: str) -> str:`
+        - `class PairedFeature:`
+        - `def __init__(self, primary_name: str):`
+        - `def pair_genome_features(`
+        - `def is_candidate(scf: Scaffold) -> bool:`
+        - `def render_terminal_table(headers: list[str], rows: list[list[str]], summary_rows: list[list[str]]) -> str:`
+        - `def main(`
+        - `def max_feat_size(pf: PairedFeature):`
       - symbols.py
         - `def main(`
       - tidy.py
-        - `def split_callback(value:str):`
         - `def main(`
       - tidy_genome.py
         - `def main(`
+      - utils.py
+        - `def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:`
       - __init__.py
       - __main__.py
     - **utils/**
@@ -426,6 +456,7 @@
         - `def round_evalue(e):`
       - genefunctions.py
         - `def reverse_complement(in_seq: str) -> str:`
+        - `def sequence_hash(in_seq: str) -> str:`
         - `def translate(seq: str) -> str:`
         - `def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):`
         - `def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[int, float, None] = 0, min_codon_len: int = 2, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA")) -> list[tuple[str, int, int]]:`
@@ -445,7 +476,7 @@
         - `def pickle_load(file):`
         - `def pickle_save(file, item):`
         - `def count_occurrences(string, char):`
-        - `def find_all_occurrences(pattern, text):`
+        - `def find_all_occurrences(pattern, text, flags: int = 0):`
         - `def start_progress_bar(total: int, description: str, quiet: bool = False, colour: str = "92"):`
         - `def run_command(working_directory: Path, command: list):`
         - `def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:`
@@ -459,8 +490,6 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
-  - **aegis_output/**
-    - **stats/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
   - **images/**
@@ -788,12 +817,37 @@
       - `def test_split_with_split_map(populus_test_files, tmp_path):`
       - `def test_tidy_genome_keep_description(populus_test_files, tmp_path):`
       - `def test_split_with_punctuation_and_jaawwd(tmp_path):`
+      - `def test_classify_feature_sweet_potato_cultivar_prefix():`
     - test_cli_subset.py
       - `def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):`
       - `def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):`
       - `def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):`
       - `def test_cli_subset_no_chr_cap(test_data_dir, tmp_path):`
       - `def test_cli_subset_chr_cap_and_seed(test_data_dir, tmp_path):`
+    - test_cli_summary.py
+      - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_summary_multi_annot_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_summary_export(test_data_dir, tmp_path):`
+      - `def test_cli_summary_fatal_mismatch_halt(tmp_path):`
+      - `def test_cli_summary_multi_annot_fatal_mismatch_hint(tmp_path):`
+      - `def test_cli_summary_disjoint_contigs_notice(tmp_path):`
+      - `def test_cli_summary_help_text():`
+      - `def test_cli_summary_multi_genome_synonyms(tmp_path):`
+      - `def test_cli_summary_multi_genome_asymmetric_contig(tmp_path):`
+      - `def test_cli_summary_multi_genome_mismatched_count(tmp_path):`
+      - `def test_cli_summary_multi_genome_completely_different_species(tmp_path):`
+    - test_cli_summary_genome.py
+      - `def test_cli_summary_genome_smoke(test_data_dir):`
+      - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
+      - `def test_cli_summary_genome_synonym_pairing(tmp_path):`
+      - `def test_cli_summary_genome_ref_and_no_seq_options(tmp_path):`
+      - `def test_cli_summary_genome_soft_masked(tmp_path):`
+    - test_cli_utils.py
+      - `def test_split_callback_string_comma():`
+      - `def test_split_callback_single_string():`
+      - `def test_split_callback_empty_and_none():`
+      - `def test_split_callback_list_inputs():`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
@@ -880,6 +934,11 @@
       - `def test_remove_features(self, sample_fasta_file):`
       - `def test_subset(self, sample_fasta_file):`
       - `def test_copy(self, sample_fasta_file):`
+      - `def test_get_stats(self, sample_fasta_file):`
+      - `def test_stats_property(self, sample_fasta_file):`
+      - `def test_get_sorted_features(self, sample_fasta_file):`
+      - `def test_assembly_stats_and_sorting_logic(self, tmp_path):`
+      - `def test_preserve_case_and_soft_masking(self, tmp_path):`
     - test_gz_support.py
       - `def test_gff3_gz_support(tmp_path):`
       - `def test_gtf_gz_support(tmp_path):`
@@ -926,7 +985,10 @@
       - `def test_simple_sequence(self):`
       - `def test_palindrome(self):`
       - `def test_longer_sequence(self):`
-      - `class TestFindORFs:`
+      - `def test_lowercase_and_rna(self):`
+      - `class TestSequenceHash:`
+      - `def test_basic_hash(self):`
+      - `def test_find_orfs_case_insensitivity(self):`
       - `def test_orfs(self):`
       - `def test_no_start_codon(self):`
       - `def test_no_stop_codon_without_must_have_stop(self):`
@@ -940,6 +1002,7 @@
       - `def test_surplus_other(self):`
       - `class TestTranslate:`
       - `def test_simple_orf(self):`
+      - `def test_case_insensitivity(self):`
       - `def test_no_start_codon(self):`
       - `def test_late_start_in_frame(self):`
       - `def test_atg_not_in_frame(self):`
@@ -1002,6 +1065,9 @@
       - `def test_init_defaults(self):`
       - `def test_size(self):`
       - `def test_inherits_from_feature(self):`
+      - `def test_splice_site_case_insensitivity(self, monkeypatch):`
+      - `class DummyScaffold:`
+      - `class DummyGenome:`
     - test_transcript.py
       - `class TestTranscriptInit:`
       - `def test_basic_properties(self, make_transcript):`

@@ -11,6 +11,7 @@ from .rename import main as rename_main
 from .split import main as split_main
 from .subset import main as subset_main
 from .summary import main as summary_main
+from .summary_genome import main as summary_genome_main
 from .symbols import main as symbols_main
 from .tidy import main as tidy_main
 from .tidy_genome import main as tidy_genome_main
@@ -34,7 +35,8 @@ app.command(name="reformat", help="Reformat an annotation file between GFF and G
 app.command(name="rename", help="Rename gene/transcript/subfeature IDs in an annotation.")(rename_main)
 app.command(name="split", short_help="Split an annotation and/or genome assembly based on genomic feature names, haplotypes, or patterns.")(split_main)
 app.command(name="subset", help="Subset an annotation, and optionally its corresponding genome assembly, in various different ways. May your testing be lite.")(subset_main)
-app.command(name="summary", help="Output summary statistics for an annotation.")(summary_main)
+app.command(name="summary", help="Output summary statistics for one or more annotations.")(summary_main)
+app.command(name="summary-genome", help="Summarise and compare chromosome sizes and assembly statistics for one or more genomes.")(summary_genome_main)
 app.command(name="symbols", help="Add gene symbols to an annotation.")(symbols_main)
 app.command(name="tidy", help="Clean and reformat an annotation file, allowing customisable format flavours.")(tidy_main)
 app.command(name="tidy-genome", help="Clean and reformat a genome FASTA file.")(tidy_genome_main)

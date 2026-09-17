@@ -161,7 +161,8 @@ class Annotation():
             "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
             "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
             "possible_policistronic_transcript", "transcript_with_no_exons",
-            "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene"
+            "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
+            "feature_exceeds_scaffold_length", "chromosome_not_in_genome"
         ]
 
         self.warnings = {key: set() for key in keys}
@@ -249,6 +250,7 @@ class Annotation():
                         break
                 if not rogue_chromosome_format:
                     self.tags.add("dapfit")
+        self._genome_validation = None
 
         misc_attributes = False
         for genes in self.chrs.values():
@@ -385,6 +387,108 @@ class Annotation():
     @property
     def summary(self) -> dict:
         return self.stats.data
+
+    @property
+    def genome_validation(self) -> dict:
+        """
+        Lazily evaluates and caches assembly-annotation validation findings.
+        Returns a dictionary with reconciliation findings.
+        """
+        if getattr(self, "_genome_validation", None) is None:
+            self._genome_validation = self.validate_against_genome(quiet=True)
+        return self._genome_validation
+
+    def validate_against_genome(self, quiet: bool = False) -> dict:
+        """
+        Validates annotation features against the associated genome assembly.
+        Cached when accessed via `annotation.genome_validation`.
+        Distinguishes between:
+          - Fatal mismatch: Zero contigs from annotation exist in genome assembly (leads to halt).
+          - Warning discrepancies: Even a single contig missing or single feature out of bounds (leads to warning).
+        Returns a dictionary summarizing findings.
+        """
+        if getattr(self, "_genome_validation", None) is not None:
+            return self._genome_validation
+
+        results = {
+            "missing_chromosomes": [],
+            "out_of_bounds_features": [],
+            "unannotated_scaffolds": [],
+            "matching_chromosomes": [],
+            "fatal_mismatch": False,
+            "has_warning": False,
+            "summary_message": "",
+        }
+        if self.genome is None or not getattr(self.genome, "scaffolds", None):
+            self._genome_validation = results
+            return results
+
+        genome_scaffolds = self.genome.scaffolds
+        missing_chroms = [ch for ch in self.chrs if ch not in genome_scaffolds]
+        matching_chroms = [ch for ch in self.chrs if ch in genome_scaffolds]
+        results["matching_chromosomes"] = matching_chroms
+        results["missing_chromosomes"] = missing_chroms
+
+        for ch in missing_chroms:
+            self.warnings["chromosome_not_in_genome"].add(ch)
+
+        # Fatal mismatch check: absolutely zero contigs match between annotation and genome
+        if len(self.chrs) > 0 and len(genome_scaffolds) > 0 and len(matching_chroms) == 0:
+            results["fatal_mismatch"] = True
+            results["summary_message"] = (
+                f"Fatal mismatch: None of the {len(self.chrs)} contig(s) in annotation '{self.name}' "
+                f"were found in genome '{self.genome.name}'. Aborting assembly comparison."
+            )
+            if not quiet:
+                print(f"\n[ERROR] {results['summary_message']}")
+            self._genome_validation = results
+            return results
+
+        out_of_bounds = []
+        for ch in matching_chroms:
+            genes = self.chrs[ch]
+            scf_len = genome_scaffolds[ch].size
+            for g in genes.values():
+                # Fast check on gene boundary
+                g_out = (g.start is not None and g.start < 1) or (g.end is not None and g.end > scf_len)
+                if g_out:
+                    out_of_bounds.append(g.id)
+                    self.warnings["feature_exceeds_scaffold_length"].add(g.id)
+                    for t in g.transcripts.values():
+                        if (t.start is not None and t.start < 1) or (t.end is not None and t.end > scf_len):
+                            self.warnings["feature_exceeds_scaffold_length"].add(t.id)
+
+        results["out_of_bounds_features"] = out_of_bounds
+
+        # Genome scaffolds without genes
+        unannotated = [scf_name for scf_name in genome_scaffolds if scf_name not in self.chrs]
+        results["unannotated_scaffolds"] = unannotated
+
+        # Any missing contig or even a single out-of-bounds feature triggers warning
+        if len(out_of_bounds) > 0 or len(missing_chroms) > 0:
+            results["has_warning"] = True
+            msg_parts = []
+            if missing_chroms:
+                if len(missing_chroms) == 1:
+                    msg_parts.append(f"1 contig in annotation not found in genome ('{missing_chroms[0]}')")
+                else:
+                    msg_parts.append(f"{len(missing_chroms)} contigs in annotation not found in genome ({', '.join(missing_chroms[:3])}{'...' if len(missing_chroms) > 3 else ''})")
+            if out_of_bounds:
+                if len(out_of_bounds) == 1:
+                    msg_parts.append(f"1 feature has coordinates exceeding contig boundaries in genome ('{out_of_bounds[0]}')")
+                else:
+                    msg_parts.append(f"{len(out_of_bounds)} features have coordinates exceeding contig boundaries in genome")
+            
+            results["summary_message"] = (
+                f"Genome-annotation discrepancies detected for '{self.name}' on '{self.genome.name}': "
+                + "; ".join(msg_parts)
+                + ". Annotation coordinates and assembly contig sizes should be verified."
+            )
+            if not quiet:
+                print(f"\n[WARNING] {results['summary_message']}")
+
+        self._genome_validation = results
+        return results
 
     def iter_genes(self):
         for chrom in self.chrs.values():
@@ -1445,7 +1549,9 @@ class Annotation():
         self.contains_promoters = False
 
     def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):
-        for genes in self.chrs.values():
+        for chrom, genes in self.chrs.items():
+            if self.genome is not None and chrom not in self.genome.scaffolds:
+                continue
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
