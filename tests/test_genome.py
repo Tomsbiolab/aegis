@@ -214,4 +214,37 @@ class TestGenome:
         sorted_chrs = g.get_sorted_features(chromosomes_only=True, sort_by="name")
         assert sorted_chrs == ["chr1", "chr2", "chr10", "chrM"]
 
+    def test_preserve_case_and_soft_masking(self, tmp_path):
+        fasta_path = tmp_path / "soft_masked.fa"
+        fasta_path.write_text(">chr1\nATGCatgcNNNN\n>chr2\natgcatgc\n")
+
+        # Default: preserve_case=True
+        g = Genome("soft", str(fasta_path), quiet=True)
+        assert g.preserve_case is True
+        assert g["chr1"].seq == "ATGCatgcNNNN"
+        assert g["chr1"].upper_seq == "ATGCATGCNNNN"
+        assert g["chr1"].soft_masked_bp == 4
+        assert g["chr1"].soft_masked_fraction == round(4 / 12, 4)
+
+        assert g["chr2"].seq == "atgcatgc"
+        assert g["chr2"].soft_masked_bp == 8
+        assert g["chr2"].soft_masked_fraction == 1.0
+
+        stats = g.get_stats()
+        assert stats["soft_masked_bp"] == 12
+        assert stats["soft_masked_pct"] == round(12 / 20 * 100, 2)
+        assert stats["gap_content"] == round(4 / 20 * 100, 2)
+
+        # preserve_case=False forces uppercase
+        g_upper = Genome("upper", str(fasta_path), quiet=True, preserve_case=False)
+        assert g_upper.preserve_case is False
+        assert g_upper["chr1"].seq == "ATGCATGCNNNN"
+        assert g_upper["chr1"].soft_masked_bp == 0
+        assert g_upper["chr1"].soft_masked_fraction == 0.0
+
+        # Sequence checksums match regardless of casing
+        assert g["chr1"].seq_hash == g_upper["chr1"].seq_hash
+        assert g["chr2"].seq_hash == g_upper["chr2"].seq_hash
+
+
 

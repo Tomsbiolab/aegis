@@ -8,6 +8,7 @@ from unittest.mock import patch, PropertyMock
 from pathlib import Path
 from aegis.utils.genefunctions import (
     reverse_complement,
+    sequence_hash,
     find_ORFs,
     choose_orf,
     translate,
@@ -165,12 +166,35 @@ class TestReverseComplement:
         rc = reverse_complement(seq)
         assert reverse_complement(rc) == seq  # double RC == original
 
+    def test_lowercase_and_rna(self):
+        assert reverse_complement("atgc") == "gcat"
+        assert reverse_complement("AUGC") == "GCAT"
+
+
+# ============================================================
+# sequence_hash
+# ============================================================
+
+class TestSequenceHash:
+    def test_basic_hash(self):
+        h = sequence_hash("ATGC")
+        assert isinstance(h, str) and len(h) == 32
+        # Case insensitive
+        assert sequence_hash("atgc") == h
+        # Distinct sequences have distinct hashes
+        assert sequence_hash("ATGG") != h
+
 
 # ============================================================
 # find_ORFs / longest_ORF
 # ============================================================
 
-class TestFindORFs:
+    def test_find_orfs_case_insensitivity(self):
+        orfs = find_ORFs("agatatgaaacccgggttgattaactaaaaagattagaaga", must_have_stop=True)
+        assert len(orfs) == 1
+        assert orfs[0][0] == "atgaaacccgggttgattaactaa"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 27
 
     def test_orfs(self):
         # ATG + 6 codons + TAA  = 24 nt
@@ -331,6 +355,10 @@ class TestTranslate:
     def test_simple_orf(self):
         # ATG AAA TAA = M K *
         assert translate("ATGAAATAA") == "MK*"
+
+    def test_case_insensitivity(self):
+        assert translate("atgaaataa") == "MK*"
+        assert translate("AtgAaaTaa") == "MK*"
 
     def test_no_start_codon(self):
         # GGG AAA TAA = G K *

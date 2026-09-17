@@ -187,6 +187,11 @@
       - `class Scaffold():`
       - `def __init__(self, name, sequence, original_name:str="", description:str=""):`
       - `def update(self, new_name:str=""):`
+      - `def seq_hash(self) -> str:`
+      - `def rc_seq_hash(self) -> str:`
+      - `def upper_seq(self) -> str:`
+      - `def soft_masked_bp(self) -> int:`
+      - `def soft_masked_fraction(self) -> float:`
       - `def copy(self):`
       - `class Genome():`
       - `def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict=`
@@ -421,9 +426,14 @@
         - `def format_number(val: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
         - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
         - `def get_natural_sort_key(name: str, genomes: list[Genome]):`
+        - `def normalize_chr_name(name: str) -> str:`
+        - `class PairedFeature:`
+        - `def __init__(self, primary_name: str):`
+        - `def pair_genome_features(`
+        - `def is_candidate(scf: Scaffold) -> bool:`
         - `def render_terminal_table(headers: list[str], rows: list[list[str]], summary_rows: list[list[str]]) -> str:`
         - `def main(`
-        - `def avg_size(fname):`
+        - `def max_feat_size(pf: PairedFeature):`
       - symbols.py
         - `def main(`
       - tidy.py
@@ -439,6 +449,7 @@
         - `def round_evalue(e):`
       - genefunctions.py
         - `def reverse_complement(in_seq: str) -> str:`
+        - `def sequence_hash(in_seq: str) -> str:`
         - `def translate(seq: str) -> str:`
         - `def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):`
         - `def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[int, float, None] = 0, min_codon_len: int = 2, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA")) -> list[tuple[str, int, int]]:`
@@ -458,7 +469,7 @@
         - `def pickle_load(file):`
         - `def pickle_save(file, item):`
         - `def count_occurrences(string, char):`
-        - `def find_all_occurrences(pattern, text):`
+        - `def find_all_occurrences(pattern, text, flags: int = 0):`
         - `def start_progress_bar(total: int, description: str, quiet: bool = False, colour: str = "92"):`
         - `def run_command(working_directory: Path, command: list):`
         - `def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:`
@@ -810,6 +821,9 @@
     - test_cli_summary_genome.py
       - `def test_cli_summary_genome_smoke(test_data_dir):`
       - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
+      - `def test_cli_summary_genome_synonym_pairing(tmp_path):`
+      - `def test_cli_summary_genome_ref_and_no_seq_options(tmp_path):`
+      - `def test_cli_summary_genome_soft_masked(tmp_path):`
     - test_equivalence.py
       - `class TestRoundEvalue:`
       - `def test_small_evalue(self):`
@@ -900,6 +914,7 @@
       - `def test_stats_property(self, sample_fasta_file):`
       - `def test_get_sorted_features(self, sample_fasta_file):`
       - `def test_assembly_stats_and_sorting_logic(self, tmp_path):`
+      - `def test_preserve_case_and_soft_masking(self, tmp_path):`
     - test_gz_support.py
       - `def test_gff3_gz_support(tmp_path):`
       - `def test_gtf_gz_support(tmp_path):`
@@ -946,7 +961,10 @@
       - `def test_simple_sequence(self):`
       - `def test_palindrome(self):`
       - `def test_longer_sequence(self):`
-      - `class TestFindORFs:`
+      - `def test_lowercase_and_rna(self):`
+      - `class TestSequenceHash:`
+      - `def test_basic_hash(self):`
+      - `def test_find_orfs_case_insensitivity(self):`
       - `def test_orfs(self):`
       - `def test_no_start_codon(self):`
       - `def test_no_stop_codon_without_must_have_stop(self):`
@@ -960,6 +978,7 @@
       - `def test_surplus_other(self):`
       - `class TestTranslate:`
       - `def test_simple_orf(self):`
+      - `def test_case_insensitivity(self):`
       - `def test_no_start_codon(self):`
       - `def test_late_start_in_frame(self):`
       - `def test_atg_not_in_frame(self):`
@@ -1022,6 +1041,9 @@
       - `def test_init_defaults(self):`
       - `def test_size(self):`
       - `def test_inherits_from_feature(self):`
+      - `def test_splice_site_case_insensitivity(self, monkeypatch):`
+      - `class DummyScaffold:`
+      - `class DummyGenome:`
     - test_transcript.py
       - `class TestTranscriptInit:`
       - `def test_basic_properties(self, make_transcript):`

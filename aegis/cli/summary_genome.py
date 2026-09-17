@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 from typing_extensions import Annotated
 
-from ..genome import Genome
+from ..genome import Genome, Scaffold
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -91,8 +91,178 @@ def get_natural_sort_key(name: str, genomes: list[Genome]):
             elif scf.organelle:
                 category = min(category, 3)
 
+    if category == 4 and name.lower().startswith("ch"):
+        category = 1
+
     parts = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', name)]
     return (category, parts)
+
+
+def normalize_chr_name(name: str) -> str:
+    """Normalize chromosome names for heuristic matching (e.g. 'chr01', 'Chr1', 'chromosome_1' -> '1')."""
+    s = name.strip().lower()
+    for prefix in ["chromosome_", "chromosome", "scaffold_", "scaffold", "contig_", "contig", "chr_", "chr"]:
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    s = s.lstrip("0")
+    return s if s else name.strip().lower()
+
+
+class PairedFeature:
+    """Represents a unified chromosome or scaffold feature across compared genomes."""
+    def __init__(self, primary_name: str):
+        self.primary_name = primary_name
+        self.scaffolds: dict[str, Scaffold] = {}
+        self.synonyms: dict[str, str] = {}
+        self.match_types: dict[str, str] = {}
+        self.seq_diff: dict[str, bool] = {}
+
+
+def pair_genome_features(
+    genomes: list[Genome],
+    ref_idx: int = 0,
+    check_sequence: bool = True,
+    include_all: bool = False,
+    chromosomes_only: bool = False,
+) -> list[PairedFeature]:
+    """
+    Pairs chromosomes and scaffolds across multiple genomes using hierarchical matching:
+    1. Exact Name match
+    2. Exact Sequence match (via MD5 / reverse-complement MD5)
+    3. Unequivocal unique size match (identifiable unique sizes across candidate contigs)
+    4. Normalized Name match (e.g. 'chr01' vs '1')
+    5. Unique unpaired contigs
+    """
+    show_all = include_all and not chromosomes_only
+
+    def is_candidate(scf: Scaffold) -> bool:
+        if show_all:
+            return True
+        if chromosomes_only:
+            return bool(scf.chromosome and not scf.organelle and not scf.unknown_chromosome)
+        return bool(scf.chromosome or scf.unknown_chromosome or scf.organelle)
+
+    ref_genome = genomes[ref_idx]
+    ref_candidates = [scf for scf in ref_genome.scaffolds.values() if is_candidate(scf)]
+    if not ref_candidates and not chromosomes_only:
+        ref_candidates = list(ref_genome.scaffolds.values())
+
+    features: list[PairedFeature] = []
+    for ref_scf in ref_candidates:
+        pf = PairedFeature(primary_name=ref_scf.name)
+        pf.scaffolds[ref_genome.name] = ref_scf
+        pf.synonyms[ref_genome.name] = ref_scf.name
+        pf.match_types[ref_genome.name] = "anchor"
+        features.append(pf)
+
+    # Process each non-reference genome against features
+    for g in genomes:
+        if g == ref_genome:
+            continue
+
+        available_scaffolds = dict(g.scaffolds)
+        unmatched_pfs = [pf for pf in features if g.name not in pf.scaffolds]
+
+        # Stage 1: Exact Name Match
+        for pf in list(unmatched_pfs):
+            if pf.primary_name in available_scaffolds:
+                scf = available_scaffolds.pop(pf.primary_name)
+                pf.scaffolds[g.name] = scf
+                pf.synonyms[g.name] = scf.name
+                pf.match_types[g.name] = "name"
+                unmatched_pfs.remove(pf)
+
+        # Stage 2: Exact Sequence Match (if check_sequence)
+        if check_sequence and unmatched_pfs and available_scaffolds:
+            for pf in list(unmatched_pfs):
+                anchor_scf = pf.scaffolds.get(ref_genome.name) or next(iter(pf.scaffolds.values()))
+                h = anchor_scf.seq_hash
+                rc_h = anchor_scf.rc_seq_hash
+
+                exact_matches = [s for s in available_scaffolds.values() if s.seq_hash == h]
+                if len(exact_matches) == 1:
+                    matched = exact_matches[0]
+                    available_scaffolds.pop(matched.name)
+                    pf.scaffolds[g.name] = matched
+                    pf.synonyms[g.name] = matched.name
+                    pf.match_types[g.name] = "exact_seq"
+                    pf.seq_diff[g.name] = False
+                    unmatched_pfs.remove(pf)
+                    continue
+
+                rc_matches = [s for s in available_scaffolds.values() if s.seq_hash == rc_h]
+                if len(rc_matches) == 1:
+                    matched = rc_matches[0]
+                    available_scaffolds.pop(matched.name)
+                    pf.scaffolds[g.name] = matched
+                    pf.synonyms[g.name] = matched.name
+                    pf.match_types[g.name] = "rc_seq"
+                    pf.seq_diff[g.name] = False
+                    unmatched_pfs.remove(pf)
+                    continue
+
+        # Stage 3: Unequivocal Unique Size Match
+        if unmatched_pfs and available_scaffolds:
+            for pf in list(unmatched_pfs):
+                anchor_scf = pf.scaffolds.get(ref_genome.name) or next(iter(pf.scaffolds.values()))
+                target_size = anchor_scf.size
+
+                ref_same_size = [p for p in unmatched_pfs if (p.scaffolds.get(ref_genome.name) or next(iter(p.scaffolds.values()))).size == target_size]
+                k_same_size = [s for s in available_scaffolds.values() if s.size == target_size]
+
+                if len(ref_same_size) == 1 and len(k_same_size) == 1:
+                    matched = k_same_size[0]
+                    available_scaffolds.pop(matched.name)
+                    pf.scaffolds[g.name] = matched
+                    pf.synonyms[g.name] = matched.name
+                    pf.match_types[g.name] = "unique_size"
+                    if check_sequence:
+                        is_ident = (matched.seq_hash == anchor_scf.seq_hash or matched.seq_hash == anchor_scf.rc_seq_hash)
+                        pf.seq_diff[g.name] = not is_ident
+                    else:
+                        pf.seq_diff[g.name] = False
+                    unmatched_pfs.remove(pf)
+
+        # Stage 4: Normalized Name Match
+        if unmatched_pfs and available_scaffolds:
+            for pf in list(unmatched_pfs):
+                norm_ref = normalize_chr_name(pf.primary_name)
+                norm_matches = [s for s in available_scaffolds.values() if normalize_chr_name(s.name) == norm_ref]
+                if len(norm_matches) == 1:
+                    matched = norm_matches[0]
+                    available_scaffolds.pop(matched.name)
+                    pf.scaffolds[g.name] = matched
+                    pf.synonyms[g.name] = matched.name
+                    pf.match_types[g.name] = "norm_name"
+                    anchor_scf = pf.scaffolds.get(ref_genome.name) or next(iter(pf.scaffolds.values()))
+                    if check_sequence:
+                        pf.seq_diff[g.name] = (matched.size == anchor_scf.size and matched.seq_hash != anchor_scf.seq_hash and matched.seq_hash != anchor_scf.rc_seq_hash)
+                    unmatched_pfs.remove(pf)
+
+        # Stage 5: Remaining scaffolds qualifying on their own
+        for scf_name, scf in available_scaffolds.items():
+            if is_candidate(scf):
+                pf = PairedFeature(primary_name=scf.name)
+                pf.scaffolds[g.name] = scf
+                pf.synonyms[g.name] = scf.name
+                pf.match_types[g.name] = "unique"
+                features.append(pf)
+
+        # If any scaffolds in g matched a nuclear chromosome in the anchor, promote them
+        promoted = False
+        for pf in features:
+            if g.name in pf.scaffolds:
+                scf = pf.scaffolds[g.name]
+                anchor = pf.scaffolds.get(ref_genome.name)
+                if anchor and anchor.chromosome and not anchor.organelle and not anchor.unknown_chromosome:
+                    if not scf.chromosome:
+                        scf.chromosome = True
+                        promoted = True
+        if promoted:
+            g.update()
+
+    return features
 
 
 def render_terminal_table(headers: list[str], rows: list[list[str]], summary_rows: list[list[str]]) -> str:
@@ -200,6 +370,18 @@ def main(
     genome_size: Annotated[str, typer.Option(
         "-s", "--genome-size", help="Estimated/expected genome size (e.g. '135M', '1.2G', or '135000000') for calculating NG50, LG50, and auNG."
     )] = "",
+    reference: Annotated[bool, typer.Option(
+        "-r", "--reference", help="Use first genome as reference (or specified via --ref-genome) and report relative differences (showing '= ref' for identical features/metrics)."
+    )] = False,
+    ref_genome: Annotated[str, typer.Option(
+        "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode)."
+    )] = "",
+    diff_only: Annotated[bool, typer.Option(
+        "--diff-only", help="Report only features and summary statistics where genomes differ from reference (hides rows that are '= ref')."
+    )] = False,
+    no_seq: Annotated[bool, typer.Option(
+        "--no-seq", help="Disable sequence-level hash matching (rely on name and unequivocal size matching only)."
+    )] = False,
 ):
     """
     Summarise and compare chromosome sizes and assembly statistics for one or more genomes.
@@ -239,45 +421,60 @@ def main(
         genomes.append(g)
 
     is_two_genomes = len(genomes) == 2
+
+    # Determine reference genome
+    ref_idx = 0
+    if ref_genome:
+        if ref_genome.isdigit():
+            idx = int(ref_genome) - 1
+            if 0 <= idx < len(genomes):
+                ref_idx = idx
+            else:
+                typer.echo(f"Warning: Reference index '{ref_genome}' out of range. Defaulting to 1st genome.", err=True)
+        else:
+            found = False
+            for idx, g in enumerate(genomes):
+                if g.name.lower() == ref_genome.lower():
+                    ref_idx = idx
+                    found = True
+                    break
+            if not found:
+                typer.echo(f"Warning: Reference genome '{ref_genome}' not found in genomes. Defaulting to 1st genome.", err=True)
+
+    is_ref_mode = bool(reference or ref_genome)
+    ref_name = genomes[ref_idx].name
+
+    # Collect and pair features
+    paired_features = pair_genome_features(
+        genomes,
+        ref_idx=ref_idx,
+        check_sequence=not no_seq,
+        include_all=include_all,
+        chromosomes_only=chromosomes_only,
+    )
+
     stats_list = [g.get_stats(estimated_genome_size=exp_size) for g in genomes]
-
-    # Collect features
-    feature_set = set()
-    feature_sizes: dict[str, dict[str, int]] = {}
-
-    for g in genomes:
-        show_all = include_all and not chromosomes_only
-        for name, scf in g.scaffolds.items():
-            is_chr = scf.chromosome or scf.unknown_chromosome or scf.organelle
-            if show_all or is_chr:
-                feature_set.add(name)
-                if name not in feature_sizes:
-                    feature_sizes[name] = {}
-                feature_sizes[name][g.name] = scf.size
 
     # Sort features
     if sort_by == "order":
-        ordered = []
-        for g in genomes:
-            for name in g.scaffolds:
-                if name in feature_set and name not in ordered:
-                    ordered.append(name)
-        sorted_features = ordered
+        sorted_features = paired_features
     elif sort_by == "size":
-        def avg_size(fname):
-            sizes = [feature_sizes[fname].get(g.name, 0) for g in genomes]
-            return max(sizes)
-        sorted_features = sorted(feature_set, key=lambda f: (-avg_size(f), f))
+        def max_feat_size(pf: PairedFeature):
+            return max([s.size for s in pf.scaffolds.values()] or [0])
+        sorted_features = sorted(paired_features, key=lambda pf: (-max_feat_size(pf), pf.primary_name))
     else:
         # Default: natural sort
-        sorted_features = sorted(feature_set, key=lambda f: get_natural_sort_key(f, genomes))
+        sorted_features = sorted(paired_features, key=lambda pf: get_natural_sort_key(pf.primary_name, genomes))
 
     # Prepare Headers
     unit_label = "" if human_readable else " (bp)"
     headers = ["Feature / Metric"]
-    for g in genomes:
-        headers.append(f"{g.name}{unit_label}")
-    if is_two_genomes:
+    for idx, g in enumerate(genomes):
+        if is_ref_mode and idx == ref_idx:
+            headers.append(f"{g.name} [Ref]")
+        else:
+            headers.append(f"{g.name}{unit_label}")
+    if is_two_genomes and not is_ref_mode:
         headers.append(f"Diff{unit_label}")
 
     # Build Feature Rows
@@ -286,26 +483,104 @@ def main(
 
     if not summary_only:
         for feat in sorted_features:
-            term_row = [feat]
-            file_row = [feat]
-            sizes = []
-            for g in genomes:
-                sz = feature_sizes.get(feat, {}).get(g.name, None)
-                sizes.append(sz)
-                term_row.append(format_number(sz, human_readable=human_readable, is_terminal=True))
-                file_row.append(format_number(sz, human_readable=human_readable, is_terminal=False))
+            ref_scf = feat.scaffolds.get(ref_name) if is_ref_mode else None
+            all_same_as_ref = True
 
-            if is_two_genomes:
-                s1, s2 = sizes[0], sizes[1]
-                diff = None
-                if s1 is not None and s2 is not None:
-                    diff = s2 - s1
-                elif s1 is not None and s2 is None:
-                    diff = -s1
-                elif s1 is None and s2 is not None:
-                    diff = s2
-                term_row.append(format_diff(diff, human_readable=human_readable, is_terminal=True))
-                file_row.append(format_diff(diff, human_readable=human_readable, is_terminal=False))
+            term_row = [feat.primary_name]
+            file_row = [feat.primary_name]
+
+            if not is_ref_mode:
+                # Standard Mode
+                sizes = []
+                for g in genomes:
+                    scf = feat.scaffolds.get(g.name)
+                    if scf is None:
+                        sizes.append(None)
+                        term_row.append("-")
+                        file_row.append("-")
+                    else:
+                        sizes.append(scf.size)
+                        synonym = feat.synonyms.get(g.name, scf.name)
+                        seq_diff = feat.seq_diff.get(g.name, False)
+                        term_val = format_number(scf.size, human_readable=human_readable, is_terminal=True)
+                        file_val = format_number(scf.size, human_readable=human_readable, is_terminal=False)
+                        if synonym != feat.primary_name:
+                            suffix = f" ({synonym}, seq diff)" if seq_diff else f" ({synonym})"
+                            term_row.append(f"{term_val}{suffix}")
+                            file_row.append(f"{file_val}{suffix}")
+                        else:
+                            term_row.append(term_val)
+                            file_row.append(file_val)
+
+                if is_two_genomes:
+                    s1, s2 = sizes[0], sizes[1]
+                    diff = None
+                    if s1 is not None and s2 is not None:
+                        diff = s2 - s1
+                    elif s1 is not None and s2 is None:
+                        diff = -s1
+                    elif s1 is None and s2 is not None:
+                        diff = s2
+                    term_row.append(format_diff(diff, human_readable=human_readable, is_terminal=True))
+                    file_row.append(format_diff(diff, human_readable=human_readable, is_terminal=False))
+
+            else:
+                # Reference Mode
+                for idx, g in enumerate(genomes):
+                    scf = feat.scaffolds.get(g.name)
+                    if idx == ref_idx:
+                        if scf is None:
+                            term_row.append("-")
+                            file_row.append("-")
+                        else:
+                            term_row.append(format_number(scf.size, human_readable=human_readable, is_terminal=True))
+                            file_row.append(format_number(scf.size, human_readable=human_readable, is_terminal=False))
+                    else:
+                        if scf is None:
+                            all_same_as_ref = False
+                            term_row.append("-")
+                            file_row.append("-")
+                        elif ref_scf is None:
+                            all_same_as_ref = False
+                            t_val = format_number(scf.size, human_readable=human_readable, is_terminal=True)
+                            f_val = format_number(scf.size, human_readable=human_readable, is_terminal=False)
+                            term_row.append(f"{t_val} (unique)")
+                            file_row.append(f"{f_val} (unique)")
+                        else:
+                            diff = scf.size - ref_scf.size
+                            synonym = feat.synonyms.get(g.name, scf.name)
+                            is_synonym = (synonym != feat.primary_name)
+                            seq_diff = feat.seq_diff.get(g.name, False)
+                            match_type = feat.match_types.get(g.name, "")
+
+                            if diff == 0:
+                                if not is_synonym:
+                                    term_row.append("= ref")
+                                    file_row.append("= ref")
+                                else:
+                                    if match_type == "rc_seq":
+                                        syn_str = f"= ref ({synonym}, revcomp)"
+                                    elif seq_diff:
+                                        syn_str = f"= ref ({synonym}, seq diff)"
+                                    else:
+                                        syn_str = f"= ref ({synonym})"
+                                    term_row.append(syn_str)
+                                    file_row.append(syn_str)
+                            else:
+                                all_same_as_ref = False
+                                t_diff = format_diff(diff, human_readable=human_readable, is_terminal=True)
+                                f_diff = format_diff(diff, human_readable=human_readable, is_terminal=False)
+                                t_val = format_number(scf.size, human_readable=human_readable, is_terminal=True)
+                                f_val = format_number(scf.size, human_readable=human_readable, is_terminal=False)
+                                if is_synonym:
+                                    term_row.append(f"{t_val} ({t_diff}) ({synonym})")
+                                    file_row.append(f"{f_val} ({f_diff}) ({synonym})")
+                                else:
+                                    term_row.append(f"{t_val} ({t_diff})")
+                                    file_row.append(f"{f_val} ({f_diff})")
+
+            if is_ref_mode and diff_only and all_same_as_ref:
+                continue
 
             terminal_rows.append(term_row)
             file_rows.append(file_row)
@@ -336,6 +611,9 @@ def main(
         ("Gap Content (N%)", "gap_content", True),
     ])
 
+    if any((s.get("soft_masked_pct") or 0) > 0 for s in stats_list):
+        summary_metrics.append(("Soft-masked (%)", "soft_masked_pct", True))
+
     terminal_summary_rows = []
     file_summary_rows = []
 
@@ -345,17 +623,43 @@ def main(
         file_row = [file_key]
 
         is_size = "size" in key.lower() or key.lower() in ("n50", "n90", "aun", "ng50", "aung")
-
         vals = [s.get(key) for s in stats_list]
-        for val in vals:
-            term_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
-            file_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
 
-        if is_two_genomes:
-            v1, v2 = vals[0], vals[1]
-            diff = (v2 - v1) if (v1 is not None and v2 is not None) else None
-            term_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
-            file_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
+        if not is_ref_mode:
+            for val in vals:
+                term_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
+                file_row.append(format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
+
+            if is_two_genomes:
+                v1, v2 = vals[0], vals[1]
+                diff = (v2 - v1) if (v1 is not None and v2 is not None) else None
+                term_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
+                file_row.append(format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
+
+        else:
+            ref_val = vals[ref_idx]
+            all_metrics_same = True
+
+            for idx, val in enumerate(vals):
+                if idx == ref_idx:
+                    term_row.append(format_number(ref_val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct))
+                    file_row.append(format_number(ref_val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct))
+                else:
+                    if val == ref_val:
+                        term_row.append("= ref")
+                        file_row.append("= ref")
+                    else:
+                        all_metrics_same = False
+                        diff = (val - ref_val) if (val is not None and ref_val is not None) else None
+                        t_diff = format_diff(diff, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct)
+                        f_diff = format_diff(diff, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct)
+                        t_val = format_number(val, human_readable=(human_readable and is_size), is_terminal=True, is_pct=is_pct)
+                        f_val = format_number(val, human_readable=(human_readable and is_size), is_terminal=False, is_pct=is_pct)
+                        term_row.append(f"{t_val} ({t_diff})")
+                        file_row.append(f"{f_val} ({f_diff})")
+
+            if diff_only and all_metrics_same:
+                continue
 
         terminal_summary_rows.append(term_row)
         file_summary_rows.append(file_row)
@@ -376,8 +680,13 @@ def main(
         export_path.parent.mkdir(parents=True, exist_ok=True)
         delimiter = "," if export_path.suffix.lower() == ".csv" else "\t"
 
-        file_headers = ["Feature"] + [g.name for g in genomes]
-        if is_two_genomes:
+        file_headers = ["Feature"]
+        for idx, g in enumerate(genomes):
+            if is_ref_mode and idx == ref_idx:
+                file_headers.append(f"{g.name} [Ref]")
+            else:
+                file_headers.append(g.name)
+        if is_two_genomes and not is_ref_mode:
             file_headers.append("Diff")
 
         with open(export_path, "w", encoding="utf-8") as f_out:
