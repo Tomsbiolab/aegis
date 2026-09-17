@@ -24,6 +24,8 @@
       - `def stats(self) -> AnnotationStats:`
       - `def export(self) -> AnnotationExport:`
       - `def summary(self) -> dict:`
+      - `def genome_validation(self) -> dict:`
+      - `def validate_against_genome(self, quiet: bool = False) -> dict:`
       - `def iter_genes(self):`
       - `def iter_transcripts(self):`
       - `def iter_exons(self):`
@@ -375,6 +377,8 @@
         - `def calculate_transcript_masking(self):`
         - `def calculate_gc_content(self):`
         - `def gene_count(self):`
+        - `def get_contig_stats(self) -> list[dict]:`
+        - `def sort_key(item):`
         - `def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,`
       - __init__.py
     - **cli/**
@@ -419,7 +423,14 @@
         - `def split_callback(value:str):`
         - `def main(`
       - summary.py
+        - `def is_fasta_path(filepath: str) -> bool:`
+        - `def format_human_readable(size: int | float, is_bp: bool = True) -> str:`
+        - `def format_number(val: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def render_terminal_table(headers: list[str], rows: list[list[str]], section_title: str = "", summary_rows: list[list[str]] | None = None) -> str:`
         - `def main(`
+        - `def contig_sort_key(name: str):`
+        - `def get_annot_metric_val(annot: Annotation, metric_key: str):`
       - summary_genome.py
         - `def format_human_readable(size: int | float, is_bp: bool = True) -> str:`
         - `def parse_size_str(size_str: str) -> int:`
@@ -818,6 +829,12 @@
       - `def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):`
       - `def test_cli_subset_no_chr_cap(test_data_dir, tmp_path):`
       - `def test_cli_subset_chr_cap_and_seed(test_data_dir, tmp_path):`
+    - test_cli_summary.py
+      - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_summary_multi_annot_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_summary_export(test_data_dir, tmp_path):`
+      - `def test_cli_summary_fatal_mismatch_halt(tmp_path):`
     - test_cli_summary_genome.py
       - `def test_cli_summary_genome_smoke(test_data_dir):`
       - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
