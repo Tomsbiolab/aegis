@@ -67,7 +67,7 @@ def test_cli_summary_fatal_mismatch_halt(tmp_path):
     fa_file = tmp_path / "mismatch.fasta"
     fa_file.write_text(fa_content)
 
-    result = runner.invoke(app, [str(gff_file), "-g", str(fa_file)])
+    result = runner.invoke(app, [str(gff_file), "-g", str(fa_file), "-d", str(tmp_path)])
     assert result.exit_code != 0, "Expected non-zero exit code on fatal mismatch"
     output = (result.stderr or "") + (result.stdout or "")
     assert "match" in output.lower() or "error" in output.lower()
@@ -90,7 +90,7 @@ def test_cli_summary_multi_annot_fatal_mismatch_hint(tmp_path):
     fa_file = tmp_path / "genome.fasta"
     fa_file.write_text(fa_content)
 
-    result = runner.invoke(app, [str(gff1), str(gff2), "-g", str(fa_file)])
+    result = runner.invoke(app, [str(gff1), str(gff2), "-g", str(fa_file), "-d", str(tmp_path)])
     assert result.exit_code != 0
     output = (result.stderr or "") + (result.stdout or "")
     assert "applies the provided genome assembly to ALL input annotations" in output
@@ -187,7 +187,7 @@ def test_cli_summary_multi_genome_mismatched_count(tmp_path):
     fa3 = tmp_path / "g3.fa"
     fa3.write_text(">chrA\nAAAA\n")
 
-    res = runner.invoke(app, [str(gff1), str(gff2), "-g", f"{fa1},{fa2},{fa3}"])
+    res = runner.invoke(app, [str(gff1), str(gff2), "-g", f"{fa1},{fa2},{fa3}", "-d", str(tmp_path)])
     assert res.exit_code != 0
     assert "Number of genome files (3) must match the number of annotation files (2)" in ((res.stderr or "") + (res.stdout or ""))
 
