@@ -817,7 +817,6 @@
       - `def test_filter_non_coding_only(rich_gff3_file, tmp_path):`
       - `def test_filter_rna_classes(rich_gff3_file, tmp_path):`
       - `def test_filter_pseudogenes(pseudogene_gff3_file, rich_gff3_file, tmp_path):`
-      - `def test_filter_conflicting_flags(rich_gff3_file, tmp_path):`
       - `def test_tidy_removes_empty_genes_with_features_flag(rich_gff3_file, tmp_path):`
     - test_cli_split.py
       - `def populus_test_files(tmp_path):`

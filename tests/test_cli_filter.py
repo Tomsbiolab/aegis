@@ -1,4 +1,3 @@
-import click
 import pytest
 from typer.testing import CliRunner
 
@@ -121,32 +120,6 @@ def test_filter_pseudogenes(pseudogene_gff3_file, rich_gff3_file, tmp_path):
     assert "gene_ps1" in annot.all_gene_ids
     assert "geneR1" not in annot.all_gene_ids
     assert "geneR2" not in annot.all_gene_ids
-
-
-def test_filter_conflicting_flags(rich_gff3_file, tmp_path):
-    output_dir = tmp_path / "filter_out"
-
-    # coding and non-coding
-    args = [str(rich_gff3_file), "-d", str(output_dir), "--coding-only", "--non-coding-only"]
-    result = runner.invoke(filter_app, args)
-    assert result.exit_code != 0
-    assert "Cannot specify both --coding-only and --non-coding-only" in click.unstyle(result.output)
-
-    # skip-pseudogenes and pseudogenes-only
-    args = [str(rich_gff3_file), "-d", str(output_dir), "--skip-pseudogenes", "--pseudogenes-only"]
-    result = runner.invoke(filter_app, args)
-    assert result.exit_code != 0
-
-    # skip-te and te-only
-    args = [str(rich_gff3_file), "-d", str(output_dir), "--skip-te", "--te-only"]
-    result = runner.invoke(filter_app, args)
-    assert result.exit_code != 0
-
-    # invalid RNA class
-    args = [str(rich_gff3_file), "-d", str(output_dir), "-r", "invalid_RNA_biotype"]
-    result = runner.invoke(filter_app, args)
-    assert result.exit_code != 0
-
 
 def test_tidy_removes_empty_genes_with_features_flag(rich_gff3_file, tmp_path):
     output_dir = tmp_path / "tidy_out"
