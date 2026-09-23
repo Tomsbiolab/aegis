@@ -1,6 +1,7 @@
 import typer
 
 from .extract import main as extract_main
+from .filter import main as filter_main
 from .merge import main as merge_main
 from .motif_search import main as motifs_main
 from .orthology import main as orthology_main
@@ -26,6 +27,7 @@ app = typer.Typer(
 
 # Single-command modules: register their main function directly as a command
 app.command(name="extract", help="Extract sequences from a genome based on an annotation file.")(extract_main)
+app.command(name="filter", help="Filter an annotation file based on biotypes, RNA classes, transposable elements, pseudogenes, or features.")(filter_main)
 app.command(name="merge", help="Merge two annotation files.")(merge_main)
 app.command(name="motifs", help="Search for DNA motifs in promoter regions.")(motifs_main)
 app.command(name="orthology", help="Pairwise orthology analysis between two annotations from different genome assembly.")(orthology_main)

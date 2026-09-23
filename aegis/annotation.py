@@ -396,7 +396,7 @@ class Annotation():
         """
         if getattr(self, "_genome_validation", None) is None:
             self._genome_validation = self.validate_against_genome(quiet=True)
-        return self._genome_validation
+        return self._genome_validation # type: ignore
 
     def validate_against_genome(self, quiet: bool = False) -> dict:
         """
@@ -408,7 +408,7 @@ class Annotation():
         Returns a dictionary summarizing findings.
         """
         if getattr(self, "_genome_validation", None) is not None:
-            return self._genome_validation
+            return self._genome_validation # type: ignore
 
         results = {
             "missing_chromosomes": [],
@@ -2731,7 +2731,7 @@ class Annotation():
 
         return chosen_features
 
-    def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=False, quiet:bool=False):
+    def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=True, quiet:bool=False):
 
         transcript_to_remove = set()
 
@@ -2926,6 +2926,41 @@ class Annotation():
         
         if removed_any:
             self.feature_tags.add("minus_non_TE")
+
+        self.update(quiet=quiet)
+
+    def remove_pseudogene_genes(self, quiet:bool=False):
+
+        removed_any = False
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                if g.pseudogene:
+                    g.quality.rescue = False
+                    g.quality.remove = True
+                    removed_any = True
+
+        self.remove_genes(quiet=quiet)
+
+        if removed_any:
+            self.feature_tags.add("minus_pseudogene")
+        self.update(quiet=quiet)
+
+    def remove_non_pseudogene_genes(self, quiet:bool=False):
+
+        removed_any = False
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                if not g.pseudogene:
+                    g.quality.rescue = False
+                    g.quality.remove = True
+                    removed_any = True
+
+        self.remove_genes(quiet=quiet)
+        
+        if removed_any:
+            self.feature_tags.add("minus_non_pseudogene")
 
         self.update(quiet=quiet)
 
