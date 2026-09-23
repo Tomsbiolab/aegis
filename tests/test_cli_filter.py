@@ -1,3 +1,4 @@
+import click
 import pytest
 from typer.testing import CliRunner
 
@@ -129,7 +130,7 @@ def test_filter_conflicting_flags(rich_gff3_file, tmp_path):
     args = [str(rich_gff3_file), "-d", str(output_dir), "--coding-only", "--non-coding-only"]
     result = runner.invoke(filter_app, args)
     assert result.exit_code != 0
-    assert "Cannot specify both --coding-only and --non-coding-only" in result.output
+    assert "Cannot specify both --coding-only and --non-coding-only" in click.unstyle(result.output)
 
     # skip-pseudogenes and pseudogenes-only
     args = [str(rich_gff3_file), "-d", str(output_dir), "--skip-pseudogenes", "--pseudogenes-only"]
