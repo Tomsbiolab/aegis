@@ -86,7 +86,7 @@
       - `def add_blast_hits(self, source, blastfile, mode:str="protein"):`
       - `def remove_chromosomes_from_header(self):`
       - `def subset(`
-      - `def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=False, quiet:bool=False):`
+      - `def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=True, quiet:bool=False):`
       - `def remove_chromosomes(self, features_to_remove:set, update:bool=True, quiet:bool=False):`
       - `def remove_genes(self, to_remove:set|None=None, override_rescue:bool=False, quiet:bool=False):`
       - `def remove_missing_genes_in_overlaps(self, quiet:bool=True):`
@@ -95,6 +95,8 @@
       - `def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):`
       - `def remove_TE_genes(self, quiet:bool=False):`
       - `def remove_non_TE_genes(self, quiet:bool=False):`
+      - `def remove_pseudogene_genes(self, quiet:bool=False):`
+      - `def remove_non_pseudogene_genes(self, quiet:bool=False):`
       - `def remove_non_coding_genes_and_transcripts(self, quiet:bool=False):`
       - `def remove_coding_genes_and_transcripts(self, quiet:bool=False):`
       - `def remove_coding_transcripts_from_non_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):`
@@ -383,6 +385,8 @@
       - __init__.py
     - **cli/**
       - extract.py
+        - `def main(`
+      - filter.py
         - `def main(`
       - list.py
         - `def genes(`
@@ -687,6 +691,9 @@
       - `def test_remove_noncoding_gene(self, rich_gff3_file):`
       - `class TestAnnotationRemoveCodingGenes:`
       - `def test_remove_coding_gene(self, rich_gff3_file):`
+      - `class TestAnnotationRemovePseudogenes:`
+      - `def test_remove_pseudogenes(self, pseudogene_gff3_file, rich_gff3_file, tmp_path):`
+      - `def test_remove_non_pseudogenes(self, pseudogene_gff3_file, rich_gff3_file, tmp_path):`
       - `class TestAnnotationClearSequences:`
       - `def test_contains_no_proteins_initially(self, sample_gff3_file):`
       - `def test_clear_protein_flag(self, sample_gff3_file):`
@@ -805,6 +812,13 @@
       - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
+    - test_cli_filter.py
+      - `def test_filter_coding_only(rich_gff3_file, tmp_path):`
+      - `def test_filter_non_coding_only(rich_gff3_file, tmp_path):`
+      - `def test_filter_rna_classes(rich_gff3_file, tmp_path):`
+      - `def test_filter_pseudogenes(pseudogene_gff3_file, rich_gff3_file, tmp_path):`
+      - `def test_filter_conflicting_flags(rich_gff3_file, tmp_path):`
+      - `def test_tidy_removes_empty_genes_with_features_flag(rich_gff3_file, tmp_path):`
     - test_cli_split.py
       - `def populus_test_files(tmp_path):`
       - `def test_classify_feature_smart():`

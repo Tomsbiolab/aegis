@@ -18,7 +18,7 @@
 - **Object-Oriented Design**: AEGIS represents genomic features (genes, transcripts, exons, etc.) as a hierarchical system of custom Python classes, providing a clean and intuitive API for data manipulation.
 - **Comprehensive Annotation Handling**: Seamlessly parse, process, and export genomic annotations in GFF3 format.
 - **Extensible and Modular**: The modular design of AEGIS allows for easy extension and integration with other bioinformatics tools and pipelines.
-- **Command Line Interface**: Running "aegis --help" in the terminal will show an updated list of the available commands whilst individual command help can be found with "aegis {command} --help". There is a total of 14 commands and some of the key functionalities are: tidy up and/or reformat gff/fasta files, sequence extraction, summary annotation statistics, merging of annotations, and comparative genomic analyses such as orthology detection and synteny analysis between annotation files associated to different genomes.
+- **Command Line Interface**: Running "aegis --help" in the terminal will show an updated list of the available commands whilst individual command help can be found with "aegis {command} --help". There is a total of 15 commands and some of the key functionalities are: tidy up and/or reformat gff/fasta files, sequence extraction, filtering by biotypes/features, summary annotation statistics, merging of annotations, and comparative genomic analyses such as orthology detection and synteny analysis between annotation files associated to different genomes.
 
 ## The AEGIS Class System
 
@@ -126,6 +126,8 @@ All of the commands are called with aegis {subcommand} in a terminal:
 - Native Tools (included in pip install):
     - Extract
         - Extracts all kinds of fasta features from an annotation.
+    - Filter
+        - Filters an annotation file based on biotypes (coding vs non-coding), RNA classes (e.g. lncRNA, mRNA), transposable elements, pseudogenes, CDS length thresholds, or gene symbols.
     - Overlap
         - Overlap quantification of gene models (and their subfeatures) between any number of gffs associated to same genome
     - Rename

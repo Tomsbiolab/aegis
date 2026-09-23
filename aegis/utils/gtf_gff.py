@@ -76,6 +76,10 @@ def parse_gff_parts(parts) -> GffEntry:
         if attr_dict.get("transposable") == "True" or attr_dict.get("transposon") == "True":
             transposable = True
 
+    if not pseudogene:
+        if attr_dict.get("pseudogene") == "True" or attr_dict.get("pseudo") == "True":
+            pseudogene = True
+
     entry_id = attr_dict.pop(INT_ID, "")
     parents = attr_dict.pop(INT_PARENT, [])
 

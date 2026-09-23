@@ -1063,6 +1063,46 @@ class TestAnnotationRemoveCodingGenes:
 
 
 # ============================================================
+# Annotation — remove_pseudogene_genes & remove_non_pseudogene_genes
+# ============================================================
+
+class TestAnnotationRemovePseudogenes:
+    def test_remove_pseudogenes(self, pseudogene_gff3_file, rich_gff3_file, tmp_path):
+        combined = tmp_path / "combined.gff3"
+        with open(combined, "w") as out:
+            with open(rich_gff3_file) as f1:
+                out.write(f1.read())
+            with open(pseudogene_gff3_file) as f2:
+                for line in f2:
+                    if not line.startswith("#"):
+                        out.write(line)
+        
+        annot = Annotation(str(combined), quiet=True)
+        assert "gene_ps1" in annot.all_gene_ids
+        assert "geneR1" in annot.all_gene_ids
+
+        annot.remove_pseudogene_genes(quiet=True)
+        assert "gene_ps1" not in annot.all_gene_ids
+        assert "geneR1" in annot.all_gene_ids
+
+    def test_remove_non_pseudogenes(self, pseudogene_gff3_file, rich_gff3_file, tmp_path):
+        combined = tmp_path / "combined.gff3"
+        with open(combined, "w") as out:
+            with open(rich_gff3_file) as f1:
+                out.write(f1.read())
+            with open(pseudogene_gff3_file) as f2:
+                for line in f2:
+                    if not line.startswith("#"):
+                        out.write(line)
+        
+        annot = Annotation(str(combined), quiet=True)
+        annot.remove_non_pseudogene_genes(quiet=True)
+        assert "gene_ps1" in annot.all_gene_ids
+        assert "geneR1" not in annot.all_gene_ids
+        assert "geneR2" not in annot.all_gene_ids
+
+
+# ============================================================
 # Annotation — clear_sequences
 # ============================================================
 
