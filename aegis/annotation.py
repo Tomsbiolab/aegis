@@ -1141,7 +1141,7 @@ class Annotation():
                     if ft_level == "exon":
                         if not skip_orphaned_features:
                             self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
-                    else:
+                    elif not quiet:
                         print(f"Warning: {ft} subfeature {ID} references {parent} miRNA and this feature is not an exon.")
 
                 # parent not found within created genes or transcripts or miRNAs
@@ -1167,7 +1167,8 @@ class Annotation():
                             self.warnings["missing_subfeature_parent"].add(ID)
                             if not skip_orphaned_features:
                                 self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
-                            print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, although at least one of the listed parents was found")
+                            if not quiet:
+                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, although at least one of the listed parents was found")
 
                         else:
                             self.warnings["missing_subfeature_parent"].add(ID)
