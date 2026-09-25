@@ -271,7 +271,7 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
                 
                 run_command(pair_tmp_dir, jcvi_ortho_cmd)
 
-                for ext in [".anchors", ".last", ".last.filtered"]:
+                for ext in [".anchors", ".lifted.anchors", ".pdf", ".last", ".last.filtered"]:
                     generated_file = pair_tmp_dir / f"{mcscan_name1}.{mcscan_name2}{ext}"
                     target_file = mcscan_dir / f"{mcscan_name1}.{mcscan_name2}{ext}"
                     if generated_file.exists():
