@@ -460,6 +460,31 @@ class TestTranslatePipeline:
         assert surplus is True
         assert trimmed.startswith("ATG")
 
+    def test_orf_mode_no_orf_returns_empty(self):
+        # No ATG in sequence -> mode="orf" must return empty sequence
+        seq = "GGGCCCAAA"
+        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf")
+        assert trimmed == ""
+        assert surplus is False
+        assert cs == 0
+        assert ce == -1
+
+    def test_orf_or_start_extracts_orf(self):
+        # When ORF exists, mode="orf_or_start" should find and extract it
+        seq = "GGGATGAAATAA"
+        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_start")
+        assert trimmed == "ATGAAATAA"
+        assert surplus is False
+
+    def test_orf_or_start_fallback_trims_from_5prime(self):
+        # No ATG, surplus 1: trims 1 nt from 5'
+        seq = "CGGGCCCAAA"  # 10 nt -> trims C -> GGGCCCAAA (9 nt)
+        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_start")
+        assert trimmed == "GGGCCCAAA"
+        assert surplus is True
+        assert cs == 1
+        assert ce == 9
+
 
 # ============================================================
 # CDS.generate_protein

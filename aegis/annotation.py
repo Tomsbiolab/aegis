@@ -1549,7 +1549,7 @@ class Annotation():
                     t.clear_promoter()
         self.contains_promoters = False
 
-    def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):
+    def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet:bool=True):
         for chrom, genes in self.chrs.items():
             if self.genome is not None and chrom not in self.genome.scaffolds:
                 continue
@@ -1559,7 +1559,7 @@ class Annotation():
                         c.generate_protein(mode=mode, quiet=quiet)
         self.contains_protein_sequences = True
 
-    def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet: bool = True):
+    def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = True):
         if not self.contains_protein_sequences:
             self.generate_proteins(mode=mode)
 

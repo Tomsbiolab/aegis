@@ -207,7 +207,7 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):
 
         if self.strand == ".":
             seq_fw, seq_rv = self.seqs
@@ -259,9 +259,13 @@ class CDS(Feature):
                 self.protein = None
                 if not quiet:
                     print(f"{self.id} CDS could not be mapped to genomic coordinates with mode={mode}")
-
-        elif not quiet:
-            print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+        else:
+            self.protein = None
+            if not quiet:
+                if nucleotide_surplus:
+                    print(f"{self.id} has a nucleotide surplus and could not be translated to a protein with mode={mode}")
+                else:
+                    print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
 
     def clear_protein(self):
         self.protein = None

@@ -55,8 +55,8 @@
       - `def correct_gene_transcript_and_subfeature_coordinates(self, quiet:bool=True):`
       - `def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):`
       - `def clear_promoters(self):`
-      - `def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):`
-      - `def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet: bool = True):`
+      - `def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet:bool=True):`
+      - `def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = True):`
       - `def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):`
       - `def clear_proteins(self):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
@@ -268,7 +268,7 @@
       - `def hard_seqs(self) -> list[str]:`
       - `def five_prime_UTR_seq(self) -> str:`
       - `def three_prime_UTR_seq(self) -> str:`
-      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):`
+      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):`
       - `def clear_protein(self):`
       - `def equal_segments(self, other:CDS):`
       - `def relative_coding_start(self):`
@@ -1029,6 +1029,9 @@
       - `def test_internal_stop(self):`
       - `def test_internal_stop_with_large_trim_fallback(self):`
       - `def test_start_mode_trims_from_5prime(self):`
+      - `def test_orf_mode_no_orf_returns_empty(self):`
+      - `def test_orf_or_start_extracts_orf(self):`
+      - `def test_orf_or_start_fallback_trims_from_5prime(self):`
       - `class TestGenerateProtein:`
       - `def _make_cds(make_CDS_segment, make_CDS, seq_len: int, strand: str = "+"):`
       - `def test_standard_protein(self, make_CDS_segment, make_CDS):`
