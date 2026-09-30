@@ -90,7 +90,7 @@ def translate(seq: str) -> str:
 
 def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
 
-    working_segments = segments if strand == "+" else reversed(segments)
+    working_segments = segments if strand != "-" else reversed(segments)
     
     output_segments = []
     current_offset = 0
@@ -111,7 +111,7 @@ def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, 
             dist_5p = overlap_start - seg_rel_start
             overlap_len = overlap_end - overlap_start + 1
             
-            if strand == "+":
+            if strand != "-":
                 g_start = seg.start + dist_5p
                 g_end = g_start + overlap_len - 1
             else:
@@ -200,15 +200,15 @@ def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[i
 
 def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earliest"]="longest") -> tuple[str, int, int]:
     if mode == "longest":
-        return max(orfs, key=lambda x: (len(x[0]), -x[1]), default=("", 0, 0))
+        return max(orfs, key=lambda x: (len(x[0]), -x[1]), default=("", 0, -1))
         
     elif mode == "earliest":
-        return max(orfs, key=lambda x: (-x[1], len(x[0])), default=("", 0, 0))
+        return max(orfs, key=lambda x: (-x[1], len(x[0])), default=("", 0, -1))
         
     else:
         raise ValueError(f"Invalid mode: '{mode}'. Expected 'longest' or 'earliest'.")
 
-def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:
+def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:
     """
     Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
     
@@ -216,10 +216,11 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
     mode: Trimming strategy. 
         - "start": Trims from the 5' end.
         - "end": Trims from the 3' end.
-        - "orf": Extracts the longest ORF. Falls back to original sequence if criteria fail.
-        - "orf_or_end": Extracts longest ORF. Falls back to 3' trimming if criteria fail.
+        - "orf": Extracts the best ORF, must return an ORF or nothing.
+        - "orf_or_end": Extracts best ORF. Falls back to 3' trimming if criteria fail.
+        - "orf_or_start": Extracts best ORF. Falls back to 5' trimming if criteria fail.
+        - if "tolerated_stops" is negative or None, an infinite number will be tolerated (full readthrough mode)
     max_nucleotide_trim: Maximum allowed nucleotides to trim when using ORF modes.
-    readthrough_stop: Passed to find_ORFs.
     """
 
     surplus = len(in_seq) % 3
@@ -239,12 +240,14 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
         out_seq = in_seq[surplus:]
         coding_start += surplus
 
-    elif mode in ("orf", "orf_or_end"):
+    elif mode in ("orf", "orf_or_end", "orf_or_start"):
         orfs = find_ORFs(in_seq, tolerated_stops=tolerated_stops, must_have_stop=must_have_stop, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
-        orf, coding_start, coding_end = choose_orf(orfs, mode=orf_choice_mode)
+        orf, orf_start, orf_end = choose_orf(orfs, mode=orf_choice_mode)
 
         if orf and (max_nucleotide_trim is None or (len(in_seq) - len(orf)) <= max_nucleotide_trim):
             out_seq = orf
+            coding_start = orf_start
+            coding_end = orf_end
             nucleotide_surplus = False
         else:
             if mode == "orf_or_end":
@@ -253,12 +256,20 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"]
                     coding_end -= surplus
                 else:
                     out_seq = in_seq
-            else: # mode == "orf"
-                out_seq = in_seq
-                nucleotide_surplus = False
 
-        
-                
+            elif mode == "orf_or_start":
+                if surplus:
+                    out_seq = in_seq[surplus:]
+                    coding_start += surplus
+                else:
+                    out_seq = in_seq
+
+            else: # mode == "orf"
+                out_seq = ""
+                nucleotide_surplus = False
+                coding_start = 0
+                coding_end = -1
+
     else:
         raise ValueError(f"Invalid mode: {mode}")
 

@@ -225,35 +225,41 @@ class CDS(Feature):
 
         coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
 
-        if relative_coding_end != 0:
+        if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
 
             protein_seq = translate(coding_seq)
 
             corrected_segments = map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
 
-            protein_start = corrected_segments[0][0]
-            protein_end = corrected_segments[-1][1]
+            if corrected_segments:
+                protein_start = corrected_segments[0][0]
+                protein_end = corrected_segments[-1][1]
 
-            if correct_CDS:
+                if correct_CDS:
 
-                new_CDS_segments = []
-                if self.parents:
-                    new_parents = self.parents[:]
-                else:
-                    new_parents = []
+                    new_CDS_segments = []
+                    if self.parents:
+                        new_parents = self.parents[:]
+                    else:
+                        new_parents = []
 
-                for start, end in corrected_segments:
-                    new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
+                    for start, end in corrected_segments:
+                        new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
 
-                self.CDS_segments = new_CDS_segments
+                    self.CDS_segments = new_CDS_segments
 
-                self.start = protein_start
-                self.end = protein_end
+                    self.start = protein_start
+                    self.end = protein_end
 
-            self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
 
-            if not quiet and nucleotide_surplus:
-                print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
+                if not quiet and nucleotide_surplus:
+                    print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
+            else:
+                self.protein = None
+                if not quiet:
+                    print(f"{self.id} CDS could not be mapped to genomic coordinates with mode={mode}")
+
         elif not quiet:
             print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
 

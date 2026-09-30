@@ -162,7 +162,7 @@ class AnnotationExport(AnnotationComponent):
                         if only_main:
                             if t.main:
                                 for c in t.CDSs.values():
-                                    if c.seq != "":
+                                    if c.protein is not None and c.protein.seq != "":
                                         if only_cds_main:
                                             if c.main:
                                                 temp_cs.append(c)
@@ -170,7 +170,7 @@ class AnnotationExport(AnnotationComponent):
                                             temp_cs.append(c)
                         else:
                             for c in t.CDSs.values():
-                                if c.seq != "":
+                                if c.protein is not None and c.protein.seq != "":
                                     if only_cds_main:
                                         if c.main:
                                             temp_cs.append(c)
