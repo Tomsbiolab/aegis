@@ -298,7 +298,7 @@
       - `def collapse_CDS_segments(self):`
       - `def clear_UTRs(self):`
       - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
-      - `def generate_best_protein(self, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, enforce_start_codon:bool=True, must_have_stop:bool=True, tolerated_stops: int = 0, quiet:bool=True):`
+      - `def generate_best_protein(`
       - `def almost_equal(self, other:Transcript):`
       - `def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):`
       - `def determine_main_CDS(self):`
@@ -1121,6 +1121,20 @@
       - `def test_rename_utrs_basic(self, make_transcript, make_exon):`
       - `class TestTranscriptSequences:`
       - `def setup(self, sample_gff3_file, sample_fasta_file):`
+      - `def test_transcript_sequence_access(self):`
+      - `class MockScaffold:`
+      - `def __init__(self, seq: str):`
+      - `class MockGenome:`
+      - `def __init__(self, seq_dict: dict[str, str]):`
+      - `class TestTranscriptGenerateBestProtein:`
+      - `def setup_mock_genome(self):`
+      - `def _activate(seq: str, chrom: str = "chr1"):`
+      - `def test_generate_best_protein_success(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_failure_strict_orf(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_orf_or_end_fallback(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_clears_old_cdss(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_multi_exon_splicing(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_strand_resolution(self, setup_mock_genome, make_transcript, make_exon):`
     - __init__.py
     - **htmlcov/**
       - coverage_html_cb_dd2e7eb5.js

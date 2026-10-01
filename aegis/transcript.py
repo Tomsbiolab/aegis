@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Literal
 
 from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
@@ -297,23 +298,66 @@ class Transcript(Feature):
 
             self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, [self.id])
 
-    def generate_best_protein(self, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, enforce_start_codon:bool=True, must_have_stop:bool=True, tolerated_stops: int = 0, quiet:bool=True):
-
+    def generate_best_protein(
+        self,
+        mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
+        start_codons: tuple[str, ...] = ("ATG",),
+        stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"),
+        min_codon_len: int = 2,
+        enforce_start_codon: bool = True,
+        must_have_stop: bool = True,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"] = "longest",
+        max_nucleotide_trim: int | None = None,
+        always_resolve_strand: bool = True,
+        ignore_ambiguous_strands: bool = False,
+        quiet: bool = True
+    ):
+        """
+        Extracts the best protein/ORF across the spliced exons of the transcript,
+        updates the CDS and UTRs, and updates the transcript strand if ambiguous.
+        """
+        self.CDSs = {}
+        self.clear_UTRs()
         self.temp_CDSs = []
 
+        cds_id = f"{self.id}_CDS1"
         for e in self.exons:
-            self.temp_CDSs.append(Feature(feature_id=f"{self.id}_CDS1", ch=self.ch, source=self.source, feature="CDS", strand=self.strand, start=e.start, end=e.end, score=self.score, parents=[self.id]))
+            self.temp_CDSs.append(Feature(feature_id=cds_id, ch=self.ch, source=self.source, feature="CDS", strand=self.strand, start=e.start, end=e.end, score=self.score, parents=[self.id]))
 
         self.generate_CDSs(quiet=quiet)
 
-        self.CDSs[f"{self.id}_CDS1"].generate_protein(mode="orf", start_codons=start_codons, stop_codons=stop_codons, enforce_start_codon=enforce_start_codon, min_codon_len=min_codon_len, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, correct_CDS=True, quiet=quiet)
+        candidate_cds = self.CDSs.get(cds_id)
+        if candidate_cds is not None:
+            candidate_cds.generate_protein(
+                mode=mode,
+                max_nucleotide_trim=max_nucleotide_trim,
+                tolerated_stops=tolerated_stops,
+                orf_choice_mode=orf_choice_mode,
+                must_have_stop=must_have_stop,
+                enforce_start_codon=enforce_start_codon,
+                min_codon_len=min_codon_len,
+                start_codons=start_codons,
+                stop_codons=stop_codons,
+                correct_CDS=True,
+                always_resolve_strand=always_resolve_strand,
+                ignore_ambiguous_strands=ignore_ambiguous_strands,
+                quiet=quiet
+            )
 
-        self.strand = self.CDSs[f"{self.id}_CDS1"].strand
-
-        for e in self.exons:
-            e.strand = self.strand
-        
-        self.generate_CDSs(quiet=quiet)
+            if candidate_cds.protein is not None:
+                self.strand = candidate_cds.strand
+                for e in self.exons:
+                    e.strand = self.strand
+                self.update(quiet=quiet)
+            else:
+                if cds_id in self.CDSs:
+                    del self.CDSs[cds_id]
+                self.coding = False
+                self.clear_UTRs()
+                for e in self.exons:
+                    e.coding = False
+                self.update(quiet=quiet)
 
     def almost_equal(self, other:Transcript):
         almost_equal = True
