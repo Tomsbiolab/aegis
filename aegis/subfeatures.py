@@ -207,21 +207,26 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):
 
-        if self.strand == ".":
+        self.CDS_segments.sort()
+
+        if (self.strand == "." or self.strand == "?") and not ignore_ambiguous_strands:
             seq_fw, seq_rv = self.seqs
             fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
             rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
 
-            if len(fw_orf[0]) >= len(rv_orf[0]):
-                self.strand = "+"
-                for cs in self.CDS_segments:
-                    cs.strand = "+"
-            else:
-                self.strand = "-"
-                for cs in self.CDS_segments:
-                    cs.strand = "-"
+            has_orf = len(fw_orf[0]) > 0 or len(rv_orf[0]) > 0
+            if has_orf or always_resolve_strand:
+                if len(fw_orf[0]) >= len(rv_orf[0]):
+                    self.strand = "+"
+                    for cs in self.CDS_segments:
+                        cs.strand = "+"
+                else:
+                    self.strand = "-"
+                    for cs in self.CDS_segments:
+                        cs.strand = "-"
+                self.update()
 
         coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
 
@@ -250,6 +255,7 @@ class CDS(Feature):
 
                     self.start = protein_start
                     self.end = protein_end
+                    self.update()
 
                 self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
 

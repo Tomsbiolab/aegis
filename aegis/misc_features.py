@@ -82,17 +82,26 @@ class Protein():
             return True
         return False
     
+    def __len__(self) -> int:
+        return len(self.seq)
+
     @property
     def size(self) -> int:
+        """Protein size in amino acids (excluding terminal stop codon)."""
+        return len(self.seq.rstrip("*"))
+
+    @property
+    def genomic_span(self) -> int:
+        """Genomic chromosome span (end - start + 1), including any introns."""
         return (self.end - self.start) + 1
     
     @property
     def ATG_start(self) -> bool:
-        return self.seq[0] == "M"
+        return self.seq.startswith("M") if self.seq else False
 
     @property
     def end_stop(self) -> bool:
-        return self.seq[-1] == "*"
+        return self.seq.endswith("*") if self.seq else False
 
     @property
     def early_stop(self) -> bool:

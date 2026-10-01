@@ -137,6 +137,7 @@
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
       - `def size(self) -> int:`
+      - `def genomic_span(self) -> int:`
       - `def names(self) -> list[str] | None:`
       - `def names(self, value: list[str] | None):`
       - `def symbols(self) -> list[str] | None:`
@@ -231,7 +232,9 @@
       - `def compare_blast_hits(self, other:Protein, source_priority:list) -> bool:`
       - `def blast_hits(self):`
       - `def gaps(self):`
+      - `def __len__(self) -> int:`
       - `def size(self) -> int:`
+      - `def genomic_span(self) -> int:`
       - `def ATG_start(self) -> bool:`
       - `def end_stop(self) -> bool:`
       - `def early_stop(self) -> bool:`
@@ -268,7 +271,7 @@
       - `def hard_seqs(self) -> list[str]:`
       - `def five_prime_UTR_seq(self) -> str:`
       - `def three_prime_UTR_seq(self) -> str:`
-      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):`
+      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):`
       - `def clear_protein(self):`
       - `def equal_segments(self, other:CDS):`
       - `def _calculate_relative_coding_coords(self) -> tuple[int, int]:`
