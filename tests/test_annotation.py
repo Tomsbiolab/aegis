@@ -2593,3 +2593,109 @@ class TestReworkCDS:
             generated_content = f.read()
             
         assert generated_content == expected_content, f"Output mismatch for {arabidopsis_araport11_with_CDS_gff3_file}"
+
+
+# ============================================================
+# Rework CDS Fallback and Generate Proteins Correct CDS
+# ============================================================
+
+class MockScaffold:
+    def __init__(self, seq: str):
+        self.seq = seq
+
+
+class MockGenome:
+    def __init__(self, seq_dict: dict[str, str]):
+        self.name = "mock_genome"
+        self.scaffolds = {k: MockScaffold(v) for k, v in seq_dict.items()}
+        self.dapfit = False
+        self.dapmod = False
+        self.confrenamed = False
+
+
+class TestAnnotationReworkCDSsFallback:
+    def test_rework_cdss_fallback_to_trim_false(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chr1": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+
+        annot.rework_CDSs(fallback_to_trim=False, quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert t.coding is False
+        assert len(t.CDSs) == 0
+
+    def test_rework_cdss_fallback_to_trim_true(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chr1": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+
+        annot.rework_CDSs(fallback_to_trim=True, quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert t.coding is True
+        assert len(t.CDSs) == 1
+        cds = list(t.CDSs.values())[0]
+        assert cds.protein is not None
+        assert len(cds.protein) == 10
+
+
+class TestAnnotationGenerateProteinsCorrectCDS:
+    def test_generate_proteins_without_correct_cds(self, tmp_path):
+        # 32 bp: 30 bp coding (10 codons) + 2 surplus bp
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t32\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t32\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t32\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tCDS\t1\t32\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chr1": "ATG" + "AAA" * 9 + "CC"})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+
+        annot.generate_proteins(mode="end", correct_CDS=False, quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        cds = t.CDSs["cds1"]
+        assert cds.protein is not None
+        assert cds.CDS_segments[0].start == 1
+        assert cds.CDS_segments[0].end == 32
+
+    def test_generate_proteins_with_correct_cds(self, tmp_path):
+        # 32 bp: 30 bp coding + 2 surplus bp trimmed from 3' end
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t32\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t32\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t32\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tCDS\t1\t32\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chr1": "ATG" + "AAA" * 9 + "CC"})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+
+        annot.generate_proteins(mode="end", correct_CDS=True, quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        cds = t.CDSs["cds1"]
+        assert cds.protein is not None
+        assert cds.CDS_segments[0].start == 1
+        assert cds.CDS_segments[0].end == 30
+        assert cds.size == 30

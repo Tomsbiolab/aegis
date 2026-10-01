@@ -206,6 +206,10 @@ class Gene(Feature):
                 if t.coding_ratio < 0.80:
                     t.generate_best_protein(must_have_stop=False, quiet=quiet)
                 t.update(quiet=quiet)
+
+                if t.coding_ratio < 0.80:
+                    t.generate_best_protein(mode="orf_or_end", must_have_stop=False, quiet=quiet)
+                t.update(quiet=quiet)
             
             self.update(quiet=quiet)
 
@@ -223,7 +227,7 @@ class Gene(Feature):
                                         else:
                                             return False
                                         
-    def compare_protein_blast_hits(self, other:Gene, source_priority:list):
+    def compare_protein_blast_hits(self, other:Gene, source_priority:list, quiet:bool=True):
         """
         Method required to deal with the fact that a gene may have several blast hits due to several proteins...
         """
@@ -231,13 +235,16 @@ class Gene(Feature):
         other_proteins = [c.protein for t in other.transcripts.values() for c in t.CDSs.values() if c.protein]
 
         if not self_proteins and not other_proteins:
-            print(f"Warning: {self.id} and {other.id} genes have no associated proteins.")
+            if not quiet:
+                print(f"Warning: {self.id} and {other.id} genes have no associated proteins.")
             return None
         elif not self_proteins:
-            print(f"Warning: {self.id} gene has no associated proteins.")
+            if not quiet:
+                print(f"Warning: {self.id} gene has no associated proteins.")
             return False
         elif not other_proteins:
-            print(f"Warning: {other.id} gene has no associated proteins.")
+            if not quiet:
+                print(f"Warning: {other.id} gene has no associated proteins.")
             return True
 
         if not source_priority:

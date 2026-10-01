@@ -5,6 +5,7 @@ from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
+from ..genome import Genome
 from .utils import split_callback
 
 RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
@@ -72,11 +73,20 @@ def main(
     for_lifton: Annotated[bool, typer.Option(
         "--for-lifton", help="Ensures output has individual CDS entry ids (-u) as it is required for LifOn compatibility in its current version."
     )] = False,
+    genome_file: Annotated[str, typer.Option(
+        "--genome-file", help="Path to genome FASTA file. Required when using --rework-all-CDSs or --infer-missing-CDSs."
+    )] = "",
+    genome_name: Annotated[str, typer.Option(
+        "--genome-name", help="A name or tag for the genome assembly."
+    )] = "",
     infer_missing_CDSs: Annotated[bool, typer.Option(
-        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations."
+        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations. Requires --genome-file."
     )] = False,
     rework_all_CDSs: Annotated[bool, typer.Option(
-        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs."
+        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs. Requires --genome-file."
+    )] = False,
+    fallback_to_trim: Annotated[bool, typer.Option(
+        "--fallback-to-trim", help="When recalculating CDSs, fallback to trimming unaligned ends if no high-ratio ORF is found."
     )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
@@ -137,9 +147,37 @@ def main(
         if feature not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid feature: {feature}. Choose from: {RNA_CLASSES}")
 
+    if (rework_all_CDSs or infer_missing_CDSs) and not genome_file:
+        raise typer.BadParameter("A genome FASTA file must be provided via --genome-file when using --rework-all-CDSs or --infer-missing-CDSs.")
+
+    if genome_file:
+        if not genome_name:
+            genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+        genome = Genome(name=genome_name, genome_file_path=genome_file, quiet=quiet)
+    else:
+        genome = None
+
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, rework_all_CDSs=rework_all_CDSs, work_out_missing_CDSs=infer_missing_CDSs, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, consider_read_utrs=consider_read_utrs, rename_features=rename_features, standardise_features=standard_features, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts, skip_orphaned_features=not(print_orphaned_features))
+    annotation = Annotation(
+        name=annotation_name,
+        annot_file_path=annotation_file,
+        genome=genome,
+        rework_all_CDSs=rework_all_CDSs,
+        work_out_missing_CDSs=infer_missing_CDSs,
+        fallback_to_trim=fallback_to_trim,
+        quiet=quiet,
+        collapse_exons=collapse_exons,
+        collapse_CDSs=collapse_CDSs,
+        consider_read_utrs=consider_read_utrs,
+        rename_features=rename_features,
+        standardise_features=standard_features,
+        remove_genes_with_no_transcripts=remove_genes_with_no_transcripts,
+        remove_transcripts_with_no_exons=remove_transcripts_with_no_exons,
+        remove_missing_transcript_parent_references=remove_missing_transcript_parent_references,
+        remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts,
+        skip_orphaned_features=not(print_orphaned_features)
+    )
 
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"

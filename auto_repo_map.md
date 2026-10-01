@@ -16,7 +16,7 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):`
       - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
@@ -55,9 +55,8 @@
       - `def correct_gene_transcript_and_subfeature_coordinates(self, quiet:bool=True):`
       - `def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):`
       - `def clear_promoters(self):`
-      - `def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):`
-      - `def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet: bool = True):`
-      - `def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):`
+      - `def generate_proteins(`
+      - `def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = True):`
       - `def clear_proteins(self):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
       - `def combine_transcripts(self, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=True, quiet:bool=False):`
@@ -75,7 +74,7 @@
       - `def remove_transcripts(self, to_remove:set, remove_genes_accordingly:bool=False,quiet:bool=False):`
       - `def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False):`
       - `def remove_missing_transcript_parent_references(self, quiet:bool=True):`
-      - `def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):`
+      - `def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, fallback_to_trim:bool=False, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
       - `def make_alternative_transcripts_into_genes(self, quiet:bool=False):`
       - `def rename_source(self, new_source:str="aegis", atypical:bool=True, orphaned:bool=True):`
@@ -137,6 +136,7 @@
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
       - `def size(self) -> int:`
+      - `def genomic_span(self) -> int:`
       - `def names(self) -> list[str] | None:`
       - `def names(self, value: list[str] | None):`
       - `def symbols(self) -> list[str] | None:`
@@ -176,7 +176,7 @@
       - `def clear_UTRs(self):`
       - `def combine_transcripts(self, respect_non_coding:bool=False, respect_non_combined:bool=False, redetect_CDS:bool=False, quiet:bool=False):`
       - `def longer_CDS(self, other:Gene):`
-      - `def compare_protein_blast_hits(self, other:Gene, source_priority:list):`
+      - `def compare_protein_blast_hits(self, other:Gene, source_priority:list, quiet:bool=True):`
       - `def get_main_CDS_range(self):`
       - `def rename_exons(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
       - `def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
@@ -231,7 +231,9 @@
       - `def compare_blast_hits(self, other:Protein, source_priority:list) -> bool:`
       - `def blast_hits(self):`
       - `def gaps(self):`
+      - `def __len__(self) -> int:`
       - `def size(self) -> int:`
+      - `def genomic_span(self) -> int:`
       - `def ATG_start(self) -> bool:`
       - `def end_stop(self) -> bool:`
       - `def early_stop(self) -> bool:`
@@ -268,11 +270,12 @@
       - `def hard_seqs(self) -> list[str]:`
       - `def five_prime_UTR_seq(self) -> str:`
       - `def three_prime_UTR_seq(self) -> str:`
-      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):`
+      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):`
       - `def clear_protein(self):`
       - `def equal_segments(self, other:CDS):`
-      - `def relative_coding_start(self):`
-      - `def relative_coding_end(self):`
+      - `def _calculate_relative_coding_coords(self) -> tuple[int, int]:`
+      - `def relative_coding_start(self) -> int:`
+      - `def relative_coding_end(self) -> int:`
       - `class Exon(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `class UTR(Feature):`
@@ -294,7 +297,7 @@
       - `def collapse_CDS_segments(self):`
       - `def clear_UTRs(self):`
       - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
-      - `def generate_best_protein(self, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, enforce_start_codon:bool=True, must_have_stop:bool=True, tolerated_stops: int = 0, quiet:bool=True):`
+      - `def generate_best_protein(`
       - `def almost_equal(self, other:Transcript):`
       - `def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):`
       - `def determine_main_CDS(self):`
@@ -322,8 +325,8 @@
       - export.py
         - `class AnnotationExport(AnnotationComponent):`
         - `def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, most_specific_id_level = "promoter", output_dir: str | None = None, use_annot_dir:bool=False, subfolder:bool=False, subfolder_name:str="features", extension:str=".fasta", quiet: bool = False,`
-        - `def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
-        - `def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end",`
+        - `def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
+        - `def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",`
         - `def unique_transcripts(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, rna_classes: list = [],`
         - `def unique_CDSs(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False,`
         - `def CDSs(self, only_main: bool = True, verbose: bool = True, used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
@@ -465,7 +468,7 @@
         - `def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):`
         - `def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[int, float, None] = 0, min_codon_len: int = 2, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA")) -> list[tuple[str, int, int]]:`
         - `def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earliest"]="longest") -> tuple[str, int, int]:`
-        - `def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:`
+        - `def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:`
         - `def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:`
         - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
@@ -810,6 +813,16 @@
       - `def test_subset_chr_cap_and_seed(self, test_data_dir):`
       - `class TestReworkCDS:`
       - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
+      - `class MockScaffold:`
+      - `def __init__(self, seq: str):`
+      - `class MockGenome:`
+      - `def __init__(self, seq_dict: dict[str, str]):`
+      - `class TestAnnotationReworkCDSsFallback:`
+      - `def test_rework_cdss_fallback_to_trim_false(self, tmp_path):`
+      - `def test_rework_cdss_fallback_to_trim_true(self, tmp_path):`
+      - `class TestAnnotationGenerateProteinsCorrectCDS:`
+      - `def test_generate_proteins_without_correct_cds(self, tmp_path):`
+      - `def test_generate_proteins_with_correct_cds(self, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
     - test_cli_filter.py
@@ -856,6 +869,10 @@
       - `def test_cli_summary_genome_synonym_pairing(tmp_path):`
       - `def test_cli_summary_genome_ref_and_no_seq_options(tmp_path):`
       - `def test_cli_summary_genome_soft_masked(tmp_path):`
+    - test_cli_tidy.py
+      - `def test_tidy_rework_cds_requires_genome(tmp_path):`
+      - `def test_tidy_rework_all_cds_with_genome(tmp_path):`
+      - `def test_tidy_rework_cds_fallback_to_trim(tmp_path):`
     - test_cli_utils.py
       - `def test_split_callback_string_comma():`
       - `def test_split_callback_single_string():`
@@ -927,6 +944,17 @@
       - `def test_str_no_names_or_symbols(self, make_gene):`
       - `class TestGeneLongerCDS:`
       - `def test_longer_cds_returns_none_without_main_transcripts(self, make_gene, make_transcript):`
+      - `class TestGeneCompareProteinBlastHits:`
+      - `def test_compare_protein_blast_hits_quiet(self, make_gene, make_transcript, capsys):`
+      - `def test_compare_protein_blast_hits_not_quiet(self, make_gene, make_transcript, capsys):`
+      - `class MockScaffold:`
+      - `def __init__(self, seq: str):`
+      - `class MockGenome:`
+      - `def __init__(self, seq_dict: dict[str, str]):`
+      - `class TestGeneCombineTranscripts:`
+      - `def setup_mock_genome(self):`
+      - `def _activate(seq: str, chrom: str = "chr1"):`
+      - `def test_combine_transcripts_orf_or_end_fallback(self, setup_mock_genome, make_gene, make_transcript, make_exon):`
     - test_genome.py
       - `class TestScaffold:`
       - `def test_basic_init(self):`
@@ -1029,6 +1057,9 @@
       - `def test_internal_stop(self):`
       - `def test_internal_stop_with_large_trim_fallback(self):`
       - `def test_start_mode_trims_from_5prime(self):`
+      - `def test_orf_mode_no_orf_returns_empty(self):`
+      - `def test_orf_or_start_extracts_orf(self):`
+      - `def test_orf_or_start_fallback_trims_from_5prime(self):`
       - `class TestGenerateProtein:`
       - `def _make_cds(make_CDS_segment, make_CDS, seq_len: int, strand: str = "+"):`
       - `def test_standard_protein(self, make_CDS_segment, make_CDS):`
@@ -1114,6 +1145,20 @@
       - `def test_rename_utrs_basic(self, make_transcript, make_exon):`
       - `class TestTranscriptSequences:`
       - `def setup(self, sample_gff3_file, sample_fasta_file):`
+      - `def test_transcript_sequence_access(self):`
+      - `class MockScaffold:`
+      - `def __init__(self, seq: str):`
+      - `class MockGenome:`
+      - `def __init__(self, seq_dict: dict[str, str]):`
+      - `class TestTranscriptGenerateBestProtein:`
+      - `def setup_mock_genome(self):`
+      - `def _activate(seq: str, chrom: str = "chr1"):`
+      - `def test_generate_best_protein_success(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_failure_strict_orf(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_orf_or_end_fallback(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_clears_old_cdss(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_multi_exon_splicing(self, setup_mock_genome, make_transcript, make_exon):`
+      - `def test_generate_best_protein_strand_resolution(self, setup_mock_genome, make_transcript, make_exon):`
     - __init__.py
     - **htmlcov/**
       - coverage_html_cb_dd2e7eb5.js

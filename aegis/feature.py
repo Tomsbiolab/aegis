@@ -136,6 +136,11 @@ class Feature():
         return (self.end - self.start) + 1
 
     @property
+    def genomic_span(self) -> int:
+        """Genomic chromosome span (end - start + 1), including any introns."""
+        return (self.end - self.start) + 1
+
+    @property
     def names(self) -> list[str] | None:
         return self._attributes.names if self._attributes else None
 

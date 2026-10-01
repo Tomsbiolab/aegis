@@ -207,55 +207,71 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):
 
-        if self.strand == ".":
+        self.CDS_segments.sort()
+
+        if (self.strand == "." or self.strand == "?") and not ignore_ambiguous_strands:
             seq_fw, seq_rv = self.seqs
             fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
             rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
 
-            if len(fw_orf[0]) >= len(rv_orf[0]):
-                self.strand = "+"
-                for cs in self.CDS_segments:
-                    cs.strand = "+"
-            else:
-                self.strand = "-"
-                for cs in self.CDS_segments:
-                    cs.strand = "-"
+            has_orf = len(fw_orf[0]) > 0 or len(rv_orf[0]) > 0
+            if has_orf or always_resolve_strand:
+                if len(fw_orf[0]) >= len(rv_orf[0]):
+                    self.strand = "+"
+                    for cs in self.CDS_segments:
+                        cs.strand = "+"
+                else:
+                    self.strand = "-"
+                    for cs in self.CDS_segments:
+                        cs.strand = "-"
+                self.update()
 
         coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
 
-        if relative_coding_end != 0:
+        if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
 
             protein_seq = translate(coding_seq)
 
             corrected_segments = map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
 
-            protein_start = corrected_segments[0][0]
-            protein_end = corrected_segments[-1][1]
+            if corrected_segments:
+                protein_start = corrected_segments[0][0]
+                protein_end = corrected_segments[-1][1]
 
-            if correct_CDS:
+                if correct_CDS:
 
-                new_CDS_segments = []
-                if self.parents:
-                    new_parents = self.parents[:]
+                    new_CDS_segments = []
+                    if self.parents:
+                        new_parents = self.parents[:]
+                    else:
+                        new_parents = []
+
+                    for start, end in corrected_segments:
+                        new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
+
+                    self.CDS_segments = new_CDS_segments
+
+                    self.start = protein_start
+                    self.end = protein_end
+                    self.update()
+
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
+
+                if not quiet and nucleotide_surplus:
+                    print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
+            else:
+                self.protein = None
+                if not quiet:
+                    print(f"{self.id} CDS could not be mapped to genomic coordinates with mode={mode}")
+        else:
+            self.protein = None
+            if not quiet:
+                if nucleotide_surplus:
+                    print(f"{self.id} has a nucleotide surplus and could not be translated to a protein with mode={mode}")
                 else:
-                    new_parents = []
-
-                for start, end in corrected_segments:
-                    new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
-
-                self.CDS_segments = new_CDS_segments
-
-                self.start = protein_start
-                self.end = protein_end
-
-            self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
-
-            if not quiet and nucleotide_surplus:
-                print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
-        elif not quiet:
-            print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+                    print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
 
     def clear_protein(self):
         self.protein = None
@@ -273,21 +289,47 @@ class CDS(Feature):
         
         return same
 
-    @property
-    def relative_coding_start(self):
-        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
-        if self.protein:
-            return (self.protein.start - self.start)
-        else:
-            return 0
+    def _calculate_relative_coding_coords(self) -> tuple[int, int]:
+        """Calculates 0-based slice indices within self.seq corresponding to the protein."""
+        if not self.protein or not self.CDS_segments:
+            return 0, max(0, self.size - 1)
+
+        prot_start = self.protein.start
+        prot_end = self.protein.end
+
+        sorted_segs = sorted(self.CDS_segments)
+        working_segs = sorted_segs if self.strand != "-" else reversed(sorted_segs)
+
+        rel_start = None
+        rel_end = None
+        offset = 0
+
+        for cs in working_segs:
+            if self.strand != "-":
+                if rel_start is None and cs.start <= prot_start <= cs.end:
+                    rel_start = offset + (prot_start - cs.start)
+                if rel_end is None and cs.start <= prot_end <= cs.end:
+                    rel_end = offset + (prot_end - cs.start)
+            else:
+                if rel_start is None and cs.start <= prot_end <= cs.end:
+                    rel_start = offset + (cs.end - prot_end)
+                if rel_end is None and cs.start <= prot_start <= cs.end:
+                    rel_end = offset + (cs.end - prot_start)
+            offset += cs.size
+
+        final_start = rel_start if rel_start is not None else 0
+        final_end = rel_end if rel_end is not None else max(0, self.size - 1)
+        return final_start, final_end
 
     @property
-    def relative_coding_end(self):
+    def relative_coding_start(self) -> int:
+        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
+        return self._calculate_relative_coding_coords()[0]
+
+    @property
+    def relative_coding_end(self) -> int:
         """ Returns python index of last protein nucleotide within the CDS sequence string, or the last CDS nucleotide index if no protein was generated yet."""
-        if self.protein:
-            return (self.protein.end - self.start)
-        else:
-            return self.end - self.start
+        return self._calculate_relative_coding_coords()[1]
 
 class Exon(Feature):
     __slots__ = ()

@@ -91,7 +91,7 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+    def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
         #deprecated arguments
         custom_filename: str="", custom_path:str=""):
 
@@ -162,7 +162,7 @@ class AnnotationExport(AnnotationComponent):
                         if only_main:
                             if t.main:
                                 for c in t.CDSs.values():
-                                    if c.seq != "":
+                                    if c.protein is not None and c.protein.seq != "":
                                         if only_cds_main:
                                             if c.main:
                                                 temp_cs.append(c)
@@ -170,7 +170,7 @@ class AnnotationExport(AnnotationComponent):
                                             temp_cs.append(c)
                         else:
                             for c in t.CDSs.values():
-                                if c.seq != "":
+                                if c.protein is not None and c.protein.seq != "":
                                     if only_cds_main:
                                         if c.main:
                                             temp_cs.append(c)
@@ -212,7 +212,7 @@ class AnnotationExport(AnnotationComponent):
 
                         f_out.write(f"\n{c.protein.seq}\n")
 
-    def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end",
+    def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         #deprecated arguments
         custom_path:str=""):
 
