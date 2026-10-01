@@ -71,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):
         
         start_time = time.time()
 
@@ -302,7 +302,7 @@ class Annotation():
         self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            self.rework_CDSs(override=rework_all_CDSs, quiet=quiet)
+            self.rework_CDSs(override=rework_all_CDSs, fallback_to_trim=fallback_to_trim, quiet=quiet)
             self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
         if rename_source:
@@ -1549,14 +1549,47 @@ class Annotation():
                     t.clear_promoter()
         self.contains_promoters = False
 
-    def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet:bool=True):
+    def generate_proteins(
+        self,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        max_nucleotide_trim: int | None = None,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"] = "longest",
+        must_have_stop: bool = False,
+        enforce_start_codon: bool = True,
+        min_codon_len: int = 2,
+        start_codons: tuple[str, ...] = ("ATG",),
+        stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"),
+        correct_CDS: bool = False,
+        always_resolve_strand: bool = True,
+        ignore_ambiguous_strands: bool = False,
+        quiet: bool = True,
+    ):
         for chrom, genes in self.chrs.items():
             if self.genome is not None and chrom not in self.genome.scaffolds:
                 continue
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
-                        c.generate_protein(mode=mode, quiet=quiet)
+                        c.generate_protein(
+                            mode=mode,
+                            max_nucleotide_trim=max_nucleotide_trim,
+                            tolerated_stops=tolerated_stops,
+                            orf_choice_mode=orf_choice_mode,
+                            must_have_stop=must_have_stop,
+                            enforce_start_codon=enforce_start_codon,
+                            min_codon_len=min_codon_len,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            correct_CDS=correct_CDS,
+                            always_resolve_strand=always_resolve_strand,
+                            ignore_ambiguous_strands=ignore_ambiguous_strands,
+                            quiet=quiet,
+                        )
+                    if correct_CDS:
+                        t.update(quiet=quiet)
+                if correct_CDS:
+                    g.update(quiet=quiet)
         self.contains_protein_sequences = True
 
     def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = True):
@@ -1590,41 +1623,6 @@ class Annotation():
                 self.protein_equivalences[first_protein_id].append(protein_id)
 
         progress_bar.close()
-    
-    def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    for c in t.CDSs.values():
-                        if c.protein:
-
-                            if c.protein.start != c.CDS_segments[0].start or c.protein.end != c.CDS_segments[-1].end:
-                                new_CDS_segments = []
-                                
-                                for cs in c.CDS_segments: 
-
-                                    if cs.end < c.protein.start:
-                                        continue
-
-                                    elif cs.start > c.protein.end:
-                                        continue
-
-                                    else:
-                                        
-                                        if cs.start < c.protein.start:
-                                            cs.start = c.protein.start
-
-                                        if cs.end > c.protein.end:
-                                            cs.end = c.protein.end
-                                            
-                                        new_CDS_segments.append(cs)
-                                
-                                c.CDS_segments = new_CDS_segments
-
-                            c.start = c.CDS_segments[0].start
-                            c.end = c.CDS_segments[-1].end
-
-        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
 
     def clear_proteins(self):
         for genes in self.chrs.values():
@@ -2156,7 +2154,7 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
+    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, fallback_to_trim:bool=False, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
         start_time = time.time()
 
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
@@ -2177,6 +2175,10 @@ class Annotation():
 
                     if t.coding_ratio < coding_ratio_threshold:
                         t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet)
+                    t.update(quiet=quiet)
+
+                    if t.coding_ratio < coding_ratio_threshold and fallback_to_trim:
+                        t.generate_best_protein(mode="orf_or_end", start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet)
                     t.update(quiet=quiet)
 
                 g.update(quiet=quiet)

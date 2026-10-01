@@ -3,6 +3,7 @@ Tests for aegis.gene — the Gene class.
 """
 
 import pytest
+from aegis.feature import Feature
 
 # ============================================================
 # __init__
@@ -161,3 +162,89 @@ class TestGeneLongerCDS:
         # No transcript has main=True, so it returns None
         result = g1.longer_CDS(g2)
         assert result is None
+
+
+# ============================================================
+# compare_protein_blast_hits
+# ============================================================
+
+class TestGeneCompareProteinBlastHits:
+    def test_compare_protein_blast_hits_quiet(self, make_gene, make_transcript, capsys):
+        g1 = make_gene(feature_id="g1")
+        g2 = make_gene(feature_id="g2")
+        t1 = make_transcript("t1", start=100, end=1000)
+        t2 = make_transcript("t2", start=100, end=2000)
+        g1.transcripts["t1"] = t1
+        g2.transcripts["t2"] = t2
+
+        res = g1.compare_protein_blast_hits(g2, source_priority=["sp"], quiet=True)
+        assert res is None
+        captured = capsys.readouterr()
+        assert "Warning" not in captured.out
+
+    def test_compare_protein_blast_hits_not_quiet(self, make_gene, make_transcript, capsys):
+        g1 = make_gene(feature_id="g1")
+        g2 = make_gene(feature_id="g2")
+        t1 = make_transcript("t1", start=100, end=1000)
+        t2 = make_transcript("t2", start=100, end=2000)
+        g1.transcripts["t1"] = t1
+        g2.transcripts["t2"] = t2
+
+        res = g1.compare_protein_blast_hits(g2, source_priority=["sp"], quiet=False)
+        assert res is None
+        captured = capsys.readouterr()
+        assert "Warning: g1 and g2 genes have no associated proteins." in captured.out
+
+
+# ============================================================
+# combine_transcripts
+# ============================================================
+
+class MockScaffold:
+    def __init__(self, seq: str):
+        self.seq = seq
+
+
+class MockGenome:
+    def __init__(self, seq_dict: dict[str, str]):
+        self.name = "mock_genome"
+        self.scaffolds = {k: MockScaffold(v) for k, v in seq_dict.items()}
+
+
+class TestGeneCombineTranscripts:
+    @pytest.fixture
+    def setup_mock_genome(self):
+        saved = Feature._ACTIVE_GENOME
+        def _activate(seq: str, chrom: str = "chr1"):
+            Feature._ACTIVE_GENOME = MockGenome({chrom: seq})
+        yield _activate
+        Feature._ACTIVE_GENOME = saved
+
+    def test_combine_transcripts_orf_or_end_fallback(self, setup_mock_genome, make_gene, make_transcript, make_exon):
+        # 30bp sequence without start/stop codons
+        seq = "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+        setup_mock_genome(seq)
+
+        g = make_gene(feature_id="g1", start=1, end=30, strand="+")
+        t1 = make_transcript(feature_id="t1", start=1, end=20, strand="+")
+        e1 = make_exon(feature_id="e1", start=1, end=20, strand="+")
+        t1.exons = [e1]
+        t1.main = True
+        t1.coding = True
+
+        t2 = make_transcript(feature_id="t2", start=10, end=30, strand="+")
+        e2 = make_exon(feature_id="e2", start=10, end=30, strand="+")
+        t2.exons = [e2]
+
+        g.transcripts = {"t1": t1, "t2": t2}
+        g.coding = True
+
+        g.combine_transcripts(redetect_CDS=True, respect_non_coding=True, quiet=True)
+
+        assert len(g.transcripts) == 1
+        combined_t = list(g.transcripts.values())[0]
+        assert combined_t.id == "g1_t001"
+        assert combined_t.coding is True
+        assert "g1_t001_CDS1" in combined_t.CDSs
+        assert combined_t.CDSs["g1_t001_CDS1"].protein is not None
+        assert combined_t.CDS_size == 30
