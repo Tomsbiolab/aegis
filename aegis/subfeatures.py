@@ -283,21 +283,47 @@ class CDS(Feature):
         
         return same
 
-    @property
-    def relative_coding_start(self):
-        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
-        if self.protein:
-            return (self.protein.start - self.start)
-        else:
-            return 0
+    def _calculate_relative_coding_coords(self) -> tuple[int, int]:
+        """Calculates 0-based slice indices within self.seq corresponding to the protein."""
+        if not self.protein or not self.CDS_segments:
+            return 0, max(0, self.size - 1)
+
+        prot_start = self.protein.start
+        prot_end = self.protein.end
+
+        sorted_segs = sorted(self.CDS_segments)
+        working_segs = sorted_segs if self.strand != "-" else reversed(sorted_segs)
+
+        rel_start = None
+        rel_end = None
+        offset = 0
+
+        for cs in working_segs:
+            if self.strand != "-":
+                if rel_start is None and cs.start <= prot_start <= cs.end:
+                    rel_start = offset + (prot_start - cs.start)
+                if rel_end is None and cs.start <= prot_end <= cs.end:
+                    rel_end = offset + (prot_end - cs.start)
+            else:
+                if rel_start is None and cs.start <= prot_end <= cs.end:
+                    rel_start = offset + (cs.end - prot_end)
+                if rel_end is None and cs.start <= prot_start <= cs.end:
+                    rel_end = offset + (cs.end - prot_start)
+            offset += cs.size
+
+        final_start = rel_start if rel_start is not None else 0
+        final_end = rel_end if rel_end is not None else max(0, self.size - 1)
+        return final_start, final_end
 
     @property
-    def relative_coding_end(self):
+    def relative_coding_start(self) -> int:
+        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
+        return self._calculate_relative_coding_coords()[0]
+
+    @property
+    def relative_coding_end(self) -> int:
         """ Returns python index of last protein nucleotide within the CDS sequence string, or the last CDS nucleotide index if no protein was generated yet."""
-        if self.protein:
-            return (self.protein.end - self.start)
-        else:
-            return self.end - self.start
+        return self._calculate_relative_coding_coords()[1]
 
 class Exon(Feature):
     __slots__ = ()

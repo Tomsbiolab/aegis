@@ -271,8 +271,9 @@
       - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):`
       - `def clear_protein(self):`
       - `def equal_segments(self, other:CDS):`
-      - `def relative_coding_start(self):`
-      - `def relative_coding_end(self):`
+      - `def _calculate_relative_coding_coords(self) -> tuple[int, int]:`
+      - `def relative_coding_start(self) -> int:`
+      - `def relative_coding_end(self) -> int:`
       - `class Exon(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `class UTR(Feature):`
