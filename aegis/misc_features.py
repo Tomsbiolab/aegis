@@ -42,7 +42,7 @@ class Protein():
         else:
             self.partial = False
 
-        if self.early_stop and self.end_stop:
+        if self.early_stop:
             self.truncated = True
         else:
             self.truncated = False
@@ -101,7 +101,15 @@ class Protein():
     
     @property
     def ATG_start(self) -> bool:
-        return self.seq.startswith("M") if self.seq else False
+        if not self.seq:
+            return False
+        if self.seq.startswith("M"):
+            return True
+        if self.nuc_seq and len(self.nuc_seq) >= 3:
+            st = self.nuc_seq[:3].upper().replace("U", "T")
+            if st in ("ATG", "GTG", "TTG", "ATA", "ATT", "ATC"):
+                return True
+        return False
 
     @property
     def end_stop(self) -> bool:

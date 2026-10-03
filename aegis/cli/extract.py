@@ -1,11 +1,12 @@
 import typer
 import os
 
-from typing import List
+from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..genome import Genome
 from ..annotation import Annotation
+from ..utils.genefunctions import TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils import split_callback
 
 FEATURES = ["gene", "transcript", "CDS", "protein", "promoter"]
@@ -104,18 +105,21 @@ def main(
     adjust_internal_shifts: Annotated[str, typer.Option(
         "--adjust-internal-shifts", help="Frameshift / phase handling mode for multi-segment CDS translation: 'intra_exon' (default: adjust shifts only across contiguous/overlapping exon segments, preserving continuous splicing across introns), 'all' (adjust across all junctions), or 'none' (translate continuous spliced sequence)."
     )] = "intra_exon",
+    taxonomy: Annotated[str, typer.Option(
+        "-tax", "--taxonomy", help="Taxonomic group preset for organelle genetic codes: 'plant' (default: nuclear=1, mito=1, plastid=11), 'vertebrate' (nuclear=1, mito=2), 'invertebrate' (nuclear=1, mito=5), or 'yeast' (nuclear=1, mito=3). Specific codes can be individually customized with --genetic-code, --mito-code, or --plastid-code."
+    )] = "plant",
     genetic_code: Annotated[int, typer.Option(
         "-gc", "--genetic-code", help="NCBI genetic code table number to use for nuclear translation (default: 1)."
     )] = 1,
     auto_organelle_codes: Annotated[bool, typer.Option(
         "--auto-organelle-codes/--no-auto-organelle-codes", help="Automatically use mitochondrial and plastid genetic codes for organelle contigs (default: True)."
     )] = True,
-    mito_code: Annotated[int, typer.Option(
-        "--mito-code", help="NCBI genetic code table number for mitochondrial contigs (default: 2)."
-    )] = 2,
-    plastid_code: Annotated[int, typer.Option(
-        "--plastid-code", help="NCBI genetic code table number for plastid/chloroplast contigs (default: 11)."
-    )] = 11,
+    mito_code: Annotated[Optional[int], typer.Option(
+        "-mc", "--mito-code", help="NCBI genetic code table number for mitochondrial contigs (overrides --taxonomy default)."
+    )] = None,
+    plastid_code: Annotated[Optional[int], typer.Option(
+        "-pc", "--plastid-code", help="NCBI genetic code table number for plastid/chloroplast contigs (overrides --taxonomy default)."
+    )] = None,
     mitochondria_chroms: Annotated[List[str], typer.Option(
         "--mitochondria-chroms", help="Explicit list or comma-separated names of mitochondrial chromosomes/scaffolds to translate with --mito-code.",
         callback=split_callback
@@ -177,6 +181,13 @@ def main(
         header_id_regex=header_id_regex if header_id_regex != "" else None,
         gwh=gwh,
     )
+    res_gc, res_mito, res_plastid = resolve_taxonomy_tables(
+        taxonomy=taxonomy,
+        table=genetic_code,
+        mito_table=mito_code,
+        plastid_table=plastid_code,
+    )
+
     annotation = Annotation(
         name=annotation_name,
         annot_file_path=annotation_file,
@@ -185,20 +196,22 @@ def main(
         collapse_exons=collapse_exons,
         collapse_CDSs=collapse_CDSs,
         adjust_internal_shifts=adjust_internal_shifts,
-        table=genetic_code,
+        taxonomy=taxonomy,
+        table=res_gc,
         auto_organelle_codes=auto_organelle_codes,
-        mito_table=mito_code,
-        plastid_table=plastid_code,
+        mito_table=res_mito,
+        plastid_table=res_plastid,
         mitochondria_chroms=mito_chroms,
         chloroplast_chroms=chloro_chroms,
     )
 
     export_translation_kwargs = {
         "adjust_internal_shifts": adjust_internal_shifts,
-        "table": genetic_code,
+        "taxonomy": taxonomy,
+        "table": res_gc,
         "auto_organelle_codes": auto_organelle_codes,
-        "mito_table": mito_code,
-        "plastid_table": plastid_code,
+        "mito_table": res_mito,
+        "plastid_table": res_plastid,
         "mitochondria_chroms": mito_chroms,
         "chloroplast_chroms": chloro_chroms,
     }

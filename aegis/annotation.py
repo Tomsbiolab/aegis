@@ -31,7 +31,7 @@ from .gene import Gene
 from .transcript import Transcript
 from .subfeatures import Exon, UTR
 from .hits import BlastHit
-from .utils.genefunctions import sort_and_update_genes
+from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
@@ -71,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str=2, plastid_table:int|str=11, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None):
         
         start_time = time.time()
 
@@ -99,11 +99,18 @@ class Annotation():
         self.sorted = False
         self.contains_promoters = False
 
+        self.taxonomy = taxonomy
+        res_table, res_mito, res_plastid = resolve_taxonomy_tables(
+            taxonomy=taxonomy,
+            table=table,
+            mito_table=mito_table,
+            plastid_table=plastid_table,
+        )
         self.adjust_internal_shifts = adjust_internal_shifts
-        self.table = table
+        self.table = res_table
         self.auto_organelle_codes = auto_organelle_codes
-        self.mito_table = mito_table
-        self.plastid_table = plastid_table
+        self.mito_table = res_mito
+        self.plastid_table = res_plastid
         self.mitochondria_chroms = mitochondria_chroms
         self.chloroplast_chroms = chloroplast_chroms
 
@@ -1600,6 +1607,7 @@ class Annotation():
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         table: int | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
@@ -1607,20 +1615,33 @@ class Annotation():
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
     ):
+        if taxonomy is None:
+            taxonomy = getattr(self, "taxonomy", "plant")
         if adjust_internal_shifts is None:
             adjust_internal_shifts = getattr(self, "adjust_internal_shifts", "intra_exon")
-        if table is None:
-            table = getattr(self, "table", 1)
         if auto_organelle_codes is None:
             auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
-        if mito_table is None:
-            mito_table = getattr(self, "mito_table", 2)
-        if plastid_table is None:
-            plastid_table = getattr(self, "plastid_table", 11)
         if mitochondria_chroms is None:
             mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
         if chloroplast_chroms is None:
             chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
+
+        cur_table = table if table is not None else getattr(self, "table", None)
+        cur_mito = mito_table if mito_table is not None else getattr(self, "mito_table", None)
+        cur_plastid = plastid_table if plastid_table is not None else getattr(self, "plastid_table", None)
+
+        table, mito_table, plastid_table = resolve_taxonomy_tables(
+            taxonomy=taxonomy,
+            table=cur_table,
+            mito_table=cur_mito,
+            plastid_table=cur_plastid,
+        )
+
+        if not quiet and auto_organelle_codes:
+            t_name = NCBI_GENETIC_CODES.get(table, {}).get("name", "Custom") if isinstance(table, int) else "Custom"
+            m_name = NCBI_GENETIC_CODES.get(mito_table, {}).get("name", "Custom") if isinstance(mito_table, int) else "Custom"
+            p_name = NCBI_GENETIC_CODES.get(plastid_table, {}).get("name", "Custom") if isinstance(plastid_table, int) else "Custom"
+            print(f"Info: Genetic code configuration [taxonomy='{taxonomy}']: nuclear={table} ({t_name}), mitochondrial={mito_table} ({m_name}), plastid={plastid_table} ({p_name})")
 
         user_mito_set: set[str] = set()
         if mitochondria_chroms:
@@ -1706,6 +1727,7 @@ class Annotation():
         mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         quiet: bool = True,
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         table: int | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
@@ -1718,6 +1740,7 @@ class Annotation():
                 mode=mode,
                 quiet=quiet,
                 adjust_internal_shifts=adjust_internal_shifts,
+                taxonomy=taxonomy,
                 table=table,
                 auto_organelle_codes=auto_organelle_codes,
                 mito_table=mito_table,
@@ -2293,6 +2316,7 @@ class Annotation():
         stop_codons: tuple[str, ...] | None = None,
         min_codon_len: int = 2,
         quiet: bool = False,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         table: int | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
@@ -2302,17 +2326,31 @@ class Annotation():
     ):
         start_time = time.time()
 
-        if table is None:
-            table = getattr(self, "table", 1)
+        if taxonomy is None:
+            taxonomy = getattr(self, "taxonomy", "plant")
         if auto_organelle_codes is None:
             auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
-        if mito_table is None:
-            mito_table = getattr(self, "mito_table", 2)
-        if plastid_table is None:
-            plastid_table = getattr(self, "plastid_table", 11)
         if mitochondria_chroms is None:
             mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
         if chloroplast_chroms is None:
+            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
+
+        cur_table = table if table is not None else getattr(self, "table", None)
+        cur_mito = mito_table if mito_table is not None else getattr(self, "mito_table", None)
+        cur_plastid = plastid_table if plastid_table is not None else getattr(self, "plastid_table", None)
+
+        table, mito_table, plastid_table = resolve_taxonomy_tables(
+            taxonomy=taxonomy,
+            table=cur_table,
+            mito_table=cur_mito,
+            plastid_table=cur_plastid,
+        )
+
+        if not quiet and auto_organelle_codes:
+            t_name = NCBI_GENETIC_CODES.get(table, {}).get("name", "Custom") if isinstance(table, int) else "Custom"
+            m_name = NCBI_GENETIC_CODES.get(mito_table, {}).get("name", "Custom") if isinstance(mito_table, int) else "Custom"
+            p_name = NCBI_GENETIC_CODES.get(plastid_table, {}).get("name", "Custom") if isinstance(plastid_table, int) else "Custom"
+            print(f"Info: Genetic code configuration [taxonomy='{taxonomy}']: nuclear={table} ({t_name}), mitochondrial={mito_table} ({m_name}), plastid={plastid_table} ({p_name})")
             chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
 
         user_mito_set: set[str] = set()

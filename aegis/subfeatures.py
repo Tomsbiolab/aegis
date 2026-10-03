@@ -45,7 +45,7 @@ class CDS(Feature):
             size += segment.size
         return size
 
-    def update_phase(self, override: bool = False):
+    def update_phase(self, override: bool = False, full_override: bool = False):
         if not self.CDS_segments:
             return
 
@@ -60,11 +60,15 @@ class CDS(Feature):
             working_segs = self.CDS_segments
 
         # If not overriding and all segments already have valid phases, preserve them
-        if not override and all(cs.phase in (0, 1, 2) for cs in self.CDS_segments):
+        if not override and not full_override and all(cs.phase in (0, 1, 2) for cs in self.CDS_segments):
             self.phase = initial_seg.phase
             return
 
-        initial_phase = initial_seg.phase if initial_seg.phase in (0, 1, 2) else 0
+        if full_override:
+            initial_phase = 0
+        else:
+            initial_phase = initial_seg.phase if initial_seg.phase in (0, 1, 2) else 0
+
         leftover = 0
         for i, cs in enumerate(working_segs):
             if i == 0:
@@ -500,7 +504,11 @@ class UTR(Feature):
     __slots__ = ('prime',)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
-        self.prime = "3'"
+        feat_lower = str(feature).lower()
+        if "5" in feat_lower or "five" in feat_lower:
+            self.prime = "5'"
+        else:
+            self.prime = "3'"
 
 class Intron(Feature):
     __slots__ = ('intra_coding',)

@@ -106,6 +106,17 @@ class TestCDS:
         assert cds.CDS_segments[0].phase == 1
         assert cds.CDS_segments[1].phase == 0
 
+    def test_cds_phase_recalculation_with_full_override(self, make_CDS, make_CDS_segment):
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=1)  # size 100
+        seg2 = make_CDS_segment("seg2", start=2000, end=2199, strand="+", phase=2)  # size 200
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+        cds.update_phase(full_override=True)
+        # With full_override=True, seg1 (5') phase is reset to 0
+        # seg1 size 100, phase 0 -> leftover = (100 - 0) % 3 = 1 -> seg2 phase = 3 - 1 = 2
+        assert cds.CDS_segments[0].phase == 0
+        assert cds.CDS_segments[1].phase == 2
+        assert cds.phase == 0
+
     def test_cds_phase_minus_strand_preservation(self, make_CDS, make_CDS_segment):
         # seg1: 1000..1099 (3' segment on minus strand), phase 2
         # seg2: 2000..2099 (5' segment on minus strand), phase 1
@@ -171,6 +182,7 @@ class TestUTR:
             parents=["mRNA1"]
         )
         assert u.size == 200
+        assert u.prime == "5'"
         assert isinstance(u, Feature)
 
 

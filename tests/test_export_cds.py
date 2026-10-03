@@ -67,3 +67,47 @@ def test_export_cds_with_table_none(test_data_dir, tmp_path):
     annot.export.CDSs(output_dir=str(tmp_path), table=None, quiet=True)
     annot.export.unique_CDSs(output_dir=str(tmp_path), table=None, quiet=True)
 
+
+def test_export_unique_CDSs_per_gene(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+
+    genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
+    annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+
+    # 1. All CDSs
+    annot.export.CDSs(output_dir=str(tmp_path), only_main=False, verbose=False, unique_CDSs_per_gene=False, quiet=True)
+    all_cds_file = tmp_path / f"{annot.id}_CDSs_c_id_all.fasta"
+    assert all_cds_file.exists()
+    all_text = all_cds_file.read_text()
+
+    # 2. Unique CDSs per gene (protein-oriented)
+    annot.export.CDSs(output_dir=str(tmp_path), only_main=False, verbose=False, unique_CDSs_per_gene=True, protein_oriented=True, quiet=True)
+    uniq_cds_file = tmp_path / f"{annot.id}_CDSs_c_id_unique_per_gene.fasta"
+    assert uniq_cds_file.exists()
+    uniq_text = uniq_cds_file.read_text()
+
+    all_headers = [line for line in all_text.splitlines() if line.startswith(">")]
+    uniq_headers = [line for line in uniq_text.splitlines() if line.startswith(">")]
+    assert len(uniq_headers) <= len(all_headers)
+
+    # 3. Unique CDSs per gene (raw)
+    annot.export.CDSs(output_dir=str(tmp_path), only_main=False, verbose=False, unique_CDSs_per_gene=True, protein_oriented=False, quiet=True)
+    uniq_raw_file = tmp_path / f"{annot.id}_CDSs_raw_c_id_unique_per_gene.fasta"
+    assert uniq_raw_file.exists()
+
+
+def test_export_cds_and_proteins_with_taxonomy(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+
+    genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
+    annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+
+    # Test that taxonomy argument works smoothly in all export functions
+    annot.export.proteins(output_dir=str(tmp_path), taxonomy="plant", quiet=True)
+    annot.export.unique_proteins(output_dir=str(tmp_path), taxonomy="vertebrate", quiet=True)
+    annot.export.CDSs(output_dir=str(tmp_path), taxonomy="yeast", quiet=True)
+    annot.export.unique_CDSs(output_dir=str(tmp_path), taxonomy="invertebrate", quiet=True)
+
+

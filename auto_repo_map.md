@@ -16,7 +16,7 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str=2, plastid_table:int|str=11, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None):`
       - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
@@ -263,7 +263,7 @@
       - `def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update(self):`
       - `def size(self):`
-      - `def update_phase(self, override: bool = False):`
+      - `def update_phase(self, override: bool = False, full_override: bool = False):`
       - `def update_frame(self):`
       - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):`
       - `def clear_UTRs(self):`
@@ -467,6 +467,7 @@
       - genefunctions.py
         - `def reverse_complement(in_seq: str) -> str:`
         - `def sequence_hash(in_seq: str) -> str:`
+        - `def resolve_taxonomy_tables(`
         - `def _build_extended_codon_table(base_dict: dict[str, str]) -> tuple[dict[str, str], defaultdict]:`
         - `def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict[str, str], dict[str, str], defaultdict, tuple[str, ...], tuple[str, ...]]:`
         - `def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:`
@@ -916,6 +917,8 @@
       - `def test_export_cds_protein_oriented_and_raw(test_data_dir, tmp_path):`
       - `def test_export_unique_proteins_per_gene(test_data_dir, tmp_path):`
       - `def test_export_cds_with_table_none(test_data_dir, tmp_path):`
+      - `def test_export_unique_CDSs_per_gene(test_data_dir, tmp_path):`
+      - `def test_export_cds_and_proteins_with_taxonomy(test_data_dir, tmp_path):`
     - test_feature.py
       - `class TestFeatureInit:`
       - `def test_basic_properties(self, make_feature):`
@@ -1143,6 +1146,7 @@
       - `def test_clear_utrs(self, make_CDS):`
       - `def test_cds_phase_preservation_when_valid(self, make_CDS, make_CDS_segment):`
       - `def test_cds_phase_recalculation_with_override(self, make_CDS, make_CDS_segment):`
+      - `def test_cds_phase_recalculation_with_full_override(self, make_CDS, make_CDS_segment):`
       - `def test_cds_phase_minus_strand_preservation(self, make_CDS, make_CDS_segment):`
       - `class TestExon:`
       - `def test_inherits_from_feature(self):`
@@ -1226,6 +1230,7 @@
       - `class TestCoordinateEdgeCases:`
       - `def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):`
       - `def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):`
+      - `def test_assign_UTRs_plus_and_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):`
     - __init__.py
     - **htmlcov/**
       - coverage_html_cb_dd2e7eb5.js

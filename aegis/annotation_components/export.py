@@ -109,6 +109,7 @@ class AnnotationExport(AnnotationComponent):
         extension: str = ".fasta",
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
         table: int | str | None = None,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
@@ -145,6 +146,7 @@ class AnnotationExport(AnnotationComponent):
                 quiet=quiet,
                 adjust_internal_shifts=adjust_internal_shifts,
                 table=table,
+                taxonomy=taxonomy,
                 auto_organelle_codes=auto_organelle_codes,
                 mito_table=mito_table,
                 plastid_table=plastid_table,
@@ -261,6 +263,7 @@ class AnnotationExport(AnnotationComponent):
         mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
         table: int | str | None = None,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
@@ -287,6 +290,7 @@ class AnnotationExport(AnnotationComponent):
             quiet=quiet,
             adjust_internal_shifts=adjust_internal_shifts,
             table=table,
+            taxonomy=taxonomy,
             auto_organelle_codes=auto_organelle_codes,
             mito_table=mito_table,
             plastid_table=plastid_table,
@@ -366,6 +370,7 @@ class AnnotationExport(AnnotationComponent):
         mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
         table: int | str | None = None,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
@@ -397,6 +402,7 @@ class AnnotationExport(AnnotationComponent):
                 quiet=quiet,
                 adjust_internal_shifts=adjust_internal_shifts,
                 table=table,
+                taxonomy=taxonomy,
                 auto_organelle_codes=auto_organelle_codes,
                 mito_table=mito_table,
                 plastid_table=plastid_table,
@@ -459,6 +465,7 @@ class AnnotationExport(AnnotationComponent):
         mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
         table: int | str | None = None,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
         auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
@@ -542,6 +549,7 @@ class AnnotationExport(AnnotationComponent):
                 quiet=True,
                 adjust_internal_shifts=adjust_internal_shifts,
                 table=table,
+                taxonomy=taxonomy,
                 auto_organelle_codes=auto_organelle_codes,
                 mito_table=mito_table,
                 plastid_table=plastid_table,
@@ -590,8 +598,14 @@ class AnnotationExport(AnnotationComponent):
                             if i > 0:
                                 add = True
                                 for c2 in final_cs:
-                                    if c1.equal_segments(c2):
-                                        add = False
+                                    if protein_oriented:
+                                        seq1 = c1.protein.nuc_seq if c1.protein is not None else ""
+                                        seq2 = c2.protein.nuc_seq if c2.protein is not None else ""
+                                        if c1.equal_segments(c2) or (seq1 != "" and seq1 == seq2):
+                                            add = False
+                                    else:
+                                        if c1.equal_segments(c2) or (c1.seq != "" and c1.seq == c2.seq):
+                                            add = False
                                 if add:
                                     final_cs.append(c1)
 

@@ -173,6 +173,50 @@ NCBI_GENETIC_CODES: dict[int, dict] = {
     },
 }
 
+TAXONOMY_ORGANELLE_CODES: dict[str, dict[str, int]] = {
+    "plant": {
+        "table": 1,
+        "mito_table": 1,      # Plant mitochondria use Standard Code (NCBI Table 1)
+        "plastid_table": 11,  # Plant plastid / Chloroplast uses NCBI Table 11
+    },
+    "vertebrate": {
+        "table": 1,
+        "mito_table": 2,      # Vertebrate Mitochondrial (NCBI Table 2)
+        "plastid_table": 11,
+    },
+    "invertebrate": {
+        "table": 1,
+        "mito_table": 5,      # Invertebrate Mitochondrial (NCBI Table 5)
+        "plastid_table": 11,
+    },
+    "yeast": {
+        "table": 1,
+        "mito_table": 3,      # Yeast Mitochondrial (NCBI Table 3)
+        "plastid_table": 11,
+    },
+}
+
+def resolve_taxonomy_tables(
+    taxonomy: str = "plant",
+    table: int | str | None = None,
+    mito_table: int | str | None = None,
+    plastid_table: int | str | None = None,
+) -> tuple[int | str, int | str, int | str]:
+    """
+    Resolves nuclear, mitochondrial, and plastid translation tables based on a taxonomy preset,
+    allowing explicit overrides for individual table types.
+    """
+    tax_key = str(taxonomy).lower() if taxonomy else "plant"
+    if tax_key not in TAXONOMY_ORGANELLE_CODES:
+        raise ValueError(
+            f"Unknown taxonomy preset: '{taxonomy}'. Available presets: {list(TAXONOMY_ORGANELLE_CODES.keys())}"
+        )
+    preset = TAXONOMY_ORGANELLE_CODES[tax_key]
+    res_table = table if table is not None else preset["table"]
+    res_mito = mito_table if mito_table is not None else preset["mito_table"]
+    res_plastid = plastid_table if plastid_table is not None else preset["plastid_table"]
+    return res_table, res_mito, res_plastid
+
 def _build_extended_codon_table(base_dict: dict[str, str]) -> tuple[dict[str, str], defaultdict]:
     """Generates an IUPAC-extended codon table considering all IUPAC ambiguous nucleotide combinations."""
     extended = {}

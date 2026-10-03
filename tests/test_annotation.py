@@ -2744,8 +2744,8 @@ class TestAnnotationGenerateProteinsCorrectCDS:
 
 class TestOrganelleTranslation:
     def test_autodetect_mitochondria(self, tmp_path):
-        # TGA is Stop in Table 1, but Trp (W) in Table 2 (Vertebrate Mitochondrial)
-        # ATGTGATAA: in Table 1 -> M (stops at TGA); in Table 2 -> MW (stops at TAA)
+        # TGA is Stop in Table 1 (Standard / Plant mitochondrial), but Trp (W) in Table 2 (Vertebrate Mitochondrial)
+        # ATGTGATAA: in Table 1 -> M** (stops at TGA); in Table 2 -> MW* (stops at TAA)
         gff_content = (
             "##gff-version 3\n"
             "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
@@ -2759,12 +2759,19 @@ class TestOrganelleTranslation:
         genome = MockGenome({"chrM": "ATGTGATAA"})
         genome.scaffolds["chrM"].mitochondria = True
 
-        annot = Annotation(str(gff_file), genome=genome, quiet=True)
-        annot.generate_proteins(mode="end", quiet=True)
+        # Default taxonomy="plant" uses Table 1 for mitochondria -> M**
+        annot_plant = Annotation(str(gff_file), genome=genome, quiet=True)
+        annot_plant.generate_proteins(mode="end", quiet=True)
+        cds_plant = annot_plant.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds_plant.protein is not None
+        assert cds_plant.protein.seq == "M**"
 
-        cds = annot.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
-        assert cds.protein is not None
-        assert cds.protein.seq == "MW*"
+        # Explicit taxonomy="vertebrate" uses Table 2 for mitochondria -> MW*
+        annot_vert = Annotation(str(gff_file), genome=genome, taxonomy="vertebrate", quiet=True)
+        annot_vert.generate_proteins(mode="end", quiet=True)
+        cds_vert = annot_vert.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds_vert.protein is not None
+        assert cds_vert.protein.seq == "MW*"
 
     def test_disable_auto_organelle_codes(self, tmp_path):
         gff_content = (
@@ -2801,13 +2808,20 @@ class TestOrganelleTranslation:
         gff_file.write_text(gff_content)
 
         genome = MockGenome({"scaff_custom": "ATGTGATAA"})
-        # User manually specifies scaff_custom as mitochondria -> Table 2 -> MW*
-        annot = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["scaff_custom"], quiet=True)
+        # User manually specifies scaff_custom as mitochondria with vertebrate taxonomy -> Table 2 -> MW*
+        annot = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["scaff_custom"], taxonomy="vertebrate", quiet=True)
         annot.generate_proteins(mode="end", quiet=True)
 
         cds = annot.chrs["scaff_custom"]["g1"].transcripts["t1"].CDSs["cds1"]
         assert cds.protein is not None
         assert cds.protein.seq == "MW*"
+
+        # User explicitly overrides mito_table=2 even under default plant taxonomy
+        annot2 = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["scaff_custom"], mito_table=2, quiet=True)
+        annot2.generate_proteins(mode="end", quiet=True)
+        cds2 = annot2.chrs["scaff_custom"]["g1"].transcripts["t1"].CDSs["cds1"]
+        assert cds2.protein is not None
+        assert cds2.protein.seq == "MW*"
 
     def test_missing_contig_raises_value_error(self, tmp_path):
         gff_content = (
@@ -2848,13 +2862,23 @@ class TestOrganelleTranslation:
         gff_file.write_text(gff_content)
 
         genome = MockGenome({"chrMT": "ATGTGATAA", "chrPt": "GTGAAATAA"})
-        annot = Annotation(str(gff_file), genome=genome, quiet=True)
-        annot.generate_proteins(mode="end", quiet=True)
 
-        cds_mt = annot.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
-        assert cds_mt.protein is not None
-        assert cds_mt.protein.seq == "MW*"
+        # Plant taxonomy (default): chrMT uses Table 1 -> M**, chrPt uses Table 11 -> VK*
+        annot_plant = Annotation(str(gff_file), genome=genome, quiet=True)
+        annot_plant.generate_proteins(mode="end", quiet=True)
 
-        cds_pt = annot.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"]
-        assert cds_pt.protein is not None
-        assert cds_pt.protein.seq == "VK*"
+        cds_mt_plant = annot_plant.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
+        assert cds_mt_plant.protein is not None
+        assert cds_mt_plant.protein.seq == "M**"
+
+        cds_pt_plant = annot_plant.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"]
+        assert cds_pt_plant.protein is not None
+        assert cds_pt_plant.protein.seq == "VK*"
+
+        # Vertebrate taxonomy: chrMT uses Table 2 -> MW*
+        annot_vert = Annotation(str(gff_file), genome=genome, taxonomy="vertebrate", quiet=True)
+        annot_vert.generate_proteins(mode="end", quiet=True)
+
+        cds_mt_vert = annot_vert.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
+        assert cds_mt_vert.protein is not None
+        assert cds_mt_vert.protein.seq == "MW*"

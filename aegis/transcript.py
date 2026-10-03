@@ -256,7 +256,7 @@ class Transcript(Feature):
                 if len(merged) < len(cds.CDS_segments):
                     cds.CDS_segments = merged
                     self.collapsed_CDS_segments = True
-                    cds.update_phase(override=True)
+                    cds.update_phase(override=True, full_override=False)
                     cds.update_frame()
                     cds.update()
                     
@@ -576,6 +576,7 @@ class Transcript(Feature):
             for c in self.CDSs.values():
                 c.UTRs = self.temp_UTRs
             self.temp_UTRs = None
+            self.update_UTRs()
 
     def generate_UTRs(self):
         if self.temp_UTRs:
@@ -627,6 +628,7 @@ class Transcript(Feature):
                             u.prime = "5'"
                             u.feature = "five_prime_UTR"
                         else:
+                            u.prime = "3'"
                             u.feature = "three_prime_UTR"
                 elif c.strand == "-":
                     for u in c.UTRs:
@@ -634,6 +636,7 @@ class Transcript(Feature):
                             u.prime = "5'"
                             u.feature = "five_prime_UTR"
                         else:
+                            u.prime = "3'"
                             u.feature = "three_prime_UTR"
 
                 c.full_UTR_exons = len(self.exons) - len(c.CDS_segments)

@@ -749,5 +749,42 @@ class TestCoordinateEdgeCases:
         assert utr_coords[0] == (1000, 1099, "5'")
         assert utr_coords[1] == (1601, 1800, "3'")
 
+    def test_assign_UTRs_plus_and_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):
+        # 1. Plus strand
+        t_plus = make_transcript(feature_id="t_plus", strand="+")
+        cs_plus = make_CDS_segment("cs_plus", strand="+", start=1200, end=1500)
+        cds_plus = make_CDS(segments=[cs_plus], strand="+", feature_id="t_plus_CDS1")
+        t_plus.CDSs = {"t_plus_CDS1": cds_plus}
+
+        # GFF UTRs without explicit prime:
+        u1 = UTR("u1", "chr1", "test", "UTR", "+", 1000, 1199, ".")
+        u2 = UTR("u2", "chr1", "test", "UTR", "+", 1501, 1700, ".")
+        t_plus.temp_UTRs = [u1, u2]
+        t_plus.assign_UTRs()
+
+        assert len(cds_plus.UTRs) == 2
+        assert cds_plus.UTRs[0].prime == "5'"
+        assert cds_plus.UTRs[1].prime == "3'"
+
+        # 2. Minus strand
+        t_minus = make_transcript(feature_id="t_minus", strand="-")
+        cs_minus = make_CDS_segment("cs_minus", strand="-", start=1200, end=1500)
+        cds_minus = make_CDS(segments=[cs_minus], strand="-", feature_id="t_minus_CDS1")
+        t_minus.CDSs = {"t_minus_CDS1": cds_minus}
+
+        # For minus strand, 5' UTR is at higher genomic coordinates (1501..1700)
+        # 3' UTR is at lower coordinates (1000..1199)
+        u_minus_3p = UTR("u_minus_3p", "chr1", "test", "UTR", "-", 1000, 1199, ".")
+        u_minus_5p = UTR("u_minus_5p", "chr1", "test", "UTR", "-", 1501, 1700, ".")
+        t_minus.temp_UTRs = [u_minus_3p, u_minus_5p]
+        t_minus.assign_UTRs()
+
+        assert len(cds_minus.UTRs) == 2
+        # UTRs are sorted by start coordinate: [1000..1199, 1501..1700]
+        # On minus strand: 1000..1199 has end <= cds.end -> prime is 3'
+        # 1501..1700 has end > cds.end -> prime is 5'
+        assert cds_minus.UTRs[0].prime == "3'"
+        assert cds_minus.UTRs[1].prime == "5'"
+
 
 
