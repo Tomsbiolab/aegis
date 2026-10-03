@@ -105,3 +105,77 @@ def test_tidy_rework_cds_fallback_to_trim(tmp_path):
     assert result.exit_code == 0
     annot_fb = Annotation(str(output_dir / "fallback.gff3"), quiet=True)
     assert annot_fb.chrs["chr1"]["g1"].transcripts["t1"].coding is True
+
+
+def test_tidy_cli_translation_options(tmp_path):
+    gff_file = tmp_path / "test.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+    )
+    fa_file = tmp_path / "test.fasta"
+    fa_file.write_text(">chr1\nATGAAAGGGAAAGGGAAAGGGAAATGATAA\n")
+    output_dir = tmp_path / "tidy_out"
+
+    args = [
+        str(gff_file),
+        "--genome-file", str(fa_file),
+        "--rework-all-CDSs",
+        "-gc", "1",
+        "--auto-organelle-codes",
+        "--mito-code", "2",
+        "--plastid-code", "11",
+        "--adjust-internal-shifts", "intra_exon",
+        "-d", str(output_dir),
+        "-q",
+    ]
+    result = runner.invoke(tidy_app, args)
+    assert result.exit_code == 0, f"Error: {result.stdout}"
+
+
+def test_tidy_cli_unknown_mito_contig(tmp_path):
+    gff_file = tmp_path / "test.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+    )
+    fa_file = tmp_path / "test.fasta"
+    fa_file.write_text(">chr1\nATGAAAGGGAAAGGGAAAGGGAAATGATAA\n")
+    output_dir = tmp_path / "tidy_out"
+
+    args = [
+        str(gff_file),
+        "--genome-file", str(fa_file),
+        "--rework-all-CDSs",
+        "--mitochondria-chroms", "nonexistent_mito",
+        "-d", str(output_dir),
+        "-q",
+    ]
+    result = runner.invoke(tidy_app, args)
+    assert result.exit_code != 0
+    assert "Specified mitochondrial chromosome 'nonexistent_mito' was not found" in str(result.exception or result.stdout)
+
+
+def test_tidy_cli_invalid_adjust_shifts(tmp_path):
+    gff_file = tmp_path / "test.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+    )
+    output_dir = tmp_path / "tidy_out"
+
+    args = [
+        str(gff_file),
+        "--adjust-internal-shifts", "invalid_shift",
+        "-d", str(output_dir),
+        "-q",
+    ]
+    result = runner.invoke(tidy_app, args)
+    assert result.exit_code != 0
+    assert "Invalid adjust_internal_shifts" in result.output

@@ -101,6 +101,29 @@ def main(
     raw_cds: Annotated[bool, typer.Option(
         "--raw-cds", help="Export raw spliced genomic CDS sequences instead of in-frame protein-oriented coding sequences."
     )] = False,
+    adjust_internal_shifts: Annotated[str, typer.Option(
+        "--adjust-internal-shifts", help="Frameshift / phase handling mode for multi-segment CDS translation: 'intra_exon' (default: adjust shifts only across contiguous/overlapping exon segments, preserving continuous splicing across introns), 'all' (adjust across all junctions), or 'none' (translate continuous spliced sequence)."
+    )] = "intra_exon",
+    genetic_code: Annotated[int, typer.Option(
+        "-gc", "--genetic-code", help="NCBI genetic code table number to use for nuclear translation (default: 1)."
+    )] = 1,
+    auto_organelle_codes: Annotated[bool, typer.Option(
+        "--auto-organelle-codes/--no-auto-organelle-codes", help="Automatically use mitochondrial and plastid genetic codes for organelle contigs (default: True)."
+    )] = True,
+    mito_code: Annotated[int, typer.Option(
+        "--mito-code", help="NCBI genetic code table number for mitochondrial contigs (default: 2)."
+    )] = 2,
+    plastid_code: Annotated[int, typer.Option(
+        "--plastid-code", help="NCBI genetic code table number for plastid/chloroplast contigs (default: 11)."
+    )] = 11,
+    mitochondria_chroms: Annotated[List[str], typer.Option(
+        "--mitochondria-chroms", help="Explicit list or comma-separated names of mitochondrial chromosomes/scaffolds to translate with --mito-code.",
+        callback=split_callback
+    )] = [],
+    chloroplast_chroms: Annotated[List[str], typer.Option(
+        "--chloroplast-chroms", help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code.",
+        callback=split_callback
+    )] = [],
 ):
     """
     Extract sequences from a genome based on an annotation file.
@@ -140,6 +163,12 @@ def main(
         if rna_class not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid rna class: {rna_class}. Choose from: {RNA_CLASSES}")
 
+    if adjust_internal_shifts not in ("intra_exon", "all", "none"):
+        raise typer.BadParameter(f"Invalid adjust_internal_shifts: '{adjust_internal_shifts}'. Choose from: 'intra_exon', 'all', 'none'.")
+
+    mito_chroms = mitochondria_chroms if len(mitochondria_chroms) > 0 else None
+    chloro_chroms = chloroplast_chroms if len(chloroplast_chroms) > 0 else None
+
     genome = Genome(
         name=genome_name,
         genome_file_path=genome_file,
@@ -148,7 +177,31 @@ def main(
         header_id_regex=header_id_regex if header_id_regex != "" else None,
         gwh=gwh,
     )
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+    annotation = Annotation(
+        name=annotation_name,
+        annot_file_path=annotation_file,
+        genome=genome,
+        quiet=quiet,
+        collapse_exons=collapse_exons,
+        collapse_CDSs=collapse_CDSs,
+        adjust_internal_shifts=adjust_internal_shifts,
+        table=genetic_code,
+        auto_organelle_codes=auto_organelle_codes,
+        mito_table=mito_code,
+        plastid_table=plastid_code,
+        mitochondria_chroms=mito_chroms,
+        chloroplast_chroms=chloro_chroms,
+    )
+
+    export_translation_kwargs = {
+        "adjust_internal_shifts": adjust_internal_shifts,
+        "table": genetic_code,
+        "auto_organelle_codes": auto_organelle_codes,
+        "mito_table": mito_code,
+        "plastid_table": plastid_code,
+        "mitochondria_chroms": mito_chroms,
+        "chloroplast_chroms": chloro_chroms,
+    }
 
     if "gene" in features:
 
@@ -182,13 +235,13 @@ def main(
             used_id = "protein"
 
         if "unique_per_gene" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, **export_translation_kwargs)
         elif "unique" in mode:
-            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet)
+            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, **export_translation_kwargs)
         elif "all" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, **export_translation_kwargs)
         else:
-            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id)
+            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, **export_translation_kwargs)
 
     if "CDS" in features:
 
@@ -202,13 +255,13 @@ def main(
         protein_oriented = not raw_cds
 
         if "unique_per_gene" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, **export_translation_kwargs)
         elif "unique" in mode:
-            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented)
+            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, **export_translation_kwargs)
         elif "all" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, **export_translation_kwargs)
         else:
-            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented)
+            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, **export_translation_kwargs)
 
     if "promoter" in features:
 
@@ -222,7 +275,7 @@ def main(
         if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
             annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet)
         else:
-            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_siz, quiet=quiet)
+            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet)
 
 if __name__ == "__main__":
     app()

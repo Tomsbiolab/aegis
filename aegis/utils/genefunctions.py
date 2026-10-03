@@ -56,37 +56,201 @@ iupac_dna_nucleotides = {
 
 codon_dict = {'TTT': 'F', 'TTC': 'F', 'TTA': 'L', 'TTG': 'L', 'TCT': 'S', 'TCC': 'S', 'TCA': 'S', 'TCG': 'S', 'TAT': 'Y', 'TAC': 'Y', 'TGT': 'C', 'TGC': 'C', 'TGG': 'W', 'CTT': 'L', 'CTC': 'L', 'CTA': 'L', 'CTG': 'L', 'CCT': 'P', 'CCC': 'P', 'CCA': 'P', 'CCG': 'P', 'CAT': 'H', 'CAC': 'H', 'CAA': 'Q', 'CAG': 'Q', 'CGT': 'R', 'CGC': 'R', 'CGA': 'R', 'CGG': 'R', 'ATT': 'I', 'ATC': 'I', 'ATA': 'I', 'ATG': 'M', 'ACT': 'T', 'ACC': 'T', 'ACA': 'T', 'ACG': 'T', 'AAT': 'N', 'AAC': 'N', 'AAA': 'K', 'AAG': 'K', 'AGT': 'S', 'AGC': 'S', 'AGA': 'R', 'AGG': 'R', 'GTT': 'V', 'GTC': 'V', 'GTA': 'V', 'GTG': 'V', 'GCT': 'A', 'GCC': 'A', 'GCA': 'A', 'GCG': 'A', 'GAT': 'D', 'GAC': 'D', 'GAA': 'E', 'GAG': 'E', 'GGT': 'G', 'GGC': 'G', 'GGA': 'G', 'GGG': 'G', "TAA": "*", "TAG": "*", "TGA": "*"}
 
+NCBI_GENETIC_CODES: dict[int, dict] = {
+    1: {
+        "name": "Standard",
+        "diff": {},
+        "stops": ("TAA", "TAG", "TGA"),
+        "starts": ("ATG",),
+    },
+    2: {
+        "name": "Vertebrate Mitochondrial",
+        "diff": {"AGA": "*", "AGG": "*", "ATA": "M", "TGA": "W"},
+        "stops": ("TAA", "TAG", "AGA", "AGG"),
+        "starts": ("ATG", "ATA", "ATT", "ATC", "GTG"),
+    },
+    3: {
+        "name": "Yeast Mitochondrial",
+        "diff": {"ATA": "M", "CTT": "T", "CTC": "T", "CTA": "T", "CTG": "T", "TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "ATA", "GTG"),
+    },
+    4: {
+        "name": "Mold, Protozoan, and Coelenterate Mitochondrial and Mycoplasma/Spiroplasma",
+        "diff": {"TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "ATA", "ATT", "ATC", "GTG", "TTG"),
+    },
+    5: {
+        "name": "Invertebrate Mitochondrial",
+        "diff": {"AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "ATA", "ATT", "ATC", "GTG", "TTG"),
+    },
+    6: {
+        "name": "Ciliate, Dasycladacean and Hexamita Nuclear",
+        "diff": {"TAA": "Q", "TAG": "Q"},
+        "stops": ("TGA",),
+        "starts": ("ATG",),
+    },
+    9: {
+        "name": "Echinoderm and Flatworm Mitochondrial",
+        "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "GTG"),
+    },
+    10: {
+        "name": "Euplotid Nuclear",
+        "diff": {"TGA": "C"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG",),
+    },
+    11: {
+        "name": "Bacterial, Archaeal and Plant Plastid",
+        "diff": {},
+        "stops": ("TAA", "TAG", "TGA"),
+        "starts": ("ATG", "GTG", "TTG"),
+    },
+    12: {
+        "name": "Alternative Yeast Nuclear",
+        "diff": {"CTG": "S"},
+        "stops": ("TAA", "TAG", "TGA"),
+        "starts": ("ATG", "CTG"),
+    },
+    13: {
+        "name": "Ascidian Mitochondrial",
+        "diff": {"AGA": "G", "AGG": "G", "ATA": "M", "TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "ATA", "GTG", "TTG"),
+    },
+    14: {
+        "name": "Alternative Flatworm Mitochondrial",
+        "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W", "TAA": "Y"},
+        "stops": ("TAG",),
+        "starts": ("ATG",),
+    },
+    16: {
+        "name": "Chlorophycean Mitochondrial",
+        "diff": {"TAG": "L"},
+        "stops": ("TAA", "TGA"),
+        "starts": ("ATG",),
+    },
+    21: {
+        "name": "Trematode Mitochondrial",
+        "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "GTG"),
+    },
+    22: {
+        "name": "Scenedesmus obliquus Mitochondrial",
+        "diff": {"TCA": "*", "TAG": "L"},
+        "stops": ("TAA", "TCA", "TGA"),
+        "starts": ("ATG",),
+    },
+    23: {
+        "name": "Thraustochytrium Mitochondrial",
+        "diff": {"TTA": "*"},
+        "stops": ("TAA", "TAG", "TGA", "TTA"),
+        "starts": ("ATG", "GTG", "ATT"),
+    },
+    24: {
+        "name": "Rhabdopleuridae Mitochondrial",
+        "diff": {"AGA": "S", "AGG": "K", "TGA": "W"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "GTG"),
+    },
+    25: {
+        "name": "Candidate Division SR1 and Gracilibacteria",
+        "diff": {"TGA": "G"},
+        "stops": ("TAA", "TAG"),
+        "starts": ("ATG", "GTG", "TTG"),
+    },
+    26: {
+        "name": "Pachysolen tannophilus Nuclear",
+        "diff": {"CTG": "A"},
+        "stops": ("TAA", "TAG", "TGA"),
+        "starts": ("ATG",),
+    },
+}
 
-extended_codon_dict = {}
-all_iupac_chars = list(iupac_dna_nucleotides.keys())
+def _build_extended_codon_table(base_dict: dict[str, str]) -> tuple[dict[str, str], defaultdict]:
+    """Generates an IUPAC-extended codon table considering all IUPAC ambiguous nucleotide combinations."""
+    extended = {}
+    all_iupac = list(iupac_dna_nucleotides.keys())
+    for c1, c2, c3 in itertools.product(all_iupac, repeat=3):
+        ambiguous = c1 + c2 + c3
+        possible_aas = set()
+        for b1, b2, b3 in itertools.product(iupac_dna_nucleotides[c1], iupac_dna_nucleotides[c2], iupac_dna_nucleotides[c3]):
+            possible_aas.add(base_dict[b1 + b2 + b3])
+        if len(possible_aas) == 1:
+            extended[ambiguous] = possible_aas.pop()
+        else:
+            extended[ambiguous] = "X"
+    byte_codon = {tuple(k.encode('ascii')): v for k, v in extended.items()}
+    b_dict = defaultdict(lambda: "X", byte_codon)
+    return extended, b_dict
 
-for c1, c2, c3 in itertools.product(all_iupac_chars, repeat=3):
-    ambiguous_codon = c1 + c2 + c3
-    
-    possible_aas = set()
-    for b1, b2, b3 in itertools.product(iupac_dna_nucleotides[c1], iupac_dna_nucleotides[c2], iupac_dna_nucleotides[c3]):
-        standard_codon = b1 + b2 + b3
-        possible_aas.add(codon_dict[standard_codon])
-    
-    if len(possible_aas) == 1:
-        extended_codon_dict[ambiguous_codon] = possible_aas.pop()
-    else:
-        extended_codon_dict[ambiguous_codon] = "X"
-
+extended_codon_dict, byte_dict = _build_extended_codon_table(codon_dict)
 byte_codon_dict = {tuple(k.encode('ascii')): v for k, v in extended_codon_dict.items()}
-byte_dict = defaultdict(lambda: "X", byte_codon_dict)
 
-def translate(seq: str) -> str:
+_GENETIC_CODE_CACHE: dict[int, tuple[dict[str, str], dict[str, str], defaultdict, tuple[str, ...], tuple[str, ...]]] = {
+    1: (codon_dict, extended_codon_dict, byte_dict, ("TAA", "TAG", "TGA"), ("ATG",))
+}
+
+def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict[str, str], dict[str, str], defaultdict, tuple[str, ...], tuple[str, ...]]:
+    """
+    Returns (base_codon_dict, extended_codon_dict, byte_dict, default_stops, default_starts)
+    for a given NCBI genetic code table ID, name, or custom dictionary.
+    All tables are fully IUPAC-extended for ambiguous base calling.
+    """
+    if isinstance(table, str):
+        if table.isdigit():
+            table = int(table)
+        else:
+            for t_id, info in NCBI_GENETIC_CODES.items():
+                if info["name"].lower() == table.lower():
+                    table = t_id
+                    break
+            else:
+                raise ValueError(f"Unknown genetic code name: '{table}'. Available IDs: {list(NCBI_GENETIC_CODES.keys())}")
+
+    if isinstance(table, int):
+        if table in _GENETIC_CODE_CACHE:
+            return _GENETIC_CODE_CACHE[table]
+        if table not in NCBI_GENETIC_CODES:
+            raise ValueError(f"Unsupported NCBI genetic code ID: {table}. Supported tables: {list(NCBI_GENETIC_CODES.keys())}")
+
+        info = NCBI_GENETIC_CODES[table]
+        base = codon_dict.copy()
+        base.update(info["diff"])
+        ext, b_dict = _build_extended_codon_table(base)
+        _GENETIC_CODE_CACHE[table] = (base, ext, b_dict, info["stops"], info["starts"])
+        return _GENETIC_CODE_CACHE[table]
+
+    elif isinstance(table, dict):
+        base = codon_dict.copy()
+        base.update(table)
+        stops = tuple(sorted([k for k, v in base.items() if v == "*"]))
+        starts = ("ATG",)
+        ext, b_dict = _build_extended_codon_table(base)
+        return base, ext, b_dict, stops, starts
+    else:
+        raise TypeError(f"table must be an int, str, or dict, got {type(table).__name__}")
+
+def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:
     """
     Translates a DNA sequence to Amino Acids.
-    Handles all ambiguous IUPAC bases.
+    Handles all ambiguous IUPAC bases according to the specified genetic code table.
     Case-insensitive.
-    Assumes input is a multiple of 3
+    Assumes input is a multiple of 3.
     """
+    if table == 1 or table == "1":
+        b_dict = byte_dict
+    else:
+        _, _, b_dict, _, _ = get_genetic_code_tables(table)
 
     it = iter(seq.upper().encode('ascii'))
-
-    return "".join(map(byte_dict.__getitem__, zip(it, it, it)))
+    return "".join(map(b_dict.__getitem__, zip(it, it, it)))
 
 def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
 
@@ -127,10 +291,26 @@ def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, 
 
     return output_segments
 
-def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[int, float, None] = 0, min_codon_len: int = 2, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA")) -> list[tuple[str, int, int]]:
+def find_ORFs(
+    in_seq: str,
+    must_have_stop: bool = True,
+    tolerated_stops: Union[int, float, None] = 0,
+    min_codon_len: int = 2,
+    enforce_start_codon: bool = True,
+    start_codons: tuple[str, ...] | None = None,
+    stop_codons: tuple[str, ...] | None = None,
+    table: int | str | dict[str, str] = 1,
+) -> list[tuple[str, int, int]]:
 
     if tolerated_stops is None or tolerated_stops < 0:
         tolerated_stops = float('inf')
+
+    if stop_codons is None or start_codons is None:
+        _, _, _, def_stops, def_starts = get_genetic_code_tables(table)
+        if stop_codons is None:
+            stop_codons = def_stops
+        if start_codons is None:
+            start_codons = def_starts
 
     stop_set = frozenset(s.upper() for s in (stop_codons if isinstance(stop_codons, (set, frozenset, tuple, list)) else [stop_codons]))
     start_codons = tuple(s.upper() for s in start_codons)
@@ -208,7 +388,20 @@ def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earli
     else:
         raise ValueError(f"Invalid mode: '{mode}'. Expected 'longest' or 'earliest'.")
 
-def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, phase: int = 0) -> tuple[str, bool, int, int]:
+def trim_surplus(
+    in_seq: str,
+    mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end",
+    max_nucleotide_trim: int | None = None,
+    tolerated_stops: int | None = 0,
+    orf_choice_mode: Literal["longest", "earliest"]="longest",
+    must_have_stop: bool = True,
+    enforce_start_codon: bool = True,
+    start_codons: tuple[str, ...] | None = None,
+    stop_codons: tuple[str, ...] | None = None,
+    min_codon_len: int = 2,
+    phase: int = 0,
+    table: int | str | dict[str, str] = 1,
+) -> tuple[str, bool, int, int]:
     """
     Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
     
@@ -222,6 +415,7 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end",
         - if "tolerated_stops" is negative or None, an infinite number will be tolerated (full readthrough mode)
     max_nucleotide_trim: Maximum allowed nucleotides to trim when using ORF modes.
     phase: Number of bases to skip at the 5' end (reading frame phase: 0, 1, or 2).
+    table: NCBI genetic code table ID (default: 1 for Standard) or custom dictionary.
     """
 
     phase_offset = phase if phase in (1, 2) else 0
@@ -242,7 +436,16 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end",
 
     elif mode in ("orf", "orf_or_end", "orf_or_start"):
         search_seq = in_seq[phase_offset:] if phase_offset else in_seq
-        orfs = find_ORFs(search_seq, tolerated_stops=tolerated_stops, must_have_stop=must_have_stop, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
+        orfs = find_ORFs(
+            search_seq,
+            tolerated_stops=tolerated_stops,
+            must_have_stop=must_have_stop,
+            enforce_start_codon=enforce_start_codon,
+            start_codons=start_codons,
+            stop_codons=stop_codons,
+            min_codon_len=min_codon_len,
+            table=table,
+        )
         orf, orf_start, orf_end = choose_orf(orfs, mode=orf_choice_mode)
 
         if orf and (max_nucleotide_trim is None or (len(search_seq) - len(orf)) <= max_nucleotide_trim):

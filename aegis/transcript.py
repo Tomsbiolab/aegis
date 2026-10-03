@@ -337,8 +337,8 @@ class Transcript(Feature):
     def generate_best_protein(
         self,
         mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
-        start_codons: tuple[str, ...] = ("ATG",),
-        stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"),
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
         min_codon_len: int = 2,
         enforce_start_codon: bool = True,
         must_have_stop: bool = True,
@@ -347,7 +347,8 @@ class Transcript(Feature):
         max_nucleotide_trim: int | None = None,
         always_resolve_strand: bool = True,
         ignore_ambiguous_strands: bool = False,
-        quiet: bool = True
+        quiet: bool = True,
+        table: int | str | dict[str, str] = 1,
     ):
         """
         Extracts the best protein/ORF across the spliced exons of the transcript,
@@ -378,7 +379,8 @@ class Transcript(Feature):
                 correct_CDS=True,
                 always_resolve_strand=always_resolve_strand,
                 ignore_ambiguous_strands=ignore_ambiguous_strands,
-                quiet=quiet
+                quiet=quiet,
+                table=table,
             )
 
             if candidate_cds.protein is not None:

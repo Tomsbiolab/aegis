@@ -68,3 +68,60 @@ def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):
         generated_content = f.read()
         
     assert generated_content == expected_content, f"Output mismatch for {expected_filename}"
+
+
+def test_extract_cli_translation_options(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+    output_dir = tmp_path / "aegis_output" / "features"
+
+    args = [
+        str(gff3_path),
+        str(fasta_path),
+        "-f", "protein",
+        "-d", str(output_dir),
+        "-gc", "1",
+        "--auto-organelle-codes",
+        "--mito-code", "2",
+        "--plastid-code", "11",
+        "--adjust-internal-shifts", "intra_exon",
+        "-q",
+    ]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, f"Error: {result.stdout}"
+
+
+def test_extract_cli_unknown_mito_contig(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+    output_dir = tmp_path / "aegis_output" / "features"
+
+    args = [
+        str(gff3_path),
+        str(fasta_path),
+        "-f", "protein",
+        "-d", str(output_dir),
+        "--mitochondria-chroms", "nonexistent_mito",
+        "-q",
+    ]
+    result = runner.invoke(app, args)
+    assert result.exit_code != 0
+    assert "Specified mitochondrial chromosome 'nonexistent_mito' was not found" in str(result.exception or result.stdout)
+
+
+def test_extract_cli_invalid_adjust_shifts(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+    output_dir = tmp_path / "aegis_output" / "features"
+
+    args = [
+        str(gff3_path),
+        str(fasta_path),
+        "-f", "protein",
+        "-d", str(output_dir),
+        "--adjust-internal-shifts", "bad_shift_mode",
+        "-q",
+    ]
+    result = runner.invoke(app, args)
+    assert result.exit_code != 0
+    assert "Invalid adjust_internal_shifts" in result.output

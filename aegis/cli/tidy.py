@@ -117,8 +117,30 @@ def main(
     )] = False,
     print_orphaned_features: Annotated[bool, typer.Option(
         "--print-orphaned-features", help="Print orphaned features. Orphaned features are features which are not assigned to any gene, or genes which could not be incorporated into the annotation object. These are normally skipped."
-    )] = False
-    
+    )] = False,
+    adjust_internal_shifts: Annotated[str, typer.Option(
+        "--adjust-internal-shifts", help="Frameshift / phase handling mode: 'intra_exon' (default), 'all', or 'none'."
+    )] = "intra_exon",
+    genetic_code: Annotated[int, typer.Option(
+        "-gc", "--genetic-code", help="NCBI genetic code table number for nuclear genes (default: 1)."
+    )] = 1,
+    auto_organelle_codes: Annotated[bool, typer.Option(
+        "--auto-organelle-codes/--no-auto-organelle-codes", help="Automatically use mitochondrial and plastid genetic codes for organelle contigs (default: True)."
+    )] = True,
+    mito_code: Annotated[int, typer.Option(
+        "--mito-code", help="NCBI genetic code table number for mitochondrial contigs (default: 2)."
+    )] = 2,
+    plastid_code: Annotated[int, typer.Option(
+        "--plastid-code", help="NCBI genetic code table number for plastid/chloroplast contigs (default: 11)."
+    )] = 11,
+    mitochondria_chroms: Annotated[List[str], typer.Option(
+        "--mitochondria-chroms", help="Explicit list or comma-separated names of mitochondrial chromosomes/scaffolds to translate with --mito-code.",
+        callback=split_callback
+    )] = [],
+    chloroplast_chroms: Annotated[List[str], typer.Option(
+        "--chloroplast-chroms", help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code.",
+        callback=split_callback
+    )] = [],
 ):
     """
     Cleans and reformats a GFF/GTF file to correct common formatting errors and improve compatibility with other bioinformatics tools.
@@ -146,6 +168,12 @@ def main(
     for feature in features:
         if feature not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid feature: {feature}. Choose from: {RNA_CLASSES}")
+
+    if adjust_internal_shifts not in ("intra_exon", "all", "none"):
+        raise typer.BadParameter(f"Invalid adjust_internal_shifts: '{adjust_internal_shifts}'. Choose from: 'intra_exon', 'all', 'none'.")
+
+    mito_chroms = mitochondria_chroms if len(mitochondria_chroms) > 0 else None
+    chloro_chroms = chloroplast_chroms if len(chloroplast_chroms) > 0 else None
 
     if (rework_all_CDSs or infer_missing_CDSs) and not genome_file:
         raise typer.BadParameter("A genome FASTA file must be provided via --genome-file when using --rework-all-CDSs or --infer-missing-CDSs.")
@@ -176,7 +204,14 @@ def main(
         remove_transcripts_with_no_exons=remove_transcripts_with_no_exons,
         remove_missing_transcript_parent_references=remove_missing_transcript_parent_references,
         remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts,
-        skip_orphaned_features=not(print_orphaned_features)
+        skip_orphaned_features=not(print_orphaned_features),
+        adjust_internal_shifts=adjust_internal_shifts,
+        table=genetic_code,
+        auto_organelle_codes=auto_organelle_codes,
+        mito_table=mito_code,
+        plastid_table=plastid_code,
+        mitochondria_chroms=mito_chroms,
+        chloroplast_chroms=chloro_chroms,
     )
 
     if output_file == "{annotation-name}_tidy.gff3":

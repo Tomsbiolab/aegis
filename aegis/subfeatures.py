@@ -241,15 +241,32 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True, adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon"):
+    def generate_protein(
+        self,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        max_nucleotide_trim: int | None = None,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"]="longest",
+        must_have_stop: bool = False,
+        enforce_start_codon: bool = True,
+        min_codon_len: int = 2,
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
+        correct_CDS: bool = False,
+        always_resolve_strand: bool = True,
+        ignore_ambiguous_strands: bool = False,
+        quiet: bool = True,
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
+        table: int | str | dict[str, str] = 1,
+    ):
 
         if len(self.CDS_segments) > 1:
             self.CDS_segments.sort()
 
         if (self.strand == "." or self.strand == "?") and not ignore_ambiguous_strands:
             seq_fw, seq_rv = self.seqs
-            fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
-            rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
+            fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons, table=table), mode=orf_choice_mode)
+            rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons, table=table), mode=orf_choice_mode)
 
             has_orf = len(fw_orf[0]) > 0 or len(rv_orf[0]) > 0
             if has_orf or always_resolve_strand:
@@ -359,7 +376,8 @@ class CDS(Feature):
                 start_codons=start_codons, 
                 stop_codons=stop_codons, 
                 min_codon_len=min_codon_len,
-                phase=cds_phase
+                phase=cds_phase,
+                table=table,
             )
             corrected_segments = (
                 map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
@@ -369,7 +387,7 @@ class CDS(Feature):
 
         if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
 
-            protein_seq = translate(coding_seq)
+            protein_seq = translate(coding_seq, table=table)
 
             if corrected_segments:
                 protein_start = corrected_segments[0][0]

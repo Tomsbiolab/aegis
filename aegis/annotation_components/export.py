@@ -91,9 +91,34 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+    def proteins(
+        self,
+        only_main: bool = True,
+        verbose: bool = True,
+        used_id: str = "protein",
+        unique_proteins_per_gene: bool = False,
+        only_cds_main: bool = True,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+        quiet: bool = True,
         #deprecated arguments
-        custom_filename: str="", custom_path:str=""):
+        custom_filename: str = "",
+        custom_path: str = "",
+    ):
 
         if custom_filename != "":
             warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
@@ -115,7 +140,17 @@ class AnnotationExport(AnnotationComponent):
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(mode=mode)
+            self._annot.generate_proteins(
+                mode=mode,
+                quiet=quiet,
+                adjust_internal_shifts=adjust_internal_shifts,
+                table=table,
+                auto_organelle_codes=auto_organelle_codes,
+                mito_table=mito_table,
+                plastid_table=plastid_table,
+                mitochondria_chroms=mitochondria_chroms,
+                chloroplast_chroms=chloroplast_chroms,
+            )
 
         extra_suffixes = ["proteins"]
 
@@ -212,9 +247,28 @@ class AnnotationExport(AnnotationComponent):
 
                         f_out.write(f"\n{c.protein.seq}\n")
 
-    def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+    def unique_proteins(
+        self,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = False,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         #deprecated arguments
-        custom_path:str=""):
+        custom_path: str = "",
+    ):
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -228,7 +282,17 @@ class AnnotationExport(AnnotationComponent):
         if subfolder_name != "features":
             subfolder = True
 
-        self._annot.generate_protein_equivalences(mode=mode, quiet=quiet)
+        self._annot.generate_protein_equivalences(
+            mode=mode,
+            quiet=quiet,
+            adjust_internal_shifts=adjust_internal_shifts,
+            table=table,
+            auto_organelle_codes=auto_organelle_codes,
+            mito_table=mito_table,
+            plastid_table=plastid_table,
+            mitochondria_chroms=mitochondria_chroms,
+            chloroplast_chroms=chloroplast_chroms,
+        )
 
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
@@ -287,9 +351,29 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
 
-    def unique_CDSs(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, protein_oriented: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+    def unique_CDSs(
+        self,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = False,
+        protein_oriented: bool = True,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         #deprecated arguments
-        custom_path:str=""):
+        custom_path: str = "",
+    ):
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -308,7 +392,17 @@ class AnnotationExport(AnnotationComponent):
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
         if protein_oriented and not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(mode=mode, quiet=quiet)
+            self._annot.generate_proteins(
+                mode=mode,
+                quiet=quiet,
+                adjust_internal_shifts=adjust_internal_shifts,
+                table=table,
+                auto_organelle_codes=auto_organelle_codes,
+                mito_table=mito_table,
+                plastid_table=plastid_table,
+                mitochondria_chroms=mitochondria_chroms,
+                chloroplast_chroms=chloroplast_chroms,
+            )
 
         all_CDS_seqs = {}
         for genes in self._annot.chrs.values():
@@ -318,7 +412,7 @@ class AnnotationExport(AnnotationComponent):
                         for c in t.CDSs.values():
                             if protein_oriented:
                                 if c.protein is None:
-                                    c.generate_protein(mode=mode, quiet=quiet)
+                                    c.generate_protein(mode=mode, quiet=quiet, adjust_internal_shifts=adjust_internal_shifts, table=table)
                                 if c.protein is not None and c.protein.nuc_seq != "":
                                     all_CDS_seqs[c.id] = c.protein.nuc_seq
                             else:
@@ -345,9 +439,35 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
 
-    def CDSs(self, only_main: bool = True, verbose: bool = True, used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", protein_oriented: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = False,
+    def CDSs(
+        self,
+        only_main: bool = True,
+        verbose: bool = True,
+        used_id: str = "CDS",
+        unique_CDSs_per_gene: bool = False,
+        only_cds_main: bool = True,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        protein_oriented: bool = True,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+        quiet: bool = False,
         #deprecated arguments
-        custom_filename: str="", custom_path:str=""):
+        custom_filename: str = "",
+        custom_path: str = "",
+    ):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -416,7 +536,17 @@ class AnnotationExport(AnnotationComponent):
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
         if protein_oriented and not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(mode=mode, quiet=True)
+            self._annot.generate_proteins(
+                mode=mode,
+                quiet=True,
+                adjust_internal_shifts=adjust_internal_shifts,
+                table=table,
+                auto_organelle_codes=auto_organelle_codes,
+                mito_table=mito_table,
+                plastid_table=plastid_table,
+                mitochondria_chroms=mitochondria_chroms,
+                chloroplast_chroms=chloroplast_chroms,
+            )
 
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
@@ -439,7 +569,7 @@ class AnnotationExport(AnnotationComponent):
                         for c in candidate_cds_list:
                             if protein_oriented:
                                 if c.protein is None:
-                                    c.generate_protein(mode=mode, quiet=True)
+                                    c.generate_protein(mode=mode, quiet=True, adjust_internal_shifts=adjust_internal_shifts, table=table)
                                 if c.protein is not None and c.protein.nuc_seq != "":
                                     temp_cs.append(c)
                             else:

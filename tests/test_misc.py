@@ -407,6 +407,21 @@ class TestTranslate:
         # 17 nt is NOT a multiple of 3, but translate just stops when bytes run out
         assert len(prot) == 5
 
+    def test_alternative_genetic_code_table_2_vertebrate_mito(self):
+        # In Table 1: TGA is Stop (*), ATA is Ile (I), AGA is Arg (R)
+        # In Table 2: TGA is Trp (W), ATA is Met (M), AGA is Stop (*)
+        seq = "ATGATA TGATAA" # ATG (M), ATA (M in Table 2, I in Table 1), TGA (W in Table 2, * in Table 1), TAA (*)
+        assert translate("ATGATATGATAA", table=1) == "MI**"
+        assert translate("ATGATATGATAA", table=2) == "MMW*"
+
+        # AGA is stop in table 2
+        assert translate("ATGAGA", table=1) == "MR"
+        assert translate("ATGAGA", table=2) == "M*"
+
+        # IUPAC ambiguous codon: AGR (A or G).
+        # In Table 2, both AGA and AGG are stop (*), so AGR cleanly resolves to *
+        assert translate("ATGAGR", table=2) == "M*"
+
 
 # ============================================================
 # translate + trim_surplus

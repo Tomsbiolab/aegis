@@ -71,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str=2, plastid_table:int|str=11, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None):
         
         start_time = time.time()
 
@@ -98,6 +98,14 @@ class Annotation():
         self.merged = False
         self.sorted = False
         self.contains_promoters = False
+
+        self.adjust_internal_shifts = adjust_internal_shifts
+        self.table = table
+        self.auto_organelle_codes = auto_organelle_codes
+        self.mito_table = mito_table
+        self.plastid_table = plastid_table
+        self.mitochondria_chroms = mitochondria_chroms
+        self.chloroplast_chroms = chloroplast_chroms
 
         self.genome = genome
         
@@ -303,7 +311,17 @@ class Annotation():
         self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            self.rework_CDSs(override=rework_all_CDSs, fallback_to_trim=fallback_to_trim, quiet=quiet)
+            self.rework_CDSs(
+                override=rework_all_CDSs,
+                fallback_to_trim=fallback_to_trim,
+                quiet=quiet,
+                table=table,
+                auto_organelle_codes=auto_organelle_codes,
+                mito_table=mito_table,
+                plastid_table=plastid_table,
+                mitochondria_chroms=mitochondria_chroms,
+                chloroplast_chroms=chloroplast_chroms,
+            )
             self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
 
         if rename_source:
@@ -1575,17 +1593,88 @@ class Annotation():
         must_have_stop: bool = False,
         enforce_start_codon: bool = True,
         min_codon_len: int = 2,
-        start_codons: tuple[str, ...] = ("ATG",),
-        stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"),
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
         correct_CDS: bool = False,
         always_resolve_strand: bool = True,
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
     ):
+        if adjust_internal_shifts is None:
+            adjust_internal_shifts = getattr(self, "adjust_internal_shifts", "intra_exon")
+        if table is None:
+            table = getattr(self, "table", 1)
+        if auto_organelle_codes is None:
+            auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
+        if mito_table is None:
+            mito_table = getattr(self, "mito_table", 2)
+        if plastid_table is None:
+            plastid_table = getattr(self, "plastid_table", 11)
+        if mitochondria_chroms is None:
+            mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
+        if chloroplast_chroms is None:
+            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
+
+        user_mito_set: set[str] = set()
+        if mitochondria_chroms:
+            if isinstance(mitochondria_chroms, str):
+                raw_m = [c.strip() for c in mitochondria_chroms.split(",") if c.strip()]
+            else:
+                raw_m = list(mitochondria_chroms)
+            all_known = set(self.chrs.keys())
+            if self.genome:
+                all_known.update(self.genome.scaffolds.keys())
+            for mc in raw_m:
+                if mc not in all_known:
+                    raise ValueError(f"Specified mitochondrial chromosome '{mc}' was not found in the annotation or genome.")
+            user_mito_set = set(raw_m)
+
+        user_chloro_set: set[str] = set()
+        if chloroplast_chroms:
+            if isinstance(chloroplast_chroms, str):
+                raw_c = [c.strip() for c in chloroplast_chroms.split(",") if c.strip()]
+            else:
+                raw_c = list(chloroplast_chroms)
+            all_known = set(self.chrs.keys())
+            if self.genome:
+                all_known.update(self.genome.scaffolds.keys())
+            for cc in raw_c:
+                if cc not in all_known:
+                    raise ValueError(f"Specified chloroplast chromosome '{cc}' was not found in the annotation or genome.")
+            user_chloro_set = set(raw_c)
+
         for chrom, genes in self.chrs.items():
             if self.genome is not None and chrom not in self.genome.scaffolds:
                 continue
+
+            if chrom in user_mito_set:
+                chrom_table = mito_table
+            elif chrom in user_chloro_set:
+                chrom_table = plastid_table
+            elif auto_organelle_codes:
+                scaffold = self.genome.scaffolds.get(chrom) if self.genome else None
+                if scaffold is not None and getattr(scaffold, "mitochondria", False):
+                    chrom_table = mito_table
+                elif scaffold is not None and getattr(scaffold, "chloroplast", False):
+                    chrom_table = plastid_table
+                else:
+                    lower_chrom = chrom.lower()
+                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt"):
+                        chrom_table = mito_table
+                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt"):
+                        chrom_table = plastid_table
+                    else:
+                        chrom_table = table
+            else:
+                chrom_table = table
+
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
@@ -1604,6 +1693,7 @@ class Annotation():
                             ignore_ambiguous_strands=ignore_ambiguous_strands,
                             quiet=quiet,
                             adjust_internal_shifts=adjust_internal_shifts,
+                            table=chrom_table,
                         )
                     if correct_CDS:
                         t.update(quiet=quiet)
@@ -1611,9 +1701,30 @@ class Annotation():
                     g.update(quiet=quiet)
         self.contains_protein_sequences = True
 
-    def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = True):
+    def generate_protein_equivalences(
+        self,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        quiet: bool = True,
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+    ):
         if not self.contains_protein_sequences:
-            self.generate_proteins(mode=mode)
+            self.generate_proteins(
+                mode=mode,
+                quiet=quiet,
+                adjust_internal_shifts=adjust_internal_shifts,
+                table=table,
+                auto_organelle_codes=auto_organelle_codes,
+                mito_table=mito_table,
+                plastid_table=plastid_table,
+                mitochondria_chroms=mitochondria_chroms,
+                chloroplast_chroms=chloroplast_chroms,
+            )
 
         all_protein_seqs = {}
         self.all_protein_ids = {}
@@ -2173,31 +2284,108 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, fallback_to_trim:bool=False, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
+    def rework_CDSs(
+        self,
+        override: bool = True,
+        coding_ratio_threshold: float = 0.8,
+        fallback_to_trim: bool = False,
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
+        min_codon_len: int = 2,
+        quiet: bool = False,
+        table: int | str | None = None,
+        auto_organelle_codes: bool | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+    ):
         start_time = time.time()
+
+        if table is None:
+            table = getattr(self, "table", 1)
+        if auto_organelle_codes is None:
+            auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
+        if mito_table is None:
+            mito_table = getattr(self, "mito_table", 2)
+        if plastid_table is None:
+            plastid_table = getattr(self, "plastid_table", 11)
+        if mitochondria_chroms is None:
+            mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
+        if chloroplast_chroms is None:
+            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
+
+        user_mito_set: set[str] = set()
+        if mitochondria_chroms:
+            if isinstance(mitochondria_chroms, str):
+                raw_m = [c.strip() for c in mitochondria_chroms.split(",") if c.strip()]
+            else:
+                raw_m = list(mitochondria_chroms)
+            all_known = set(self.chrs.keys())
+            if self.genome:
+                all_known.update(self.genome.scaffolds.keys())
+            for mc in raw_m:
+                if mc not in all_known:
+                    raise ValueError(f"Specified mitochondrial chromosome '{mc}' was not found in the annotation or genome.")
+            user_mito_set = set(raw_m)
+
+        user_chloro_set: set[str] = set()
+        if chloroplast_chroms:
+            if isinstance(chloroplast_chroms, str):
+                raw_c = [c.strip() for c in chloroplast_chroms.split(",") if c.strip()]
+            else:
+                raw_c = list(chloroplast_chroms)
+            all_known = set(self.chrs.keys())
+            if self.genome:
+                all_known.update(self.genome.scaffolds.keys())
+            for cc in raw_c:
+                if cc not in all_known:
+                    raise ValueError(f"Specified chloroplast chromosome '{cc}' was not found in the annotation or genome.")
+            user_chloro_set = set(raw_c)
 
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
     
-        for genes in self.chrs.values():
+        for chrom, genes in self.chrs.items():
+            if chrom in user_mito_set:
+                chrom_table = mito_table
+            elif chrom in user_chloro_set:
+                chrom_table = plastid_table
+            elif auto_organelle_codes:
+                scaffold = self.genome.scaffolds.get(chrom) if self.genome else None
+                if scaffold is not None and getattr(scaffold, "mitochondria", False):
+                    chrom_table = mito_table
+                elif scaffold is not None and getattr(scaffold, "chloroplast", False):
+                    chrom_table = plastid_table
+                else:
+                    lower_chrom = chrom.lower()
+                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt"):
+                        chrom_table = mito_table
+                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt"):
+                        chrom_table = plastid_table
+                    else:
+                        chrom_table = table
+            else:
+                chrom_table = table
+
             for g in genes.values():
                 progress_bar.update(1)
                 for t in g.transcripts.values():
                     if t.coding and not override:
                         continue
 
-                    t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len, quiet=quiet)
+                    t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
                     t.update(quiet=quiet)
 
                     if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, tolerated_stops=1, min_codon_len=min_codon_len, quiet=quiet)
+                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, tolerated_stops=1, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
                     t.update(quiet=quiet)
 
                     if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet)
+                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
                     t.update(quiet=quiet)
 
                     if t.coding_ratio < coding_ratio_threshold and fallback_to_trim:
-                        t.generate_best_protein(mode="orf_or_end", start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet)
+                        t.generate_best_protein(mode="orf_or_end", start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
                     t.update(quiet=quiet)
 
                 g.update(quiet=quiet)

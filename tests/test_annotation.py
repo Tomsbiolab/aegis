@@ -2736,3 +2736,98 @@ class TestAnnotationGenerateProteinsCorrectCDS:
         assert cds.CDS_segments[0].start == 1
         assert cds.CDS_segments[0].end == 30
         assert cds.size == 30
+
+
+# ============================================================
+# Organelle Translation and Genetic Codes
+# ============================================================
+
+class TestOrganelleTranslation:
+    def test_autodetect_mitochondria(self, tmp_path):
+        # TGA is Stop in Table 1, but Trp (W) in Table 2 (Vertebrate Mitochondrial)
+        # ATGTGATAA: in Table 1 -> M (stops at TGA); in Table 2 -> MW (stops at TAA)
+        gff_content = (
+            "##gff-version 3\n"
+            "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
+            "chrM\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_mito;Parent=g_mito\n"
+            "chrM\ttest\texon\t1\t9\t.\t+\t.\tID=e_mito;Parent=t_mito\n"
+            "chrM\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_mito;Parent=t_mito\n"
+        )
+        gff_file = tmp_path / "mito_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chrM": "ATGTGATAA"})
+        genome.scaffolds["chrM"].mitochondria = True
+
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+        annot.generate_proteins(mode="end", quiet=True)
+
+        cds = annot.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds.protein is not None
+        assert cds.protein.seq == "MW*"
+
+    def test_disable_auto_organelle_codes(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
+            "chrM\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_mito;Parent=g_mito\n"
+            "chrM\ttest\texon\t1\t9\t.\t+\t.\tID=e_mito;Parent=t_mito\n"
+            "chrM\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_mito;Parent=t_mito\n"
+        )
+        gff_file = tmp_path / "mito_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chrM": "ATGTGATAA"})
+        genome.scaffolds["chrM"].mitochondria = True
+
+        # When auto_organelle_codes is False, Table 1 is used -> TGA is Stop (*), TAA is Stop (*) -> M**
+        annot = Annotation(str(gff_file), genome=genome, auto_organelle_codes=False, quiet=True)
+        annot.generate_proteins(mode="end", quiet=True)
+
+        cds = annot.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds.protein is not None
+        assert cds.protein.seq == "M**"
+
+    def test_user_specified_contig_override(self, tmp_path):
+        # Scaffold has non-standard name "scaff_custom" and mitochondria=False
+        gff_content = (
+            "##gff-version 3\n"
+            "scaff_custom\ttest\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+            "scaff_custom\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
+            "scaff_custom\ttest\texon\t1\t9\t.\t+\t.\tID=e1;Parent=t1\n"
+            "scaff_custom\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "custom_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"scaff_custom": "ATGTGATAA"})
+        # User manually specifies scaff_custom as mitochondria -> Table 2 -> MW*
+        annot = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["scaff_custom"], quiet=True)
+        annot.generate_proteins(mode="end", quiet=True)
+
+        cds = annot.chrs["scaff_custom"]["g1"].transcripts["t1"].CDSs["cds1"]
+        assert cds.protein is not None
+        assert cds.protein.seq == "MW*"
+
+    def test_missing_contig_raises_value_error(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t9\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chr1": "ATGTGATAA"})
+
+        # Unknown mitochondrial contig
+        with pytest.raises(ValueError, match="Specified mitochondrial chromosome 'nonexistent_chr' was not found"):
+            annot = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["nonexistent_chr"], quiet=True)
+            annot.generate_proteins()
+
+        # Unknown chloroplast contig
+        with pytest.raises(ValueError, match="Specified chloroplast chromosome 'nonexistent_plastid' was not found"):
+            annot = Annotation(str(gff_file), genome=genome, chloroplast_chroms=["nonexistent_plastid"], quiet=True)
+            annot.generate_proteins()
