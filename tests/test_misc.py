@@ -268,6 +268,14 @@ class TestSequenceHash:
         orfs = find_ORFs(seq, must_have_stop=False)
         assert len(orfs) >= 1
 
+    def test_rna_find_orfs(self):
+        seq = "AUGAAAUAA"
+        orfs = find_ORFs(seq, must_have_stop=True)
+        assert len(orfs) == 1
+        assert orfs[0][0] == "AUGAAAUAA"
+        assert orfs[0][1] == 0
+        assert orfs[0][2] == 8
+
 
 class TestLongestORF:
     def test_single_orf(self):
@@ -421,6 +429,14 @@ class TestTranslate:
         # IUPAC ambiguous codon: AGR (A or G).
         # In Table 2, both AGA and AGG are stop (*), so AGR cleanly resolves to *
         assert translate("ATGAGR", table=2) == "M*"
+
+    def test_rna_translation(self):
+        assert translate("AUGAAAUAA") == "MK*"
+        assert translate("augaaauaa") == "MK*"
+        assert translate("AugAaaUaa") == "MK*"
+
+    def test_table_none_defaults_to_table_1(self):
+        assert translate("ATGAAATAA", table=None) == "MK*"
 
 
 # ============================================================

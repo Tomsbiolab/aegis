@@ -259,6 +259,8 @@ class CDS(Feature):
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
         table: int | str | dict[str, str] = 1,
     ):
+        if table is None:
+            table = 1
 
         if len(self.CDS_segments) > 1:
             self.CDS_segments.sort()

@@ -837,6 +837,7 @@
       - `def test_disable_auto_organelle_codes(self, tmp_path):`
       - `def test_user_specified_contig_override(self, tmp_path):`
       - `def test_missing_contig_raises_value_error(self, tmp_path):`
+      - `def test_autodetect_chrmt_and_chrpt_by_name(self, tmp_path):`
     - test_cli_extract.py
       - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
       - `def test_extract_cli_translation_options(test_data_dir, tmp_path):`
@@ -913,6 +914,8 @@
       - `def test_whitespace_stripped(self):`
     - test_export_cds.py
       - `def test_export_cds_protein_oriented_and_raw(test_data_dir, tmp_path):`
+      - `def test_export_unique_proteins_per_gene(test_data_dir, tmp_path):`
+      - `def test_export_cds_with_table_none(test_data_dir, tmp_path):`
     - test_feature.py
       - `class TestFeatureInit:`
       - `def test_basic_properties(self, make_feature):`
@@ -1055,6 +1058,7 @@
       - `def test_orfs(self):`
       - `def test_no_start_codon(self):`
       - `def test_no_stop_codon_without_must_have_stop(self):`
+      - `def test_rna_find_orfs(self):`
       - `class TestLongestORF:`
       - `def test_single_orf(self):`
       - `def test_multiple_orfs(self):`
@@ -1074,6 +1078,8 @@
       - `def test_ambiguous_codons_produce_gap(self):`
       - `def test_longer_sequence(self):`
       - `def test_alternative_genetic_code_table_2_vertebrate_mito(self):`
+      - `def test_rna_translation(self):`
+      - `def test_table_none_defaults_to_table_1(self):`
       - `class TestTranslatePipeline:`
       - `def test_orf_or_end_extracts_orf(self):`
       - `def test_orf_or_end_with_surplus(self):`

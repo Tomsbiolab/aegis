@@ -203,6 +203,8 @@ def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict
     for a given NCBI genetic code table ID, name, or custom dictionary.
     All tables are fully IUPAC-extended for ambiguous base calling.
     """
+    if table is None:
+        table = 1
     if isinstance(table, str):
         if table.isdigit():
             table = int(table)
@@ -239,7 +241,7 @@ def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict
 
 def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:
     """
-    Translates a DNA sequence to Amino Acids.
+    Translates a DNA or RNA sequence to Amino Acids.
     Handles all ambiguous IUPAC bases according to the specified genetic code table.
     Case-insensitive.
     Assumes input is a multiple of 3.
@@ -249,7 +251,8 @@ def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:
     else:
         _, _, b_dict, _, _ = get_genetic_code_tables(table)
 
-    it = iter(seq.upper().encode('ascii'))
+    normalized_seq = seq.upper().replace("U", "T")
+    it = iter(normalized_seq.encode('ascii'))
     return "".join(map(b_dict.__getitem__, zip(it, it, it)))
 
 def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
@@ -312,11 +315,11 @@ def find_ORFs(
         if start_codons is None:
             start_codons = def_starts
 
-    stop_set = frozenset(s.upper() for s in (stop_codons if isinstance(stop_codons, (set, frozenset, tuple, list)) else [stop_codons]))
-    start_codons = tuple(s.upper() for s in start_codons)
+    stop_set = frozenset(s.upper().replace("U", "T") for s in (stop_codons if isinstance(stop_codons, (set, frozenset, tuple, list)) else [stop_codons]))
+    start_codons = tuple(s.upper().replace("U", "T") for s in start_codons)
 
     seq_len = len(in_seq)
-    seq_upper = in_seq.upper()
+    seq_upper = in_seq.upper().replace("U", "T")
     min_seq_len = min_codon_len * 3
 
     f0, f1, f2 = [], [], []

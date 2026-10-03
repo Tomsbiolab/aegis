@@ -2831,3 +2831,30 @@ class TestOrganelleTranslation:
         with pytest.raises(ValueError, match="Specified chloroplast chromosome 'nonexistent_plastid' was not found"):
             annot = Annotation(str(gff_file), genome=genome, chloroplast_chroms=["nonexistent_plastid"], quiet=True)
             annot.generate_proteins()
+
+    def test_autodetect_chrmt_and_chrpt_by_name(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chrMT\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mt\n"
+            "chrMT\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_mt;Parent=g_mt\n"
+            "chrMT\ttest\texon\t1\t9\t.\t+\t.\tID=e_mt;Parent=t_mt\n"
+            "chrMT\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_mt;Parent=t_mt\n"
+            "chrPt\ttest\tgene\t1\t9\t.\t+\t.\tID=g_pt\n"
+            "chrPt\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_pt;Parent=g_pt\n"
+            "chrPt\ttest\texon\t1\t9\t.\t+\t.\tID=e_pt;Parent=t_pt\n"
+            "chrPt\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_pt;Parent=t_pt\n"
+        )
+        gff_file = tmp_path / "organelle_by_name_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chrMT": "ATGTGATAA", "chrPt": "GTGAAATAA"})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+        annot.generate_proteins(mode="end", quiet=True)
+
+        cds_mt = annot.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
+        assert cds_mt.protein is not None
+        assert cds_mt.protein.seq == "MW*"
+
+        cds_pt = annot.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"]
+        assert cds_pt.protein is not None
+        assert cds_pt.protein.seq == "VK*"

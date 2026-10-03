@@ -1666,9 +1666,9 @@ class Annotation():
                     chrom_table = plastid_table
                 else:
                     lower_chrom = chrom.lower()
-                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt"):
+                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
                         chrom_table = mito_table
-                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt"):
+                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
                         chrom_table = plastid_table
                     else:
                         chrom_table = table
@@ -2358,9 +2358,9 @@ class Annotation():
                     chrom_table = plastid_table
                 else:
                     lower_chrom = chrom.lower()
-                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt"):
+                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
                         chrom_table = mito_table
-                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt"):
+                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
                         chrom_table = plastid_table
                     else:
                         chrom_table = table

@@ -224,7 +224,7 @@ class AnnotationExport(AnnotationComponent):
                             if i > 0:
                                 add = True
                                 for c2 in final_cs:
-                                    if c1.equal_segments(c2):
+                                    if c1.equal_segments(c2) or (c1.protein is not None and c2.protein is not None and c1.protein.seq == c2.protein.seq):
                                         add = False
                                 if add:
                                     final_cs.append(c1)
@@ -412,7 +412,8 @@ class AnnotationExport(AnnotationComponent):
                         for c in t.CDSs.values():
                             if protein_oriented:
                                 if c.protein is None:
-                                    c.generate_protein(mode=mode, quiet=quiet, adjust_internal_shifts=adjust_internal_shifts, table=table)
+                                    table_to_use = table if table is not None else getattr(self._annot, "table", 1)
+                                    c.generate_protein(mode=mode, quiet=quiet, adjust_internal_shifts=adjust_internal_shifts, table=table_to_use)
                                 if c.protein is not None and c.protein.nuc_seq != "":
                                     all_CDS_seqs[c.id] = c.protein.nuc_seq
                             else:
@@ -569,7 +570,8 @@ class AnnotationExport(AnnotationComponent):
                         for c in candidate_cds_list:
                             if protein_oriented:
                                 if c.protein is None:
-                                    c.generate_protein(mode=mode, quiet=True, adjust_internal_shifts=adjust_internal_shifts, table=table)
+                                    table_to_use = table if table is not None else getattr(self._annot, "table", 1)
+                                    c.generate_protein(mode=mode, quiet=True, adjust_internal_shifts=adjust_internal_shifts, table=table_to_use)
                                 if c.protein is not None and c.protein.nuc_seq != "":
                                     temp_cs.append(c)
                             else:
