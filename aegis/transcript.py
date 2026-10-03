@@ -227,13 +227,16 @@ class Transcript(Feature):
                         # Directly adjacent segments (seg.start == cur_end + 1) only collapse if phase-compatible
                         prev_seg = group_segs[-1]
                         phase_compatible = True
-                        if seg.start == cur_end + 1 and prev_seg.phase is not None and seg.phase is not None:
+                        is_adjacent = seg.start == cur_end + 1
+                        is_short_overlap = seg.start <= cur_end and (cur_end - seg.start + 1) in (1, 2)
+                        if (is_adjacent or is_short_overlap) and prev_seg.phase is not None and seg.phase is not None:
+                            overlap = (cur_end - seg.start + 1) if is_short_overlap else 0
                             if cds.strand != "-":
                                 prev_lo = (prev_seg.size - prev_seg.phase) % 3
-                                phase_compatible = (prev_lo + seg.phase) % 3 == 0
+                                phase_compatible = (prev_lo - overlap + seg.phase) % 3 == 0
                             else:
                                 seg_lo = (seg.size - seg.phase) % 3
-                                phase_compatible = (seg_lo + prev_seg.phase) % 3 == 0
+                                phase_compatible = (seg_lo - overlap + prev_seg.phase) % 3 == 0
 
                         if phase_compatible:
                             if seg.end > cur_end:

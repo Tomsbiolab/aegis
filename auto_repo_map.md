@@ -225,7 +225,7 @@
       - `def __init__(self, source, score, evalue):`
     - misc_features.py
       - `class Protein():`
-      - `def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str=""):`
+      - `def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None):`
       - `def copy(self):`
       - `def get_blast_hits_key(self, source_priority:list) -> tuple:`
       - `def compare_blast_hits(self, other:Protein, source_priority:list) -> bool:`
@@ -238,6 +238,9 @@
       - `def end_stop(self) -> bool:`
       - `def early_stop(self) -> bool:`
       - `def ATG_late(self) -> bool:`
+      - `def segments(self) -> tuple[tuple[int, int], ...]:`
+      - `def partial_5prime(self) -> bool:`
+      - `def partial_3prime(self) -> bool:`
       - `def summary_tag(self) -> str:`
       - `class Promoter(Feature):`
       - `def __init__(self, promoter_type, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
@@ -270,7 +273,7 @@
       - `def hard_seqs(self) -> list[str]:`
       - `def five_prime_UTR_seq(self) -> str:`
       - `def three_prime_UTR_seq(self) -> str:`
-      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):`
+      - `def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True, adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon"):`
       - `def clear_protein(self):`
       - `def equal_segments(self, other:CDS):`
       - `def _calculate_relative_coding_coords(self) -> tuple[int, int]:`
@@ -681,6 +684,9 @@
       - `class TestAnnotationExportGtf:`
       - `def test_export_gtf(self, sample_gff3_file, tmp_path):`
       - `def test_export_gtf_just_genes(self, sample_gff3_file, tmp_path):`
+      - `def test_export_gtf_strict_2_2(self, sample_gff3_file, tmp_path):`
+      - `class TestPhaseWarnings:`
+      - `def test_phase_mismatch_across_intron_warning(self, tmp_path):`
       - `class TestAnnotationRenameChromosomes:`
       - `def test_rename_chromosome(self, multi_gene_gff3_file):`
       - `def test_rename_updates_transcript_chromosome(self, multi_gene_gff3_file):`
@@ -1079,6 +1085,10 @@
       - `def test_protein_with_phase_2_minus_strand(self, make_CDS_segment, make_CDS):`
       - `def test_protein_with_internal_phase_shift_plus_strand(self, make_CDS_segment, make_CDS):`
       - `def test_protein_with_internal_phase_shift_minus_strand(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_with_intron_phase_mismatch_continuous_default(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_with_intron_phase_mismatch_forced_all(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_segments_and_partial_properties(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_partial_5prime_and_3prime(self):`
       - `class TestOverlap:`
       - `def test_overlapping_features(self, create_test_feature):`
       - `def test_overlapping_features_displaced(self, create_test_feature):`
@@ -1191,6 +1201,8 @@
       - `def test_collapse_cds_preserves_initial_phase_plus(self, make_transcript, make_CDS, make_CDS_segment):`
       - `def test_collapse_cds_preserves_initial_phase_minus(self, make_transcript, make_CDS, make_CDS_segment):`
       - `def test_collapse_cds_does_not_merge_across_internal_phase_shift(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_cds_preserves_1bp_overlap_frameshift(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_cds_merges_1bp_overlap_compatible_phase(self, make_transcript, make_CDS, make_CDS_segment):`
       - `class TestCoordinateEdgeCases:`
       - `def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):`
       - `def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):`

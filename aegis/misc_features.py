@@ -10,9 +10,10 @@ from .feature import Feature
 
 class Protein():
 
-    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "nucleotide_surplus", "seq", "nuc_seq", "partial", "truncated", "start", "end")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "nucleotide_surplus", "seq", "nuc_seq", "partial", "truncated", "start", "end", "_segments")
 
     _blast_hits: list[BlastHit] | None
+    _segments: tuple[tuple[int, int], ...] | None
     start: int
     end: int
     ch: str
@@ -23,13 +24,14 @@ class Protein():
     nuc_seq: str
     nucleotide_surplus: bool
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str=""):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None):
         self.id = prot_id
         self.ch = chrom
         self.start = start
         self.end = end
         self.readthrough = readthrough
         self._blast_hits = None
+        self._segments = segments
 
         self.seq = sequence
         self.nuc_seq = nuc_seq
@@ -112,6 +114,23 @@ class Protein():
     @property
     def ATG_late(self) -> bool:
         return "M" in self.seq[1:]
+
+    @property
+    def segments(self) -> tuple[tuple[int, int], ...]:
+        """Genomic coordinate intervals for the translated protein codons."""
+        if self._segments is not None:
+            return self._segments
+        return ((self.start, self.end),)
+
+    @property
+    def partial_5prime(self) -> bool:
+        """Whether the protein is partial at the 5' end (lacks ATG start)."""
+        return not self.ATG_start
+
+    @property
+    def partial_3prime(self) -> bool:
+        """Whether the protein is partial at the 3' end (lacks stop codon or has nucleotide surplus)."""
+        return not self.end_stop or self.nucleotide_surplus
 
     @property
     def summary_tag(self) -> str:

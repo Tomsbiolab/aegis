@@ -162,7 +162,8 @@ class Annotation():
             "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
             "possible_policistronic_transcript", "transcript_with_no_exons",
             "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
-            "feature_exceeds_scaffold_length", "chromosome_not_in_genome"
+            "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
+            "phase_mismatch_across_intron"
         ]
 
         self.warnings = {key: set() for key in keys}
@@ -1279,12 +1280,23 @@ class Annotation():
                 g.collapse_subfeatures(exons=collapse_exons, CDSs=collapse_CDSs)
                 for t in g.transcripts.values():
                     t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
-                    if t.polycistronic == "no":
-                        continue
-                    elif t.polycistronic == "maybe":
+                    if t.polycistronic == "maybe":
                         self.warnings["possible_policistronic_transcript"].add(t.id) 
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].add(t.id)
+                    for c in t.CDSs.values():
+                        if len(c.CDS_segments) > 1:
+                            working_segs = c.CDS_segments if c.strand != "-" else list(reversed(c.CDS_segments))
+                            prev_cs = working_segs[0]
+                            prev_lo = (prev_cs.size - (prev_cs.phase or 0)) % 3 if prev_cs.phase is not None else None
+                            for next_cs in working_segs[1:]:
+                                if prev_lo is not None and next_cs.phase is not None and (prev_lo + next_cs.phase) % 3 != 0:
+                                    is_contiguous = (next_cs.start <= prev_cs.end + 2) if c.strand != "-" else (prev_cs.start <= next_cs.end + 2)
+                                    if not is_contiguous:
+                                        self.warnings["phase_mismatch_across_intron"].add(c.id)
+                                if next_cs.phase is not None:
+                                    prev_lo = (next_cs.size - next_cs.phase) % 3
+                                prev_cs = next_cs
                 g.update(quiet=quiet)
 
         if count > 0:
@@ -1569,6 +1581,7 @@ class Annotation():
         always_resolve_strand: bool = True,
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
     ):
         for chrom, genes in self.chrs.items():
             if self.genome is not None and chrom not in self.genome.scaffolds:
@@ -1590,6 +1603,7 @@ class Annotation():
                             always_resolve_strand=always_resolve_strand,
                             ignore_ambiguous_strands=ignore_ambiguous_strands,
                             quiet=quiet,
+                            adjust_internal_shifts=adjust_internal_shifts,
                         )
                     if correct_CDS:
                         t.update(quiet=quiet)

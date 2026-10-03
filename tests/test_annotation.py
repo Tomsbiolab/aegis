@@ -946,6 +946,43 @@ class TestAnnotationExportGtf:
             if len(parts) >= 3:
                 assert parts[2] == "gene"
 
+    def test_export_gtf_strict_2_2(self, sample_gff3_file, tmp_path):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), subfolder=True, strict_gtf_2_2=True, UTRs=True, quiet=True)
+        out_dir = tmp_path / "out_gtfs"
+        gtf_files = list(out_dir.glob("*.gtf"))
+        content = gtf_files[0].read_text()
+        lines = [l for l in content.strip().split("\n") if not l.startswith("#") and l != "###"]
+        features = [l.split("\t")[2] for l in lines if len(l.split("\t")) >= 3]
+        # Strict GTF 2.2 should not have gene or transcript lines
+        assert "gene" not in features
+        assert "transcript" not in features
+        # Features should only be exon, CDS, 5UTR, 3UTR, etc.
+        assert "exon" in features or "CDS" in features
+        for f in features:
+            assert f in ("exon", "CDS", "5UTR", "3UTR", "start_codon", "stop_codon")
+
+
+class TestPhaseWarnings:
+
+    def test_phase_mismatch_across_intron_warning(self, tmp_path):
+        # seg1: 1000..1099 (len 100), phase 0 -> leftover = 1. Expected seg2 phase = 2.
+        # seg2: 2000..2099 (len 100), phase 0 (mismatch: (1 + 0) % 3 != 0 across intron)
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True)
+        assert len(annot.warnings["phase_mismatch_across_intron"]) == 1
+
 
 # ============================================================
 # Annotation — rename_chromosomes

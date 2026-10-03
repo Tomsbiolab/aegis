@@ -902,7 +902,7 @@ class AnnotationExport(AnnotationComponent):
                         f_out.write("###\n")
 
     def gtf(self, 
-            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False,
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, strict_gtf_2_2: bool = False,
             # Deprecated arguments
             custom_path: str = "", tag: str = ".gtf"):
 
@@ -957,7 +957,8 @@ class AnnotationExport(AnnotationComponent):
                         if gene_1bp_feature:
                             continue
 
-                    f_out.write(g.print_gtf())
+                    if not strict_gtf_2_2 or just_genes:
+                        f_out.write(g.print_gtf())
 
                     if just_genes:
                         continue
@@ -966,10 +967,11 @@ class AnnotationExport(AnnotationComponent):
                         if main_only:
                             if not t.main:
                                 continue
-                        original_feature = t.feature
-                        t.feature = "transcript"
-                        f_out.write(t.print_gtf())
-                        t.feature = original_feature
+                        if not strict_gtf_2_2:
+                            original_feature = t.feature
+                            t.feature = "transcript"
+                            f_out.write(t.print_gtf())
+                            t.feature = original_feature
                         for e in t.exons:
                             f_out.write(e.print_gtf())
                         for c in t.CDSs.values():
@@ -981,7 +983,16 @@ class AnnotationExport(AnnotationComponent):
                             if UTRs:
                                 if hasattr(c, "UTRs"):
                                     for u in c.UTRs:
-                                        f_out.write(u.print_gtf())
+                                        if strict_gtf_2_2:
+                                            orig_ft = u.feature
+                                            if u.prime == "5'":
+                                                u.feature = "5UTR"
+                                            elif u.prime == "3'":
+                                                u.feature = "3UTR"
+                                            f_out.write(u.print_gtf())
+                                            u.feature = orig_ft
+                                        else:
+                                            f_out.write(u.print_gtf())
 
                     if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
                         continue

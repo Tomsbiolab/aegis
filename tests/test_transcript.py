@@ -675,6 +675,40 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[1].end == 1199
         assert cds.CDS_segments[1].phase == 0
 
+    def test_collapse_cds_preserves_1bp_overlap_frameshift(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        # seg1: 1000..1099 (size 100), phase 0 -> leftover = 1
+        # seg2: 1099..1199 (1-bp overlap at 1099), phase 1 -> (1 - 1 + 1) % 3 = 1 != 0 (incompatible -1 frameshift)
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099, phase=0)
+        seg2 = make_CDS_segment("s2", strand="+", start=1099, end=1199, phase=1)
+        cds = make_CDS(segments=[seg1, seg2], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        # Should NOT collapse because of incompatible phase in 1bp overlap
+        assert len(cds.CDS_segments) == 2
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1099
+        assert cds.CDS_segments[1].start == 1099
+        assert cds.CDS_segments[1].end == 1199
+
+    def test_collapse_cds_merges_1bp_overlap_compatible_phase(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        # seg1: 1000..1099 (size 100), phase 0 -> leftover = 1
+        # seg2: 1099..1199 (1-bp overlap at 1099), phase 0 -> (1 - 1 + 0) % 3 = 0 (compatible phase)
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099, phase=0)
+        seg2 = make_CDS_segment("s2", strand="+", start=1099, end=1199, phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        # Should collapse because phase is compatible
+        assert len(cds.CDS_segments) == 1
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1199
+
 
 # ============================================================
 # Boundary & overlap edge cases

@@ -241,7 +241,7 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):
+    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True, adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon"):
 
         if len(self.CDS_segments) > 1:
             self.CDS_segments.sort()
@@ -265,38 +265,88 @@ class CDS(Feature):
 
         cds_phase = self.phase if self.phase in (1, 2) else 0
 
-        # Check if the CDS has an internal non-canonical phase shift (e.g. ribosomal frameshift, pseudogene indel)
+        # Determine internal shift adjustment mode: "intra_exon" (default), "all", or "none"
+        if adjust_internal_shifts is True or adjust_internal_shifts == "intra_exon":
+            adj_mode = "intra_exon"
+        elif adjust_internal_shifts == "all":
+            adj_mode = "all"
+        else:
+            adj_mode = "none"
+
         working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
         has_internal_shift = False
+        shifts_to_adjust = False
         if len(working_segs) > 1 and all(cs.phase in (0, 1, 2) for cs in working_segs):
             prev_lo = (working_segs[0].size - (working_segs[0].phase or 0)) % 3
+            prev_seg = working_segs[0]
             for cs in working_segs[1:]:
                 if (prev_lo + (cs.phase or 0)) % 3 != 0:
                     has_internal_shift = True
-                    break
+                    is_contig = (cs.start <= prev_seg.end + 2) if self.strand != "-" else (prev_seg.start <= cs.end + 2)
+                    if adj_mode == "all" or (adj_mode == "intra_exon" and is_contig):
+                        shifts_to_adjust = True
                 prev_lo = (cs.size - (cs.phase or 0)) % 3
+                prev_seg = cs
 
-        if has_internal_shift and mode in ("start", "end"):
+        if not quiet and has_internal_shift:
+            if shifts_to_adjust:
+                print(f"Warning: {self.id} has an internal phase shift at segment boundaries; junction bases were adjusted.")
+            else:
+                print(f"Warning: {self.id} has a phase mismatch across introns; mature mRNA spliced continuously without adjusting junction bases.")
+
+        if shifts_to_adjust and mode in ("start", "end"):
             coding_parts = []
+            segment_intervals = []
             pending_leftover = ""
+            n_segs = len(working_segs)
             for i, cs in enumerate(working_segs):
                 p = cs.phase or 0
                 s = cs.seq
                 l = len(s)
                 lo = (l - p) % 3
                 if i == 0:
+                    trim_5p = p
                     coding_parts.append(s[p : l - lo])
                     pending_leftover = s[l - lo :]
                 else:
                     leading = s[:p]
                     if len(pending_leftover) + len(leading) == 3:
+                        trim_5p = 0
                         coding_parts.append(pending_leftover + leading)
+                    else:
+                        trim_5p = p
                     coding_parts.append(s[p : l - lo])
                     pending_leftover = s[l - lo :]
+
+                if i == n_segs - 1:
+                    trim_3p = lo
+                else:
+                    next_cs = working_segs[i + 1]
+                    next_p = next_cs.phase or 0
+                    if lo + next_p == 3:
+                        trim_3p = 0
+                    else:
+                        trim_3p = lo
+
+                if self.strand != "-":
+                    g_start = cs.start + trim_5p
+                    g_end = cs.end - trim_3p
+                else:
+                    g_end = cs.end - trim_5p
+                    g_start = cs.start + trim_3p
+
+                if g_start <= g_end:
+                    segment_intervals.append((int(g_start), int(g_end)))
+
             coding_seq = "".join(coding_parts)
             nucleotide_surplus = True
             relative_coding_start = cds_phase
-            relative_coding_end = len(self.seq) - 1
+            relative_coding_end = relative_coding_start + len(coding_seq) - 1
+
+            if self.strand == "-":
+                corrected_segments = list(reversed(segment_intervals))
+            else:
+                corrected_segments = segment_intervals
         else:
             coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(
                 self.seq, 
@@ -311,12 +361,15 @@ class CDS(Feature):
                 min_codon_len=min_codon_len,
                 phase=cds_phase
             )
+            corrected_segments = (
+                map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
+                if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start
+                else []
+            )
 
         if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
 
             protein_seq = translate(coding_seq)
-
-            corrected_segments = map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
 
             if corrected_segments:
                 protein_start = corrected_segments[0][0]
@@ -339,7 +392,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode, nuc_seq=coding_seq)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments))
 
                 if not quiet and nucleotide_surplus:
                     print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")

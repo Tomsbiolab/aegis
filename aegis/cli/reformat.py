@@ -27,6 +27,9 @@ def main(
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum."
     )] = False,
+    strict_gtf_2_2: Annotated[bool, typer.Option(
+        "--strict-gtf-2-2", help="Export strict GTF 2.2 format without top-level gene/transcript lines and with 5UTR/3UTR features."
+    )] = False,
 ):
     """
     Convert between GFF and GTF formats.
@@ -65,7 +68,7 @@ def main(
             output_file += ".gff3"
 
     if input_format == "gff3":
-        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
+        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, strict_gtf_2_2=strict_gtf_2_2)
     elif input_format == "gtf":
         annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
 
