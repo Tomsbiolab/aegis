@@ -10,6 +10,7 @@ import warnings
 
 from .utils.genefunctions import reverse_complement
 from .other_components import FeatureQuality, FeatureAttributes
+from .conf import default_features
 
 from functools import total_ordering
 
@@ -236,13 +237,13 @@ class Feature():
             temp_attributes.extend(self.misc_attributes)
 
         attribute_string = ";".join(temp_attributes)
-        phase = self.phase if self.phase is not None else "."
+        phase = self.phase if (self.feature in default_features["CDS"] and self.phase is not None) else "."
 
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
     def print_gtf(self):
         attribute_string = "; ".join(self.gtf_attributes) # type: ignore
-        phase = self.phase if self.phase is not None else "."
+        phase = self.phase if (self.feature in default_features["CDS"] and self.phase is not None) else "."
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
     
     def copy(self):

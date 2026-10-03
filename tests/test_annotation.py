@@ -1245,7 +1245,7 @@ class TestAnnotationReworkCDSs:
             quiet=True,
             genome=genome,
         )
-        annot.rework_CDSs(quiet=True)
+        annot.rework_CDSs(quiet=True, coding_ratio_threshold=0.65)
         return annot
 
     def test_all_transcripts_have_cds(self, reworked_annotation):
@@ -2618,7 +2618,7 @@ class TestReworkCDS:
         output_dir = tmp_path
 
         genome = Genome("TAIR10", arabidopsis_tair10_fasta_file)
-        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True)
+        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4)
 
         annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True)
 

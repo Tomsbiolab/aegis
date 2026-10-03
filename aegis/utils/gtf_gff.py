@@ -55,7 +55,7 @@ def parse_gff_parts(parts) -> GffEntry:
     score = sys.intern(parts[5])
 
     raw_phase = parts[7]
-    phase = int(raw_phase) if raw_phase in ("0", "1", "2") else None
+    phase = int(raw_phase) if (raw_phase in ("0", "1", "2") and feature in default_features["CDS"]) else None
 
     ch = sys.intern(parts[0].partition(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
 

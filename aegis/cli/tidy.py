@@ -89,6 +89,24 @@ def main(
     fallback_to_trim: Annotated[bool, typer.Option(
         "--fallback-to-trim", help="When recalculating CDSs, fallback to trimming unaligned ends if no high-ratio ORF is found."
     )] = False,
+    coding_ratio_threshold: Annotated[float, typer.Option(
+        "--coding-ratio-threshold", help="Threshold ratio of coding sequence length to transcript length for rework CDS (default: 0.7)."
+    )] = 0.7,
+    allow_internal_stops: Annotated[bool, typer.Option(
+        "--allow-internal-stops/--no-allow-internal-stops", help="Allow internal stop codons in progressive rework fallback (default: True)."
+    )] = True,
+    allow_partial: Annotated[bool, typer.Option(
+        "--allow-partial/--no-allow-partial", help="Allow partial ORFs without stop codon in progressive rework fallback (default: True)."
+    )] = True,
+    enforce_start_codon: Annotated[bool, typer.Option(
+        "--enforce-start-codon/--no-enforce-start-codon", help="Require start codon (ATG) in initial rework passes (default: True)."
+    )] = True,
+    orf_choice_mode: Annotated[str, typer.Option(
+        "--orf-choice-mode", help="ORF selection criteria: 'longest' or 'earliest' (default: 'longest')."
+    )] = "longest",
+    skip_coordinate_polishing: Annotated[bool, typer.Option(
+        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead."
+    )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
     )] = False,
@@ -176,6 +194,9 @@ def main(
     if adjust_internal_shifts not in ("intra_exon", "all", "none"):
         raise typer.BadParameter(f"Invalid adjust_internal_shifts: '{adjust_internal_shifts}'. Choose from: 'intra_exon', 'all', 'none'.")
 
+    if orf_choice_mode not in ("longest", "earliest"):
+        raise typer.BadParameter(f"Invalid orf_choice_mode: '{orf_choice_mode}'. Choose from: 'longest', 'earliest'.")
+
     mito_chroms = mitochondria_chroms if len(mitochondria_chroms) > 0 else None
     chloro_chroms = chloroplast_chroms if len(chloroplast_chroms) > 0 else None
 
@@ -224,6 +245,12 @@ def main(
         plastid_table=res_plastid,
         mitochondria_chroms=mito_chroms,
         chloroplast_chroms=chloro_chroms,
+        skip_coordinate_polishing=skip_coordinate_polishing,
+        coding_ratio_threshold=coding_ratio_threshold,
+        allow_internal_stops=allow_internal_stops,
+        allow_partial=allow_partial,
+        enforce_start_codon=enforce_start_codon,
+        orf_choice_mode=orf_choice_mode,
     )
 
     if output_file == "{annotation-name}_tidy.gff3":

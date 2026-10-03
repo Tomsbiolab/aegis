@@ -39,7 +39,7 @@ from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
 from .annotation_components.overlaps import AnnotationOverlaps
 from .annotation_components.redundancy import AnnotationRedundancy
-from .conf import default_noncoding_transcripts, default_features_r
+from .conf import default_noncoding_transcripts, default_features_r, default_features
 
 class Annotation():
 
@@ -71,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest"):
         
         start_time = time.time()
 
@@ -98,6 +98,13 @@ class Annotation():
         self.merged = False
         self.sorted = False
         self.contains_promoters = False
+
+        self.skip_coordinate_polishing = skip_coordinate_polishing
+        self.coding_ratio_threshold = coding_ratio_threshold
+        self.allow_internal_stops = allow_internal_stops
+        self.allow_partial = allow_partial
+        self.enforce_start_codon = enforce_start_codon
+        self.orf_choice_mode = orf_choice_mode
 
         self.taxonomy = taxonomy
         res_table, res_mito, res_plastid = resolve_taxonomy_tables(
@@ -178,7 +185,9 @@ class Annotation():
             "possible_policistronic_transcript", "transcript_with_no_exons",
             "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
             "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
-            "phase_mismatch_across_intron"
+            "phase_mismatch_across_intron",
+            "cds_segment_coordinate_mismatch", "cds_exceeds_exon",
+            "exon_transcript_boundary_mismatch", "transcript_exceeds_gene"
         ]
 
         self.warnings = {key: set() for key in keys}
@@ -315,11 +324,12 @@ class Annotation():
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
+        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(
                 override=rework_all_CDSs,
+                coding_ratio_threshold=coding_ratio_threshold,
                 fallback_to_trim=fallback_to_trim,
                 quiet=quiet,
                 table=table,
@@ -328,8 +338,12 @@ class Annotation():
                 plastid_table=plastid_table,
                 mitochondria_chroms=mitochondria_chroms,
                 chloroplast_chroms=chloroplast_chroms,
+                allow_internal_stops=allow_internal_stops,
+                allow_partial=allow_partial,
+                enforce_start_codon=enforce_start_codon,
+                orf_choice_mode=orf_choice_mode,
             )
-            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
+            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing)
 
         if rename_source:
             self.rename_source(rename_source)
@@ -1008,7 +1022,7 @@ class Annotation():
         score = entry.score
         attributes = entry.attributes
         parents = entry.parents
-        phase = entry.phase
+        phase = entry.phase if (ft_level == "CDS" or ft in default_features["CDS"]) else None
 
         if start == end:
             self.warnings[f"1bp_{ft_level}"].add(ID)
@@ -1288,7 +1302,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None):
         start_time = time.time()
 
         batch_size = 1000
@@ -1343,8 +1357,11 @@ class Annotation():
         if update_gene_and_transcript_list:
             self.update_gene_and_transcript_list(quiet=quiet)
 
+        if skip_coordinate_polishing is None:
+            skip_coordinate_polishing = getattr(self, "skip_coordinate_polishing", False)
+
         self.homogenise_parents_for_shared_exons_utrs()
-        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
+        self.correct_gene_transcript_and_subfeature_coordinates(skip_correction=skip_coordinate_polishing, quiet=quiet)
         if not self.sorted:
             self.sort_genes(processes=sort_processes)
         if define_synteny:
@@ -1477,9 +1494,12 @@ class Annotation():
                     for t_id in mRNA_transcripts_to_remove:
                         del self.chrs[chrom][g.id].transcripts[t_id]   
 
-    def correct_gene_transcript_and_subfeature_coordinates(self, quiet:bool=True):
+    def correct_gene_transcript_and_subfeature_coordinates(self, skip_correction:bool=False, quiet:bool=True):
         if not quiet:
-            print(f"Correcting feature coordinates for {self.id}")
+            if skip_correction:
+                print(f"Checking feature coordinates (skipping correction) for {self.id}")
+            else:
+                print(f"Correcting feature coordinates for {self.id}")
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -1495,59 +1515,92 @@ class Annotation():
                             seg_end = c.CDS_segments[-1].end
                             
                             if c.start != seg_start:
-                                if not quiet:
-                                    print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
-                                c.start = seg_start
-                                self.sorted = False
+                                if skip_correction:
+                                    self.warnings["cds_segment_coordinate_mismatch"].add(c.id)
+                                    if not quiet:
+                                        print(f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
+                                else:
+                                    if not quiet:
+                                        print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
+                                    c.start = seg_start
+                                    self.sorted = False
                                 
                             if c.end != seg_end:
-                                if not quiet:
-                                    print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
-                                c.end = seg_end
-                                self.sorted = False
+                                if skip_correction:
+                                    self.warnings["cds_segment_coordinate_mismatch"].add(c.id)
+                                    if not quiet:
+                                        print(f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
+                                else:
+                                    if not quiet:
+                                        print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
+                                    c.end = seg_end
+                                    self.sorted = False
 
                     if t.exons:
                         if len(t.exons) > 1:
                             t.exons.sort()
                         for c in t.CDSs.values():
                             if c.start < t.exons[0].start:
-                                if not quiet:
-                                    print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
-                                t.exons[0].start = c.start
-                                self.sorted = False
+                                if skip_correction:
+                                    self.warnings["cds_exceeds_exon"].add(c.id)
+                                    if not quiet:
+                                        print(f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
+                                else:
+                                    if not quiet:
+                                        print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                    t.exons[0].start = c.start
+                                    self.sorted = False
                             if c.end > t.exons[-1].end:
-                                if not quiet:
-                                    print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
-                                t.exons[-1].end = c.end
-                                self.sorted = False
+                                if skip_correction:
+                                    self.warnings["cds_exceeds_exon"].add(c.id)
+                                    if not quiet:
+                                        print(f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
+                                else:
+                                    if not quiet:
+                                        print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                    t.exons[-1].end = c.end
+                                    self.sorted = False
 
                         if t.exons[0].start < t.start:
                             if not quiet:
-                                print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}")
+                                print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon start is earlier than for {t.id} ({self.id})")
                         elif t.exons[0].start > t.start:
                             if not quiet:
-                                print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}")
+                                print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon starts later than for {t.id} ({self.id})")
                         if t.exons[-1].end < t.end:
                             if not quiet:
-                                print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}")
+                                print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes earlier than for {t.id} ({self.id})")
                         elif t.exons[-1].end > t.end:
                             if not quiet:
-                                print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}")
+                                print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
                         if t.start != t.exons[0].start or t.end != t.exons[-1].end:
-                            t.start = t.exons[0].start
-                            t.end = t.exons[-1].end
-                            self.sorted = False
+                            if skip_correction:
+                                self.warnings["exon_transcript_boundary_mismatch"].add(t.id)
+                            else:
+                                t.start = t.exons[0].start
+                                t.end = t.exons[-1].end
+                                self.sorted = False
 
                     if t.start < g.start:
-                        if not quiet:
-                            print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
-                        g.start = t.start
-                        self.sorted = False
+                        if skip_correction:
+                            self.warnings["transcript_exceeds_gene"].add(t.id)
+                            if not quiet:
+                                print(f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
+                        else:
+                            if not quiet:
+                                print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
+                            g.start = t.start
+                            self.sorted = False
                     if t.end > g.end:
-                        if not quiet:
-                            print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
-                        g.end = t.end
-                        self.sorted = False
+                        if skip_correction:
+                            self.warnings["transcript_exceeds_gene"].add(t.id)
+                            if not quiet:
+                                print(f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
+                        else:
+                            if not quiet:
+                                print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
+                            g.end = t.end
+                            self.sorted = False
                     if earliest_start is None or latest_end is None:
                         earliest_start = t.start
                         latest_end = t.end
@@ -1559,13 +1612,21 @@ class Annotation():
 
                 if earliest_start is not None and latest_end is not None:
                     if g.start != earliest_start or g.end != latest_end:
-                        if not quiet:
-                            print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
-                        g.start = earliest_start
-                        g.end = latest_end
-                        self.sorted = False
+                        if skip_correction:
+                            self.warnings["transcript_exceeds_gene"].add(g.id)
+                            if not quiet:
+                                print(f"Warning: {g.id} boundaries differ from transcripts ({self.id})")
+                        else:
+                            if not quiet:
+                                print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
+                            g.start = earliest_start
+                            g.end = latest_end
+                            self.sorted = False
         if not quiet:
-            print(f"Corrected feature coordinates for {self.id}")
+            if skip_correction:
+                print(f"Checked feature coordinates (skipped correction) for {self.id}")
+            else:
+                print(f"Corrected feature coordinates for {self.id}")
 
     def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):
         """
@@ -2310,7 +2371,7 @@ class Annotation():
     def rework_CDSs(
         self,
         override: bool = True,
-        coding_ratio_threshold: float = 0.8,
+        coding_ratio_threshold: float = 0.7,
         fallback_to_trim: bool = False,
         start_codons: tuple[str, ...] | None = None,
         stop_codons: tuple[str, ...] | None = None,
@@ -2323,6 +2384,13 @@ class Annotation():
         plastid_table: int | str | None = None,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+        enforce_start_codon: bool = True,
+        must_have_stop: bool = True,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"] = "longest",
+        mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
+        allow_internal_stops: bool = True,
+        allow_partial: bool = True,
     ):
         start_time = time.time()
 
@@ -2411,20 +2479,64 @@ class Annotation():
                     if t.coding and not override:
                         continue
 
-                    t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
+                    t.generate_best_protein(
+                        mode=mode,
+                        start_codons=start_codons,
+                        stop_codons=stop_codons,
+                        min_codon_len=min_codon_len,
+                        enforce_start_codon=enforce_start_codon,
+                        must_have_stop=must_have_stop,
+                        tolerated_stops=tolerated_stops,
+                        orf_choice_mode=orf_choice_mode,
+                        quiet=quiet,
+                        table=chrom_table,
+                    )
                     t.update(quiet=quiet)
 
-                    if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, tolerated_stops=1, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
-                    t.update(quiet=quiet)
+                    if t.coding_ratio < coding_ratio_threshold and allow_internal_stops:
+                        t.generate_best_protein(
+                            mode=mode,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            tolerated_stops=1 if (tolerated_stops is None or tolerated_stops == 0) else tolerated_stops,
+                            min_codon_len=min_codon_len,
+                            enforce_start_codon=enforce_start_codon,
+                            must_have_stop=must_have_stop,
+                            orf_choice_mode=orf_choice_mode,
+                            quiet=quiet,
+                            table=chrom_table,
+                        )
+                        t.update(quiet=quiet)
 
-                    if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
-                    t.update(quiet=quiet)
+                    if t.coding_ratio < coding_ratio_threshold and allow_partial:
+                        t.generate_best_protein(
+                            mode=mode,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            must_have_stop=False,
+                            tolerated_stops=tolerated_stops,
+                            min_codon_len=min_codon_len,
+                            enforce_start_codon=enforce_start_codon,
+                            orf_choice_mode=orf_choice_mode,
+                            quiet=quiet,
+                            table=chrom_table,
+                        )
+                        t.update(quiet=quiet)
 
                     if t.coding_ratio < coding_ratio_threshold and fallback_to_trim:
-                        t.generate_best_protein(mode="orf_or_end", start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet, table=chrom_table)
-                    t.update(quiet=quiet)
+                        trim_mode = "orf_or_end" if mode == "orf" else mode
+                        t.generate_best_protein(
+                            mode=trim_mode,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            must_have_stop=False,
+                            min_codon_len=min_codon_len,
+                            enforce_start_codon=enforce_start_codon,
+                            orf_choice_mode=orf_choice_mode,
+                            quiet=quiet,
+                            table=chrom_table,
+                        )
+                        t.update(quiet=quiet)
 
                 g.update(quiet=quiet)
 
@@ -2786,8 +2898,10 @@ class Annotation():
 
                 for t in g.transcripts.values():
                     t.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
+                    num_exons = len(t.exons)
                     for x, e in enumerate(t.exons):
-                        e.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"', f'exon_number "{x+1}"']
+                        exon_num = (num_exons - x) if t.strand == "-" else (x + 1)
+                        e.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"', f'exon_number "{exon_num}"']
 
                     for c in t.CDSs.values():
                         c.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']

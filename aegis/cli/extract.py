@@ -128,6 +128,9 @@ def main(
         "--chloroplast-chroms", help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code.",
         callback=split_callback
     )] = [],
+    strip_stop: Annotated[bool, typer.Option(
+        "--strip-stop", help="Strip trailing stop codon (* in proteins, terminal 3-nt stop codon in CDSs) from exported sequences."
+    )] = False,
 ):
     """
     Extract sequences from a genome based on an annotation file.
@@ -246,15 +249,17 @@ def main(
             used_id = "CDS"
         else:
             used_id = "protein"
+        protein_kwargs = export_translation_kwargs.copy()
+        protein_kwargs["strip_stop"] = strip_stop
 
         if "unique_per_gene" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, **export_translation_kwargs)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, **protein_kwargs)
         elif "unique" in mode:
-            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, **export_translation_kwargs)
+            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, **protein_kwargs)
         elif "all" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, **export_translation_kwargs)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, **protein_kwargs)
         else:
-            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, **export_translation_kwargs)
+            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, **protein_kwargs)
 
     if "CDS" in features:
 
@@ -266,15 +271,17 @@ def main(
             used_id = "CDS"
 
         protein_oriented = not raw_cds
+        cds_kwargs = export_translation_kwargs.copy()
+        cds_kwargs["strip_stop"] = strip_stop
 
         if "unique_per_gene" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, **export_translation_kwargs)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, **cds_kwargs)
         elif "unique" in mode:
-            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, **export_translation_kwargs)
+            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, **cds_kwargs)
         elif "all" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, **export_translation_kwargs)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, **cds_kwargs)
         else:
-            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, **export_translation_kwargs)
+            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, **cds_kwargs)
 
     if "promoter" in features:
 

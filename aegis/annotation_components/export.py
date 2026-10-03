@@ -11,6 +11,7 @@ import warnings
 from typing import Literal
 
 from ..utils.misc import start_progress_bar
+from ..utils.genefunctions import get_genetic_code_tables
 from .base import AnnotationComponent
 
 class AnnotationExport(AnnotationComponent):
@@ -116,6 +117,7 @@ class AnnotationExport(AnnotationComponent):
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         quiet: bool = True,
+        strip_stop: bool = False,
         #deprecated arguments
         custom_filename: str = "",
         custom_path: str = "",
@@ -247,7 +249,10 @@ class AnnotationExport(AnnotationComponent):
                         if verbose:
                             f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
 
-                        f_out.write(f"\n{c.protein.seq}\n")
+                        prot_seq = c.protein.seq
+                        if strip_stop and prot_seq.endswith("*"):
+                            prot_seq = prot_seq[:-1]
+                        f_out.write(f"\n{prot_seq}\n")
 
     def unique_proteins(
         self,
@@ -269,6 +274,7 @@ class AnnotationExport(AnnotationComponent):
         plastid_table: int | str | None = None,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+        strip_stop: bool = False,
         #deprecated arguments
         custom_path: str = "",
     ):
@@ -304,6 +310,8 @@ class AnnotationExport(AnnotationComponent):
             for protein_id in self._annot.protein_equivalences:
                 chrom, g, t, c = self._annot.all_protein_ids[protein_id]
                 sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
+                if strip_stop and sequence.endswith("*"):
+                    sequence = sequence[:-1]
                 f_out.write(f">{protein_id}\n{sequence}\n")
 
         now = time.time()
@@ -376,6 +384,7 @@ class AnnotationExport(AnnotationComponent):
         plastid_table: int | str | None = None,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+        strip_stop: bool = False,
         #deprecated arguments
         custom_path: str = "",
     ):
@@ -416,15 +425,24 @@ class AnnotationExport(AnnotationComponent):
                 if g.coding:
                     for t in g.transcripts.values():
                         for c in t.CDSs.values():
+                            raw_cds = ""
                             if protein_oriented:
                                 if c.protein is None:
                                     table_to_use = table if table is not None else getattr(self._annot, "table", 1)
                                     c.generate_protein(mode=mode, quiet=quiet, adjust_internal_shifts=adjust_internal_shifts, table=table_to_use)
                                 if c.protein is not None and c.protein.nuc_seq != "":
-                                    all_CDS_seqs[c.id] = c.protein.nuc_seq
+                                    raw_cds = c.protein.nuc_seq
                             else:
                                 if c.seq != "":
-                                    all_CDS_seqs[c.id] = c.seq
+                                    raw_cds = c.seq
+
+                            if raw_cds:
+                                if strip_stop and len(raw_cds) >= 3:
+                                    table_to_use = table if table is not None else getattr(self._annot, "table", 1)
+                                    _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                    if raw_cds[-3:].upper() in def_stops:
+                                        raw_cds = raw_cds[:-3]
+                                all_CDS_seqs[c.id] = raw_cds
 
         progress_bar = start_progress_bar(total=len(all_CDS_seqs.keys()), description=f"Exporting unique {self._annot.id} CDSs", quiet=quiet, colour="91")
         
@@ -471,6 +489,7 @@ class AnnotationExport(AnnotationComponent):
         plastid_table: int | str | None = None,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+        strip_stop: bool = False,
         quiet: bool = False,
         #deprecated arguments
         custom_filename: str = "",
@@ -625,9 +644,17 @@ class AnnotationExport(AnnotationComponent):
                                 f_out.write(f"|{c.strand}|{c.ch}|{c.start}:{c.end}")
 
                         if protein_oriented and c.protein is not None:
-                            f_out.write(f"\n{c.protein.nuc_seq}\n")
+                            cds_seq = c.protein.nuc_seq
                         else:
-                            f_out.write(f"\n{c.seq}\n")
+                            cds_seq = c.seq
+
+                        if strip_stop and len(cds_seq) >= 3:
+                            table_to_use = table if table is not None else getattr(self._annot, "table", 1)
+                            _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                            if cds_seq[-3:].upper() in def_stops:
+                                cds_seq = cds_seq[:-3]
+
+                        f_out.write(f"\n{cds_seq}\n")
 
 
     def transcripts(self, only_main: bool = True, verbose: bool = True, used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
