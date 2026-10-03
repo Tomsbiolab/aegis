@@ -10,7 +10,7 @@ from .feature import Feature
 
 class Protein():
 
-    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "nucleotide_surplus", "seq", "partial", "truncated", "start", "end")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "nucleotide_surplus", "seq", "nuc_seq", "partial", "truncated", "start", "end")
 
     _blast_hits: list[BlastHit] | None
     start: int
@@ -20,9 +20,10 @@ class Protein():
     partial: bool
     truncated: bool
     seq: str
+    nuc_seq: str
     nucleotide_surplus: bool
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str=""):
         self.id = prot_id
         self.ch = chrom
         self.start = start
@@ -31,6 +32,7 @@ class Protein():
         self._blast_hits = None
 
         self.seq = sequence
+        self.nuc_seq = nuc_seq
         self.nucleotide_surplus = nucleotide_surplus
 
         if self.ATG_start == False or self.end_stop == False or self.nucleotide_surplus or self.gaps:

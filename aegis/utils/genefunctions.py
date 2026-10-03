@@ -208,7 +208,7 @@ def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earli
     else:
         raise ValueError(f"Invalid mode: '{mode}'. Expected 'longest' or 'earliest'.")
 
-def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:
+def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, phase: int = 0) -> tuple[str, bool, int, int]:
     """
     Trims surplus nucleotides to ensure sequence length is a multiple of 3, or extracts an ORF.
     
@@ -221,48 +221,44 @@ def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end",
         - "orf_or_start": Extracts best ORF. Falls back to 5' trimming if criteria fail.
         - if "tolerated_stops" is negative or None, an infinite number will be tolerated (full readthrough mode)
     max_nucleotide_trim: Maximum allowed nucleotides to trim when using ORF modes.
+    phase: Number of bases to skip at the 5' end (reading frame phase: 0, 1, or 2).
     """
 
-    surplus = len(in_seq) % 3
-    nucleotide_surplus = surplus != 0
-    coding_start = 0
+    phase_offset = phase if phase in (1, 2) else 0
+    available_len = max(0, len(in_seq) - phase_offset)
+    surplus = available_len % 3
+    nucleotide_surplus = (surplus != 0 or phase_offset != 0)
+    coding_start = phase_offset
     coding_end = len(in_seq) - 1
 
     if mode == "end":
-
         if surplus:
-            out_seq = in_seq[:-surplus]
             coding_end -= surplus
-        else:
-            out_seq = in_seq
+        out_seq = in_seq[coding_start:coding_end + 1] if coding_end >= coding_start else ""
     
     elif mode == "start":
-        out_seq = in_seq[surplus:]
         coding_start += surplus
+        out_seq = in_seq[coding_start:coding_end + 1] if coding_end >= coding_start else ""
 
     elif mode in ("orf", "orf_or_end", "orf_or_start"):
-        orfs = find_ORFs(in_seq, tolerated_stops=tolerated_stops, must_have_stop=must_have_stop, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
+        search_seq = in_seq[phase_offset:] if phase_offset else in_seq
+        orfs = find_ORFs(search_seq, tolerated_stops=tolerated_stops, must_have_stop=must_have_stop, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
         orf, orf_start, orf_end = choose_orf(orfs, mode=orf_choice_mode)
 
-        if orf and (max_nucleotide_trim is None or (len(in_seq) - len(orf)) <= max_nucleotide_trim):
+        if orf and (max_nucleotide_trim is None or (len(search_seq) - len(orf)) <= max_nucleotide_trim):
             out_seq = orf
-            coding_start = orf_start
-            coding_end = orf_end
+            coding_start = orf_start + phase_offset
+            coding_end = orf_end + phase_offset
             nucleotide_surplus = False
         else:
             if mode == "orf_or_end":
                 if surplus:
-                    out_seq = in_seq[:-surplus]
                     coding_end -= surplus
-                else:
-                    out_seq = in_seq
+                out_seq = in_seq[coding_start:coding_end + 1] if coding_end >= coding_start else ""
 
             elif mode == "orf_or_start":
-                if surplus:
-                    out_seq = in_seq[surplus:]
-                    coding_start += surplus
-                else:
-                    out_seq = in_seq
+                coding_start += surplus
+                out_seq = in_seq[coding_start:coding_end + 1] if coding_end >= coding_start else ""
 
             else: # mode == "orf"
                 out_seq = ""

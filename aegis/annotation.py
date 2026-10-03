@@ -982,6 +982,7 @@ class Annotation():
         score = entry.score
         attributes = entry.attributes
         parents = entry.parents
+        phase = entry.phase
 
         if start == end:
             self.warnings[f"1bp_{ft_level}"].add(ID)
@@ -995,7 +996,7 @@ class Annotation():
                     print(f"{self.id} Warning: No parent provided so the following {ft} subfeature {ID} could not be assigned to any transcript")
 
                 if not skip_orphaned_features:
-                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
             
             elif infer_gene_and_transcript_from_subfeatures:
 
@@ -1015,7 +1016,7 @@ class Annotation():
                     entry.parents = [created_gene]
                     self._add_transcript(entry, quiet=quiet, skip_orphaned_features=skip_orphaned_features)
 
-                self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
 
             else:
 
@@ -1023,7 +1024,7 @@ class Annotation():
                     print(f"{self.id} Warning: No parent provided and infer_gene_and_transcript_from_subfeatures={infer_gene_and_transcript_from_subfeatures} so the following {ft} subfeature {ID} could not be assigned to a created transcript")
 
                 if not skip_orphaned_features:
-                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
 
         true_orphans = True
 
@@ -1041,13 +1042,13 @@ class Annotation():
                         if not quiet:
                             print(f"{self.id} Error: {ID} subfeature refers to a transcript in a different chromosome, it could not be assigned to its parent")
                         if not skip_orphaned_features:
-                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                         continue
 
                     gene_parent = self.all_transcript_ids[parent][1]
 
                     if ft_level == "CDS":
-                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                     elif ft_level == "exon":
                         self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, parents, attributes))
                     elif ft_level == "UTR":
@@ -1062,7 +1063,7 @@ class Annotation():
                         if not quiet:
                             print(f"{self.id} Error: {ID} subfeature refers to a gene in a different chromosome, it could not be assigned to its parent")
                         if not skip_orphaned_features:
-                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                         continue
 
                     # cases where subfeature directly references a pseudogene creating a pseudotranscript for the pseudogene
@@ -1079,7 +1080,7 @@ class Annotation():
                             
                         if pseudo_t in self.chrs[ch][parent].transcripts:
                             if ft_level == "CDS":
-                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes, phase=phase))
                             elif ft_level == "exon":
                                 self.chrs[ch][parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                             elif ft_level == "UTR":
@@ -1089,7 +1090,7 @@ class Annotation():
                                 self._miRNA_info.add(ID)
                         else:
                             if not skip_orphaned_features:
-                                self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                                self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                             if not quiet:
                                 print(f"{self.id} Error: {parent} pseudogene already had a transcript which {ft} subfeature {ID} ignores")
 
@@ -1100,7 +1101,7 @@ class Annotation():
                             if not infer_gene_and_transcript_from_subfeatures:
                                 self.warnings["subfeature_to_gene"].add(ID)
                                 if not skip_orphaned_features:
-                                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                                 if not quiet:
                                     print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is a gene, but since infer_gene_and_transcript_from_subfeatures is False, the gene and transcript were not auto-created.")
                             else:
@@ -1123,7 +1124,7 @@ class Annotation():
                         if len(self.chrs[ch][parent].transcripts) == 1:
                             temp_id = list(self.chrs[ch][parent].transcripts.keys())[0]
                             if ft_level == "CDS":
-                                self.chrs[ch][parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [temp_id], attributes))
+                                self.chrs[ch][parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [temp_id], attributes, phase=phase))
                             elif ft_level == "exon":
                                 self.chrs[ch][parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [temp_id], attributes))
                             elif ft_level == "UTR":
@@ -1197,7 +1198,7 @@ class Annotation():
 
 
                             if ft_level == "CDS":
-                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, temp_parents, attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, temp_parents, attributes, phase=phase))
                             elif ft_level == "exon":
                                 self.chrs[ch][inferred_g_id].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, temp_parents, attributes))
                             elif ft_level == "UTR":
@@ -1227,7 +1228,7 @@ class Annotation():
                     found = True
 
                     if ft_level == "CDS":
-                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [parent], attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [parent], attributes, phase=phase))
                     elif ft_level == "exon":
                         self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [parent], attributes))
                     elif ft_level == "UTR":
@@ -1238,7 +1239,7 @@ class Annotation():
                 if not found and not quiet:
                     print(f"{self.id} Error: {ID} {ft} feature could not be assigned to any transcript. Possibly due to unforseen id clash issue")
                     if not skip_orphaned_features:
-                        self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                        self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
 
     def _get_unique_transcript_id(self, t_id):
         unique_id = t_id
@@ -1451,6 +1452,8 @@ class Annotation():
 
                     for c in t.CDSs.values():
                         if hasattr(c, 'CDS_segments') and c.CDS_segments:
+                            if len(c.CDS_segments) > 1:
+                                c.CDS_segments.sort()
                             seg_start = c.CDS_segments[0].start
                             seg_end = c.CDS_segments[-1].end
                             
@@ -1467,6 +1470,8 @@ class Annotation():
                                 self.sorted = False
 
                     if t.exons:
+                        if len(t.exons) > 1:
+                            t.exons.sort()
                         for c in t.CDSs.values():
                             if c.start < t.exons[0].start:
                                 if not quiet:

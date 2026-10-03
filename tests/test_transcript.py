@@ -378,3 +378,342 @@ class TestTranscriptGenerateBestProtein:
         assert cds.protein is not None
         assert cds.protein.seq == "MK*"
 
+
+# ============================================================
+# Exon sorting & boundary sync
+# ============================================================
+
+class TestTranscriptExonSorting:
+    def test_exons_sorted_upon_update(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=3000, end=4000)
+        e2 = make_exon(feature_id="e2", start=1000, end=2000)
+        t.exons = [e1, e2]
+
+        t.update()
+
+        assert [e.start for e in t.exons] == [1000, 3000]
+        assert t.start == 1000
+        assert t.end == 4000
+
+    def test_rename_exons_orders_before_naming_plus_strand(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=5000, end=6000)
+        e2 = make_exon(feature_id="e2", start=1000, end=2000)
+        t.exons = [e1, e2]
+
+        t.rename_exons(base_id="T1", digits=3)
+
+        assert t.exons[0].start == 1000
+        assert t.exons[0].id == "T1_e001"
+        assert t.exons[1].start == 5000
+        assert t.exons[1].id == "T1_e002"
+
+    def test_rename_exons_orders_before_naming_minus_strand(self, make_transcript, make_exon):
+        t = make_transcript(strand="-")
+        e1 = make_exon(feature_id="e1", start=1000, end=2000, strand="-")
+        e2 = make_exon(feature_id="e2", start=5000, end=6000, strand="-")
+        # Appended in ascending order, but minus strand should assign e001 to highest coordinate (5' end)
+        t.exons = [e1, e2]
+
+        t.rename_exons(base_id="T1", digits=3)
+
+        assert t.exons[0].start == 1000
+        assert t.exons[0].id == "T1_e002"
+        assert t.exons[1].start == 5000
+        assert t.exons[1].id == "T1_e001"
+
+    def test_generate_introns_with_unordered_exons(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=3000, end=4000)
+        e2 = make_exon(feature_id="e2", start=1000, end=2000)
+        t.exons = [e1, e2]
+
+        t.generate_introns()
+
+        assert len(t.introns) == 1
+        assert t.introns[0].start == 2001
+        assert t.introns[0].end == 2999
+
+
+# ============================================================
+# collapse_exons
+# ============================================================
+
+class TestCollapseExons:
+    def test_collapse_contiguous_exons(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=1000, end=2000)
+        e2 = make_exon(feature_id="e2", start=2001, end=3000)
+        t.exons = [e1, e2]
+
+        t.collapse_exons()
+
+        assert t.collapsed_exons is True
+        assert len(t.exons) == 1
+        assert t.exons[0].start == 1000
+        assert t.exons[0].end == 3000
+        assert t.start == 1000
+        assert t.end == 3000
+
+    def test_collapse_overlapping_exons(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=1000, end=2000)
+        e2 = make_exon(feature_id="e2", start=1500, end=2500)
+        t.exons = [e1, e2]
+
+        t.collapse_exons()
+
+        assert t.collapsed_exons is True
+        assert len(t.exons) == 1
+        assert t.exons[0].start == 1000
+        assert t.exons[0].end == 2500
+
+    def test_collapse_contained_exons(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=1000, end=3000)
+        e2 = make_exon(feature_id="e2", start=1200, end=1800)
+        t.exons = [e1, e2]
+
+        t.collapse_exons()
+
+        assert t.collapsed_exons is True
+        assert len(t.exons) == 1
+        assert t.exons[0].start == 1000
+        assert t.exons[0].end == 3000
+
+    def test_collapse_mixed_exons_maintains_order(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        # Mixed and unordered
+        e_middle = make_exon(feature_id="em", start=4000, end=5000)
+        e_first1 = make_exon(feature_id="ef1", start=1000, end=2000)
+        e_first2 = make_exon(feature_id="ef2", start=2001, end=2500)
+        e_last = make_exon(feature_id="el", start=7000, end=8000)
+        t.exons = [e_middle, e_first2, e_last, e_first1]
+
+        t.collapse_exons()
+
+        assert t.collapsed_exons is True
+        assert len(t.exons) == 3
+        assert [(e.start, e.end) for e in t.exons] == [(1000, 2500), (4000, 5000), (7000, 8000)]
+        assert t.start == 1000
+        assert t.end == 8000
+
+    def test_collapse_no_overlaps_unchanged(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        e1 = make_exon(feature_id="e1", start=1000, end=2000)
+        e2 = make_exon(feature_id="e2", start=3000, end=4000)
+        t.exons = [e1, e2]
+
+        t.collapse_exons()
+
+        assert t.collapsed_exons is False
+        assert len(t.exons) == 2
+
+
+# ============================================================
+# collapse_CDS_segments
+# ============================================================
+
+class TestCollapseCDSSegments:
+    def test_collapse_contiguous_cds_plus_strand(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        # 3 segments on + strand:
+        # seg1: 1000..1099 (100 bp)
+        # seg2: 1100..1199 (100 bp, contiguous with seg1 -> merged to 1000..1199 = 200 bp)
+        # seg3: 1500..1599 (100 bp, separate)
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099)
+        seg2 = make_CDS_segment("s2", strand="+", start=1100, end=1199)
+        seg3 = make_CDS_segment("s3", strand="+", start=1500, end=1599)
+        cds = make_CDS(segments=[seg1, seg2, seg3], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert len(cds.CDS_segments) == 2
+        # Segments must be ordered ascending
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1199
+        assert cds.CDS_segments[1].start == 1500
+        assert cds.CDS_segments[1].end == 1599
+        assert cds.start == 1000
+        assert cds.end == 1599
+
+        # Phase check on + strand:
+        # 1st segment: phase = 0, leftover = (200 - 0) % 3 = 2
+        # 2nd segment: phase = 3 - 2 = 1, leftover = (100 - 1) % 3 = 0
+        assert cds.CDS_segments[0].phase == 0
+        assert cds.CDS_segments[1].phase == 1
+
+        # Frame check on + strand:
+        # 1st segment: (1000 + 0) % 3 = 1 -> frame = 1
+        # 2nd segment: (1500 + 1) % 3 = 1 -> frame = 1
+        assert cds.CDS_segments[0].frame == 1
+        assert cds.CDS_segments[1].frame == 1
+
+    def test_collapse_contiguous_cds_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="-")
+        # 3 segments on - strand:
+        # seg1: 1000..1099 (100 bp)
+        # seg2: 1100..1199 (100 bp, contiguous with seg1 -> merged to 1000..1199 = 200 bp)
+        # seg3: 2000..2099 (100 bp, 5' end where translation starts!)
+        seg1 = make_CDS_segment("s1", strand="-", start=1000, end=1099)
+        seg2 = make_CDS_segment("s2", strand="-", start=1100, end=1199)
+        seg3 = make_CDS_segment("s3", strand="-", start=2000, end=2099)
+        cds = make_CDS(segments=[seg1, seg2, seg3], strand="-", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert len(cds.CDS_segments) == 2
+        # Segments must be ordered ascending in genomic coordinates
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1199
+        assert cds.CDS_segments[1].start == 2000
+        assert cds.CDS_segments[1].end == 2099
+        assert cds.start == 1000
+        assert cds.end == 2099
+
+        # Phase check on - strand (5' to 3' is reversed: seg[1] then seg[0]):
+        # 5' segment is seg[1] (2000..2099, size 100):
+        # phase = 0, leftover = (100 - 0) % 3 = 1
+        # 3' segment is seg[0] (1000..1199, size 200):
+        # phase = 3 - 1 = 2
+        assert cds.CDS_segments[1].phase == 0
+        assert cds.CDS_segments[0].phase == 2
+
+        # Frame check on - strand:
+        # seg[1]: (2000 + 0) % 3 = 2 -> 7 - 2 = 5
+        # seg[0]: (1000 + 2) % 3 = 0 -> 3 -> 7 - 3 = 4
+        assert cds.CDS_segments[1].frame == 5
+        assert cds.CDS_segments[0].frame == 4
+
+    def test_collapse_overlapping_cds(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1200)
+        seg2 = make_CDS_segment("s2", strand="+", start=1150, end=1300)
+        cds = make_CDS(segments=[seg1, seg2], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert len(cds.CDS_segments) == 1
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1300
+        assert cds.CDS_segments[0].phase == 0
+        assert cds.start == 1000
+        assert cds.end == 1300
+
+    def test_collapse_cds_preserves_initial_phase_plus(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        # seg1 and seg2 contiguous: 1000..1099 (size 100, phase 1 -> 0 leftover) and 1100..1199 (phase 0)
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099, phase=1)
+        seg2 = make_CDS_segment("s2", strand="+", start=1100, end=1199, phase=0)
+        # seg3 separated: 2000..2099
+        seg3 = make_CDS_segment("s3", strand="+", start=2000, end=2099, phase=0)
+        cds = make_CDS(segments=[seg1, seg2, seg3], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert len(cds.CDS_segments) == 2
+        # Merged segment (1000..1199, size 200) retains initial phase 1
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1199
+        assert cds.CDS_segments[0].phase == 1
+        # Leftover from merged: (200 - 1) % 3 = 199 % 3 = 1
+        # seg3 phase should be 3 - 1 = 2
+        assert cds.CDS_segments[1].start == 2000
+        assert cds.CDS_segments[1].end == 2099
+        assert cds.CDS_segments[1].phase == 2
+
+    def test_collapse_cds_preserves_initial_phase_minus(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="-")
+        # seg1: 1000..1099 (3' segment on minus strand)
+        seg1 = make_CDS_segment("s1", strand="-", start=1000, end=1099, phase=2)
+        # seg2 & seg3 contiguous: 2000..2099 and 2100..2199 (5' is seg3 at 2100..2199, phase 2)
+        seg2 = make_CDS_segment("s2", strand="-", start=2000, end=2099, phase=1)
+        seg3 = make_CDS_segment("s3", strand="-", start=2100, end=2199, phase=2)
+        cds = make_CDS(segments=[seg1, seg2, seg3], strand="-", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert len(cds.CDS_segments) == 2
+        # seg[1] is 2000..2199 (5' segment on minus strand, merged from s2 and s3)
+        assert cds.CDS_segments[1].start == 2000
+        assert cds.CDS_segments[1].end == 2199
+        assert cds.CDS_segments[1].phase == 2
+        # Leftover from merged 2000..2199 (size 200, phase 2): (200 - 2) % 3 = 198 % 3 = 0
+        # Downstream 3' segment seg[0] (1000..1099) gets phase 0
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1099
+        assert cds.CDS_segments[0].phase == 0
+
+    def test_collapse_cds_does_not_merge_across_internal_phase_shift(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        # seg1: 1000..1099 (size 100), phase 0 -> leftover = 1
+        # seg2: 1100..1199 (size 100), contiguous, but phase 0 (frameshift! 1 + 0 = 1 != 0 mod 3)
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099, phase=0)
+        seg2 = make_CDS_segment("s2", strand="+", start=1100, end=1199, phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        # Should NOT collapse because of the internal phase shift between s1 and s2
+        assert len(cds.CDS_segments) == 2
+        assert cds.CDS_segments[0].start == 1000
+        assert cds.CDS_segments[0].end == 1099
+        assert cds.CDS_segments[0].phase == 0
+        assert cds.CDS_segments[1].start == 1100
+        assert cds.CDS_segments[1].end == 1199
+        assert cds.CDS_segments[1].phase == 0
+
+
+# ============================================================
+# Boundary & overlap edge cases
+# ============================================================
+
+class TestCoordinateEdgeCases:
+    def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        # Two distinct CDS segments sharing a single boundary nucleotide (1500)
+        seg1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
+        seg2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
+        t.temp_CDSs = [seg1, seg2]
+
+        t.generate_CDSs(quiet=True, consider_polycistronic=True)
+
+        # Because they overlap at 1500, it should recognize multiple overlapping CDSs
+        assert len(t.CDSs) == 2 or t.polycistronic in ("yes", "maybe")
+
+    def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        e1 = make_exon("e1", start=1000, end=1200, strand="+")
+        e2 = make_exon("e2", start=1300, end=1400, strand="+")  # entirely internal to CDS
+        e3 = make_exon("e3", start=1500, end=1800, strand="+")
+        t.exons = [e1, e2, e3]
+
+        # CDS starts in e1 at 1100, spans all of e2 (1300..1400), and ends in e3 at 1600
+        cs1 = make_CDS_segment("cs1", strand="+", start=1100, end=1200)
+        cs2 = make_CDS_segment("cs2", strand="+", start=1300, end=1400)
+        cs3 = make_CDS_segment("cs3", strand="+", start=1500, end=1600)
+        cds = make_CDS(segments=[cs1, cs2, cs3], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.generate_UTRs()
+
+        utr_coords = [(u.start, u.end, u.prime) for u in cds.UTRs]
+        # Only 5' UTR from e1 (1000..1099) and 3' UTR from e3 (1601..1800)
+        assert len(utr_coords) == 2
+        assert utr_coords[0] == (1000, 1099, "5'")
+        assert utr_coords[1] == (1601, 1800, "3'")
+
+
+

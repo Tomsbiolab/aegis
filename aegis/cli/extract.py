@@ -98,6 +98,9 @@ def main(
     gwh: Annotated[bool, typer.Option(
         "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
     )] = False,
+    raw_cds: Annotated[bool, typer.Option(
+        "--raw-cds", help="Export raw spliced genomic CDS sequences instead of in-frame protein-oriented coding sequences."
+    )] = False,
 ):
     """
     Extract sequences from a genome based on an annotation file.
@@ -196,14 +199,16 @@ def main(
         else:
             used_id = "CDS"
 
+        protein_oriented = not raw_cds
+
         if "unique_per_gene" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented)
         elif "unique" in mode:
-            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet)
+            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented)
         elif "all" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented)
         else:
-            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id)
+            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented)
 
     if "promoter" in features:
 

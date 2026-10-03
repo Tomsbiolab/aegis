@@ -20,11 +20,21 @@ class CDS(Feature):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)    
         self.main = False
         self.CDS_segments = CDS_segments
+        if self.CDS_segments:
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            self.start = self.CDS_segments[0].start
+            self.end = self.CDS_segments[-1].end
         self.full_UTR_exons = 0
         self.protein = None
         self.update()
 
     def update(self):
+        if self.CDS_segments:
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            self.start = self.CDS_segments[0].start
+            self.end = self.CDS_segments[-1].end
         self.update_phase()
         self.update_frame()
 
@@ -35,38 +45,62 @@ class CDS(Feature):
             size += segment.size
         return size
 
-    def update_phase(self):
+    def update_phase(self, override: bool = False):
+        if not self.CDS_segments:
+            return
+
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+
+        if self.strand == "-":
+            initial_seg = self.CDS_segments[-1]
+            working_segs = list(reversed(self.CDS_segments))
+        else:
+            initial_seg = self.CDS_segments[0]
+            working_segs = self.CDS_segments
+
+        # If not overriding and all segments already have valid phases, preserve them
+        if not override and all(cs.phase in (0, 1, 2) for cs in self.CDS_segments):
+            self.phase = initial_seg.phase
+            return
+
+        initial_phase = initial_seg.phase if initial_seg.phase in (0, 1, 2) else 0
         leftover = 0
-        if self.strand == "+":
-            for cs in self.CDS_segments:
+        for i, cs in enumerate(working_segs):
+            if i == 0:
+                cs.phase = initial_phase
+            else:
                 if leftover == 0:
                     cs.phase = 0
                 else:
                     cs.phase = 3 - leftover
-                leftover = (cs.size - cs.phase) % 3
-        elif self.strand == "-":
-            for cs in reversed(self.CDS_segments):
-                if leftover == 0:
-                    cs.phase = 0
-                else:
-                    cs.phase = 3 - leftover
-                leftover = (cs.size - cs.phase) % 3    
+            leftover = (cs.size - cs.phase) % 3
+
+        self.phase = initial_phase
 
     def update_frame(self):
+        if not self.CDS_segments:
+            return
+
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+
         if self.strand == "+":
             for cs in self.CDS_segments:
-                frame = (cs.start + cs.phase) % 3 #type: ignore
-                if frame == 0:
-                    frame = 3
-                cs.frame = frame
+                if cs.phase is not None:
+                    frame = (cs.start + cs.phase) % 3
+                    if frame == 0:
+                        frame = 3
+                    cs.frame = frame
 
         if self.strand == "-":
             for cs in reversed(self.CDS_segments):
-                frame = (cs.start + cs.phase) % 3 #type: ignore
-                if frame == 0:
-                    frame = 3
-                frame = 7 - frame
-                cs.frame = frame
+                if cs.phase is not None:
+                    frame = (cs.end - cs.phase) % 3
+                    if frame == 0:
+                        frame = 3
+                    frame = 7 - frame
+                    cs.frame = frame
 
     def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):
 
@@ -209,7 +243,8 @@ class CDS(Feature):
 
     def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, always_resolve_strand: bool = True, ignore_ambiguous_strands: bool = False, quiet:bool=True):
 
-        self.CDS_segments.sort()
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
 
         if (self.strand == "." or self.strand == "?") and not ignore_ambiguous_strands:
             seq_fw, seq_rv = self.seqs
@@ -228,7 +263,54 @@ class CDS(Feature):
                         cs.strand = "-"
                 self.update()
 
-        coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
+        cds_phase = self.phase if self.phase in (1, 2) else 0
+
+        # Check if the CDS has an internal non-canonical phase shift (e.g. ribosomal frameshift, pseudogene indel)
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
+        has_internal_shift = False
+        if len(working_segs) > 1 and all(cs.phase in (0, 1, 2) for cs in working_segs):
+            prev_lo = (working_segs[0].size - (working_segs[0].phase or 0)) % 3
+            for cs in working_segs[1:]:
+                if (prev_lo + (cs.phase or 0)) % 3 != 0:
+                    has_internal_shift = True
+                    break
+                prev_lo = (cs.size - (cs.phase or 0)) % 3
+
+        if has_internal_shift and mode in ("start", "end"):
+            coding_parts = []
+            pending_leftover = ""
+            for i, cs in enumerate(working_segs):
+                p = cs.phase or 0
+                s = cs.seq
+                l = len(s)
+                lo = (l - p) % 3
+                if i == 0:
+                    coding_parts.append(s[p : l - lo])
+                    pending_leftover = s[l - lo :]
+                else:
+                    leading = s[:p]
+                    if len(pending_leftover) + len(leading) == 3:
+                        coding_parts.append(pending_leftover + leading)
+                    coding_parts.append(s[p : l - lo])
+                    pending_leftover = s[l - lo :]
+            coding_seq = "".join(coding_parts)
+            nucleotide_surplus = True
+            relative_coding_start = cds_phase
+            relative_coding_end = len(self.seq) - 1
+        else:
+            coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(
+                self.seq, 
+                mode=mode, 
+                max_nucleotide_trim=max_nucleotide_trim, 
+                orf_choice_mode=orf_choice_mode, 
+                must_have_stop=must_have_stop, 
+                tolerated_stops=tolerated_stops, 
+                enforce_start_codon=enforce_start_codon, 
+                start_codons=start_codons, 
+                stop_codons=stop_codons, 
+                min_codon_len=min_codon_len,
+                phase=cds_phase
+            )
 
         if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
 
@@ -257,7 +339,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode, nuc_seq=coding_seq)
 
                 if not quiet and nucleotide_surplus:
                     print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
@@ -277,8 +359,10 @@ class CDS(Feature):
         self.protein = None
 
     def equal_segments(self, other:CDS):
-        self.CDS_segments.sort()
-        other.CDS_segments.sort()
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+        if len(other.CDS_segments) > 1:
+            other.CDS_segments.sort()
         same = True
         if len(self.CDS_segments) == len(other.CDS_segments):
             for n, segment in enumerate(self.CDS_segments):
@@ -297,8 +381,9 @@ class CDS(Feature):
         prot_start = self.protein.start
         prot_end = self.protein.end
 
-        sorted_segs = sorted(self.CDS_segments)
-        working_segs = sorted_segs if self.strand != "-" else reversed(sorted_segs)
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+        working_segs = self.CDS_segments if self.strand != "-" else reversed(self.CDS_segments)
 
         rel_start = None
         rel_end = None

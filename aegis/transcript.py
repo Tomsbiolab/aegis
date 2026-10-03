@@ -44,12 +44,22 @@ class Transcript(Feature):
         if self.exons == []:
             self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
-            self.exons.sort()
+            if len(self.exons) > 1:
+                self.exons.sort()
         else:
-            self.exons.sort()
+            if len(self.exons) > 1:
+                self.exons.sort()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
 
+        if self.exons:
+            if len(self.exons) > 1:
+                self.exons.sort()
+            self.start = self.exons[0].start
+            self.end = self.exons[-1].end
+
         for i, c in enumerate(self.CDSs.values()):
+            if len(c.CDS_segments) > 1:
+                c.CDS_segments.sort()
             if i == 0:
                 c_start = c.start
                 c_end = c.end
@@ -62,12 +72,12 @@ class Transcript(Feature):
         if self.CDSs:
             if self.strand == "+":
                 for e in self.exons:
-                    if e.end > c_start and e.start < c_end:
+                    if e.end >= c_start and e.start <= c_end:
                         e.coding = True
                     
             elif self.strand == "-":
                 for e in self.exons:
-                    if e.start < c_end and e.end > c_start:
+                    if e.start <= c_end and e.end >= c_start:
                         e.coding = True
 
     def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):
@@ -106,6 +116,8 @@ class Transcript(Feature):
             rename = True
 
         if rename:
+            if len(self.exons) > 1:
+                self.exons.sort()
 
             if self.strand == "+" or self.strand == ".":
                 for x, e in enumerate(self.exons):
@@ -208,20 +220,41 @@ class Transcript(Feature):
                 merged = []
                 cur_start = cds.CDS_segments[0].start
                 cur_end = cds.CDS_segments[0].end
-                for x, seg in enumerate(cds.CDS_segments[1:]):
+                group_segs = [cds.CDS_segments[0]]
+                for seg in cds.CDS_segments[1:]:
                     if seg.start <= cur_end + 1:
-                        if seg.end > cur_end:
-                            cur_end = seg.end
-                    else:
-                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, parents))
-                        cur_start = seg.start
-                        cur_end = seg.end
+                        # Overlapping segments (seg.start <= cur_end) always collapse
+                        # Directly adjacent segments (seg.start == cur_end + 1) only collapse if phase-compatible
+                        prev_seg = group_segs[-1]
+                        phase_compatible = True
+                        if seg.start == cur_end + 1 and prev_seg.phase is not None and seg.phase is not None:
+                            if cds.strand != "-":
+                                prev_lo = (prev_seg.size - prev_seg.phase) % 3
+                                phase_compatible = (prev_lo + seg.phase) % 3 == 0
+                            else:
+                                seg_lo = (seg.size - seg.phase) % 3
+                                phase_compatible = (seg_lo + prev_seg.phase) % 3 == 0
 
-                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, parents))
+                        if phase_compatible:
+                            if seg.end > cur_end:
+                                cur_end = seg.end
+                            group_segs.append(seg)
+                            continue
+
+                    rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
+                    merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
+                    cur_start = seg.start
+                    cur_end = seg.end
+                    group_segs = [seg]
+
+                rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
+                merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
 
                 if len(merged) < len(cds.CDS_segments):
                     cds.CDS_segments = merged
                     self.collapsed_CDS_segments = True
+                    cds.update_phase(override=True)
+                    cds.update_frame()
                     cds.update()
                     
         if self.collapsed_CDS_segments:
@@ -364,6 +397,10 @@ class Transcript(Feature):
         if len(self.exons) != len(other.exons):
             almost_equal = False
         else:
+            if len(self.exons) > 1:
+                self.exons.sort()
+            if len(other.exons) > 1:
+                other.exons.sort()
             for n, exon in enumerate(self.exons):
                 if exon.start != other.exons[n].start or exon.end != other.exons[n].end:
                     almost_equal = False
@@ -382,6 +419,8 @@ class Transcript(Feature):
         """
 
         if self.temp_CDSs:
+            if len(self.temp_CDSs) > 1:
+                self.temp_CDSs.sort()
 
             parents = [self.id]
         
@@ -406,7 +445,7 @@ class Transcript(Feature):
                     for sn in range(1, len(self.temp_CDSs)):
                         prev = self.temp_CDSs[sn - 1]
                         curr = self.temp_CDSs[sn]
-                        if curr.start < prev.end:
+                        if curr.start <= prev.end:
                             more_than_1_CDS = True
                         seg_id = curr.id
                         if seg_id in seen_ids:
@@ -543,7 +582,7 @@ class Transcript(Feature):
                 if c.strand != exon.strand:
                     continue
                 if exon.end <= c.CDS_segments[-1].end and exon.start >= c.CDS_segments[0].start:
-                    pass
+                    continue
                 if exon.end < c.CDS_segments[0].start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
@@ -620,6 +659,8 @@ class Transcript(Feature):
         self.generated_exons = True
 
     def generate_introns(self):
+        if len(self.exons) > 1:
+            self.exons.sort()
         self.introns = []
         counter = 0
         parents = [self.id]

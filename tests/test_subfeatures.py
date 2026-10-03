@@ -37,6 +37,35 @@ class TestCDS:
         # Phase of second segment should be computed
         assert cds.CDS_segments[1].phase is not None
 
+    def test_update_phase_minus_strand_descending_input(self, make_CDS, make_CDS_segment):
+        # Exact coordinates corresponding to Vitvi000006 on minus strand
+        # Provided in descending (5' to 3') order
+        seg_5p = make_CDS_segment("cds1", start=106282, end=106588, strand="-")  # length = 307, (307-0)%3 = 1 leftover
+        seg_mid = make_CDS_segment("cds2", start=106094, end=106179, strand="-") # length = 86, phase must be 3-1 = 2
+        seg_3p = make_CDS_segment("cds3", start=105672, end=105956, strand="-")  # length = 285, phase must be 0
+
+        # Pass in descending biological order
+        cds = make_CDS(segments=[seg_5p, seg_mid, seg_3p], strand="-")
+        
+        # Segments must be sorted in ascending genomic coordinate order
+        assert cds.CDS_segments[0].start == 105672
+        assert cds.CDS_segments[1].start == 106094
+        assert cds.CDS_segments[2].start == 106282
+
+        # In ascending order, segment [2] is 5' start, [1] is mid, [0] is 3' end
+        assert cds.CDS_segments[2].phase == 0  # 5' start codon segment must have phase 0
+        assert cds.CDS_segments[1].phase == 2  # (3 - 1) = 2
+        assert cds.CDS_segments[0].phase == 0  # (86 - 2) % 3 = 0 leftover, so phase = 0
+
+    def test_cds_init_sorts_unordered_segments(self, make_CDS, make_CDS_segment):
+        s1 = make_CDS_segment("s1", start=5000, end=6000)
+        s2 = make_CDS_segment("s2", start=1000, end=2000)
+        s3 = make_CDS_segment("s3", start=3000, end=4000)
+        cds = make_CDS(segments=[s1, s2, s3])
+        assert [s.start for s in cds.CDS_segments] == [1000, 3000, 5000]
+        assert cds.start == 1000
+        assert cds.end == 6000
+
     def test_equal_segments_same(self, make_CDS):
         cds1 = make_CDS()
         cds2 = make_CDS()
@@ -55,6 +84,37 @@ class TestCDS:
         cds.clear_UTRs()
         assert cds.UTRs == []
         assert cds.full_UTR_exons == 0
+
+    def test_cds_phase_preservation_when_valid(self, make_CDS, make_CDS_segment):
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=1)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2199, strand="+", phase=2)
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+        assert cds.phase == 1
+        assert cds.CDS_segments[0].phase == 1
+        assert cds.CDS_segments[1].phase == 2
+        cds.update_phase(override=False)
+        assert cds.CDS_segments[0].phase == 1
+        assert cds.CDS_segments[1].phase == 2
+
+    def test_cds_phase_recalculation_with_override(self, make_CDS, make_CDS_segment):
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=1)  # size 100
+        seg2 = make_CDS_segment("seg2", start=2000, end=2199, strand="+", phase=2)  # size 200
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+        cds.update_phase(override=True)
+        # seg1 size 100, phase 1: leftover = (100 - 1) % 3 = 0.
+        # seg2 phase should be recalculated to 0:
+        assert cds.CDS_segments[0].phase == 1
+        assert cds.CDS_segments[1].phase == 0
+
+    def test_cds_phase_minus_strand_preservation(self, make_CDS, make_CDS_segment):
+        # seg1: 1000..1099 (3' segment on minus strand), phase 2
+        # seg2: 2000..2099 (5' segment on minus strand), phase 1
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="-", phase=2)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2099, strand="-", phase=1)
+        cds = make_CDS(segments=[seg1, seg2], strand="-")
+        assert cds.phase == 1
+        assert cds.CDS_segments[1].phase == 1
+        assert cds.CDS_segments[0].phase == 2
 
 
 # ============================================================

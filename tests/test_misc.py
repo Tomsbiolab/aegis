@@ -344,6 +344,22 @@ class TestTrimSurplus:
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
+    def test_trim_surplus_with_phase_1(self):
+        seq = "AATGAAATAA"  # 10 nt, phase 1 -> skip 1 -> ATGAAATAA (9 nt)
+        out, surplus, cs, ce = trim_surplus(seq, mode="end", phase=1)
+        assert out == "ATGAAATAA"
+        assert cs == 1
+        assert ce == 9
+        assert surplus is True
+
+    def test_trim_surplus_with_phase_2(self):
+        seq = "CCATGAAATAA"  # 11 nt, phase 2 -> skip 2 -> ATGAAATAA (9 nt)
+        out, surplus, cs, ce = trim_surplus(seq, mode="end", phase=2)
+        assert out == "ATGAAATAA"
+        assert cs == 2
+        assert ce == 10
+        assert surplus is True
+
 
 # ============================================================
 # translate
@@ -594,6 +610,100 @@ class TestGenerateProtein:
         assert p.nucleotide_surplus is False
         assert p.seq.startswith("M")
         assert p.seq.endswith("*")
+
+    def test_protein_with_phase_1_plus_strand(self, make_CDS_segment, make_CDS):
+        # 10 nt, phase 1: first base 'A' skipped, translates 'ATGAAATAA' -> M K *
+        seq = "AATGAAATAA"
+        seg = make_CDS_segment("seg1", start=1000, end=1009, strand="+", phase=1)
+        cds = make_CDS(segments=[seg], strand="+")
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p is not None
+        assert p.seq == "MK*"
+        assert p.nuc_seq == "ATGAAATAA"
+        assert p.start == 1001  # skipped coordinate 1000
+        assert p.end == 1009
+
+    def test_protein_with_phase_2_minus_strand(self, make_CDS_segment, make_CDS):
+        # 11 nt, phase 2: first 2 bases 'CC' skipped from 5' end, translates 'ATGAAATAA' -> M K *
+        seq = "CCATGAAATAA"
+        seg = make_CDS_segment("seg1", start=1000, end=1010, strand="-", phase=2)
+        cds = make_CDS(segments=[seg], strand="-")
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p is not None
+        assert p.seq == "MK*"
+        assert p.nuc_seq == "ATGAAATAA"
+        assert p.start == 1000
+        assert p.end == 1008  # skipped coordinates 1010 and 1009 on - strand
+
+    def test_protein_with_internal_phase_shift_plus_strand(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        # seg1: 100 bp (33 'AAA' codons = 99 bp + 1 base 'T'), phase 0 -> leftover = 1
+        # seg2: 90 bp (30 'CCC' codons = 90 bp), phase 0 (frameshift: 1 + 0 = 1 != 0 mod 3)
+        seq1 = ("AAA" * 33) + "T"
+        seq2 = "CCC" * 30
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=0)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2089, strand="+", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1099] = list(seq1)
+        chr_seq[1999:2089] = list(seq2)
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            cds.generate_protein(mode="end")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        # 33 Lysines (AAA) and 30 Prolines (CCC)
+        expected_prot = ("K" * 33) + ("P" * 30)
+        expected_nuc = ("AAA" * 33) + ("CCC" * 30)
+        assert p.seq == expected_prot
+        assert p.nuc_seq == expected_nuc
+        assert len(p.nuc_seq) == 3 * len(p.seq)
+
+    def test_protein_with_internal_phase_shift_minus_strand(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        # Minus strand: seg2 (2000..2099) is 5', seg1 (1000..1089) is 3'
+        seq2 = ("AAA" * 33) + "T"  # 100 bp, phase 0 -> leftover = 1
+        seq1 = "CCC" * 30           # 90 bp, phase 0 (frameshift: 1 + 0 = 1 != 0 mod 3)
+        seg1 = make_CDS_segment("seg1", start=1000, end=1089, strand="-", phase=0)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2099, strand="-", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="-")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1089] = list(reverse_complement(seq1))
+        chr_seq[1999:2099] = list(reverse_complement(seq2))
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            cds.generate_protein(mode="end")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        expected_prot = ("K" * 33) + ("P" * 30)
+        expected_nuc = ("AAA" * 33) + ("CCC" * 30)
+        assert p.seq == expected_prot
+        assert p.nuc_seq == expected_nuc
+        assert len(p.nuc_seq) == 3 * len(p.seq)
 
 
 # ============================================================

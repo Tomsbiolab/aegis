@@ -247,10 +247,10 @@ def make_transcript():
 @pytest.fixture
 def make_CDS_segment():
     """Create a Feature segment to use as a CDS segment."""
-    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None):
+    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None, phase=None):
         if parents is None: parents = ["mRNA1"]
         if attributes is None: attributes = {}
-        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy(), phase=phase)
     return _make
 
 @pytest.fixture

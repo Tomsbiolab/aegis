@@ -225,7 +225,7 @@
       - `def __init__(self, source, score, evalue):`
     - misc_features.py
       - `class Protein():`
-      - `def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str):`
+      - `def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str=""):`
       - `def copy(self):`
       - `def get_blast_hits_key(self, source_priority:list) -> tuple:`
       - `def compare_blast_hits(self, other:Protein, source_priority:list) -> bool:`
@@ -260,7 +260,7 @@
       - `def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update(self):`
       - `def size(self):`
-      - `def update_phase(self):`
+      - `def update_phase(self, override: bool = False):`
       - `def update_frame(self):`
       - `def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):`
       - `def clear_UTRs(self):`
@@ -328,8 +328,8 @@
         - `def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
         - `def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",`
         - `def unique_transcripts(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, rna_classes: list = [],`
-        - `def unique_CDSs(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False,`
-        - `def CDSs(self, only_main: bool = True, verbose: bool = True, used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
+        - `def unique_CDSs(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, protein_oriented: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",`
+        - `def CDSs(self, only_main: bool = True, verbose: bool = True, used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", protein_oriented: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", quiet: bool = False,`
         - `def transcripts(self, only_main: bool = True, verbose: bool = True, used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
         - `def genes(self, verbose: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
         - `def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet:bool=False,`
@@ -468,7 +468,7 @@
         - `def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):`
         - `def find_ORFs(in_seq: str, must_have_stop: bool = True, tolerated_stops: Union[int, float, None] = 0, min_codon_len: int = 2, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA")) -> list[tuple[str, int, int]]:`
         - `def choose_orf(orfs: list[tuple[str, int, int]], mode: Literal["longest", "earliest"]="longest") -> tuple[str, int, int]:`
-        - `def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2) -> tuple[str, bool, int, int]:`
+        - `def trim_surplus(in_seq: str, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "orf_or_end", max_nucleotide_trim: int | None = None, tolerated_stops: int | None = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = True, enforce_start_codon: bool = True, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, phase: int = 0) -> tuple[str, bool, int, int]:`
         - `def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:`
         - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
@@ -502,6 +502,7 @@
   - **images/**
   - **notebook/**
     - **tidy_output/**
+  - **private/**
   - **scripts/**
     - generate_map.py
       - `def generate_map():`
@@ -549,7 +550,7 @@
       - `def make_transcript():`
       - `def _make(feature_id="mRNA1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=1000, end=5000, score=".", parents=None, attributes=None) -> Transcript:`
       - `def make_CDS_segment():`
-      - `def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None):`
+      - `def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None, phase=None):`
       - `def make_CDS(make_CDS_segment):`
       - `def _make(segments=None, feature_id="cds1", source="aegis", ch="chr1", strand="+", score=".", parents=None, attributes=None, feature="CDS"):`
       - `def make_exon():`
@@ -891,6 +892,8 @@
       - `def test_nan_string(self):`
       - `def test_empty_string(self):`
       - `def test_whitespace_stripped(self):`
+    - test_export_cds.py
+      - `def test_export_cds_protein_oriented_and_raw(test_data_dir, tmp_path):`
     - test_feature.py
       - `class TestFeatureInit:`
       - `def test_basic_properties(self, make_feature):`
@@ -1041,6 +1044,8 @@
       - `def test_divisible_by_3(self):`
       - `def test_surplus_trimmed(self):`
       - `def test_surplus_other(self):`
+      - `def test_trim_surplus_with_phase_1(self):`
+      - `def test_trim_surplus_with_phase_2(self):`
       - `class TestTranslate:`
       - `def test_simple_orf(self):`
       - `def test_case_insensitivity(self):`
@@ -1070,6 +1075,10 @@
       - `def test_orf_extraction(self, make_CDS_segment, make_CDS):`
       - `def test_early_stop(self, make_CDS_segment, make_CDS):`
       - `def test_no_surplus_flagged(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_with_phase_1_plus_strand(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_with_phase_2_minus_strand(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_with_internal_phase_shift_plus_strand(self, make_CDS_segment, make_CDS):`
+      - `def test_protein_with_internal_phase_shift_minus_strand(self, make_CDS_segment, make_CDS):`
       - `class TestOverlap:`
       - `def test_overlapping_features(self, create_test_feature):`
       - `def test_overlapping_features_displaced(self, create_test_feature):`
@@ -1097,9 +1106,14 @@
       - `def test_init(self, make_CDS):`
       - `def test_update_size(self, make_CDS):`
       - `def test_update_phase(self, make_CDS, make_CDS_segment):`
+      - `def test_update_phase_minus_strand_descending_input(self, make_CDS, make_CDS_segment):`
+      - `def test_cds_init_sorts_unordered_segments(self, make_CDS, make_CDS_segment):`
       - `def test_equal_segments_same(self, make_CDS):`
       - `def test_equal_segments_different(self, make_CDS, make_CDS_segment):`
       - `def test_clear_utrs(self, make_CDS):`
+      - `def test_cds_phase_preservation_when_valid(self, make_CDS, make_CDS_segment):`
+      - `def test_cds_phase_recalculation_with_override(self, make_CDS, make_CDS_segment):`
+      - `def test_cds_phase_minus_strand_preservation(self, make_CDS, make_CDS_segment):`
       - `class TestExon:`
       - `def test_inherits_from_feature(self):`
       - `class TestUTR:`
@@ -1159,6 +1173,27 @@
       - `def test_generate_best_protein_clears_old_cdss(self, setup_mock_genome, make_transcript, make_exon):`
       - `def test_generate_best_protein_multi_exon_splicing(self, setup_mock_genome, make_transcript, make_exon):`
       - `def test_generate_best_protein_strand_resolution(self, setup_mock_genome, make_transcript, make_exon):`
+      - `class TestTranscriptExonSorting:`
+      - `def test_exons_sorted_upon_update(self, make_transcript, make_exon):`
+      - `def test_rename_exons_orders_before_naming_plus_strand(self, make_transcript, make_exon):`
+      - `def test_rename_exons_orders_before_naming_minus_strand(self, make_transcript, make_exon):`
+      - `def test_generate_introns_with_unordered_exons(self, make_transcript, make_exon):`
+      - `class TestCollapseExons:`
+      - `def test_collapse_contiguous_exons(self, make_transcript, make_exon):`
+      - `def test_collapse_overlapping_exons(self, make_transcript, make_exon):`
+      - `def test_collapse_contained_exons(self, make_transcript, make_exon):`
+      - `def test_collapse_mixed_exons_maintains_order(self, make_transcript, make_exon):`
+      - `def test_collapse_no_overlaps_unchanged(self, make_transcript, make_exon):`
+      - `class TestCollapseCDSSegments:`
+      - `def test_collapse_contiguous_cds_plus_strand(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_contiguous_cds_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_overlapping_cds(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_cds_preserves_initial_phase_plus(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_cds_preserves_initial_phase_minus(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `def test_collapse_cds_does_not_merge_across_internal_phase_shift(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `class TestCoordinateEdgeCases:`
+      - `def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):`
+      - `def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):`
     - __init__.py
     - **htmlcov/**
       - coverage_html_cb_dd2e7eb5.js
