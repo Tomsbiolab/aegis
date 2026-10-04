@@ -179,3 +179,96 @@ def test_tidy_cli_invalid_adjust_shifts(tmp_path):
     result = runner.invoke(tidy_app, args)
     assert result.exit_code != 0
     assert "Invalid adjust_internal_shifts" in result.output
+
+
+def test_tidy_cli_min_codon_len(tmp_path):
+    """Ensure --min-codon-len suppresses micro-ORFs shorter than the threshold."""
+    gff_file = tmp_path / "micro.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+    )
+    fa_file = tmp_path / "micro.fasta"
+    fa_file.write_text(">chr1\nATG" + "AAA" * 8 + "TAA\n")
+
+    out_dir = tmp_path / "out"
+
+    # With --min-codon-len 15, the 10-codon ORF should be suppressed (no CDS)
+    args = [
+        str(gff_file),
+        "--genome-file", str(fa_file),
+        "--infer-missing-CDSs",
+        "--min-codon-len", "15",
+        "-d", str(out_dir),
+        "-o", "filtered.gff3",
+        "-q",
+    ]
+    res = runner.invoke(tidy_app, args)
+    assert res.exit_code == 0
+    annot = Annotation(str(out_dir / "filtered.gff3"), quiet=True)
+    t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+    assert len(t.CDSs) == 0
+
+
+def test_tidy_cli_recalculate_phases(tmp_path):
+    """Ensure --recalculate-phases fixes intron phase mismatches while preserving 5' phase."""
+    gff_file = tmp_path / "phase.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+        "chr1\ttest\tCDS\t1000\t1099\t.\t+\t1\tID=c1;Parent=t1\n"
+        "chr1\ttest\tCDS\t2000\t2099\t.\t+\t2\tID=c1;Parent=t1\n"
+    )
+    out_dir = tmp_path / "out"
+
+    args = [
+        str(gff_file),
+        "--recalculate-phases",
+        "-d", str(out_dir),
+        "-o", "recalc.gff3",
+        "-q",
+    ]
+    res = runner.invoke(tidy_app, args)
+    assert res.exit_code == 0
+    annot = Annotation(str(out_dir / "recalc.gff3"), quiet=True)
+    cds = list(annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs.values())[0]
+    segs = cds.CDS_segments
+    assert segs[0].phase == 1  # 5' partial phase preserved!
+    assert segs[1].phase == 0  # recalculated to match leftover: (100-1)%3 = 0
+    assert len(annot.warnings["phase_mismatch_across_intron"]) == 0
+
+
+def test_tidy_cli_reset_phases_zero(tmp_path):
+    """Ensure --reset-phases-zero resets initial phase to 0 and recalculates downstream phases."""
+    gff_file = tmp_path / "phase.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+        "chr1\ttest\tCDS\t1000\t1099\t.\t+\t1\tID=c1;Parent=t1\n"
+        "chr1\ttest\tCDS\t2000\t2099\t.\t+\t2\tID=c1;Parent=t1\n"
+    )
+    out_dir = tmp_path / "out"
+
+    args = [
+        str(gff_file),
+        "--reset-phases-zero",
+        "-d", str(out_dir),
+        "-o", "reset.gff3",
+        "-q",
+    ]
+    res = runner.invoke(tidy_app, args)
+    assert res.exit_code == 0
+    annot = Annotation(str(out_dir / "reset.gff3"), quiet=True)
+    cds = list(annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs.values())[0]
+    segs = cds.CDS_segments
+    assert segs[0].phase == 0  # reset to 0!
+    assert segs[1].phase == 2  # (100-0)%3 = 1 -> leftover 1 -> next phase = 2
+    assert len(annot.warnings["phase_mismatch_across_intron"]) == 0

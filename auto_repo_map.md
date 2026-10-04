@@ -16,7 +16,7 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest"):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False):`
       - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
@@ -47,7 +47,7 @@
       - `def _get_unique_transcript_id(self, t_id):`
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
-      - `def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None):`
+      - `def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):`
       - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
       - `def mark_rRNA_transcripts(self, rRNA_transcripts_file, clean:bool=True):`
@@ -57,6 +57,7 @@
       - `def clear_promoters(self):`
       - `def get_chromosome_translation_table(`
       - `def generate_proteins(`
+      - `def get_protein_qc_summary(self) -> dict[str, int]:`
       - `def generate_protein_equivalences(`
       - `def clear_proteins(self):`
       - `def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):`
@@ -277,9 +278,11 @@
       - `def generate_protein(`
       - `def clear_protein(self):`
       - `def equal_segments(self, other:CDS):`
+      - `def relative_coding_intervals(self) -> tuple[tuple[int, int], ...]:`
       - `def _calculate_relative_coding_coords(self) -> tuple[int, int]:`
       - `def relative_coding_start(self) -> int:`
       - `def relative_coding_end(self) -> int:`
+      - `def has_internal_shift(self) -> bool:`
       - `class Exon(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `class UTR(Feature):`
@@ -691,6 +694,8 @@
       - `def test_export_gtf_strict_2_2(self, sample_gff3_file, tmp_path):`
       - `class TestPhaseWarnings:`
       - `def test_phase_mismatch_across_intron_warning(self, tmp_path):`
+      - `def test_recalculate_phases_resolves_mismatch(self, tmp_path):`
+      - `def test_get_protein_qc_summary(self, tmp_path):`
       - `class TestAnnotationRenameChromosomes:`
       - `def test_rename_chromosome(self, multi_gene_gff3_file):`
       - `def test_rename_updates_transcript_chromosome(self, multi_gene_gff3_file):`
@@ -848,6 +853,8 @@
       - `def test_extract_cli_keep_stop(test_data_dir, tmp_path):`
       - `def test_extract_cli_strip_stop_cds(test_data_dir, tmp_path):`
       - `def test_extract_cli_skip_coordinate_polishing(test_data_dir, tmp_path):`
+      - `def test_extract_cli_no_cds_suggestion(tmp_path):`
+      - `def test_extract_cli_infer_missing_cdss(tmp_path):`
     - test_cli_filter.py
       - `def test_filter_coding_only(rich_gff3_file, tmp_path):`
       - `def test_filter_non_coding_only(rich_gff3_file, tmp_path):`
@@ -886,6 +893,7 @@
       - `def test_cli_summary_multi_genome_asymmetric_contig(tmp_path):`
       - `def test_cli_summary_multi_genome_mismatched_count(tmp_path):`
       - `def test_cli_summary_multi_genome_completely_different_species(tmp_path):`
+      - `def test_cli_summary_protein_qc_metrics(test_data_dir, tmp_path):`
     - test_cli_summary_genome.py
       - `def test_cli_summary_genome_smoke(test_data_dir):`
       - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
@@ -899,6 +907,9 @@
       - `def test_tidy_cli_translation_options(tmp_path):`
       - `def test_tidy_cli_unknown_mito_contig(tmp_path):`
       - `def test_tidy_cli_invalid_adjust_shifts(tmp_path):`
+      - `def test_tidy_cli_min_codon_len(tmp_path):`
+      - `def test_tidy_cli_recalculate_phases(tmp_path):`
+      - `def test_tidy_cli_reset_phases_zero(tmp_path):`
     - test_cli_utils.py
       - `def test_split_callback_string_comma():`
       - `def test_split_callback_single_string():`
@@ -1154,6 +1165,12 @@
       - `def test_cds_phase_recalculation_with_override(self, make_CDS, make_CDS_segment):`
       - `def test_cds_phase_recalculation_with_full_override(self, make_CDS, make_CDS_segment):`
       - `def test_cds_phase_minus_strand_preservation(self, make_CDS, make_CDS_segment):`
+      - `def test_cds_relative_coding_intervals_plus_strand(self, make_CDS, make_CDS_segment, monkeypatch):`
+      - `class DummyScaffold:`
+      - `class DummyGenome:`
+      - `def test_cds_relative_coding_intervals_minus_strand(self, make_CDS, make_CDS_segment, monkeypatch):`
+      - `class DummyScaffold:`
+      - `class DummyGenome:`
       - `class TestExon:`
       - `def test_inherits_from_feature(self):`
       - `class TestUTR:`

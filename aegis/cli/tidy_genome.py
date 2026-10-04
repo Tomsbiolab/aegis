@@ -57,6 +57,15 @@ def main(
     skip_coordinate_polishing: Annotated[bool, typer.Option(
         "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead."
     )] = False,
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2)."
+    )] = 2,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+    )] = False,
 ):
     """
     Processes and cleans a genome FASTA file and its corresponding annotation (GFF/GTF).
@@ -87,7 +96,15 @@ def main(
 
     if annotation_file:
         
-        a = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=g, skip_coordinate_polishing=skip_coordinate_polishing)
+        a = Annotation(
+            annot_file_path=annotation_file,
+            name=annotation_name,
+            genome=g,
+            skip_coordinate_polishing=skip_coordinate_polishing,
+            min_codon_len=min_codon_len,
+            recalculate_phases=recalculate_phases,
+            reset_phases_zero=reset_phases_zero,
+        )
     
     os.makedirs(output_dir, exist_ok=True)
 

@@ -983,6 +983,43 @@ class TestPhaseWarnings:
         annot = Annotation(str(gff_file), quiet=True)
         assert len(annot.warnings["phase_mismatch_across_intron"]) == 1
 
+    def test_recalculate_phases_resolves_mismatch(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True, recalculate_phases=True)
+        assert len(annot.warnings["phase_mismatch_across_intron"]) == 0
+        cds = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
+        assert cds.CDS_segments[1].phase == 2
+
+    def test_get_protein_qc_summary(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True)
+        qc = annot.get_protein_qc_summary()
+        assert qc["total_cds"] == 1
+        assert qc["phase_mismatches"] == 1
+        assert qc["frameshifted_cds"] == 1
+
 
 # ============================================================
 # Annotation — rename_chromosomes

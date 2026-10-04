@@ -163,6 +163,15 @@ def main(
         "--chloroplast-chroms", help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code.",
         callback=split_callback
     )] = [],
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (e.g. 30 or 50 to suppress micro-ORFs, default: 2)."
+    )] = 2,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+    )] = False,
 ):
     """
     Cleans and reformats a GFF/GTF file to correct common formatting errors and improve compatibility with other bioinformatics tools.
@@ -251,6 +260,9 @@ def main(
         allow_partial=allow_partial,
         enforce_start_codon=enforce_start_codon,
         orf_choice_mode=orf_choice_mode,
+        min_codon_len=min_codon_len,
+        recalculate_phases=recalculate_phases,
+        reset_phases_zero=reset_phases_zero,
     )
 
     if output_file == "{annotation-name}_tidy.gff3":

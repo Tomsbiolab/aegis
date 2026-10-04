@@ -127,6 +127,65 @@ class TestCDS:
         assert cds.CDS_segments[1].phase == 1
         assert cds.CDS_segments[0].phase == 2
 
+    def test_cds_relative_coding_intervals_plus_strand(self, make_CDS, make_CDS_segment, monkeypatch):
+        from aegis.misc_features import Protein
+        # Two segments on + strand: 1000..1099 (size 100), 2000..2099 (size 100) -> total size 200
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+")
+        seg2 = make_CDS_segment("seg2", start=2000, end=2099, strand="+")
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+        # Suppose protein spans 1010..1099 and 2000..2050
+        cds.protein = Protein(
+            prot_id="p1", sequence="M" * 47, chrom="chr1",
+            start=1010, end=2050, nucleotide_surplus=False, readthrough="end",
+            nuc_seq="ATG" * 47,
+            segments=((1010, 1099), (2000, 2050))
+        )
+        intervals = cds.relative_coding_intervals
+        assert intervals == ((10, 99), (100, 150))
+        assert cds.relative_coding_start == 10
+        assert cds.relative_coding_end == 150
+
+        # Verify slice reconstruction matches nuc_seq
+        class DummyScaffold:
+            seq = "N" * 1000 + "A" * 10 + "ATG" * 30 + "N" * 900 + "ATG" * 17 + "C" * 49
+        class DummyGenome:
+            scaffolds = {"chr1": DummyScaffold()}
+            name = "dummy"
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", DummyGenome())
+        reconstructed = "".join(cds.seq[s:e+1] for s, e in intervals)
+        assert len(reconstructed) == len(cds.protein.nuc_seq)
+
+    def test_cds_relative_coding_intervals_minus_strand(self, make_CDS, make_CDS_segment, monkeypatch):
+        from aegis.misc_features import Protein
+        # Two segments on - strand: 1000..1099 (3'), 2000..2099 (5') -> total size 200
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="-")
+        seg2 = make_CDS_segment("seg2", start=2000, end=2099, strand="-")
+        cds = make_CDS(segments=[seg1, seg2], strand="-")
+        # In transcription direction (5' to 3'), seg2 is first (offset 0..99), seg1 is second (offset 100..199)
+        # Protein spans 2000..2090 (5' piece, length 91) and 1020..1099 (3' piece, length 80)
+        cds.protein = Protein(
+            prot_id="p1", sequence="M" * 57, chrom="chr1",
+            start=1020, end=2090, nucleotide_surplus=False, readthrough="end",
+            nuc_seq="ATG" * 57,
+            segments=((1020, 1099), (2000, 2090))
+        )
+        intervals = cds.relative_coding_intervals
+        # In seg2 (offset 0): 2000..2090 -> s = 0 + (2099 - 2090) = 9, e = 0 + (2099 - 2000) = 99
+        # In seg1 (offset 100): 1020..1099 -> s = 100 + (1099 - 1099) = 100, e = 100 + (1099 - 1020) = 179
+        assert intervals == ((9, 99), (100, 179))
+        assert cds.relative_coding_start == 9
+        assert cds.relative_coding_end == 179
+
+        class DummyScaffold:
+            seq = "N" * 1000 + "T" * 80 + "G" * 20 + "N" * 900 + "A" * 91 + "C" * 9
+        class DummyGenome:
+            scaffolds = {"chr1": DummyScaffold()}
+            name = "dummy"
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", DummyGenome())
+        reconstructed = "".join(cds.seq[s:e+1] for s, e in intervals)
+        assert len(reconstructed) == len(cds.protein.nuc_seq)
+
+
 
 # ============================================================
 # Exon

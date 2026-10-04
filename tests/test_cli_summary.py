@@ -211,3 +211,19 @@ def test_cli_summary_multi_genome_completely_different_species(tmp_path):
     assert "MULTI-GENOME ASSEMBLY WARNING" in res.stdout
     assert "Annotation Summary Statistics" in res.stdout
 
+
+def test_cli_summary_protein_qc_metrics(test_data_dir, tmp_path):
+    """Ensure aegis summary reports protein QC metrics when a genome is provided."""
+    a1 = test_data_dir / "input/annotation/minimal.gff3"
+    g1 = test_data_dir / "input/fasta/minimal.fasta"
+
+    res = runner.invoke(app, [str(a1), "-g", str(g1), "-d", str(tmp_path)])
+    assert res.exit_code == 0, f"Run failed: {res.stdout}"
+    stdout = res.stdout
+    assert "Phase Mismatches across Introns" in stdout
+    assert "Translated Proteins" in stdout
+    assert "Complete Proteins" in stdout
+    assert "Partial Proteins" in stdout
+    assert "Truncated Proteins" in stdout
+    assert "Phase-shifted / Frameshifted CDSs" in stdout
+

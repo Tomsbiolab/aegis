@@ -217,3 +217,42 @@ def test_extract_cli_skip_coordinate_polishing(test_data_dir, tmp_path):
     result = runner.invoke(app, args)
     assert result.exit_code == 0, f"Error: {result.stdout}"
 
+
+def test_extract_cli_no_cds_suggestion(tmp_path):
+    """Ensure extract emits a suggestion when the input annotation has no CDSs and --infer-missing-CDSs is omitted."""
+    fa = tmp_path / "test.fa"
+    fa.write_text(">chr1\nATGGCCGTTTAAAAGGGCCC\n")
+    gff = tmp_path / "no_cds.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t20\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t20\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t20\t.\t+\t.\tID=e1;Parent=t1\n"
+    )
+    out_dir = tmp_path / "out"
+
+    res = runner.invoke(app, [str(gff), str(fa), "-d", str(out_dir)])
+    assert res.exit_code == 0
+    all_out = (res.stdout or "") + (res.stderr or "")
+    assert "Notice: The input annotation does not contain any annotated CDS features" in all_out
+    assert "Pass '--infer-missing-CDSs' to automatically detect and predict CDSs" in all_out
+
+
+def test_extract_cli_infer_missing_cdss(tmp_path):
+    """Ensure passing --infer-missing-CDSs predicts CDSs and suppresses the missing CDS notice."""
+    fa = tmp_path / "test.fa"
+    fa.write_text(">chr1\nATGGCCGTTTAAAAGGGCCC\n")
+    gff = tmp_path / "no_cds.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t20\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t20\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t20\t.\t+\t.\tID=e1;Parent=t1\n"
+    )
+    out_dir = tmp_path / "out"
+
+    res = runner.invoke(app, [str(gff), str(fa), "--infer-missing-CDSs", "-d", str(out_dir)])
+    assert res.exit_code == 0
+    all_out = (res.stdout or "") + (res.stderr or "")
+    assert "Notice: The input annotation does not contain any annotated CDS features" not in all_out
+

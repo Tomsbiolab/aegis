@@ -710,9 +710,15 @@ def main(
         ("Mean Intron Size (bp)", "mean_intron_size", False),
         ("Total Gene Span", "total_length_gene", False),
         ("Total mRNA Length", "total_length_mRNA", False),
+        ("Phase Mismatches across Introns", "phase_mismatches", False),
     ]
     if has_genomes:
         summary_metrics.extend([
+            ("Translated Proteins", "total_proteins", False),
+            ("Complete Proteins", "complete_proteins", False),
+            ("Partial Proteins", "partial_proteins", False),
+            ("Truncated Proteins", "truncated_proteins", False),
+            ("Phase-shifted / Frameshifted CDSs", "frameshifted_cds", False),
             ("Out-of-bounds Features", "out_of_bounds", False),
             ("Contigs Missing in Genome", "missing_chroms", False),
             ("Unannotated Scaffolds", "unannotated_scaffolds", False),
@@ -720,6 +726,9 @@ def main(
 
     def get_annot_metric_val(annot: Annotation, metric_key: str):
         stats_data = annot.stats.data
+        if metric_key in ("total_proteins", "complete_proteins", "partial_proteins", "truncated_proteins", "frameshifted_cds", "phase_mismatches"):
+            qc = annot.get_protein_qc_summary()
+            return qc.get(metric_key, 0)
         if metric_key == "total_genes":
             return sum(len(genes) for genes in annot.chrs.values())
         if metric_key == "coding_genes":

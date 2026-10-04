@@ -140,6 +140,39 @@ def main(
     strip_stop_cds: Annotated[bool, typer.Option(
         "--strip-stop-cds", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon)."
     )] = False,
+    rework_all_CDSs: Annotated[bool, typer.Option(
+        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs."
+    )] = False,
+    infer_missing_CDSs: Annotated[bool, typer.Option(
+        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations."
+    )] = False,
+    fallback_to_trim: Annotated[bool, typer.Option(
+        "--fallback-to-trim", help="When recalculating CDSs, fallback to trimming unaligned ends if no high-ratio ORF is found."
+    )] = False,
+    coding_ratio_threshold: Annotated[float, typer.Option(
+        "--coding-ratio-threshold", help="Threshold ratio of coding sequence length to transcript length for rework CDS (default: 0.7)."
+    )] = 0.7,
+    allow_internal_stops: Annotated[bool, typer.Option(
+        "--allow-internal-stops/--no-allow-internal-stops", help="Allow internal stop codons in progressive rework fallback (default: True)."
+    )] = True,
+    allow_partial: Annotated[bool, typer.Option(
+        "--allow-partial/--no-allow-partial", help="Allow partial ORFs without stop codon in progressive rework fallback (default: True)."
+    )] = True,
+    enforce_start_codon: Annotated[bool, typer.Option(
+        "--enforce-start-codon/--no-enforce-start-codon", help="Require start codon (ATG) in initial rework passes (default: True)."
+    )] = True,
+    orf_choice_mode: Annotated[str, typer.Option(
+        "--orf-choice-mode", help="ORF selection criteria: 'longest' or 'earliest' (default: 'longest')."
+    )] = "longest",
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (e.g. 30 or 50 to suppress micro-ORFs, default: 2)."
+    )] = 2,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+    )] = False,
 ):
     """
     Extract sequences from a genome based on an annotation file.
@@ -183,6 +216,9 @@ def main(
     if adjust_internal_shifts not in ("intra_exon", "all", "none"):
         raise typer.BadParameter(f"Invalid adjust_internal_shifts: '{adjust_internal_shifts}'. Choose from: 'intra_exon', 'all', 'none'.")
 
+    if orf_choice_mode not in ("longest", "earliest"):
+        raise typer.BadParameter(f"Invalid orf_choice_mode: '{orf_choice_mode}'. Choose from: 'longest', 'earliest'.")
+
     mito_chroms = mitochondria_chroms if len(mitochondria_chroms) > 0 else None
     chloro_chroms = chloroplast_chroms if len(chloroplast_chroms) > 0 else None
 
@@ -205,6 +241,9 @@ def main(
         name=annotation_name,
         annot_file_path=annotation_file,
         genome=genome,
+        rework_all_CDSs=rework_all_CDSs,
+        work_out_missing_CDSs=infer_missing_CDSs,
+        fallback_to_trim=fallback_to_trim,
         quiet=quiet,
         collapse_exons=collapse_exons,
         collapse_CDSs=collapse_CDSs,
@@ -217,7 +256,24 @@ def main(
         mitochondria_chroms=mito_chroms,
         chloroplast_chroms=chloro_chroms,
         skip_coordinate_polishing=skip_coordinate_polishing,
+        coding_ratio_threshold=coding_ratio_threshold,
+        allow_internal_stops=allow_internal_stops,
+        allow_partial=allow_partial,
+        enforce_start_codon=enforce_start_codon,
+        orf_choice_mode=orf_choice_mode,
+        min_codon_len=min_codon_len,
+        recalculate_phases=recalculate_phases,
+        reset_phases_zero=reset_phases_zero,
     )
+
+    has_any_cds = any(bool(t.CDSs) for genes in annotation.chrs.values() for g in genes.values() for t in g.transcripts.values())
+    if not has_any_cds and not infer_missing_CDSs and not rework_all_CDSs:
+        typer.secho(
+            "Notice: The input annotation does not contain any annotated CDS features. No protein or CDS sequences were extracted.\n"
+            "Tip: Pass '--infer-missing-CDSs' to automatically detect and predict CDSs across transcripts.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     export_translation_kwargs = {
         "adjust_internal_shifts": adjust_internal_shifts,

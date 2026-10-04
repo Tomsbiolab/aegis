@@ -71,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest"):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False):
         
         start_time = time.time()
 
@@ -105,6 +105,10 @@ class Annotation():
         self.allow_partial = allow_partial
         self.enforce_start_codon = enforce_start_codon
         self.orf_choice_mode = orf_choice_mode
+        self.min_codon_len = min_codon_len
+        self.recalculate_phases = recalculate_phases
+        self.reset_phases_zero = reset_phases_zero
+        self._protein_qc_summary = None
 
         self.taxonomy = taxonomy
         res_table, res_mito, res_plastid = resolve_taxonomy_tables(
@@ -324,13 +328,14 @@ class Annotation():
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing)
+        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(
                 override=rework_all_CDSs,
                 coding_ratio_threshold=coding_ratio_threshold,
                 fallback_to_trim=fallback_to_trim,
+                min_codon_len=min_codon_len,
                 quiet=quiet,
                 table=table,
                 auto_organelle_codes=auto_organelle_codes,
@@ -343,7 +348,7 @@ class Annotation():
                 enforce_start_codon=enforce_start_codon,
                 orf_choice_mode=orf_choice_mode,
             )
-            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing)
+            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
         if rename_source:
             self.rename_source(rename_source)
@@ -1302,8 +1307,16 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
         start_time = time.time()
+
+        self._protein_qc_summary = None
+        if recalculate_phases is None:
+            recalculate_phases = getattr(self, "recalculate_phases", False)
+        if reset_phases_zero is None:
+            reset_phases_zero = getattr(self, "reset_phases_zero", False)
+        if "phase_mismatch_across_intron" in self.warnings:
+            self.warnings["phase_mismatch_across_intron"].clear()
 
         batch_size = 1000
         count = 0
@@ -1324,6 +1337,12 @@ class Annotation():
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].add(t.id)
                     for c in t.CDSs.values():
+                        if reset_phases_zero:
+                            c.update_phase(override=True, full_override=True)
+                            c.update_frame()
+                        elif recalculate_phases:
+                            c.update_phase(override=True, full_override=False)
+                            c.update_frame()
                         if len(c.CDS_segments) > 1:
                             working_segs = c.CDS_segments if c.strand != "-" else list(reversed(c.CDS_segments))
                             prev_cs = working_segs[0]
@@ -1852,6 +1871,74 @@ class Annotation():
                 if correct_CDS:
                     g.update(quiet=quiet)
         self.contains_protein_sequences = True
+
+    def get_protein_qc_summary(self) -> dict[str, int]:
+        """
+        Computes summary metrics for CDSs and translated proteins across the annotation:
+        - total_cds: Total CDS features.
+        - total_proteins: CDSs with translated protein sequences.
+        - complete_proteins: Translated proteins with valid start codon, stop codon, no surplus, no early stop.
+        - partial_proteins: Proteins missing start codon, missing stop codon, or containing surplus/gaps.
+        - partial_5prime: Proteins missing valid start codon.
+        - partial_3prime: Proteins missing stop codon or with nucleotide surplus.
+        - truncated_proteins: Proteins with premature internal stop codons.
+        - frameshifted_cds: CDSs with internal phase shifts / frameshifts (intra-exon or intron).
+        - phase_mismatches: CDSs with phase mismatch across introns.
+        """
+        if hasattr(self, "_protein_qc_summary") and self._protein_qc_summary is not None:
+            return self._protein_qc_summary
+
+        if self.genome is not None and not getattr(self, "contains_protein_sequences", False):
+            try:
+                self.generate_proteins(quiet=True)
+            except Exception:
+                pass
+
+        total_cds = 0
+        total_proteins = 0
+        complete_proteins = 0
+        partial_proteins = 0
+        partial_5p = 0
+        partial_3p = 0
+        truncated_proteins = 0
+        frameshifted_cds = 0
+
+        intron_phase_mismatches = self.warnings.get("phase_mismatch_across_intron", set())
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        total_cds += 1
+                        if getattr(c, "has_internal_shift", False) or c.id in intron_phase_mismatches:
+                            frameshifted_cds += 1
+                        p = c.protein
+                        if p is not None and p.seq:
+                            total_proteins += 1
+                            if p.partial:
+                                partial_proteins += 1
+                            if p.truncated:
+                                truncated_proteins += 1
+                            if not p.partial and not p.truncated:
+                                complete_proteins += 1
+                            if getattr(p, "partial_5prime", False):
+                                partial_5p += 1
+                            if getattr(p, "partial_3prime", False):
+                                partial_3p += 1
+
+        summary = {
+            "total_cds": total_cds,
+            "total_proteins": total_proteins,
+            "complete_proteins": complete_proteins,
+            "partial_proteins": partial_proteins,
+            "partial_5prime": partial_5p,
+            "partial_3prime": partial_3p,
+            "truncated_proteins": truncated_proteins,
+            "frameshifted_cds": frameshifted_cds,
+            "phase_mismatches": len(intron_phase_mismatches),
+        }
+        self._protein_qc_summary = summary
+        return summary
 
     def generate_protein_equivalences(
         self,

@@ -466,38 +466,55 @@ class CDS(Feature):
         
         return same
 
-    def _calculate_relative_coding_coords(self) -> tuple[int, int]:
-        """Calculates 0-based slice indices within self.seq corresponding to the protein."""
+    @property
+    def relative_coding_intervals(self) -> tuple[tuple[int, int], ...]:
+        """
+        Returns exact 0-based slice intervals (start, end) within self.seq for each coding segment.
+        Guarantees that "".join(self.seq[s:e+1] for s, e in self.relative_coding_intervals) == self.protein.nuc_seq
+        even across internal phase shifts / ribosomal frameshifts.
+        """
         if not self.protein or not self.CDS_segments:
-            return 0, max(0, self.size - 1)
+            return ((0, max(0, self.size - 1)),)
 
-        prot_start = self.protein.start
-        prot_end = self.protein.end
+        prot_segs = self.protein.segments
+        if not prot_segs:
+            return ((0, max(0, self.size - 1)),)
 
         if len(self.CDS_segments) > 1:
             self.CDS_segments.sort()
-        working_segs = self.CDS_segments if self.strand != "-" else reversed(self.CDS_segments)
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
 
-        rel_start = None
-        rel_end = None
+        intervals = []
         offset = 0
-
         for cs in working_segs:
-            if self.strand != "-":
-                if rel_start is None and cs.start <= prot_start <= cs.end:
-                    rel_start = offset + (prot_start - cs.start)
-                if rel_end is None and cs.start <= prot_end <= cs.end:
-                    rel_end = offset + (prot_end - cs.start)
-            else:
-                if rel_start is None and cs.start <= prot_end <= cs.end:
-                    rel_start = offset + (cs.end - prot_end)
-                if rel_end is None and cs.start <= prot_start <= cs.end:
-                    rel_end = offset + (cs.end - prot_start)
+            seg_start, seg_end = cs.start, cs.end
+            for p_start, p_end in prot_segs:
+                ov_start = max(seg_start, p_start)
+                ov_end = min(seg_end, p_end)
+                if ov_start <= ov_end:
+                    if self.strand != "-":
+                        s = offset + (ov_start - seg_start)
+                        e = offset + (ov_end - seg_start)
+                    else:
+                        s = offset + (seg_end - ov_end)
+                        e = offset + (seg_end - ov_start)
+                    intervals.append((int(s), int(e)))
             offset += cs.size
 
-        final_start = rel_start if rel_start is not None else 0
-        final_end = rel_end if rel_end is not None else max(0, self.size - 1)
-        return final_start, final_end
+        if not intervals:
+            return ((0, max(0, self.size - 1)),)
+        return tuple(intervals)
+
+    def _calculate_relative_coding_coords(self) -> tuple[int, int]:
+        """Calculates 0-based slice indices (start, end) within self.seq corresponding to the protein."""
+        if not self.protein or not self.CDS_segments:
+            return 0, max(0, self.size - 1)
+
+        intervals = self.relative_coding_intervals
+        if intervals:
+            return intervals[0][0], intervals[-1][1]
+
+        return 0, max(0, self.size - 1)
 
     @property
     def relative_coding_start(self) -> int:
@@ -508,6 +525,20 @@ class CDS(Feature):
     def relative_coding_end(self) -> int:
         """ Returns python index of last protein nucleotide within the CDS sequence string, or the last CDS nucleotide index if no protein was generated yet."""
         return self._calculate_relative_coding_coords()[1]
+
+    @property
+    def has_internal_shift(self) -> bool:
+        """Returns True if the CDS segments have an internal phase shift at segment boundaries."""
+        if not self.CDS_segments or len(self.CDS_segments) <= 1:
+            return False
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
+        if all(cs.phase in (0, 1, 2) for cs in working_segs):
+            prev_lo = (working_segs[0].size - (working_segs[0].phase or 0)) % 3
+            for cs in working_segs[1:]:
+                if (prev_lo + (cs.phase or 0)) % 3 != 0:
+                    return True
+                prev_lo = (cs.size - (cs.phase or 0)) % 3
+        return False
 
 class Exon(Feature):
     __slots__ = ()

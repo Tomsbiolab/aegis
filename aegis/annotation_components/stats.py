@@ -30,6 +30,11 @@ KEY_DESCRIPTIONS = {
     # Tally counts
     "coding_genes":               "Number of coding genes",
     "noncoding_genes":            "Number of non-coding genes",
+    "complete_proteins":          "Number of complete proteins",
+    "partial_proteins":           "Number of partial proteins",
+    "truncated_proteins":         "Number of truncated proteins",
+    "frameshifted_cds":           "Number of phase-shifted / frameshifted CDSs",
+    "phase_mismatches":           "Number of phase mismatches across introns",
     "CDSs_without_stop":          "Number of CDS without stop codon",
     "CDSs_with_stop":             "Number of CDS with stop codon",
     # Feature counts (generic ones present in most annotations)
@@ -394,6 +399,13 @@ class AnnotationStats(AnnotationComponent):
         self.data["shortest_CDS"]         = _shortest_CDS if _shortest_CDS is not None else 0
         self.data["longest_CDS_segment"]  = _longest_CDS_seg
         self.data["shortest_CDS_segment"] = _shortest_CDS_seg if _shortest_CDS_seg is not None else 0
+
+        qc = self._annot.get_protein_qc_summary()
+        self.data["complete_proteins"]    = qc["complete_proteins"]
+        self.data["partial_proteins"]     = qc["partial_proteins"]
+        self.data["truncated_proteins"]   = qc["truncated_proteins"]
+        self.data["frameshifted_cds"]     = qc["frameshifted_cds"]
+        self.data["phase_mismatches"]     = qc["phase_mismatches"]
 
         # anything with mean will be also plotted as distribution plots:
         if export:

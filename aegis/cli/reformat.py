@@ -33,6 +33,12 @@ def main(
     polish_coordinates: Annotated[bool, typer.Option(
         "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates)."
     )] = False,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+    )] = False,
 ):
     """
     Convert between GFF and GTF formats.
@@ -57,6 +63,8 @@ def main(
         annot_file_path=annotation_file,
         quiet=quiet,
         skip_coordinate_polishing=skip_coordinate_polishing,
+        recalculate_phases=recalculate_phases,
+        reset_phases_zero=reset_phases_zero,
     )
 
     input_format = input_format.lower()
