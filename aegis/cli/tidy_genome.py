@@ -54,6 +54,9 @@ def main(
     gwh: Annotated[bool, typer.Option(
         "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
     )] = False,
+    skip_coordinate_polishing: Annotated[bool, typer.Option(
+        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead."
+    )] = False,
 ):
     """
     Processes and cleans a genome FASTA file and its corresponding annotation (GFF/GTF).
@@ -84,7 +87,7 @@ def main(
 
     if annotation_file:
         
-        a = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=g)
+        a = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=g, skip_coordinate_polishing=skip_coordinate_polishing)
     
     os.makedirs(output_dir, exist_ok=True)
 

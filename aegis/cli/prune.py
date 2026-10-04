@@ -46,7 +46,7 @@ def main(
     else:
         subfolder = False
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 
     if output_file == "{annotation-name}.{ext}":
         output_file = f"{annotation_name}"

@@ -343,7 +343,8 @@ def main(
                 name=aname,
                 annot_file_path=afile,
                 genome=assigned_genome,
-                quiet=True
+                quiet=True,
+                skip_coordinate_polishing=True,
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)

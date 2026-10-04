@@ -111,3 +111,48 @@ def test_export_cds_and_proteins_with_taxonomy(test_data_dir, tmp_path):
     annot.export.unique_CDSs(output_dir=str(tmp_path), taxonomy="invertebrate", quiet=True)
 
 
+def test_export_protein_strip_stop_default(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+
+    genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
+    annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+
+    # Default strip_stop is True: no trailing '*'
+    dir_stripped = tmp_path / "stripped"
+    annot.export.proteins(output_dir=str(dir_stripped), verbose=False, quiet=True)
+    prot_file = dir_stripped / f"{annot.id}_proteins_p_id_main.fasta"
+    seqs = [line.strip() for line in prot_file.read_text().splitlines() if line and not line.startswith(">")]
+    assert not any(s.endswith("*") for s in seqs)
+
+    # Explicit strip_stop=False: contains trailing '*'
+    dir_kept = tmp_path / "kept"
+    annot.export.proteins(output_dir=str(dir_kept), verbose=False, strip_stop=False, quiet=True)
+    prot_file_kept = dir_kept / f"{annot.id}_proteins_p_id_main.fasta"
+    seqs_kept = [line.strip() for line in prot_file_kept.read_text().splitlines() if line and not line.startswith(">")]
+    assert any(s.endswith("*") for s in seqs_kept)
+
+
+def test_export_cds_strip_stop_organelle(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+
+    genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
+    annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+
+    # Export CDS with strip_stop=True vs strip_stop=False
+    dir_no_strip = tmp_path / "cds_nostrip"
+    dir_strip = tmp_path / "cds_strip"
+
+    annot.export.CDSs(output_dir=str(dir_no_strip), strip_stop=False, quiet=True)
+    annot.export.CDSs(output_dir=str(dir_strip), strip_stop=True, quiet=True)
+
+    cds_nostrip_file = dir_no_strip / f"{annot.id}_CDSs_c_id_main_coordinates.fasta"
+    cds_strip_file = dir_strip / f"{annot.id}_CDSs_c_id_main_coordinates.fasta"
+
+    seqs_nostrip = [line.strip() for line in cds_nostrip_file.read_text().splitlines() if line and not line.startswith(">")]
+    seqs_strip = [line.strip() for line in cds_strip_file.read_text().splitlines() if line and not line.startswith(">")]
+
+    assert any(len(ns) == len(s) + 3 for ns, s in zip(seqs_nostrip, seqs_strip))
+
+

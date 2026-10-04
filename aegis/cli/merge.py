@@ -67,12 +67,12 @@ def main(
         features = ["transcript", "CDS", "exon", "UTR"]
 
     print(f"Loading base annotation from {annotation_files[0]}...")
-    base_annotation = Annotation(annot_file_path=annotation_files[0], quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+    base_annotation = Annotation(annot_file_path=annotation_files[0], quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, skip_coordinate_polishing=True)
 
     for annotation_file in annotation_files[1:]:
 
         print(f"Loading annotation to merge from {annotation_file}...")
-        merge_annotation = Annotation(annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+        merge_annotation = Annotation(annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, skip_coordinate_polishing=True)
 
         print("Merging annotations...")
         base_annotation.merge(

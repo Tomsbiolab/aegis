@@ -102,7 +102,14 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs)
+    annotation = Annotation(
+        name=annotation_name,
+        annot_file_path=annotation_file,
+        quiet=quiet,
+        collapse_exons=collapse_exons,
+        collapse_CDSs=collapse_CDSs,
+        skip_coordinate_polishing=True,
+    )
 
     if output_file == "{annotation-name}_renamed.gff3":
         output_file = f"{annotation_name}_renamed.gff3"

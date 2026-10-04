@@ -135,7 +135,7 @@ def main(
             header_id_regex=header_id_regex if header_id_regex != "" else None,
             gwh=gwh,
         )
-        a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet)
+        a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet, skip_coordinate_polishing=True)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
         common_actual_chromosomes = common_chromosomes - g.scaffold_names
         common_actual_chromosomes_minus_mt_chl = common_actual_chromosomes - g.accessory_chromosome_names
@@ -155,7 +155,7 @@ def main(
                 )
             raise ValueError(f"There are no common scaffolds/chromosomes between provided annotation and genome file.")
     else:
-        a = Annotation(annotation_file, annotation_name, quiet=quiet)
+        a = Annotation(annotation_file, annotation_name, quiet=quiet, skip_coordinate_polishing=True)
         common_chromosomes = set(a.chrs)
 
     if not chosen_chromosomes_set:

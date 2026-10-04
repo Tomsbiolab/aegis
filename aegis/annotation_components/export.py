@@ -117,7 +117,7 @@ class AnnotationExport(AnnotationComponent):
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         quiet: bool = True,
-        strip_stop: bool = False,
+        strip_stop: bool = True,
         #deprecated arguments
         custom_filename: str = "",
         custom_path: str = "",
@@ -274,7 +274,7 @@ class AnnotationExport(AnnotationComponent):
         plastid_table: int | str | None = None,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
-        strip_stop: bool = False,
+        strip_stop: bool = True,
         #deprecated arguments
         custom_path: str = "",
     ):
@@ -438,10 +438,27 @@ class AnnotationExport(AnnotationComponent):
 
                             if raw_cds:
                                 if strip_stop and len(raw_cds) >= 3:
-                                    table_to_use = table if table is not None else getattr(self._annot, "table", 1)
-                                    _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
-                                    if raw_cds[-3:].upper() in def_stops:
-                                        raw_cds = raw_cds[:-3]
+                                    if protein_oriented and c.protein is not None:
+                                        if c.protein.seq.endswith("*"):
+                                            raw_cds = raw_cds[:-3]
+                                    else:
+                                        table_to_use = table
+                                        if table_to_use is None:
+                                            if hasattr(self._annot, "get_chromosome_translation_table"):
+                                                table_to_use = self._annot.get_chromosome_translation_table(
+                                                    c.ch,
+                                                    taxonomy=taxonomy,
+                                                    auto_organelle_codes=auto_organelle_codes,
+                                                    mito_table=mito_table,
+                                                    plastid_table=plastid_table,
+                                                    mitochondria_chroms=mitochondria_chroms,
+                                                    chloroplast_chroms=chloroplast_chroms,
+                                                )
+                                            else:
+                                                table_to_use = getattr(self._annot, "table", 1)
+                                        _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                        if raw_cds[-3:].upper() in def_stops:
+                                            raw_cds = raw_cds[:-3]
                                 all_CDS_seqs[c.id] = raw_cds
 
         progress_bar = start_progress_bar(total=len(all_CDS_seqs.keys()), description=f"Exporting unique {self._annot.id} CDSs", quiet=quiet, colour="91")
@@ -649,10 +666,27 @@ class AnnotationExport(AnnotationComponent):
                             cds_seq = c.seq
 
                         if strip_stop and len(cds_seq) >= 3:
-                            table_to_use = table if table is not None else getattr(self._annot, "table", 1)
-                            _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
-                            if cds_seq[-3:].upper() in def_stops:
-                                cds_seq = cds_seq[:-3]
+                            if protein_oriented and c.protein is not None:
+                                if c.protein.seq.endswith("*"):
+                                    cds_seq = cds_seq[:-3]
+                            else:
+                                table_to_use = table
+                                if table_to_use is None:
+                                    if hasattr(self._annot, "get_chromosome_translation_table"):
+                                        table_to_use = self._annot.get_chromosome_translation_table(
+                                            c.ch,
+                                            taxonomy=taxonomy,
+                                            auto_organelle_codes=auto_organelle_codes,
+                                            mito_table=mito_table,
+                                            plastid_table=plastid_table,
+                                            mitochondria_chroms=mitochondria_chroms,
+                                            chloroplast_chroms=chloroplast_chroms,
+                                        )
+                                    else:
+                                        table_to_use = getattr(self._annot, "table", 1)
+                                _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                if cds_seq[-3:].upper() in def_stops:
+                                    cds_seq = cds_seq[:-3]
 
                         f_out.write(f"\n{cds_seq}\n")
 

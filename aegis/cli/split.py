@@ -455,9 +455,9 @@ def main(
 
     if annotation_file:
         if genome_obj:
-            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet)
+            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, skip_coordinate_polishing=True)
         else:
-            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, quiet=quiet)
+            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, quiet=quiet, skip_coordinate_polishing=True)
 
     # 5. Classify features (scaffolds/chromosomes)
     # Collect all feature identifiers and their descriptions

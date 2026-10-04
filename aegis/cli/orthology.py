@@ -641,7 +641,7 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, skip_coordinate_polishing=True))
 
         if strip_gene_tags:
             annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)

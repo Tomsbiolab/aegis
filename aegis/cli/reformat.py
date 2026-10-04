@@ -30,10 +30,15 @@ def main(
     strict_gtf_2_2: Annotated[bool, typer.Option(
         "--strict-gtf-2-2", help="Export strict GTF 2.2 format without top-level gene/transcript lines and with 5UTR/3UTR features."
     )] = False,
+    polish_coordinates: Annotated[bool, typer.Option(
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates)."
+    )] = False,
 ):
     """
     Convert between GFF and GTF formats.
     """
+
+    skip_coordinate_polishing = not polish_coordinates
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -47,7 +52,12 @@ def main(
 
     encoding = read_file_with_fallback(annotation_file)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
+    annotation = Annotation(
+        name=annotation_name,
+        annot_file_path=annotation_file,
+        quiet=quiet,
+        skip_coordinate_polishing=skip_coordinate_polishing,
+    )
 
     input_format = input_format.lower()
 

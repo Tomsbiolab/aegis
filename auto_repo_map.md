@@ -55,6 +55,7 @@
       - `def correct_gene_transcript_and_subfeature_coordinates(self, skip_correction:bool=False, quiet:bool=True):`
       - `def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):`
       - `def clear_promoters(self):`
+      - `def get_chromosome_translation_table(`
       - `def generate_proteins(`
       - `def generate_protein_equivalences(`
       - `def clear_proteins(self):`
@@ -844,6 +845,9 @@
       - `def test_extract_cli_translation_options(test_data_dir, tmp_path):`
       - `def test_extract_cli_unknown_mito_contig(test_data_dir, tmp_path):`
       - `def test_extract_cli_invalid_adjust_shifts(test_data_dir, tmp_path):`
+      - `def test_extract_cli_keep_stop(test_data_dir, tmp_path):`
+      - `def test_extract_cli_strip_stop_cds(test_data_dir, tmp_path):`
+      - `def test_extract_cli_skip_coordinate_polishing(test_data_dir, tmp_path):`
     - test_cli_filter.py
       - `def test_filter_coding_only(rich_gff3_file, tmp_path):`
       - `def test_filter_non_coding_only(rich_gff3_file, tmp_path):`
@@ -919,6 +923,8 @@
       - `def test_export_cds_with_table_none(test_data_dir, tmp_path):`
       - `def test_export_unique_CDSs_per_gene(test_data_dir, tmp_path):`
       - `def test_export_cds_and_proteins_with_taxonomy(test_data_dir, tmp_path):`
+      - `def test_export_protein_strip_stop_default(test_data_dir, tmp_path):`
+      - `def test_export_cds_strip_stop_organelle(test_data_dir, tmp_path):`
     - test_feature.py
       - `class TestFeatureInit:`
       - `def test_basic_properties(self, make_feature):`

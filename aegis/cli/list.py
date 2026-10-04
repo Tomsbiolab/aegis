@@ -69,7 +69,7 @@ def genes(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 
     annotation.export.gene_list(
         output_dir=output_dir,
@@ -146,7 +146,7 @@ def transcripts(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 
     annotation.export.transcript_list(
         output_dir=output_dir,

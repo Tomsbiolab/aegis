@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Literal
 
 from .feature import Feature
@@ -196,28 +197,42 @@ class CDS(Feature):
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            cds_seqs = ["", ""]
-            for cs in self.CDS_segments:
-                cds_seqs[0] += cs.seq
-
-            for cs in reversed(self.CDS_segments):
-                cds_seqs[1] += reverse_complement(cs.seq)
-
-            return cds_seqs
+            if not self.CDS_segments:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+                warnings.warn(
+                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            fw_seq = "".join(scf_seq[max(0, cs.start - 1):min(scf_len, cs.end)] for cs in self.CDS_segments)
+            return [fw_seq, reverse_complement(fw_seq)]
 
     @property
     def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            cds_seqs = ["", ""]
-            for cs in self.CDS_segments:
-                cds_seqs[0] += cs.hard_seq
-
-            for cs in reversed(self.CDS_segments):
-                cds_seqs[1] += reverse_complement(cs.hard_seq)
-
-            return cds_seqs
+            if not self.CDS_segments:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+                warnings.warn(
+                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            fw_seq = "".join(scf_seq[max(0, cs.start - 1):min(scf_len, cs.end)] for cs in self.CDS_segments)
+            return [fw_seq, reverse_complement(fw_seq)]
 
     @property
     def five_prime_UTR_seq(self) -> str:
@@ -276,15 +291,16 @@ class CDS(Feature):
 
             has_orf = len(fw_orf[0]) > 0 or len(rv_orf[0]) > 0
             if has_orf or always_resolve_strand:
-                if len(fw_orf[0]) >= len(rv_orf[0]):
-                    self.strand = "+"
-                    for cs in self.CDS_segments:
-                        cs.strand = "+"
+                new_strand = "+" if len(fw_orf[0]) >= len(rv_orf[0]) else "-"
+                strand_changed = (new_strand != self.strand)
+                self.strand = new_strand
+                for cs in self.CDS_segments:
+                    cs.strand = new_strand
+                if strand_changed:
+                    self.update_phase(override=True)
+                    self.update_frame()
                 else:
-                    self.strand = "-"
-                    for cs in self.CDS_segments:
-                        cs.strand = "-"
-                self.update()
+                    self.update()
 
         cds_phase = self.phase if self.phase in (1, 2) else 0
 

@@ -125,3 +125,95 @@ def test_extract_cli_invalid_adjust_shifts(test_data_dir, tmp_path):
     result = runner.invoke(app, args)
     assert result.exit_code != 0
     assert "Invalid adjust_internal_shifts" in result.output
+
+
+def test_extract_cli_keep_stop(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+    output_dir = tmp_path / "aegis_output" / "features"
+
+    args = [
+        str(gff3_path),
+        str(fasta_path),
+        "-a", "extract_test",
+        "-g", "extract_test",
+        "-f", "protein",
+        "-m", "main",
+        "--keep-stop",
+        "-d", str(output_dir),
+        "-q",
+    ]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, f"Error: {result.stdout}"
+    output_file = output_dir / "extract_test_on_extract_test_proteins_p_id_main.fasta"
+    assert output_file.exists()
+    content = output_file.read_text()
+    # When --keep-stop is passed, protein sequences should have trailing '*'
+    seq_lines = [line.strip() for line in content.splitlines() if line and not line.startswith(">")]
+    assert any(s.endswith("*") for s in seq_lines)
+
+
+def test_extract_cli_strip_stop_cds(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+    dir_default = tmp_path / "default"
+    dir_stripped = tmp_path / "stripped"
+
+    # Default CDS export (retains stop codon)
+    args_default = [
+        str(gff3_path),
+        str(fasta_path),
+        "-a", "extract_test",
+        "-g", "extract_test",
+        "-f", "CDS",
+        "-m", "main",
+        "--feature-id", "CDS",
+        "-d", str(dir_default),
+        "-q",
+    ]
+    res_def = runner.invoke(app, args_default)
+    assert res_def.exit_code == 0
+
+    # Stripped CDS export
+    args_stripped = [
+        str(gff3_path),
+        str(fasta_path),
+        "-a", "extract_test",
+        "-g", "extract_test",
+        "-f", "CDS",
+        "-m", "main",
+        "--feature-id", "CDS",
+        "--strip-stop-cds",
+        "-d", str(dir_stripped),
+        "-q",
+    ]
+    res_strip = runner.invoke(app, args_stripped)
+    assert res_strip.exit_code == 0
+
+    file_def = dir_default / "extract_test_on_extract_test_CDSs_c_id_main.fasta"
+    file_strip = dir_stripped / "extract_test_on_extract_test_CDSs_c_id_main.fasta"
+    assert file_def.exists() and file_strip.exists()
+
+    seqs_def = [line.strip() for line in file_def.read_text().splitlines() if line and not line.startswith(">")]
+    seqs_strip = [line.strip() for line in file_strip.read_text().splitlines() if line and not line.startswith(">")]
+    assert len(seqs_def) == len(seqs_strip)
+    # At least one CDS with a stop codon is 3 nt shorter
+    assert any(len(d) == len(s) + 3 for d, s in zip(seqs_def, seqs_strip))
+
+
+def test_extract_cli_skip_coordinate_polishing(test_data_dir, tmp_path):
+    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
+    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
+    output_dir = tmp_path / "aegis_output" / "features"
+
+    args = [
+        str(gff3_path),
+        str(fasta_path),
+        "-f", "gene",
+        "--skip-coordinate-polishing",
+        "-d", str(output_dir),
+        "-q",
+    ]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, f"Error: {result.stdout}"
+

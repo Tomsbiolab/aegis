@@ -128,8 +128,17 @@ def main(
         "--chloroplast-chroms", help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code.",
         callback=split_callback
     )] = [],
-    strip_stop: Annotated[bool, typer.Option(
-        "--strip-stop", help="Strip trailing stop codon (* in proteins, terminal 3-nt stop codon in CDSs) from exported sequences."
+    polish_coordinates: Annotated[bool, typer.Option(
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates)."
+    )] = False,
+    strip_stop: Annotated[Optional[bool], typer.Option(
+        "--strip-stop/--no-strip-stop", help="Explicitly enable/disable stripping stop codons across both proteins and CDSs (overrides defaults)."
+    )] = None,
+    keep_stop: Annotated[bool, typer.Option(
+        "--keep-stop", help="Keep trailing stop codon (* in proteins) when exporting protein sequences (by default trailing stop codons are stripped)."
+    )] = False,
+    strip_stop_cds: Annotated[bool, typer.Option(
+        "--strip-stop-cds", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon)."
     )] = False,
 ):
     """
@@ -145,6 +154,7 @@ def main(
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs
+    skip_coordinate_polishing = not polish_coordinates
 
     for f_type in features:
         if f_type not in FEATURES:
@@ -206,6 +216,7 @@ def main(
         plastid_table=res_plastid,
         mitochondria_chroms=mito_chroms,
         chloroplast_chroms=chloro_chroms,
+        skip_coordinate_polishing=skip_coordinate_polishing,
     )
 
     export_translation_kwargs = {
@@ -239,6 +250,13 @@ def main(
         else:
             annotation.export.transcripts(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes) #type: ignore
 
+    if strip_stop is not None:
+        protein_strip = strip_stop
+        cds_strip = strip_stop
+    else:
+        protein_strip = not keep_stop
+        cds_strip = strip_stop_cds
+
     if "protein" in features:
 
         if "gene" in feature_id:
@@ -250,7 +268,7 @@ def main(
         else:
             used_id = "protein"
         protein_kwargs = export_translation_kwargs.copy()
-        protein_kwargs["strip_stop"] = strip_stop
+        protein_kwargs["strip_stop"] = protein_strip
 
         if "unique_per_gene" in mode:
             annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, **protein_kwargs)
@@ -272,7 +290,7 @@ def main(
 
         protein_oriented = not raw_cds
         cds_kwargs = export_translation_kwargs.copy()
-        cds_kwargs["strip_stop"] = strip_stop
+        cds_kwargs["strip_stop"] = cds_strip
 
         if "unique_per_gene" in mode:
             annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, **cds_kwargs)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import warnings
 from typing import Literal
 
 from .feature import Feature
@@ -730,28 +731,42 @@ class Transcript(Feature):
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            transcript_seqs = ["", ""]
-            for exon in self.exons:
-                transcript_seqs[0] += exon.seq
-
-            for exon in reversed(self.exons):
-                transcript_seqs[1] += reverse_complement(exon.seq)
-
-            return transcript_seqs
+            if not self.exons:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+                warnings.warn(
+                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.exons) > 1:
+                self.exons.sort()
+            fw_seq = "".join(scf_seq[max(0, exon.start - 1):min(scf_len, exon.end)] for exon in self.exons)
+            return [fw_seq, reverse_complement(fw_seq)]
 
     @property
     def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            transcript_seqs = ["", ""]
-            for exon in self.exons:
-                transcript_seqs[0] += exon.hard_seq
-
-            for exon in reversed(self.exons):
-                transcript_seqs[1] += reverse_complement(exon.hard_seq)
-
-            return transcript_seqs
+            if not self.exons:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+                warnings.warn(
+                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.exons) > 1:
+                self.exons.sort()
+            fw_seq = "".join(scf_seq[max(0, exon.start - 1):min(scf_len, exon.end)] for exon in self.exons)
+            return [fw_seq, reverse_complement(fw_seq)]
     
     @property
     def size(self):
