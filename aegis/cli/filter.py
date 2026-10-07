@@ -4,7 +4,7 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback
+from .utils import split_callback, IO_PANEL, EXEC_PANEL
 
 RNA_CLASSES = [
     "mRNA", "antisense_lncRNA", "antisense_RNA",
@@ -16,6 +16,9 @@ RNA_CLASSES = [
     "RNase_P_RNA"
 ]
 
+BIOTYPE_PANEL = "Biotype & RNA Filtering"
+FEATURE_PANEL = "Feature Filtering"
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
@@ -25,50 +28,65 @@ def main(
         help="Path to the input annotation GFF/GTF file."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory."
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, with or without extension."
+        "-o", "--output-file", help="Path to the output annotation filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_filtered",
-    coding_only: Annotated[bool, typer.Option(
-        "--coding-only", help="Keep only protein-coding genes and transcripts (removes non-coding genes and non-coding transcripts from mixed genes)."
-    )] = False,
-    non_coding_only: Annotated[bool, typer.Option(
-        "--non-coding-only", help="Keep only non-protein-coding genes and transcripts (removes coding genes and coding transcripts from mixed genes, keeping lncRNAs, etc.)."
-    )] = False,
-    rna_classes: Annotated[List[str], typer.Option(
-        "-r", "--rna-classes", help="Filter transcripts by biotype (e.g. 'mRNA,lncRNA'). Provide a comma-separated list. Transcripts not in the list and genes without remaining transcripts are removed.",
-        callback=split_callback
-    )] = [],
-    skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Remove pseudogenes from the annotation."
-    )] = False,
-    pseudogenes_only: Annotated[bool, typer.Option(
-        "--pseudogenes-only", help="Keep only pseudogenes, removing non-pseudogene genes."
-    )] = False,
-    skip_te: Annotated[bool, typer.Option(
-        "--skip-te", "--skip-transposables", help="Remove transposable element genes from the annotation."
-    )] = False,
-    te_only: Annotated[bool, typer.Option(
-        "--te-only", "--transposables-only", help="Keep only transposable element genes, removing non-TE genes."
-    )] = False,
-    min_cds_size: Annotated[Optional[int], typer.Option(
-        "--min-cds-size", help="Remove genes whose main CDS length (bp) is smaller than this threshold."
-    )] = None,
-    has_symbol: Annotated[bool, typer.Option(
-        "--has-symbol", help="Keep only genes that have an assigned gene symbol."
-    )] = False,
     main_only: Annotated[bool, typer.Option(
-        "-m", "--main", help="Include only the main transcript and main CDS per gene."
+        "-m", "--main", help="Include only the main transcript and main CDS per gene.",
+        rich_help_panel=FEATURE_PANEL,
     )] = False,
     include_UTRs: Annotated[bool, typer.Option(
-        "-u", "--include-UTRs", help="Include UTRs in output GFF."
+        "-u", "--include-UTRs", help="Include UTRs in output GFF.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    coding_only: Annotated[bool, typer.Option(
+        "--coding-only", help="Keep only protein-coding genes and transcripts (removes non-coding genes and non-coding transcripts from mixed genes).",
+        rich_help_panel=BIOTYPE_PANEL,
+    )] = False,
+    non_coding_only: Annotated[bool, typer.Option(
+        "--non-coding-only", help="Keep only non-protein-coding genes and transcripts (removes coding genes and coding transcripts from mixed genes, keeping lncRNAs, etc.).",
+        rich_help_panel=BIOTYPE_PANEL,
+    )] = False,
+    rna_classes: Annotated[List[str], typer.Option(
+        "-r", "-b", "--rna-classes", "--biotypes", help="Filter transcripts by biotype (e.g. 'mRNA,lncRNA'). Provide a comma-separated list. Transcripts not in the list and genes without remaining transcripts are removed.",
+        callback=split_callback,
+        rich_help_panel=BIOTYPE_PANEL,
+    )] = [],
+    skip_pseudogenes: Annotated[bool, typer.Option(
+        "--skip-pseudogenes", help="Remove pseudogenes from the annotation.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    pseudogenes_only: Annotated[bool, typer.Option(
+        "--pseudogenes-only", help="Keep only pseudogenes, removing non-pseudogene genes.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    skip_te: Annotated[bool, typer.Option(
+        "--skip-te", "--skip-transposables", help="Remove transposable element genes from the annotation.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    te_only: Annotated[bool, typer.Option(
+        "--te-only", "--transposables-only", help="Keep only transposable element genes, removing non-TE genes.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    min_cds_size: Annotated[Optional[int], typer.Option(
+        "--min-cds-size", "--min-cds-len", help="Remove genes whose main CDS length (bp) is smaller than this threshold.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = None,
+    has_symbol: Annotated[bool, typer.Option(
+        "--has-symbol", help="Keep only genes that have an assigned gene symbol.",
+        rich_help_panel=FEATURE_PANEL,
     )] = False,
     quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

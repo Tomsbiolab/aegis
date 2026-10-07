@@ -9,7 +9,9 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
-from .utils import split_callback
+from .utils import split_callback, IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL
+
+SUBSET_PANEL = "Subset Criteria"
 
 app = typer.Typer(add_completion=False)
 @app.command()
@@ -20,57 +22,77 @@ def main(
     genome_file: Annotated[str, typer.Argument(
         help="Path to the input genome FASTA file."
     )] = "",
-    chr_cap: Annotated[Optional[int], typer.Option(
-        "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s). Set to 0 to disable."
-    )] = 2,
-    no_chr_cap: Annotated[bool, typer.Option(
-        "--no-chr-cap", help="Do not enforce a chromosome cap. Selects all common chromosomes/scaffolds."
-    )] = False,
-    chosen_chromosomes: Annotated[List[str], typer.Option(
-        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s). Add them and separate them by commas e.g. --chromosomes 'chr1,chr3'.",
-        callback=split_callback
-    )] = [],
-    gene_cap: Annotated[Optional[int], typer.Option(
-        "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. Set to 0 to disable. The gene cap will affect scaffolds/chromosomes as uniformly as possible."
-    )] = 3000,
-    no_gene_cap: Annotated[bool, typer.Option(
-        "--no-gene-cap", help="Do not enforce a gene cap. Retains all genes present on the selected chromosomes/scaffolds."
-    )] = False,
-    min_genes: Annotated[Optional[int], typer.Option(
-        "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chosen-chromosomes if used. Set to 0 to disable."
-    )] = 1500,
-    no_min_genes: Annotated[bool, typer.Option(
-        "--no-min-genes", help="Do not enforce a minimum total number of genes in the subset."
-    )] = False,
-    seed: Annotated[Optional[int], typer.Option(
-        "-s", "--seed", help="Random seed for reproducible subset sampling."
-    )] = None,
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-g", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/subsets/",
     output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Path to the output annotation filename, including extension."
+        "-oa", "-o", "--output-annot-file", "--output-file", help="Path to the output annotation filename, including extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_subset.gff3",
     output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Path to the output genome filename, including extension."
+        "-og", "--output-genome-file", help="Path to the output genome filename, including extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-name}_subset.fasta",
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+
+    chosen_chromosomes: Annotated[List[str], typer.Option(
+        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s). Add them and separate them by commas e.g. --chromosomes 'chr1,chr3'.",
+        callback=split_callback,
+        rich_help_panel=SUBSET_PANEL,
+    )] = [],
+    chr_cap: Annotated[Optional[int], typer.Option(
+        "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s). Set to 0 to disable.",
+        rich_help_panel=SUBSET_PANEL,
+    )] = 2,
+    no_chr_cap: Annotated[bool, typer.Option(
+        "--no-chr-cap", help="Do not enforce a chromosome cap. Selects all common chromosomes/scaffolds.",
+        rich_help_panel=SUBSET_PANEL,
     )] = False,
+    gene_cap: Annotated[Optional[int], typer.Option(
+        "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. Set to 0 to disable. The gene cap will affect scaffolds/chromosomes as uniformly as possible.",
+        rich_help_panel=SUBSET_PANEL,
+    )] = 3000,
+    no_gene_cap: Annotated[bool, typer.Option(
+        "--no-gene-cap", help="Do not enforce a gene cap. Retains all genes present on the selected chromosomes/scaffolds.",
+        rich_help_panel=SUBSET_PANEL,
+    )] = False,
+    min_genes: Annotated[Optional[int], typer.Option(
+        "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chosen-chromosomes if used. Set to 0 to disable.",
+        rich_help_panel=SUBSET_PANEL,
+    )] = 1500,
+    no_min_genes: Annotated[bool, typer.Option(
+        "--no-min-genes", help="Do not enforce a minimum total number of genes in the subset.",
+        rich_help_panel=SUBSET_PANEL,
+    )] = False,
+    seed: Annotated[Optional[int], typer.Option(
+        "-s", "--seed", help="Random seed for reproducible subset sampling.",
+        rich_help_panel=SUBSET_PANEL,
+    )] = None,
+
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

@@ -6,6 +6,9 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..genome import Genome, Scaffold
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL
+
+GENOME_COMP_PANEL = "Genome Comparison Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -332,58 +335,79 @@ def main(
         help="Path to one or more input genome FASTA file(s)."
     )],
     genome_names: Annotated[str, typer.Option(
-        "-g", "--genome-names", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames."
+        "-g", "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
+        rich_help_panel=IO_PANEL,
     )] = "",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to output TSV/CSV file."
+        "-o", "--output-file", help="Path to output TSV/CSV file.",
+        rich_help_panel=IO_PANEL,
     )] = "",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified."
+        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified.",
+        rich_help_panel=IO_PANEL,
     )] = "",
-    include_all: Annotated[bool, typer.Option(
-        "-a", "--all", help="Include all scaffolds and contigs in the table, not just chromosomes."
-    )] = False,
-    summary_only: Annotated[bool, typer.Option(
-        "--summary-only", help="Report only assembly-level summary statistics without listing individual chromosomes."
-    )] = False,
-    contigs_only: Annotated[bool, typer.Option(
-        "--contigs-only", "--scaffolds-only", help="Report only chromosome/scaffold statistics without the summary table."
-    )] = False,
-    chromosomes_only: Annotated[bool, typer.Option(
-        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs."
-    )] = False,
-    human_readable: Annotated[bool, typer.Option(
-        "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb)."
-    )] = False,
-    sort_by: Annotated[str, typer.Option(
-        "--sort-by", help="Sort order for chromosomes: 'name' (natural sort, default), 'size' (descending size), or 'order' (FASTA order)."
-    )] = "name",
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Suppress terminal output (useful when exporting to file)."
-    )] = False,
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
-    )] = False,
-    genome_size: Annotated[str, typer.Option(
-        "-s", "--genome-size", help="Estimated/expected genome size (e.g. '135M', '1.2G', or '135000000') for calculating NG50, LG50, and auNG."
-    )] = "",
+
     reference: Annotated[bool, typer.Option(
-        "-r", "--reference", help="Use first genome as reference (or specified via --ref-genome) and report relative differences (showing '= ref' for identical features/metrics)."
+        "-r", "--reference", help="Use first genome as reference (or specified via --ref-genome) and report relative differences (showing '= ref' for identical features/metrics).",
+        rich_help_panel=GENOME_COMP_PANEL,
     )] = False,
     ref_genome: Annotated[str, typer.Option(
-        "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode)."
+        "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode).",
+        rich_help_panel=GENOME_COMP_PANEL,
     )] = "",
     diff_only: Annotated[bool, typer.Option(
-        "--diff-only", help="Report only features and summary statistics where genomes differ from reference (automatically activates reference mode; hides rows that are '= ref')."
+        "--diff-only", help="Report only features and summary statistics where genomes differ from reference (automatically activates reference mode; hides rows that are '= ref').",
+        rich_help_panel=GENOME_COMP_PANEL,
     )] = False,
+    include_all: Annotated[bool, typer.Option(
+        "-a", "--all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = False,
+    summary_only: Annotated[bool, typer.Option(
+        "--summary-only", help="Report only assembly-level summary statistics without listing individual chromosomes.",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = False,
+    contigs_only: Annotated[bool, typer.Option(
+        "--contigs-only", "--scaffolds-only", help="Report only chromosome/scaffold statistics without the summary table.",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = False,
+    chromosomes_only: Annotated[bool, typer.Option(
+        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs.",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = False,
+    human_readable: Annotated[bool, typer.Option(
+        "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb).",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = False,
+    genome_size: Annotated[str, typer.Option(
+        "-s", "--genome-size", help="Estimated/expected genome size (e.g. '135M', '1.2G', or '135000000') for calculating NG50, LG50, and auNG.",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = "",
     no_seq: Annotated[bool, typer.Option(
-        "--no-seq", help="Disable sequence-level hash matching (rely on name and unequivocal size matching only)."
+        "--no-seq", help="Disable sequence-level hash matching (rely on name and unequivocal size matching only).",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = False,
+    sort_by: Annotated[str, typer.Option(
+        "--sort-by", help="Sort order for chromosomes: 'name' (natural sort, default), 'size' (descending size), or 'order' (FASTA order).",
+        rich_help_panel=GENOME_COMP_PANEL,
+    )] = "name",
+
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Suppress terminal output (useful when exporting to file).",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

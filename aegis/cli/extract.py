@@ -6,7 +6,21 @@ from typing_extensions import Annotated
 
 from ..genome import Genome
 from ..annotation import Annotation
-from .utils import split_callback, TaxonomyOption, GeneticCodeOption, AutoOrganelleCodesOption, MitoCodeOption, PlastidCodeOption, MitochondriaChromsOption, ChloroplastChromsOption, InitiatorMethionineOption
+from .utils import (
+    split_callback,
+    TaxonomyOption,
+    GeneticCodeOption,
+    AutoOrganelleCodesOption,
+    MitoCodeOption,
+    PlastidCodeOption,
+    MitochondriaChromsOption,
+    ChloroplastChromsOption,
+    InitiatorMethionineOption,
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    CDS_PANEL,
+)
 
 FEATURES = ["gene", "transcript", "CDS", "protein", "promoter"]
 
@@ -22,6 +36,8 @@ RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA",
                 "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
                 "SRP_RNA", "RNase_MRP_RNA"]
 
+EXTRACTION_PANEL = "Feature Extraction Options"
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.command()
@@ -33,77 +49,150 @@ def main(
         help="Path to the input genome FASTA file."
     )],
     genome_name: Annotated[str, typer.Option(
-        "-g", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]"
+        "-g", "-gn", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]"
+        "-a", "-an", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved."
+        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/features/",
+    feature_id: Annotated[str, typer.Option(
+        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "feature",
+    detailed_headers: Annotated[bool, typer.Option(
+        "-dh", "--detailed-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
     features: Annotated[List[str], typer.Option(
         "-f", "--features", help=f"Feature type(s) to extract, as a comma-separated list. Available options: {', '.join(FEATURES)}.",
-        callback=split_callback
+        callback=split_callback,
+        rich_help_panel=EXTRACTION_PANEL,
     )] = ["gene"],
-
     mode: Annotated[List[str], typer.Option(
         "-m", "--mode", help=f"""Extraction mode(s), as a comma-separated list. Controls filtering of features.\n\n
-
         - 'all': Extract all features (e.g., all transcripts for a gene).\n
         - 'unique_per_gene': Keep one copy of each unique protein/CDS sequence per gene.\n
         - 'main': Extract only the main variant (e.g., the longest transcript).\n
         - 'unique': Keep only one copy of each unique protein/CDS sequence across the entire output.""",
-        callback=split_callback
+        callback=split_callback,
+        rich_help_panel=EXTRACTION_PANEL,
     )] = ["all", "main"],
     rna_classes: Annotated[List[str], typer.Option(
         "-r", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
-        callback=split_callback
+        callback=split_callback,
+        rich_help_panel=EXTRACTION_PANEL,
     )] = [],
     promoter_size: Annotated[int, typer.Option(
-        "-ps", "--promoter-size", help=f"Size of the promoter region in base pairs (bp). Used only if 'promoter' is a selected feature."
+        "-ps", "--promoter-size", help=f"Size of the promoter region in base pairs (bp). Used only if 'promoter' is a selected feature.",
+        rich_help_panel=EXTRACTION_PANEL,
     )] = 2000,
-
     promoter_type: Annotated[str, typer.Option(
         "-p", "--promoter-type", help="""\
                 Defines the reference point for extracting promoter regions. Used only if 'promoter' is selected.\n\n
-                
                 Options:\n
                 - 'standard': Upstream of the transcript's start site (TSS).\n
                 - 'upstream_ATG': Upstream of the main CDS's start codon (ATG). Falls back to 'standard' if no CDS is present.\n
                 - 'standard_plus_up_to_ATG': The 'standard' promoter plus the 5' UTR (sequence between TSS and ATG). Falls back to 'standard' if no CDS.
-                """
+                """,
+        rich_help_panel=EXTRACTION_PANEL,
     )] = "standard",
-
-    detailed_headers: Annotated[bool, typer.Option(
-        "-dh", "--detailed-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable."
-    )] = False,
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+    raw_cds: Annotated[bool, typer.Option(
+        "--raw-cds", help="Export raw spliced genomic CDS sequences instead of in-frame protein-oriented coding sequences.",
+        rich_help_panel=EXTRACTION_PANEL,
     )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
-        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
+        rich_help_panel=EXTRACTION_PANEL,
     )] = False,
     no_collapse_CDSs: Annotated[bool, typer.Option(
-        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments."
+        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
+        rich_help_panel=EXTRACTION_PANEL,
     )] = False,
-    feature_id: Annotated[str, typer.Option(
-        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}."
-    )] = "feature",
+    strip_stop: Annotated[Optional[bool], typer.Option(
+        "--strip-stop/--no-strip-stop", help="Explicitly enable/disable stripping stop codons across both proteins and CDSs (overrides defaults).",
+        rich_help_panel=EXTRACTION_PANEL,
+    )] = None,
+    keep_stop: Annotated[bool, typer.Option(
+        "--keep-stop", help="Keep trailing stop codon (* in proteins) when exporting protein sequences (by default trailing stop codons are stripped).",
+        rich_help_panel=EXTRACTION_PANEL,
+    )] = False,
+    strip_stop_cds: Annotated[bool, typer.Option(
+        "--strip-stop-cds", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon).",
+        rich_help_panel=EXTRACTION_PANEL,
+    )] = False,
+
+    infer_missing_CDSs: Annotated[bool, typer.Option(
+        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+    rework_all_CDSs: Annotated[bool, typer.Option(
+        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+    fallback_to_trim: Annotated[bool, typer.Option(
+        "--fallback-to-trim", help="When recalculating CDSs, fallback to trimming unaligned ends if no high-ratio ORF is found.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+    coding_ratio_threshold: Annotated[float, typer.Option(
+        "--coding-ratio-threshold", help="Threshold ratio of coding sequence length to transcript length for rework CDS (default: 0.7).",
+        rich_help_panel=CDS_PANEL,
+    )] = 0.7,
+    allow_internal_stops: Annotated[bool, typer.Option(
+        "--allow-internal-stops/--no-allow-internal-stops", help="Allow internal stop codons in progressive rework fallback (default: True).",
+        rich_help_panel=CDS_PANEL,
+    )] = True,
+    allow_partial: Annotated[bool, typer.Option(
+        "--allow-partial/--no-allow-partial", help="Allow partial ORFs without stop codon in progressive rework fallback (default: True).",
+        rich_help_panel=CDS_PANEL,
+    )] = True,
+    enforce_start_codon: Annotated[bool, typer.Option(
+        "--enforce-start-codon/--no-enforce-start-codon", help="Require start codon (ATG) in initial rework passes (default: True).",
+        rich_help_panel=CDS_PANEL,
+    )] = True,
+    orf_choice_mode: Annotated[str, typer.Option(
+        "--orf-choice-mode", help="ORF selection criteria: 'longest' or 'earliest' (default: 'longest').",
+        rich_help_panel=CDS_PANEL,
+    )] = "longest",
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (e.g. 30 or 50 to suppress micro-ORFs, default: 2).",
+        rich_help_panel=CDS_PANEL,
+    )] = 2,
+    adjust_internal_shifts: Annotated[str, typer.Option(
+        "--adjust-internal-shifts", help="Frameshift / phase handling mode for multi-segment CDS translation: 'intra_exon' (default: adjust shifts only across contiguous/overlapping exon segments, preserving continuous splicing across introns), 'all' (adjust across all junctions), or 'none' (translate continuous spliced sequence).",
+        rich_help_panel=CDS_PANEL,
+    )] = "intra_exon",
+    polish_coordinates: Annotated[bool, typer.Option(
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates).",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
-    raw_cds: Annotated[bool, typer.Option(
-        "--raw-cds", help="Export raw spliced genomic CDS sequences instead of in-frame protein-oriented coding sequences."
-    )] = False,
-    adjust_internal_shifts: Annotated[str, typer.Option(
-        "--adjust-internal-shifts", help="Frameshift / phase handling mode for multi-segment CDS translation: 'intra_exon' (default: adjust shifts only across contiguous/overlapping exon segments, preserving continuous splicing across introns), 'all' (adjust across all junctions), or 'none' (translate continuous spliced sequence)."
-    )] = "intra_exon",
+
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -112,50 +201,10 @@ def main(
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
     initiator_methionine: InitiatorMethionineOption = "canonical",
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates)."
-    )] = False,
-    strip_stop: Annotated[Optional[bool], typer.Option(
-        "--strip-stop/--no-strip-stop", help="Explicitly enable/disable stripping stop codons across both proteins and CDSs (overrides defaults)."
-    )] = None,
-    keep_stop: Annotated[bool, typer.Option(
-        "--keep-stop", help="Keep trailing stop codon (* in proteins) when exporting protein sequences (by default trailing stop codons are stripped)."
-    )] = False,
-    strip_stop_cds: Annotated[bool, typer.Option(
-        "--strip-stop-cds", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon)."
-    )] = False,
-    rework_all_CDSs: Annotated[bool, typer.Option(
-        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs."
-    )] = False,
-    infer_missing_CDSs: Annotated[bool, typer.Option(
-        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations."
-    )] = False,
-    fallback_to_trim: Annotated[bool, typer.Option(
-        "--fallback-to-trim", help="When recalculating CDSs, fallback to trimming unaligned ends if no high-ratio ORF is found."
-    )] = False,
-    coding_ratio_threshold: Annotated[float, typer.Option(
-        "--coding-ratio-threshold", help="Threshold ratio of coding sequence length to transcript length for rework CDS (default: 0.7)."
-    )] = 0.7,
-    allow_internal_stops: Annotated[bool, typer.Option(
-        "--allow-internal-stops/--no-allow-internal-stops", help="Allow internal stop codons in progressive rework fallback (default: True)."
-    )] = True,
-    allow_partial: Annotated[bool, typer.Option(
-        "--allow-partial/--no-allow-partial", help="Allow partial ORFs without stop codon in progressive rework fallback (default: True)."
-    )] = True,
-    enforce_start_codon: Annotated[bool, typer.Option(
-        "--enforce-start-codon/--no-enforce-start-codon", help="Require start codon (ATG) in initial rework passes (default: True)."
-    )] = True,
-    orf_choice_mode: Annotated[str, typer.Option(
-        "--orf-choice-mode", help="ORF selection criteria: 'longest' or 'earliest' (default: 'longest')."
-    )] = "longest",
-    min_codon_len: Annotated[int, typer.Option(
-        "--min-codon-len", help="Minimum codon length required for predicted ORFs (e.g. 30 or 50 to suppress micro-ORFs, default: 2)."
-    )] = 2,
-    recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
-    )] = False,
-    reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

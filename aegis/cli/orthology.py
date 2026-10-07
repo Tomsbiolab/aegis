@@ -304,7 +304,7 @@ def main(
         rich_help_panel="Core Input/Output Configuration"
     )] = [],
     reference_annotation: Annotated[str, typer.Option(
-        "--reference-annotation", 
+        "-r", "--reference-annotation", 
         help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
         rich_help_panel="Core Input/Output Configuration"
     )] = "None",

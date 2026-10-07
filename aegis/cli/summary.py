@@ -9,7 +9,18 @@ from ..annotation import Annotation
 from ..genome import Genome, Scaffold
 from ..utils.genefunctions import NCBI_GENETIC_CODES
 from .summary_genome import pair_genome_features, PairedFeature, normalize_chr_name
-from .utils import TaxonomyOption, GeneticCodeOption, AutoOrganelleCodesOption, MitoCodeOption, PlastidCodeOption
+from .utils import (
+    TaxonomyOption,
+    GeneticCodeOption,
+    AutoOrganelleCodesOption,
+    MitoCodeOption,
+    PlastidCodeOption,
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+)
+
+SUMMARY_PANEL = "Summary & Comparison Options"
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -151,61 +162,82 @@ def main(
         help="Path to one or more annotation GFF/GTF file(s). (Optional: a single genome FASTA can be provided as the last argument, or explicitly via -g/--genome)."
     )],
     genome: Annotated[Optional[List[str]], typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g)."
+        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
+        rich_help_panel=IO_PANEL,
     )] = None,
     annotation_names: Annotated[str, typer.Option(
-        "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames)."
+        "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames).",
+        rich_help_panel=IO_PANEL,
     )] = "",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag (comma-separated if multiple genomes)."
+        "-gn", "--genome-name", help="Genome assembly version, name or tag (comma-separated if multiple genomes).",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to output summary table (TSV/CSV)."
+        "-o", "--output-file", help="Path to output summary table (TSV/CSV).",
+        rich_help_panel=IO_PANEL,
     )] = "",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder for stats and reports."
+        "-d", "--output-dir", help="Path to the output folder for stats and reports.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/stats/",
+    plots: Annotated[bool, typer.Option(
+        "--plots", help="Export distribution barplots and pie charts into output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
+
     reference: Annotated[bool, typer.Option(
-        "-r", "--reference", help="Use first annotation as reference (or specified via --ref-annotation) and report relative differences."
+        "-r", "--reference", help="Use first annotation as reference (or specified via --ref-annotation) and report relative differences.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     ref_annotation: Annotated[str, typer.Option(
-        "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference."
+        "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = "",
     diff_only: Annotated[bool, typer.Option(
-        "--diff-only", help="Report only features and summary statistics where annotations differ from reference (automatically activates reference mode; hides rows that are '= ref')."
+        "--diff-only", help="Report only features and summary statistics where annotations differ from reference (automatically activates reference mode; hides rows that are '= ref').",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     summary_only: Annotated[bool, typer.Option(
-        "--summary-only", help="Report only overall summary statistics without listing individual contigs."
+        "--summary-only", help="Report only overall summary statistics without listing individual contigs.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     contigs_only: Annotated[bool, typer.Option(
-        "--contigs-only", help="Report only contig-level statistics without the summary table."
+        "--contigs-only", help="Report only contig-level statistics without the summary table.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     chromosomes_only: Annotated[bool, typer.Option(
-        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs."
+        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     human_readable: Annotated[bool, typer.Option(
-        "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb)."
+        "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb).",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
-    )] = False,
-    plots: Annotated[bool, typer.Option(
-        "--plots", help="Export distribution barplots and pie charts into output directory."
-    )] = False,
+
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
+
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
+
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
 ):
     """
     Outputs summary statistics and chromosome breakdown for one or more annotations,

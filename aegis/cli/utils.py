@@ -32,9 +32,13 @@ def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Genetic code options shared by every command that translates CDSs
+# Standard Rich help panel titles used across the AEGIS CLI suite
 # ---------------------------------------------------------------------------
+IO_PANEL = "Input / Output Options"
+EXEC_PANEL = "Execution / Debugging"
+FASTA_HEADER_PANEL = "FASTA Header Options"
 GENETIC_CODES_PANEL = "Genetic Codes"
+CDS_PANEL = "CDS Inference & Reworking"
 
 
 def taxonomy_callback(value: str) -> str:

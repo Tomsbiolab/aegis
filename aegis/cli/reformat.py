@@ -4,6 +4,10 @@ import os
 from typing_extensions import Annotated
 
 from ..annotation import Annotation, detect_file_format, read_file_with_fallback
+from .utils import IO_PANEL, EXEC_PANEL
+
+FORMAT_PANEL = "Format Options"
+COORDS_PANEL = "Coordinate & Phase Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -13,31 +17,40 @@ def main(
         help="Path to the input annotation GFF/GTF file."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     input_format: Annotated[str, typer.Option(
-        "-f", "--input-format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override."
+        "-f", "--input-format", "--format", help="GTF/GFF format is automatically detected. Choose GTF or GFF to override.",
+        rich_help_panel=FORMAT_PANEL,
     )] = "Auto Detect",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension."
+        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}.{ext}",
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
-    )] = False,
     strict_gtf_2_2: Annotated[bool, typer.Option(
-        "--strict-gtf-2-2", help="Export strict GTF 2.2 format without top-level gene/transcript lines and with 5UTR/3UTR features."
+        "--strict-gtf-2-2", help="Export strict GTF 2.2 format without top-level gene/transcript lines and with 5UTR/3UTR features.",
+        rich_help_panel=FORMAT_PANEL,
     )] = False,
     polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates)."
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates).",
+        rich_help_panel=COORDS_PANEL,
     )] = False,
     recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=COORDS_PANEL,
     )] = False,
     reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

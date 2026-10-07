@@ -4,8 +4,10 @@ import os
 from typing_extensions import Annotated
 
 from ..annotation import Annotation, read_file_with_fallback
+from .utils import IO_PANEL, EXEC_PANEL
 
 features = ["gene", "transcript"]
+PRUNE_PANEL = "Pruning Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
@@ -17,19 +19,24 @@ def main(
         help="Input file with list of ids, one per line."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     feature_type: Annotated[str, typer.Option(
-        "-f", "--feature-type", help=f"Identify feature level to be removed, based on input ids. Choose from {features}."
+        "-f", "--feature-type", "--feature", help=f"Identify feature level to be removed, based on input ids. Choose from {features}.",
+        rich_help_panel=PRUNE_PANEL,
     )] = "gene",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory."
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension."
+        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_pruned",
     quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

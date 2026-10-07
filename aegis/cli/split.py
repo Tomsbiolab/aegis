@@ -10,6 +10,9 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome, Scaffold
 from ..utils.misc import open_file
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL
+
+SPLIT_PANEL = "Split Criteria"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -280,64 +283,86 @@ def main(
         help="Optional second input file (genome FASTA or annotation GFF/GTF)."
     )] = "",
     annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided."
+        "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
     )] = "",
     genome_file: Annotated[str, typer.Option(
-        "-g", "--genome", help="Path to the input genome FASTA file. Overrides positional argument if provided."
-    )] = "",
-    split_by: Annotated[Optional[list[str]], typer.Option(
-        "-s", "--split-by", help="Tag(s) or pattern(s) to split by (e.g. 'A,B', 'A,;D,', 'A,,D,', or multiple -s A, -s D,).",
-    )] = None,
-    regex: Annotated[str, typer.Option(
-        "-r", "--regex", help="Optional regular expression pattern to extract the split tag from sequence ID or description (e.g. 'chromosome \\d+([A-Z])')."
-    )] = "",
-    match_mode: Annotated[str, typer.Option(
-        "-m", "--match-mode", help="Matching mode for split-by tags: 'smart' (default; checks chromosome/haplotype context and word boundaries), 'substring' (simple substring match), or 'exact' (exact word match)."
-    )] = "smart",
-    ignore_case: Annotated[bool, typer.Option(
-        "-i", "--ignore-case", help="Case-insensitive matching. By default, matching is case-sensitive."
-    )] = False,
-    split_map: Annotated[str, typer.Option(
-        "--split-map", help="Path to a TSV file for explicit scaffold mapping. Format: 'scaffold_id<tab>split_group' per line."
+        "-g", "--genome", help="Path to the input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag."
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
+        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/split/",
     output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']"
+        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_split{tag}.gff3",
     output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']"
+        "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-name}_split{tag}.fasta",
-    keep_description: Annotated[bool, typer.Option(
-        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files."
+    split_by: Annotated[Optional[list[str]], typer.Option(
+        "-s", "--split-by", help="Tag(s) or pattern(s) to split by (e.g. 'A,B', 'A,;D,', 'A,,D,', or multiple -s A, -s D,).",
+        rich_help_panel=SPLIT_PANEL,
+    )] = None,
+    regex: Annotated[str, typer.Option(
+        "-r", "--regex", help="Optional regular expression pattern to extract the split tag from sequence ID or description (e.g. 'chromosome \\d+([A-Z])').",
+        rich_help_panel=SPLIT_PANEL,
+    )] = "",
+    match_mode: Annotated[str, typer.Option(
+        "-m", "--match-mode", help="Matching mode for split-by tags: 'smart' (default; checks chromosome/haplotype context and word boundaries), 'substring' (simple substring match), or 'exact' (exact word match).",
+        rich_help_panel=SPLIT_PANEL,
+    )] = "smart",
+    ignore_case: Annotated[bool, typer.Option(
+        "-i", "--ignore-case", help="Case-insensitive matching. By default, matching is case-sensitive.",
+        rich_help_panel=SPLIT_PANEL,
     )] = False,
-    write_empty_other: Annotated[bool, typer.Option(
-        "--write-empty-other", help="Write '_split_other' files even if no scaffolds are unassigned."
-    )] = False,
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
-    )] = False,
+    split_map: Annotated[str, typer.Option(
+        "--split-map", help="Path to a TSV file for explicit scaffold mapping. Format: 'scaffold_id<tab>split_group' per line.",
+        rich_help_panel=SPLIT_PANEL,
+    )] = "",
     by_chromosome: Annotated[bool, typer.Option(
-        "-c", "--by-chromosome", "--by-chr", help="Preset: automatically partition each chromosome into its own split file (unplaced scaffolds into 'other')."
+        "-c", "--by-chromosome", "--by-chr", help="Preset: automatically partition each chromosome into its own split file (unplaced scaffolds into 'other').",
+        rich_help_panel=SPLIT_PANEL,
     )] = False,
-    dry_run: Annotated[bool, typer.Option(
-        "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk."
-    )] = False,
+
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    dry_run: Annotated[bool, typer.Option(
+        "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    write_empty_other: Annotated[bool, typer.Option(
+        "--write-empty-other", help="Write '_split_other' files even if no scaffolds are unassigned.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

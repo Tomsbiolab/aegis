@@ -4,9 +4,11 @@ from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
+from .utils import IO_PANEL, EXEC_PANEL
 
 app = typer.Typer(add_completion=False)
 
+MERGE_PANEL = "Overlap & Merging Options"
 features: list = ["gene", "transcript", "CDS", "exon", "UTR"]
 
 @app.command()
@@ -15,36 +17,45 @@ def main(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. If gene and exon overlaps are chosen, priority will be given to the gene models of the first annotations and the subsequent ones."
     )],
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension."
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-names}.gff3",
     max_gene_overlap: Annotated[float, typer.Option(
         "-g", "--max-gene-overlap",
-        help="Max gene overlap percentage. Maximum allowed gene overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of gene overlap)."
+        help="Max gene overlap percentage. Maximum allowed gene overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of gene overlap).",
+        rich_help_panel=MERGE_PANEL,
     )] = 100,
     max_exon_overlap: Annotated[float, typer.Option(
         "-e", "--max-exon-overlap",
-        help="Max exon overlap percentage. Maximum allowed exon overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of exon overlap)."
+        help="Max exon overlap percentage. Maximum allowed exon overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of exon overlap).",
+        rich_help_panel=MERGE_PANEL,
     )] = 100,
     max_cds_overlap: Annotated[float, typer.Option(
         "-c", "--max-cds-overlap",
-        help="Max CDS overlap percentage. Maximum allowed CDS overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of CDS overlap)."
+        help="Max CDS overlap percentage. Maximum allowed CDS overlap (0-100) with prioritised annotations. Genes exceeding this are excluded. Default: 100 (allows any degree of CDS overlap).",
+        rich_help_panel=MERGE_PANEL,
     )] = 100,
     skip_renaming: Annotated[bool, typer.Option(
         "--skip-renaming",
         help=f"Skip renaming of subgene features: transcript,CDS,exon,UTRs.",
-    )] = False,
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        rich_help_panel=MERGE_PANEL,
     )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
-        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons."
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
+        rich_help_panel=MERGE_PANEL,
     )] = False,
     no_collapse_CDSs: Annotated[bool, typer.Option(
-        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments."
-    )] = False
+        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
+        rich_help_panel=MERGE_PANEL,
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
 ):
     """
     Merge two or more GFF3 annotation files.

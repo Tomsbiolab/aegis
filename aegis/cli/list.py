@@ -4,6 +4,10 @@ import os
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
+from .utils import IO_PANEL, EXEC_PANEL
+
+COLUMNS_PANEL = "Output Columns"
+FILTER_PANEL = "Filtering Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -13,49 +17,64 @@ def genes(
         help="Path to the input annotation GFF/GTF file."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]"
+        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension."
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_genes_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", help="Separator for the output file. Tab is default.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
     lengths: Annotated[bool, typer.Option(
-        "-l", "--lengths", help="Include feature lengths in the output."
+        "-l", "--lengths", help="Include feature lengths in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     transcript_length: Annotated[bool, typer.Option(
-        "--transcript-length", help="Include main transcript lengths instead of gene lengths in the output. Useful for example when 'gene length' is required for count normalisation purposes, where actually the length of the main transcript is what matters."
+        "--transcript-length", help="Include main transcript lengths instead of gene lengths in the output. Useful for example when 'gene length' is required for count normalisation purposes, where actually the length of the main transcript is what matters.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     coordinates: Annotated[bool, typer.Option(
-        "-c", "--coordinates", help="Include feature coordinates in the output."
+        "-c", "--coordinates", help="Include feature coordinates in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     chromosomes: Annotated[bool, typer.Option(
-        "-ch", "--chromosomes", help="Include chromosome/scaffold information in the output."
+        "-ch", "--chromosomes", help="Include chromosome/scaffold information in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     coding_info: Annotated[bool, typer.Option(
-        "--coding-info", help="Include whether a gene codes for a protein or not."
-    )] = False,
-    skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", help="Whether to skip coding genes."
-    )] = False,
-    skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", help="Whether to skip non-coding genes."
+        "--coding-info", help="Include whether a gene codes for a protein or not.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     gene_symbols: Annotated[bool, typer.Option(
-        "--gene-symbols", help="Whether to include gene symbols in the output."
+        "--gene-symbols", help="Whether to include gene symbols in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Tab is default."
-    )] = "\t",
+    skip_coding: Annotated[bool, typer.Option(
+        "--skip-coding", help="Whether to skip coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_non_coding: Annotated[bool, typer.Option(
+        "--skip-non-coding", help="Whether to skip non-coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
     skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Whether to skip pseudogenes."
+        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_transposables: Annotated[bool, typer.Option(
-        "--skip-transposables", help="Whether to skip transposable elements."
+        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
@@ -93,46 +112,60 @@ def transcripts(
         help="Path to the input annotation GFF/GTF file."
     )],
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]"
+        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension."
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_transcripts_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", help="Separator for the output file. Default is tab.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
     lengths: Annotated[bool, typer.Option(
-        "-l", "--lengths", help="Include feature lengths in the output."
+        "-l", "--lengths", help="Include feature lengths in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     coordinates: Annotated[bool, typer.Option(
-        "-c", "--coordinates", help="Include feature coordinates in the output."
+        "-c", "--coordinates", help="Include feature coordinates in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     chromosomes: Annotated[bool, typer.Option(
-        "-ch", "--chromosomes", help="Include chromosome/scaffold information in the output."
+        "-ch", "--chromosomes", help="Include chromosome/scaffold information in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     coding_info: Annotated[bool, typer.Option(
-        "--coding-info", help="Include whether a gene codes for a protein or not."
-    )] = False,
-    skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", help="Whether to skip coding transcripts."
-    )] = False,
-    skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", help="Whether to skip non-coding transcripts."
+        "--coding-info", help="Include whether a gene codes for a protein or not.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
     gene_symbols: Annotated[bool, typer.Option(
-        "--gene-symbols", help="Whether to include gene symbols in the output."
+        "--gene-symbols", help="Whether to include gene symbols in the output.",
+        rich_help_panel=COLUMNS_PANEL,
     )] = False,
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Default is tab."
-    )] = "\t",
+    skip_coding: Annotated[bool, typer.Option(
+        "--skip-coding", help="Whether to skip coding transcripts.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_non_coding: Annotated[bool, typer.Option(
+        "--skip-non-coding", help="Whether to skip non-coding transcripts.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
     skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Whether to skip pseudogenes."
+        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_transposables: Annotated[bool, typer.Option(
-        "--skip-transposables", help="Whether to skip transposable elements."
+        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

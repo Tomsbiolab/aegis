@@ -5,6 +5,9 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, CDS_PANEL
+
+GENOME_CLEANING_PANEL = "Genome Cleaning & Renaming"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
@@ -16,55 +19,80 @@ def main(
         help="Path to the input annotation GFF/GTF file. If provided, it will be processed to match the cleaned genome."
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-g", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
-    remove_scaffolds: Annotated[bool, typer.Option(
-        "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome."
-    )] = False,
-    remove_organelles: Annotated[bool, typer.Option(
-        "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only effective if --remove-scaffolds is also enabled."
-    )] = False,
-    remove_chr00: Annotated[bool, typer.Option(
-        "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled."
-    )] = False,
-    rename_map: Annotated[str, typer.Option(
-        "--rename-map", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, without a header."
-    )] = "",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output files will be saved."
+        "-d", "--output-dir", help="Path to the directory where output files will be saved.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Path to the output genome filename, with or without extension."
+        "-og", "-o", "--output-genome-file", "--output-file", help="Path to the output genome filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-name}_tidy.fasta",
     output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension."
+        "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_tidy.gff3",
-    keep_description: Annotated[bool, typer.Option(
-        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file."
+
+    remove_scaffolds: Annotated[bool, typer.Option(
+        "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome.",
+        rich_help_panel=GENOME_CLEANING_PANEL,
     )] = False,
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+    remove_organelles: Annotated[bool, typer.Option(
+        "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only effective if --remove-scaffolds is also enabled.",
+        rich_help_panel=GENOME_CLEANING_PANEL,
+    )] = False,
+    remove_chr00: Annotated[bool, typer.Option(
+        "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled.",
+        rich_help_panel=GENOME_CLEANING_PANEL,
+    )] = False,
+    rename_map: Annotated[str, typer.Option(
+        "--rename-map", help="Path to a TSV file for renaming chromosomes. Format: 'old_name<tab>new_name' per line, without a header.",
+        rich_help_panel=GENOME_CLEANING_PANEL,
     )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
-    )] = False,
-    skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead."
-    )] = False,
+
     min_codon_len: Annotated[int, typer.Option(
-        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2)."
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
+        rich_help_panel=CDS_PANEL,
     )] = 2,
     recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs."
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=CDS_PANEL,
     )] = False,
     reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases."
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+    skip_coordinate_polishing: Annotated[bool, typer.Option(
+        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
+        rich_help_panel=CDS_PANEL,
+    )] = False,
+
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

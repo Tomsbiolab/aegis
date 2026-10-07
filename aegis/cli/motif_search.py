@@ -6,7 +6,9 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL
 
+PROMOTER_PANEL = "Promoter & Motif Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -28,40 +30,52 @@ def main(
         help="Actual length of motif."
     )],
     header: Annotated[bool, typer.Option(
-        "-H", "--header", help="Use this flag to indicate the presence of a header in input genelist file."
+        "-H", "--header", help="Use this flag to indicate the presence of a header in input genelist file.",
+        rich_help_panel=PROMOTER_PANEL,
     )] = False,
     promoter_size: Annotated[int, typer.Option(
-        "-ps", "--promoter-size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'."
+        "-ps", "--promoter-size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'.",
+        rich_help_panel=PROMOTER_PANEL,
     )] = 2000,
     promoter_type: Annotated[str, typer.Option(
-        "-p", "--promoter-type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard."
+        "-p", "--promoter-type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.",
+        rich_help_panel=PROMOTER_PANEL,
     )] = "standard",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-g", "--genome-name", help="Genome assembly version, name or tag."
+        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     query_tag: Annotated[str, typer.Option(
-        "--genelist-tag", help="Query gene list tag/name to improve output description."
+        "--genelist-tag", help="Query gene list tag/name to improve output description.",
+        rich_help_panel=IO_PANEL,
     )] = "query_genes",
     motif_tag: Annotated[str, typer.Option(
-        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'."
+        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'.",
+        rich_help_panel=IO_PANEL,
     )] = "query_motif",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory."
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
-    )] = False,
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """

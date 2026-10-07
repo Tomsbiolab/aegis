@@ -4,6 +4,9 @@ import os
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
+from .utils import IO_PANEL, EXEC_PANEL
+
+SYMBOLS_PANEL = "Gene Symbol Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -16,25 +19,32 @@ def main(
         help="Input tsv file with list of 'gene-id\tgene-symbol\n' entries. Excel '.xlsx' files are also permitted."
     )],
     sep: Annotated[str, typer.Option(
-        "-s", "--separator", help="Indicate separator if input text file is separated by anything other than tabs."
+        "-s", "--separator", help="Indicate separator if input text file is separated by anything other than tabs.",
+        rich_help_panel=SYMBOLS_PANEL,
     )] = "\t",
     header: Annotated[bool, typer.Option(
-        "-H", "--header", help="Use this flag to indicate the presence of a header in input symbols_file."
+        "-H", "--header", help="Use this flag to indicate the presence of a header in input symbols_file.",
+        rich_help_panel=SYMBOLS_PANEL,
     )] = False,
     clear_existing: Annotated[bool, typer.Option(
-        "-c", "--clear-existing-symbols", help="Clears existing names and symbols from annotation file. Otherwise additional symbols are added to the existing ones."
+        "-c", "--clear-existing-symbols", help="Clears existing names and symbols from annotation file. Otherwise additional symbols are added to the existing ones.",
+        rich_help_panel=SYMBOLS_PANEL,
     )] = False,
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory."
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension."
+        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
+        rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_symbols.gff3",
     quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,    
 
 ):
