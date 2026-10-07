@@ -307,19 +307,19 @@ def main(
 
     # 2. Input / Output Options
     annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     genome_file: Annotated[str, typer.Option(
-        "-g", "--genome", help="Path to the input genome FASTA file. Overrides positional argument if provided.",
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to the input genome FASTA file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     output_dir: Annotated[str, typer.Option(
@@ -327,7 +327,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/split/",
     output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']",
+        "-oa", "-o", "--output-annot-file", "--output-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_split{tag}.gff3",
     output_genome_file: Annotated[str, typer.Option(

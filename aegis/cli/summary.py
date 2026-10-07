@@ -195,15 +195,15 @@ def main(
 
     # 2. Input / Output Options
     annotation_files_opt: Annotated[Optional[List[str]], typer.Option(
-        "-a", "--annotations", "--annotation", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
+        "-a", "--annotations", "--annotation", "--annotation-file", "--annotation-files", "--annot", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
         rich_help_panel=IO_PANEL,
     )] = None,
     genome: Annotated[Optional[List[str]], typer.Option(
-        "-g", "--genome", "--genome-file", "--genomes", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
+        "-g", "--genome", "--genome-file", "--genome-files", "--genomes", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
         rich_help_panel=IO_PANEL,
     )] = None,
     annotation_names: Annotated[str, typer.Option(
-        "-an", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames).",
+        "-an", "--annotation-names", "--annotation-name", "--annot-names", "--annot-name", help="Comma-separated annotation names or tags (defaults to filenames).",
         rich_help_panel=IO_PANEL,
     )] = "",
     genome_name: Annotated[str, typer.Option(

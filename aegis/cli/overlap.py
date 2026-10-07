@@ -2,7 +2,7 @@ import typer
 import os
 import warnings
 
-from typing import List
+from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
@@ -22,8 +22,8 @@ def main(
         "-ot", "--overlap-threshold", help="Select the required overlap threshold to report a gene-id pair match (default: 6). Increase for more stringent comparisons, or decrease for more extensive reporting.",
         rich_help_panel=OVERLAP_PANEL,
     )] = 6,
-    include_NAs: Annotated[bool, typer.Option(
-        "-na", "--include-NAs", help="Whether to include unmapped / non-overlapping gene IDs in the output table.",
+    include_nas: Annotated[bool, typer.Option(
+        "-na", "--include-nas", help="Whether to include unmapped / non-overlapping gene IDs in the output table.",
         rich_help_panel=OVERLAP_PANEL,
     )] = False,
     simple: Annotated[bool, typer.Option(
@@ -33,7 +33,7 @@ def main(
 
     # 2. Input / Output Options
     annotation_files_opt: Annotated[List[str], typer.Option(
-        "-a", "--annotations", "--annotation-files", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-files", "--annotation-file", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
         callback=split_callback,
         rich_help_panel=IO_PANEL,
     )] = [],
@@ -42,10 +42,10 @@ def main(
         callback=split_callback,
         rich_help_panel=IO_PANEL,
     )] = ["{annotation-filename(s)}"],
-    reference_annotation: Annotated[str, typer.Option(
+    reference_annotation: Annotated[Optional[str], typer.Option(
         "-r", "--reference-annotation", help="Select a single annotation (by name or filename) to use as reference. Only matches to/from this annotation are reported.",
         rich_help_panel=IO_PANEL,
-    )] = "None",
+    )] = None,
     original_annotation_files: Annotated[List[str], typer.Option(
         "--original-annotation-files", help="Optional original annotation files before coordinate transfer / liftover to evaluate conservation of synteny.",
         callback=split_callback,
@@ -56,7 +56,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_filetag: Annotated[str, typer.Option(
-        "-o", "-t", "--output-file", "--output-filetag", "--filetag", help="Output file prefix/name.",
+        "-o", "--output-file", "--output-filetag", "--filetag", help="Output file prefix/name.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name(s)}",
 
@@ -84,7 +84,7 @@ def main(
     if len(annot_files) > 1 and annot_files[-1].lower() in ("true", "false"):
         typer.echo(
             "⚠️  Detected extra value 'true' or 'false' at the end of positional arguments.\n"
-            "👉 Did you mean to use the '--include-NAs' or '--simple' flags? Use them like this: '-na' or '-s' (no 'true' needed).",
+            "👉 Did you mean to use the '--include-nas' or '--simple' flags? Use them like this: '-na' or '-s' (no 'true' needed).",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -113,7 +113,7 @@ def main(
         synteny = False
         original_annotation_files = ["NA"] * len(annot_files)
     
-    if reference_annotation != "None":
+    if reference_annotation is not None and reference_annotation != "None":
         if reference_annotation not in annot_files and reference_annotation not in annotation_names:
             raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annot_files}) nor annotation-names ({annotation_names}).")
         
@@ -142,13 +142,13 @@ def main(
         output_file += f"_self_overlaps_t{overlap_threshold}.csv"
 
         annotations[0].overlaps.detect()
-        _ = annotations[0].overlaps.export(output_dir=output_dir, filename=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, save_csv=True, NAs=include_NAs, quiet=quiet)
+        _ = annotations[0].overlaps.export(output_dir=output_dir, filename=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, save_csv=True, NAs=include_nas, quiet=quiet)
 
     elif len(annot_files) > 1:
         if output_filetag == "{annotation-name(s)}":
             output_filetag = ""
             
-        export_group_equivalences(annotations, output_folder=output_dir, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_NAs, output_also_single_files=False, quiet=quiet)
+        export_group_equivalences(annotations, output_folder=output_dir, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_nas, output_also_single_files=False, quiet=quiet)
 
 
 if __name__ == "__main__":

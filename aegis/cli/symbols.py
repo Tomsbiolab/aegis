@@ -33,15 +33,15 @@ def main(
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     symbols_file_opt: Annotated[str, typer.Option(
-        "--symbols-file", help="Path to input TSV/XLSX symbols mapping file. Overrides positional argument if provided.",
+        "-s", "--symbols-file", "--symbols", help="Path to input TSV/XLSX symbols mapping file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(

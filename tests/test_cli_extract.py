@@ -55,7 +55,7 @@ def test_extract_cli_validation_errors(test_data_dir, tmp_path):
 
 
 def test_extract_cli_infer_missing_cdss_smoke(tmp_path):
-    """Smoke test: ensure --infer-missing-CDSs runs without errors on annotation lacking CDSs."""
+    """Smoke test: ensure --infer-missing-cds runs without errors on annotation lacking CDSs."""
     fa = tmp_path / "test.fa"
     fa.write_text(">chr1\nATGGCCGTTTAAAAGGGCCC\n")
     gff = tmp_path / "no_cds.gff3"
@@ -67,5 +67,5 @@ def test_extract_cli_infer_missing_cdss_smoke(tmp_path):
     )
     out_dir = tmp_path / "out"
 
-    res = runner.invoke(app, [str(gff), str(fa), "--infer-missing-CDSs", "-d", str(out_dir), "-q"])
+    res = runner.invoke(app, [str(gff), str(fa), "--infer-missing-cds", "-d", str(out_dir), "-q"])
     assert res.exit_code == 0

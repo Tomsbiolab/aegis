@@ -58,19 +58,19 @@ def main(
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     output_dir: Annotated[str, typer.Option(
@@ -78,7 +78,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/subsets/",
     output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", "--output-annotation-file", "--output-file", help="Path to the output annotation filename, including extension.",
+        "-oa", "-o", "--output-annot-file", "--output-annotation-file", "--output-file", help="Path to the output annotation filename, including extension.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_subset.gff3",
     output_genome_file: Annotated[str, typer.Option(

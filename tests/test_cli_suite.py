@@ -54,6 +54,8 @@ def test_motif_search_options():
     assert "-ml" in res.stdout
     assert "-a" in res.stdout
     assert "-g" in res.stdout
+    assert "-o" in res.stdout
+    assert "--output-file" in res.stdout
 
 
 def test_prune_keep_option():
@@ -80,7 +82,7 @@ def test_orthology_blast_panel():
     assert res.exit_code == 0
     assert "BLASTp Options" in res.stdout
     assert "--skip-all-blasts" in res.stdout
-    assert "--skip-RBHs" in res.stdout
+    assert "--skip-rbhs" in res.stdout
 
 
 def test_list_options_suite():

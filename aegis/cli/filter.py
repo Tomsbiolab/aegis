@@ -27,11 +27,11 @@ def main(
 
     # 1. Filtering Options
     coding_only: Annotated[bool, typer.Option(
-        "--coding-only", help="Keep only protein-coding genes and transcripts (removes non-coding genes and non-coding transcripts from mixed genes).",
+        "--coding-only", "--skip-non-coding", help="Keep only protein-coding genes and transcripts (removes non-coding genes and non-coding transcripts from mixed genes).",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     non_coding_only: Annotated[bool, typer.Option(
-        "--non-coding-only", help="Keep only non-protein-coding genes and transcripts (removes coding genes and coding transcripts from mixed genes, keeping lncRNAs, etc.).",
+        "--non-coding-only", "--skip-coding", help="Keep only non-protein-coding genes and transcripts (removes coding genes and coding transcripts from mixed genes, keeping lncRNAs, etc.).",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     rna_classes: Annotated[List[str], typer.Option(
@@ -79,11 +79,11 @@ def main(
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(

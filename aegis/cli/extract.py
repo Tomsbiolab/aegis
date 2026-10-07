@@ -92,8 +92,8 @@ def main(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
-    no_collapse_CDSs: Annotated[bool, typer.Option(
-        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
+    no_collapse_cds: Annotated[bool, typer.Option(
+        "--no-collapse-cds", help="Do not merge overlapping/adjacent CDS segments.",
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
     strip_stop: Annotated[Optional[bool], typer.Option(
@@ -109,7 +109,33 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
 
-    # 2. Output Sequence Header Options
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/features/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", "--output-prefix", help="Optional output filename or prefix.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+
+    # 3. Output Sequence Header Options
     feature_id: Annotated[str, typer.Option(
         "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
         rich_help_panel=OUTPUT_HEADER_PANEL,
@@ -119,13 +145,27 @@ def main(
         rich_help_panel=OUTPUT_HEADER_PANEL,
     )] = False,
 
-    # 3. CDS Inference & Reworking
-    infer_missing_CDSs: Annotated[bool, typer.Option(
-        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
+    # 4. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 5. CDS Inference & Reworking
+    infer_missing_cds: Annotated[bool, typer.Option(
+        "--infer-missing-cds", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
         rich_help_panel=CDS_PANEL,
     )] = False,
-    rework_all_CDSs: Annotated[bool, typer.Option(
-        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs.",
+    rework_all_cds: Annotated[bool, typer.Option(
+        "--rework-all-cds", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-cds.",
         rich_help_panel=CDS_PANEL,
     )] = False,
     fallback_to_trim: Annotated[bool, typer.Option(
@@ -173,7 +213,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 4. Genetic Codes
+    # 6. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -182,42 +222,6 @@ def main(
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
     initiator_methionine: InitiatorMethionineOption = "canonical",
-
-    # 5. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/features/",
-
-    # 6. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
 
     # 7. Execution & Debugging
     quiet: Annotated[bool, typer.Option(
@@ -261,7 +265,7 @@ def main(
     genome_file = genome_in
 
     collapse_exons = not no_collapse_exons
-    collapse_CDSs = not no_collapse_CDSs
+    collapse_CDSs = not no_collapse_cds
     skip_coordinate_polishing = not polish_coordinates
 
     for f_type in features:
@@ -308,8 +312,8 @@ def main(
         name=annotation_name,
         annot_file_path=annotation_file,
         genome=genome,
-        rework_all_CDSs=rework_all_CDSs,
-        work_out_missing_CDSs=infer_missing_CDSs,
+        rework_all_CDSs=rework_all_cds,
+        work_out_missing_CDSs=infer_missing_cds,
         fallback_to_trim=fallback_to_trim,
         quiet=quiet,
         collapse_exons=collapse_exons,
@@ -335,17 +339,37 @@ def main(
     )
 
     has_any_cds = any(bool(t.CDSs) for genes in annotation.chrs.values() for g in genes.values() for t in g.transcripts.values())
-    if not has_any_cds and not infer_missing_CDSs and not rework_all_CDSs:
+    if not has_any_cds and not infer_missing_cds and not rework_all_cds:
         typer.secho(
             "Notice: The input annotation does not contain any annotated CDS features. No protein or CDS sequences were extracted.\n"
-            "Tip: Pass '--infer-missing-CDSs' to automatically detect and predict CDSs across transcripts.",
+            "Tip: Pass '--infer-missing-cds' to automatically detect and predict CDSs across transcripts.",
             fg=typer.colors.YELLOW,
             err=True,
         )
 
+    def resolve_export_filename(feat_name: str, mode_name: str) -> Optional[str]:
+        if not output_file:
+            return None
+        fn = output_file
+        if "{feature}" in fn:
+            fn = fn.replace("{feature}", feat_name)
+        if "{mode}" in fn:
+            fn = fn.replace("{mode}", mode_name)
+        if "{annotation-name}" in fn:
+            fn = fn.replace("{annotation-name}", annotation_name)
+        if "{genome-name}" in fn:
+            fn = fn.replace("{genome-name}", genome_name)
+        if fn == output_file and (len(features) > 1 or len(mode) > 1) and not ("{feature}" in output_file or "{mode}" in output_file):
+            stem, ext = os.path.splitext(output_file)
+            ext = ext if ext else ".fasta"
+            fn = f"{stem}_{feat_name}_{mode_name}{ext}"
+        elif fn == output_file and not fn.endswith(".fasta") and not fn.endswith(".fa"):
+            fn = f"{fn}.fasta"
+        return fn
+
     if "gene" in features:
 
-        annotation.export.genes(output_dir=output_dir, verbose=detailed_headers)
+        annotation.export.genes(output_dir=output_dir, verbose=detailed_headers, filename=resolve_export_filename("gene", "all"))
 
     if "transcript" in features:
 
@@ -355,13 +379,13 @@ def main(
             used_id = "transcript"
 
         if "unique_per_gene" in mode:
-            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True) #type: ignore
+            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True, filename=resolve_export_filename("transcript", "unique_per_gene")) #type: ignore
         elif "unique" in mode:
-            annotation.export.unique_transcripts(output_dir=output_dir, quiet=quiet, rna_classes=rna_classes) #type: ignore
+            annotation.export.unique_transcripts(output_dir=output_dir, quiet=quiet, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "unique")) #type: ignore
         elif "all" in mode:
-            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes) #type: ignore
+            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "all")) #type: ignore
         else:
-            annotation.export.transcripts(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes) #type: ignore
+            annotation.export.transcripts(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "main")) #type: ignore
 
     if strip_stop is not None:
         protein_strip = strip_stop
@@ -382,13 +406,13 @@ def main(
             used_id = "protein"
 
         if "unique_per_gene" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, strip_stop=protein_strip)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, strip_stop=protein_strip, filename=resolve_export_filename("protein", "unique_per_gene"))
         elif "unique" in mode:
-            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, strip_stop=protein_strip)
+            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, strip_stop=protein_strip, filename=resolve_export_filename("protein", "unique"))
         elif "all" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, strip_stop=protein_strip)
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, strip_stop=protein_strip, filename=resolve_export_filename("protein", "all"))
         else:
-            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, strip_stop=protein_strip)
+            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, strip_stop=protein_strip, filename=resolve_export_filename("protein", "main"))
 
     if "CDS" in features:
 
@@ -402,13 +426,13 @@ def main(
         protein_oriented = not raw_cds
 
         if "unique_per_gene" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, strip_stop=cds_strip)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "unique_per_gene"))
         elif "unique" in mode:
-            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, strip_stop=cds_strip)
+            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "unique"))
         elif "all" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, strip_stop=cds_strip)
+            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "all"))
         else:
-            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, strip_stop=cds_strip)
+            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "main"))
 
     if "promoter" in features:
 
@@ -420,9 +444,9 @@ def main(
             used_id = "promoter"
 
         if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
-            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet)
+            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "all"))
         else:
-            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet)
+            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "main"))
 
 if __name__ == "__main__":
     app()

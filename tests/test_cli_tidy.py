@@ -16,19 +16,19 @@ def test_tidy_rework_cds_requires_genome(tmp_path):
         "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
     )
 
-    # 1. --rework-all-CDSs without genome
-    res1 = runner.invoke(tidy_app, [str(gff_file), "--rework-all-CDSs"])
+    # 1. --rework-all-cds without genome
+    res1 = runner.invoke(tidy_app, [str(gff_file), "--rework-all-cds"])
     assert res1.exit_code != 0
     assert "genome" in res1.output.lower()
 
-    # 2. --infer-missing-CDSs without genome
-    res2 = runner.invoke(tidy_app, [str(gff_file), "--infer-missing-CDSs"])
+    # 2. --infer-missing-cds without genome
+    res2 = runner.invoke(tidy_app, [str(gff_file), "--infer-missing-cds"])
     assert res2.exit_code != 0
     assert "genome" in res2.output.lower()
 
 
 def test_tidy_cli_smoke(tmp_path):
-    """Smoke test: ensure tidy CLI runs with genome and --rework-all-CDSs without errors."""
+    """Smoke test: ensure tidy CLI runs with genome and --rework-all-cds without errors."""
     gff_file = tmp_path / "test.gff3"
     gff_file.write_text(
         "##gff-version 3\n"
@@ -45,7 +45,7 @@ def test_tidy_cli_smoke(tmp_path):
     args = [
         str(gff_file),
         "--genome-file", str(fa_file),
-        "--rework-all-CDSs",
+        "--rework-all-cds",
         "-d", str(output_dir),
         "-o", output_file,
         "-q",

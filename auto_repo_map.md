@@ -408,6 +408,7 @@
     - **cli/**
       - extract.py
         - `def main(`
+        - `def resolve_export_filename(feat_name: str, mode_name: str) -> Optional[str]:`
       - filter.py
         - `def main(`
       - list.py
@@ -527,6 +528,8 @@
         - `def barplot(values:list[int], export_folder:str, tag:str, title:str, max_x:int|None=None):`
       - __init__.py
   - **aegis_bio.egg-info/**
+  - **aegis_output/**
+    - **stats/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
   - **images/**

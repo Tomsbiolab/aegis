@@ -23,7 +23,7 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = ["transcript", "CDS", "exon", "UTR"],
     prefix: Annotated[str, typer.Option(
-        "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. switch from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
+        "-p", "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. switch from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
         rich_help_panel=RENAME_PANEL,
     )] = "",
     suffix: Annotated[str, typer.Option(
@@ -59,7 +59,25 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = False,
 
-    # 2. Subfeature & Model Options
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation file.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_renamed.gff3",
+
+    # 3. Subfeature & Model Options
     keep_existing_ids_if_derived_from_base_id: Annotated[bool, typer.Option(
         "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id.",
         rich_help_panel=SUBFEATURE_PANEL,
@@ -76,28 +94,10 @@ def main(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=SUBFEATURE_PANEL,
     )] = False,
-    no_collapse_CDSs: Annotated[bool, typer.Option(
-        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
+    no_collapse_cds: Annotated[bool, typer.Option(
+        "--no-collapse-cds", help="Do not merge overlapping/adjacent CDS segments.",
         rich_help_panel=SUBFEATURE_PANEL,
     )] = False,
-
-    # 3. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation file.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_renamed.gff3",
 
     # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
@@ -122,7 +122,7 @@ def main(
     annotation_file = annot_in
 
     collapse_exons = not no_collapse_exons
-    collapse_CDSs = not no_collapse_CDSs
+    collapse_CDSs = not no_collapse_cds
 
     for feature in rename_features:
         if feature not in VALID_FEATURES:

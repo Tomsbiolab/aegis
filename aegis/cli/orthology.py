@@ -28,10 +28,10 @@ from .utils import (
     GENETIC_CODES_PANEL,
     ORTHOLOGY_PANEL,
     BLAST_PANEL,
+    FASTA_HEADER_PANEL,
+    OUTPUT_FILTER_PANEL,
 )
 from time import time
-
-OUTPUT_PANEL = "Output & Filtering Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -333,14 +333,99 @@ def main(
         rich_help_panel=ORTHOLOGY_PANEL,
     )] = ["ALL"],
 
-    # 2. BLASTp Options
+    # 2. Core Input / Output Configuration
+    genome_files_opt: Annotated[list[str], typer.Option(
+        "-g", "--genome", "--genomes", "--genome-files", "--genome-file",
+        help="Genome assemblies corresponding to annotation files (optional if passed as positional arguments). Provide in the same order as annotations.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
+    annotation_files_opt: Annotated[list[str], typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-files", "--annotation-file",
+        help="Annotation files (optional if passed as positional arguments). Provide in the same order as genome files.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
+    annotation_names: Annotated[list[str], typer.Option(
+        "-an", "--annotation-names", "--annotation-name",
+        help="Annotation versions, names or tags otherwise they will just be the annotation file basename without the extension. Provide in the same order as annotation files, separated by commas.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = ["{annotation-filename(s)}"],
+    genome_names: Annotated[list[str], typer.Option(
+        "-gn", "--genome-names", "--genome-name",
+        help="Genome versions, names or tags otherwise they will just be the genome file basename without the extension. Provide in the same order as genome files, separated by commas.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = ["{genome-filename(s)}"],
+    group_names: Annotated[list[str], typer.Option(
+        "--group-names", 
+        help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
+    reference_annotation: Annotated[str, typer.Option(
+        "-r", "--reference-annotation", 
+        help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
+        rich_help_panel=IO_PANEL,
+    )] = "None",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", 
+        help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/orthologues/",
+    output_filename: Annotated[str, typer.Option(
+        "-o", "--output-file", 
+        help="Output filename to be saved to output folder with or without extension (default '.tsv' extension added automatically if omitted).",
+        rich_help_panel=IO_PANEL,
+    )] = "equivalences{other_tags}.tsv",
+
+    # 3. Output & Filtering Options
+    confidence: Annotated[list[str], typer.Option(
+        "--confidence", 
+        help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
+        callback=split_callback,
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = ["high", "medium", "lower"],
+    include_nas: Annotated[bool, typer.Option(
+        "-na", "--include-nas", 
+        help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = False,
+    skip_cardinality: Annotated[bool, typer.Option(
+        "-sc", "--skip-cardinality", 
+        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = False,
+    tiered_cardinality: Annotated[bool, typer.Option(
+        "--tiered-cardinality", 
+        help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = False,
+    include_duplicates: Annotated[bool, typer.Option(
+        "--include-duplicates", 
+        help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = False,
+    split_scores: Annotated[bool, typer.Option(
+        "--split-scores", 
+        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = False,
+    strip_gene_tags: Annotated[bool, typer.Option(
+        "--strip-gene-tags", 
+        help="Strip gene tags, i.e. remove 'gene-' prefix from gene IDs. e.g., 'gene-LOC100263960' to 'LOC100263960'.",
+        rich_help_panel=OUTPUT_FILTER_PANEL,
+    )] = False,
+
+    # 4. BLASTp Options
     skip_all_blasts: Annotated[bool, typer.Option(
         "--skip-all-blasts", 
         help="Skip all protein BLASTs.",
         rich_help_panel=BLAST_PANEL,
     )] = False,
     skip_rbhs: Annotated[bool, typer.Option(
-        "--skip-RBHs", 
+        "--skip-rbhs", 
         help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary.",
         rich_help_panel=BLAST_PANEL,
     )] = False,
@@ -365,99 +450,31 @@ def main(
         rich_help_panel=BLAST_PANEL,
     )] = 0.00001,
 
-    # 3. Output & Filtering Options
-    confidence: Annotated[list[str], typer.Option(
-        "--confidence", 
-        help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
-        callback=split_callback,
-        rich_help_panel=OUTPUT_PANEL,
-    )] = ["high", "medium", "lower"],
-    include_NAs: Annotated[bool, typer.Option(
-        "-na", "--include-NAs", 
-        help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    skip_cardinality: Annotated[bool, typer.Option(
-        "-sc", "--skip-cardinality", 
-        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    tiered_cardinality: Annotated[bool, typer.Option(
-        "--tiered-cardinality", 
-        help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    include_duplicates: Annotated[bool, typer.Option(
-        "--include-duplicates", 
-        help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    split_scores: Annotated[bool, typer.Option(
-        "--split-scores", 
-        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    strip_gene_tags: Annotated[bool, typer.Option(
-        "--strip-gene-tags", 
-        help="Strip gene tags, i.e. remove 'gene-' prefix from gene IDs. e.g., 'gene-LOC100263960' to 'LOC100263960'.",
-        rich_help_panel=OUTPUT_PANEL,
+    # 5. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", 
+        help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", 
+        help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", 
+        help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
-    # 4. Core Input / Output Configuration
-    genome_files_opt: Annotated[list[str], typer.Option(
-        "-g", "--genome-files", "--genomes",
-        help="Genome assemblies corresponding to annotation files (optional if passed as positional arguments). Provide in the same order as annotations.",
-        callback=split_callback,
-        rich_help_panel=IO_PANEL,
-    )] = [],
-    annotation_files_opt: Annotated[list[str], typer.Option(
-        "-a", "--annotation-files", "--annotations",
-        help="Annotation files (optional if passed as positional arguments). Provide in the same order as genome files.",
-        callback=split_callback,
-        rich_help_panel=IO_PANEL,
-    )] = [],
-    annotation_names: Annotated[list[str], typer.Option(
-        "-an", "--annotation-names", 
-        help="Annotation versions, names or tags otherwise they will just be the annotation file basename without the extension. Provide in the same order as annotation files, separated by commas.",
-        callback=split_callback,
-        rich_help_panel=IO_PANEL,
-    )] = ["{annotation-filename(s)}"],
-    genome_names: Annotated[list[str], typer.Option(
-        "-gn", "--genome-names", 
-        help="Genome versions, names or tags otherwise they will just be the genome file basename without the extension. Provide in the same order as genome files, separated by commas.",
-        callback=split_callback,
-        rich_help_panel=IO_PANEL,
-    )] = ["{genome-filename(s)}"],
-    group_names: Annotated[list[str], typer.Option(
-        "--group-names", 
-        help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
-        callback=split_callback,
-        rich_help_panel=IO_PANEL,
-    )] = [],
-    reference_annotation: Annotated[str, typer.Option(
-        "-r", "--reference-annotation", 
-        help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
-        rich_help_panel=IO_PANEL,
-    )] = "None",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", 
-        help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/orthologues/",
-    output_filename: Annotated[str, typer.Option(
-        "-o", "--output-file", 
-        help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
-        rich_help_panel=IO_PANEL,
-    )] = "equivalences{other_tags}.tsv",
-
-    # 5. Genetic Codes
+    # 6. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
 
-    # 6. Execution / Debugging
+    # 7. Execution / Debugging
     threads: Annotated[int, typer.Option(
         "-t", "--threads", 
         help="Number of threads.",
@@ -585,7 +602,7 @@ def main(
     if len(annotation_files) > 1 and annotation_files[-1].lower() in ("true", "false"):
         typer.echo(
             "⚠️  Detected extra value 'true' or 'false' at the end of positional arguments.\n"
-            "👉 Did you mean to use the '--include_NAs' or '--simple' flags? Use them like this: '-n' or '-s' (no 'true' needed).",
+            "👉 Did you mean to use the '--include-nas' or '--simple' flags? Use them like this: '-na' or '-s' (no 'true' needed).",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -690,7 +707,17 @@ def main(
 
     genome_name_map = {path: name for path, name in zip(genome_files, genome_names)}    
 
-    genomes:dict[str, Genome] = { g: Genome(name=genome_name_map[g], genome_file_path=g, quiet=quiet) for g in set(genome_files) }
+    genomes:dict[str, Genome] = {
+        g: Genome(
+            name=genome_name_map[g],
+            genome_file_path=g,
+            quiet=quiet,
+            header_id_tag=header_id_tag if header_id_tag else None,
+            header_id_regex=header_id_regex if header_id_regex else None,
+            gwh=gwh,
+        )
+        for g in set(genome_files)
+    }
 
     annotations:list[Annotation] = []
 
@@ -1180,7 +1207,7 @@ def main(
         final_df = final_df[final_df["summary_score"].isin(valid_confidences)].copy()
         extra_tag += f"_confidence{'_'.join(sorted_confs)}"
 
-    if include_NAs:
+    if include_nas:
         extra_tag += "_with_NAs"
         matched_set = set()
         if not final_df.empty:

@@ -35,39 +35,21 @@ def main(
         rich_help_panel=GENOME_CLEANING_PANEL,
     )] = "",
 
-    # 2. Coordinate & Phase Options (when paired annotation is provided)
-    min_codon_len: Annotated[int, typer.Option(
-        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
-        rich_help_panel=COORDS_PANEL,
-    )] = 2,
-    recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
-    reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
-    skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
-
-    # 3. Input / Output Options
+    # 2. Input / Output Options
     genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -75,7 +57,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Path to the output genome filename, with or without extension.",
+        "-og", "-o", "--output-genome-file", "--output-file", help="Path to the output genome filename, with or without extension.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-name}_tidy.fasta",
     output_annot_file: Annotated[str, typer.Option(
@@ -83,7 +65,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_tidy.gff3",
 
-    # 4. Reference FASTA Options
+    # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
         rich_help_panel=FASTA_HEADER_PANEL,
@@ -99,6 +81,24 @@ def main(
     keep_description: Annotated[bool, typer.Option(
         "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file.",
         rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 4. Coordinate & Phase Options (when paired annotation is provided)
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
+        rich_help_panel=COORDS_PANEL,
+    )] = 2,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    skip_coordinate_polishing: Annotated[bool, typer.Option(
+        "--skip-coordinate-polishing/--polish-coordinates", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
+        rich_help_panel=COORDS_PANEL,
     )] = False,
 
     # 5. Execution & Debugging

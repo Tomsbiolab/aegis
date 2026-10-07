@@ -37,7 +37,29 @@ def genes(
         rich_help_panel=FILTER_PANEL,
     )] = False,
 
-    # 2. Output Columns
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_genes_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", help="Separator for the output file. Tab is default.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
+
+    # 3. Output Columns
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -62,28 +84,6 @@ def genes(
         "--gene-symbols", help="Whether to include gene symbols in the output.",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
-
-    # 3. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_genes_list.tsv",
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Tab is default.",
-        rich_help_panel=IO_PANEL,
-    )] = "\t",
 
     # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
@@ -169,7 +169,29 @@ def transcripts(
         rich_help_panel=FILTER_PANEL,
     )] = False,
 
-    # 2. Output Columns
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_transcripts_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", help="Separator for the output file. Default is tab.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
+
+    # 3. Output Columns
     gene_id: Annotated[bool, typer.Option(
         "--gene-id", "--gene", help="Include parent gene ID in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -194,28 +216,6 @@ def transcripts(
         "--gene-symbols", help="Whether to include gene symbols in the output.",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
-
-    # 3. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_transcripts_list.tsv",
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Default is tab.",
-        rich_help_panel=IO_PANEL,
-    )] = "\t",
 
     # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(

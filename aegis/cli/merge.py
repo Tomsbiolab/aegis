@@ -31,30 +31,15 @@ def main(
         rich_help_panel=MERGE_PANEL,
     )] = 100,
 
-    # 2. Subfeature & Model Options
-    skip_renaming: Annotated[bool, typer.Option(
-        "--skip-renaming",
-        help="Skip renaming of subgene features (transcript, CDS, exon, UTRs).",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-    no_collapse_exons: Annotated[bool, typer.Option(
-        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-    no_collapse_CDSs: Annotated[bool, typer.Option(
-        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-
-    # 3. Input / Output Options
+    # 2. Input / Output Options
     annotation_files_opt: Annotated[List[str], typer.Option(
-        "-a", "--annotations", "--annotation-files",
+        "-a", "--annotations", "--annotation", "--annotation-files", "--annotation-file", "--annot",
         help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
         callback=split_callback,
         rich_help_panel=IO_PANEL,
     )] = [],
     annotation_names: Annotated[List[str], typer.Option(
-        "-an", "--annotation-names",
+        "-an", "--annotation-names", "--annotation-name", "--annot-names", "--annot-name",
         help="Optional names or tags for the annotations, separated by commas. [default: derived from filenames]",
         callback=split_callback,
         rich_help_panel=IO_PANEL,
@@ -67,6 +52,21 @@ def main(
         "-o", "--output-file", help="Path to the output filename (e.g., 'merged.gff3').",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-names}.gff3",
+
+    # 3. Subfeature & Model Options
+    skip_renaming: Annotated[bool, typer.Option(
+        "--skip-renaming",
+        help="Skip renaming of subgene features (transcript, CDS, exon, UTRs).",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    no_collapse_exons: Annotated[bool, typer.Option(
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    no_collapse_cds: Annotated[bool, typer.Option(
+        "--no-collapse-cds", help="Do not merge overlapping/adjacent CDS segments.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
 
     # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
@@ -89,7 +89,7 @@ def main(
         raise typer.BadParameter("At least two annotation files must be provided to merge. Provide as positional arguments or via -a/--annotations.")
 
     collapse_exons = not no_collapse_exons
-    collapse_CDSs = not no_collapse_CDSs
+    collapse_CDSs = not no_collapse_cds
 
     if output_dir == "./aegis_output/":
         subfolder = True

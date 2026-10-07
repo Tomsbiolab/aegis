@@ -39,7 +39,7 @@ def main(
         help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
     )] = "",
     genome_file: Annotated[str, typer.Argument(
-        help="Optional path to genome FASTA file (or provide via -g/--genome). Required when using --rework-all-CDSs or --infer-missing-CDSs."
+        help="Optional path to genome FASTA file (or provide via -g/--genome). Required when using --rework-all-cds or --infer-missing-cds."
     )] = "",
 
     # 1. Feature & Biotype Filtering
@@ -48,7 +48,7 @@ def main(
         rich_help_panel=FEATURE_PANEL,
     )] = False,
     strip_utrs: Annotated[bool, typer.Option(
-        "--strip-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
+        "--strip-utrs", "--no-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
         rich_help_panel=FEATURE_PANEL,
     )] = False,
     just_genes: Annotated[bool, typer.Option(
@@ -69,7 +69,33 @@ def main(
         rich_help_panel=FEATURE_PANEL,
     )] = False,
 
-    # 2. Structural Model Sanitisation
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to genome FASTA file. Overrides positional genome argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="A name or tag for the genome assembly.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_tidy.gff3",
+
+    # 3. Structural Model Sanitisation
     clean_features: Annotated[bool, typer.Option(
         "--clean-features", help="Removes non-standard features from a GFF for downstream compatibility.",
         rich_help_panel=MODEL_PANEL,
@@ -79,7 +105,7 @@ def main(
         rich_help_panel=MODEL_PANEL,
     )] = False,
     unique_cds_entry_ids: Annotated[bool, typer.Option(
-        "--unique-cds-entry-ids", "--for-lifton", help="Ensure each CDS entry line has a unique ID (required for LiftOn/Liftoff compatibility).",
+        "--unique-cds-entry-ids", help="Ensure each CDS entry line has a unique ID (required for LiftOn/Liftoff compatibility).",
         rich_help_panel=MODEL_PANEL,
     )] = False,
     repeat_exons_utrs: Annotated[bool, typer.Option(
@@ -94,12 +120,12 @@ def main(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=MODEL_PANEL,
     )] = False,
-    no_collapse_CDSs: Annotated[bool, typer.Option(
-        "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
+    no_collapse_cds: Annotated[bool, typer.Option(
+        "--no-collapse-cds", help="Do not merge overlapping/adjacent CDS segments.",
         rich_help_panel=MODEL_PANEL,
     )] = False,
 
-    # 3. Attribute & Metadata Formatting
+    # 4. Attribute & Metadata Formatting
     clean_attributes: Annotated[bool, typer.Option(
         "--clean-attributes", help="Removes non-standard attributes from a GFF.",
         rich_help_panel=ATTR_PANEL,
@@ -137,13 +163,27 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
 
-    # 4. CDS Inference & Reworking
-    infer_missing_CDSs: Annotated[bool, typer.Option(
-        "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations. Requires genome file.",
+    # 5. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 6. CDS Inference & Reworking
+    infer_missing_cds: Annotated[bool, typer.Option(
+        "--infer-missing-cds", help="Detects and creates CDSs where missing, without overriding existing CDS annotations. Requires genome file.",
         rich_help_panel=CDS_PANEL,
     )] = False,
-    rework_all_CDSs: Annotated[bool, typer.Option(
-        "--rework-all-CDSs", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-CDSs. Requires genome file.",
+    rework_all_cds: Annotated[bool, typer.Option(
+        "--rework-all-cds", help="Recalculates ALL CDSs from the genome sequence, overriding existing ones. More aggressive than --infer-missing-cds. Requires genome file.",
         rich_help_panel=CDS_PANEL,
     )] = False,
     fallback_to_trim: Annotated[bool, typer.Option(
@@ -179,7 +219,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
     skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
+        "--skip-coordinate-polishing/--polish-coordinates", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead (default: false, coordinate polishing is active).",
         rich_help_panel=CDS_PANEL,
     )] = False,
     recalculate_phases: Annotated[bool, typer.Option(
@@ -191,7 +231,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 5. Genetic Codes
+    # 7. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -199,46 +239,6 @@ def main(
     plastid_code: PlastidCodeOption = None,
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
-
-    # 6. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to genome FASTA file. Overrides positional genome argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="A name or tag for the genome assembly.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_tidy.gff3",
-
-    # 7. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
 
     # 8. Execution & Debugging
     quiet: Annotated[bool, typer.Option(
@@ -273,7 +273,7 @@ def main(
 
     include_UTRs = not strip_utrs
     collapse_exons = not(no_collapse_exons)
-    collapse_CDSs = not(no_collapse_CDSs)
+    collapse_CDSs = not(no_collapse_cds)
     remove_missing_transcript_parent_references = not(keep_missing_transcript_parent_references)
 
     if keep_original_subfeature_ids:
@@ -300,11 +300,11 @@ def main(
         raise typer.BadParameter(f"Invalid orf_choice_mode: '{orf_choice_mode}'. Choose from: 'longest', 'earliest'.")
 
 
-    if (rework_all_CDSs or infer_missing_CDSs) and not genome_file:
-        raise typer.BadParameter("A genome FASTA file must be provided via --genome-file when using --rework-all-CDSs or --infer-missing-CDSs.")
+    if (rework_all_cds or infer_missing_cds) and not genome_file:
+        raise typer.BadParameter("A genome FASTA file must be provided via --genome-file when using --rework-all-cds or --infer-missing-cds.")
 
     if genome_file:
-        if not genome_name:
+        if not genome_name or genome_name == "{genome-file}":
             genome_name = os.path.splitext(os.path.basename(genome_file))[0]
         genome = Genome(
             name=genome_name,
@@ -324,8 +324,8 @@ def main(
         name=annotation_name,
         annot_file_path=annotation_file,
         genome=genome,
-        rework_all_CDSs=rework_all_CDSs,
-        work_out_missing_CDSs=infer_missing_CDSs,
+        rework_all_CDSs=rework_all_cds,
+        work_out_missing_CDSs=infer_missing_cds,
         fallback_to_trim=fallback_to_trim,
         quiet=quiet,
         collapse_exons=collapse_exons,

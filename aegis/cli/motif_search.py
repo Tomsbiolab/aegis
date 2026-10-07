@@ -52,18 +52,13 @@ def main(
         "-p", "--promoter-type", help="Reference point for promoter extraction: 'standard' (upstream of TSS), 'upstream_ATG' (upstream of main CDS ATG codon), or 'standard_plus_up_to_ATG' (upstream of TSS plus 5' UTR up to start codon).",
         rich_help_panel=PROMOTER_PANEL,
     )] = "standard",
-    motif_tag: Annotated[str, typer.Option(
-        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'.",
-        rich_help_panel=PROMOTER_PANEL,
-    )] = "query_motif",
-
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     genelist_opt: Annotated[str, typer.Option(
@@ -71,17 +66,21 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     query_tag: Annotated[str, typer.Option(
         "--genelist-tag", help="Query gene list tag/name to improve output description.",
         rich_help_panel=IO_PANEL,
     )] = "query_genes",
+    motif_tag: Annotated[str, typer.Option(
+        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'.",
+        rich_help_panel=IO_PANEL,
+    )] = "query_motif",
     header: Annotated[bool, typer.Option(
         "-H", "--header", help="Indicate the presence of a column header in the input genelist file.",
         rich_help_panel=IO_PANEL,
@@ -90,6 +89,10 @@ def main(
         "-d", "--output-dir", help="Path to the output directory.",
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Custom output filename.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
 
     # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
@@ -191,6 +194,7 @@ def main(
         motif_length=final_motif_len,
         glistname=query_tag,
         tf_motif_tag=motif_tag,
+        filename=output_file if output_file else None,
         output_dir=output_dir,
         subfolder=subfolder,
         quiet=quiet,

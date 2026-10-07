@@ -391,9 +391,9 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "",
     output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified.",
+        "-d", "--output-dir", help="Path to the output folder for stats and reports.",
         rich_help_panel=IO_PANEL,
-    )] = "",
+    )] = "./aegis_output/stats/",
 
     # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
