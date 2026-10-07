@@ -305,23 +305,7 @@ def main(
         rich_help_panel=SPLIT_PANEL,
     )] = False,
 
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-    keep_description: Annotated[bool, typer.Option(
-        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
+    # 2. Input / Output Options
     annotation_file: Annotated[str, typer.Option(
         "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
@@ -350,6 +334,24 @@ def main(
         "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']",
         rich_help_panel=IO_PANEL,
     )] = "{genome-name}_split{tag}.fasta",
+
+    # 3. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
 
     dry_run: Annotated[bool, typer.Option(
         "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk.",

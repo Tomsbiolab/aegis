@@ -1,6 +1,6 @@
 import typer
 import os
-
+from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
@@ -10,9 +10,29 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.command()
 def genes(
-    annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+    annotation_file: Annotated[Optional[str], typer.Argument(
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = None,
+
+    # 1. Filtering Options
+    skip_coding: Annotated[bool, typer.Option(
+        "--skip-coding", "--non-coding-only", help="Whether to skip coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_non_coding: Annotated[bool, typer.Option(
+        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_pseudogenes: Annotated[bool, typer.Option(
+        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_transposables: Annotated[bool, typer.Option(
+        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+
+    # 2. Output Columns
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -38,25 +58,13 @@ def genes(
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
 
-    skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", "--non-coding-only", help="Whether to skip coding genes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding genes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_transposables: Annotated[bool, typer.Option(
-        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
+        "-an", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -72,6 +80,7 @@ def genes(
         rich_help_panel=IO_PANEL,
     )] = "\t",
 
+    # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
@@ -86,6 +95,11 @@ def genes(
     """
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    annotation_file = annot_in
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -110,14 +124,39 @@ def genes(
         skip_pseudogenes=skip_pseudogenes,
         skip_transposables=skip_transposables,
         gene_symbols=gene_symbols,
-        main_transcript_length_instead_of_gene_length=transcript_length
+        main_transcript_length_instead_of_gene_length=transcript_length,
+        quiet=quiet,
     )
 
 @app.command()
 def transcripts(
-    annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+    annotation_file: Annotated[Optional[str], typer.Argument(
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = None,
+
+    # 1. Filtering Options
+    main_only: Annotated[bool, typer.Option(
+        "-m", "--main", "--only-main", "--main-only", help="Only list the primary / main transcript for each gene.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_coding: Annotated[bool, typer.Option(
+        "--skip-coding", "--non-coding-only", help="Whether to skip coding transcripts.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_non_coding: Annotated[bool, typer.Option(
+        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding transcripts.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_pseudogenes: Annotated[bool, typer.Option(
+        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_transposables: Annotated[bool, typer.Option(
+        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+
+    # 2. Output Columns
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -139,25 +178,13 @@ def transcripts(
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
 
-    skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", "--non-coding-only", help="Whether to skip coding transcripts.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding transcripts.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_transposables: Annotated[bool, typer.Option(
-        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
+        "-an", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -173,6 +200,7 @@ def transcripts(
         rich_help_panel=IO_PANEL,
     )] = "\t",
 
+    # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
@@ -187,6 +215,11 @@ def transcripts(
     """
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    annotation_file = annot_in
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -210,7 +243,9 @@ def transcripts(
         sep=sep,
         skip_pseudogenes=skip_pseudogenes,
         skip_transposables=skip_transposables,
-        gene_symbols=gene_symbols
+        gene_symbols=gene_symbols,
+        only_main=main_only,
+        quiet=quiet,
     )
 
 if __name__ == "__main__":

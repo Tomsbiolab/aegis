@@ -8,6 +8,7 @@ from ..annotation import Annotation
 from ..genome import Genome
 from .utils import (
     split_callback,
+    detect_file_type,
     TaxonomyOption,
     GeneticCodeOption,
     AutoOrganelleCodesOption,
@@ -18,8 +19,8 @@ from .utils import (
     IO_PANEL,
     EXEC_PANEL,
     CDS_PANEL,
-    CLEANING_PANEL,
-    FORMATTING_PANEL,
+    MODEL_PANEL,
+    ATTR_PANEL,
     FEATURE_PANEL,
     FASTA_HEADER_PANEL,
 )
@@ -35,10 +36,10 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = "",
     genome_file: Annotated[str, typer.Argument(
-        help="Optional path to genome FASTA file. Required when using --rework-all-CDSs or --infer-missing-CDSs."
+        help="Optional path to genome FASTA file (or provide via -g/--genome). Required when using --rework-all-CDSs or --infer-missing-CDSs."
     )] = "",
 
     # 1. Feature & Biotype Filtering
@@ -46,16 +47,16 @@ def main(
         "-m", "--main", help="Whether to include only a main transcript and main CDS per gene.",
         rich_help_panel=FEATURE_PANEL,
     )] = False,
-    include_UTRs: Annotated[bool, typer.Option(
-        "-u", "--include-UTRs", help="Include UTRs in output gff, normally these are not required by external tools as they can be deduced from exons and CDS features.",
+    strip_utrs: Annotated[bool, typer.Option(
+        "--strip-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
         rich_help_panel=FEATURE_PANEL,
     )] = False,
     just_genes: Annotated[bool, typer.Option(
         "--just-genes", help="Whether to only include gene level features.",
         rich_help_panel=FEATURE_PANEL,
     )] = False,
-    features: Annotated[List[str], typer.Option(
-        "-b", "-r", "--biotypes", "--rna-classes", "-f", "--features", help=f"Selects only certain transcripts (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included. This option automatically enables 'clean_features'.",
+    biotypes: Annotated[List[str], typer.Option(
+        "-b", "-r", "--biotypes", "--rna-classes", help="Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback,
         rich_help_panel=FEATURE_PANEL,
     )] = [],
@@ -68,79 +69,124 @@ def main(
         rich_help_panel=FEATURE_PANEL,
     )] = False,
 
-    # 2. GFF Cleaning & Sanitisation
+    # 2. Structural Model Sanitisation
     clean_features: Annotated[bool, typer.Option(
-        "--clean-features", help="Removes non-standard features from a gff, may help with external tool compatibility issues.",
-        rich_help_panel=CLEANING_PANEL,
-    )] = False,
-    clean_attributes: Annotated[bool, typer.Option(
-        "--clean-attributes", help="Removes non-standard attributes from a gff, may help with external tool compatibility issues.",
-        rich_help_panel=CLEANING_PANEL,
+        "--clean-features", help="Removes non-standard features from a GFF for downstream compatibility.",
+        rich_help_panel=MODEL_PANEL,
     )] = False,
     standard_features: Annotated[bool, typer.Option(
-        "--standard-features", help="Standardises feature names to the most common names, for instance 'transcript' or 'pseudotranscript' just become 'mRNA' for downstream tool compatibility.",
-        rich_help_panel=CLEANING_PANEL,
+        "--standard-features", help="Standardises feature names to common types (e.g. 'pseudotranscript' -> 'mRNA').",
+        rich_help_panel=MODEL_PANEL,
     )] = False,
-    remove_symbols: Annotated[bool, typer.Option(
-        "--remove-symbols", help="Removes symbol attributes from gff output.",
-        rich_help_panel=CLEANING_PANEL,
+    unique_cds_entry_ids: Annotated[bool, typer.Option(
+        "--unique-cds-entry-ids", "--for-lifton", help="Ensure each CDS entry line has a unique ID (required for LiftOn/Liftoff compatibility).",
+        rich_help_panel=MODEL_PANEL,
     )] = False,
-    remove_aliases: Annotated[bool, typer.Option(
-        "--remove-aliases", help="Removes alias attributes from gff output.",
-        rich_help_panel=CLEANING_PANEL,
+    repeat_exons_utrs: Annotated[bool, typer.Option(
+        "--repeat-exons-utrs", help="Creates individual exon/UTR entries with individual parental references for features shared across transcripts.",
+        rich_help_panel=MODEL_PANEL,
     )] = False,
     keep_missing_transcript_parent_references: Annotated[bool, typer.Option(
-        "--keep-missing-transcript-parent-references", help="Keep parental references to missing transcripts. These are removed by default.",
-        rich_help_panel=CLEANING_PANEL,
+        "--keep-missing-transcript-parent-references", help="Keep parental references to missing transcripts (removed by default).",
+        rich_help_panel=MODEL_PANEL,
     )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
-        rich_help_panel=CLEANING_PANEL,
+        rich_help_panel=MODEL_PANEL,
     )] = False,
     no_collapse_CDSs: Annotated[bool, typer.Option(
         "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
-        rich_help_panel=CLEANING_PANEL,
+        rich_help_panel=MODEL_PANEL,
     )] = False,
 
-    # 3. Feature & Attribute Formatting
-    unique_cds_entry_ids: Annotated[bool, typer.Option(
-        "--unique-cds-entry-ids", "--for-lifton", help="CDS entries corresponding to a same protein in a gff by default share the same id. This flag ensures each CDS entry (line) has a unique id (required for LiftOn/Liftoff compatibility).",
-        rich_help_panel=FORMATTING_PANEL,
-    )] = False,
-    for_lifton: Annotated[bool, typer.Option(
-        "--for-lifton-legacy", help="Ensures output has individual CDS entry ids as required for Lifton/Liftoff compatibility.",
-        rich_help_panel=FORMATTING_PANEL,
-    )] = False,
-    repeat_exons_utrs: Annotated[bool, typer.Option(
-        "--repeat-exons-utrs", help="Creates individual exon/UTR entries with individual parental references for cases where a feature has more than one transcript level parent.",
-        rich_help_panel=FORMATTING_PANEL,
-    )] = False,
-    keep_original_subfeature_ids: Annotated[bool, typer.Option(
-        "--keep-original-subfeature-ids", help="Keep original subfeature ids for CDS, UTR and exon features. By default, since tidy detects shared exons and UTRs between transcripts of the same gene, it will rename these subfeatures accordingly.",
-        rich_help_panel=FORMATTING_PANEL,
+    # 3. Attribute & Metadata Formatting
+    clean_attributes: Annotated[bool, typer.Option(
+        "--clean-attributes", help="Removes non-standard attributes from a GFF.",
+        rich_help_panel=ATTR_PANEL,
     )] = False,
     add_gene_id: Annotated[bool, typer.Option(
-        "--add-gene-id", help="Creates a special attribute 'Gene_id' which has the Gene_id as a value but is given to all gene features and subfeatures. This is useful for example when using featureCounts at the exon level but summarising counts at the Gene_id level.",
-        rich_help_panel=FORMATTING_PANEL,
+        "--add-gene-id", help="Adds a parental 'Gene_id' attribute to all features and subfeatures (useful for featureCounts).",
+        rich_help_panel=ATTR_PANEL,
     )] = False,
     symbols_as_description: Annotated[bool, typer.Option(
-        "--symbols-as-description", help="Places gene symbols as 'Description=' attributes. Useful for JBrowse(2) display.",
-        rich_help_panel=FORMATTING_PANEL,
+        "--symbols-as-description", help="Places gene symbols into 'Description=' attributes (useful for JBrowse display).",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
+    remove_symbols: Annotated[bool, typer.Option(
+        "--remove-symbols", help="Removes symbol attributes from GFF output.",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
+    remove_aliases: Annotated[bool, typer.Option(
+        "--remove-aliases", help="Removes alias attributes from GFF output.",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
+    keep_original_subfeature_ids: Annotated[bool, typer.Option(
+        "--keep-original-subfeature-ids", help="Keep original subfeature IDs for CDS, UTR and exon features instead of synchronizing with gene IDs.",
+        rich_help_panel=ATTR_PANEL,
     )] = False,
     consider_read_utrs: Annotated[bool, typer.Option(
         "--consider-read-utrs", help="Consider UTRs as read from the GFF rather than inferred.",
-        rich_help_panel=FORMATTING_PANEL,
+        rich_help_panel=ATTR_PANEL,
     )] = False,
     print_empty_attributes: Annotated[bool, typer.Option(
-        "--print-empty-attributes", help="Print empty attributes. These are normally skipped.",
-        rich_help_panel=FORMATTING_PANEL,
+        "--print-empty-attributes", help="Print empty attributes (normally skipped).",
+        rich_help_panel=ATTR_PANEL,
     )] = False,
     print_orphaned_features: Annotated[bool, typer.Option(
-        "--print-orphaned-features", help="Print orphaned features. Orphaned features are features which are not assigned to any gene, or genes which could not be incorporated into the annotation object. These are normally skipped.",
-        rich_help_panel=FORMATTING_PANEL,
+        "--print-orphaned-features", help="Print orphaned features not assigned to any gene (normally skipped).",
+        rich_help_panel=ATTR_PANEL,
     )] = False,
 
-    # 4. CDS Inference & Reworking
+    # 4. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genome-file", help="Path to genome FASTA file. Overrides positional genome argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", help="A name or tag for the genome assembly.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_tidy.gff3",
+
+    # 5. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 6. Genetic Codes
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
+    mitochondria_chroms: MitochondriaChromsOption = [],
+    chloroplast_chroms: ChloroplastChromsOption = [],
+
+    # 7. CDS Inference & Reworking
     infer_missing_CDSs: Annotated[bool, typer.Option(
         "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations. Requires genome file.",
         rich_help_panel=CDS_PANEL,
@@ -194,52 +240,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 5. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
-    # 6. Genetic Codes
-    taxonomy: TaxonomyOption = "plant",
-    genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
-    mito_code: MitoCodeOption = None,
-    plastid_code: PlastidCodeOption = None,
-    mitochondria_chroms: MitochondriaChromsOption = [],
-    chloroplast_chroms: ChloroplastChromsOption = [],
-
-    # 7. Input / Output Options
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="A name or tag for the genome assembly.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to genome FASTA file. Overrides positional genome argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_tidy.gff3",
-
-    # 8. Execution / Debugging
+    # 8. Execution & Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -258,8 +259,19 @@ def main(
     if verbose:
         quiet = False
 
-    genome_file = genome_file_opt or genome_file
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    genome_in = genome_file_opt if genome_file_opt else genome_file
 
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+
+    if annot_in and genome_in and detect_file_type(annot_in) == "fasta" and detect_file_type(genome_in) == "annotation":
+        annot_in, genome_in = genome_in, annot_in
+
+    annotation_file = annot_in
+    genome_file = genome_in
+
+    include_UTRs = not strip_utrs
     collapse_exons = not(no_collapse_exons)
     collapse_CDSs = not(no_collapse_CDSs)
     remove_missing_transcript_parent_references = not(keep_missing_transcript_parent_references)
@@ -277,9 +289,9 @@ def main(
     else:
         subfolder = False
 
-    for feature in features:
-        if feature not in RNA_CLASSES:
-            raise typer.BadParameter(f"Invalid feature: {feature}. Choose from: {RNA_CLASSES}")
+    for biotype in biotypes:
+        if biotype not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid biotype: {biotype}. Choose from: {RNA_CLASSES}")
 
     if adjust_internal_shifts not in ("intra_exon", "all", "none"):
         raise typer.BadParameter(f"Invalid adjust_internal_shifts: '{adjust_internal_shifts}'. Choose from: 'intra_exon', 'all', 'none'.")
@@ -348,7 +360,7 @@ def main(
     if output_file == "{annotation-name}_tidy.gff3":
         output_file = f"{annotation_name}_tidy.gff3"
 
-    if unique_cds_entry_ids or for_lifton:
+    if unique_cds_entry_ids:
         annotation.CDS_to_CDS_segment_ids()
     else:
         annotation.CDS_segment_to_CDS_ids()
@@ -356,8 +368,8 @@ def main(
     if symbols_as_description:
         remove_symbols = True
 
-    if features:
-        annotation.filter_by_rna_class(rna_classes=features, remove_genes_accordingly=True, quiet=quiet)
+    if biotypes:
+        annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
         clean_features = True
 
     annotation.export.gff(output_dir=output_dir, filename=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)

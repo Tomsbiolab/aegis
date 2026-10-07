@@ -345,7 +345,7 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
     include_all: Annotated[bool, typer.Option(
-        "-a", "--all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
+        "-A", "--all", "--include-all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
     summary_only: Annotated[bool, typer.Option(
@@ -377,6 +377,25 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = "name",
 
+    # 2. Input / Output Options
+    genome_files_opt: Annotated[Optional[List[str]], typer.Option(
+        "-g", "--genomes", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Overrides positional arguments if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = None,
+    genome_names: Annotated[str, typer.Option(
+        "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to output TSV/CSV file.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+
+    # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
         rich_help_panel=FASTA_HEADER_PANEL,
@@ -390,19 +409,7 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
-    genome_names: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to output TSV/CSV file.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-
+    # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,

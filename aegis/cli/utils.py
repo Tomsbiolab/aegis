@@ -34,23 +34,23 @@ def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:
 # ---------------------------------------------------------------------------
 # Standard Rich help panel titles used across the AEGIS CLI suite
 # ---------------------------------------------------------------------------
-CORE_PANEL = "Core Command Options"
+EXTRACTION_PANEL = "Feature Extraction Options"
 FEATURE_PANEL = "Feature & Model Options"
 FILTER_PANEL = "Filtering Options"
-BIOTYPE_PANEL = "Biotype & RNA Filtering"
+MODEL_PANEL = "Structural Model Sanitisation"
+ATTR_PANEL = "Attribute & Metadata Formatting"
+CLEANING_PANEL = "Structural Model Sanitisation"
+FORMATTING_PANEL = "Attribute & Metadata Formatting"
 CDS_PANEL = "CDS Inference & Reworking"
 COORDS_PANEL = "Coordinate & Phase Options"
-CLEANING_PANEL = "GFF Cleaning & Sanitisation"
-FORMATTING_PANEL = "Feature & Attribute Formatting"
-FORMAT_PANEL = "Format Options"
+FORMAT_PANEL = "Format Conversion Options"
 RENAME_PANEL = "Feature ID Renaming"
 SUBFEATURE_PANEL = "Subfeature & Model Options"
 SPLIT_PANEL = "Split Criteria"
 SUBSET_PANEL = "Subset Criteria"
 SUMMARY_PANEL = "Summary & Comparison Options"
-GENOME_COMP_PANEL = "Summary & Comparison Options"
 OVERLAP_PANEL = "Overlap Criteria"
-MERGE_PANEL = "Overlap & Merging Options"
+MERGE_PANEL = "Overlap & Merging Criteria"
 PROMOTER_PANEL = "Promoter & Motif Options"
 SYMBOLS_PANEL = "Gene Symbol Options"
 PRUNE_PANEL = "Pruning Options"
@@ -60,10 +60,11 @@ GENOME_CLEANING_PANEL = "Genome Cleaning & Renaming"
 
 FASTA_HEADER_PANEL = "Reference FASTA Options"
 OUTPUT_HEADER_PANEL = "Output Sequence Header Options"
+OUTPUT_FILTER_PANEL = "Output & Filtering Options"
 GENETIC_CODES_PANEL = "Genetic Codes"
 IO_PANEL = "Input / Output Options"
 COLUMNS_PANEL = "Output Columns"
-EXEC_PANEL = "Execution / Debugging"
+EXEC_PANEL = "Execution & Debugging"
 
 
 def detect_file_type(filepath: str) -> str:

@@ -11,8 +11,8 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = "",
 
     # 1. Format Options
     input_format: Annotated[str, typer.Option(
@@ -25,6 +25,10 @@ def main(
     )] = None,
     strict_gtf_2_2: Annotated[bool, typer.Option(
         "--strict-gtf-2-2", help="Export strict GTF 2.2 format without top-level gene/transcript lines and with 5UTR/3UTR features.",
+        rich_help_panel=FORMAT_PANEL,
+    )] = False,
+    strip_utrs: Annotated[bool, typer.Option(
+        "--strip-utrs", "--no-utrs", help="Strip UTRs from exported output (by default, UTRs are retained).",
         rich_help_panel=FORMAT_PANEL,
     )] = False,
 
@@ -43,8 +47,12 @@ def main(
     )] = False,
 
     # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -72,7 +80,13 @@ def main(
     if verbose:
         quiet = False
 
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    annotation_file = annot_in
+
     skip_coordinate_polishing = not polish_coordinates
+    export_utrs = not strip_utrs
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -124,9 +138,9 @@ def main(
         output_file += f".{target_format}"
 
     if target_format == "gtf":
-        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, strict_gtf_2_2=strict_gtf_2_2)
+        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=export_utrs, quiet=quiet, subfolder=subfolder, strict_gtf_2_2=strict_gtf_2_2)
     elif target_format == "gff3":
-        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
+        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=export_utrs, quiet=quiet, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()

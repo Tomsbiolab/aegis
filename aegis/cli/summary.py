@@ -189,31 +189,17 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
 
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
-    taxonomy: TaxonomyOption = "plant",
-    genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
-    mito_code: MitoCodeOption = None,
-    plastid_code: PlastidCodeOption = None,
-
+    # 2. Input / Output Options
+    annotation_files_opt: Annotated[Optional[List[str]], typer.Option(
+        "-a", "--annotations", "--annotation", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = None,
     genome: Annotated[Optional[List[str]], typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
+        "-g", "--genome", "--genome-file", "--genomes", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
         rich_help_panel=IO_PANEL,
     )] = None,
     annotation_names: Annotated[str, typer.Option(
-        "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames).",
+        "-an", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames).",
         rich_help_panel=IO_PANEL,
     )] = "",
     genome_name: Annotated[str, typer.Option(
@@ -233,6 +219,28 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = False,
 
+    # 3. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 4. Genetic Codes
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
+
+    # 5. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
@@ -259,6 +267,15 @@ def main(
       4. Comparing annotations from DIFFERENT genomes/species (macro statistics):
          aegis summary speciesA.gff speciesB.gff --summary-only
     """
+    if annotation_files_opt:
+        extra_annots = []
+        for a_arg in annotation_files_opt:
+            for part in a_arg.split(","):
+                part = part.strip()
+                if part:
+                    extra_annots.append(part)
+        files = extra_annots + (files or [])
+
     if not files:
         typer.echo("Error: At least one annotation GFF/GTF file must be provided.", err=True)
         raise typer.Exit(code=1)

@@ -1,6 +1,6 @@
 import typer
 import os
-
+from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
@@ -12,16 +12,18 @@ VALID_FEATURES: list[str] = ["gene", "transcript", "CDS", "exon", "UTR"]
 
 @app.command()
 def main(
-    annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+    annotation_file: Annotated[Optional[str], typer.Argument(
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = None,
+
+    # 1. Feature ID Renaming
     rename_features: Annotated[list[str], typer.Option(
         "-f", "--features", "--rename-features", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {VALID_FEATURES}.",
         callback=split_callback,
         rich_help_panel=RENAME_PANEL,
     )] = ["transcript", "CDS", "exon", "UTR"],
     prefix: Annotated[str, typer.Option(
-        "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. swich from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
+        "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. switch from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
         rich_help_panel=RENAME_PANEL,
     )] = "",
     suffix: Annotated[str, typer.Option(
@@ -45,17 +47,19 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = 3,
     strip_gene_tag: Annotated[bool, typer.Option(
-        "--remove-gene-tag", "--strip-gene-tags", help="Some gffs have a flanking literal 'gene' tag. Use this flag to remove it. e.g. 'gene-Solyc00g174340' would become just 'Solyc00g174340'",
+        "--strip-gene-tags", "--strip-gene-tag", "--remove-gene-tag", "--remove-gene-tags", help="Some GFFs have a flanking literal 'gene-' or 'gene:' prefix. Use this flag to remove it. e.g. 'gene-Solyc00g174340' becomes 'Solyc00g174340'.",
         rich_help_panel=RENAME_PANEL,
     )] = False,
     remove_point_suffix: Annotated[bool, typer.Option(
-        "--remove-point-suffix", help="Some gene id formats carry an '.annotation-version' suffix that is in some cases not welcome. Use this flag to remove it: e.g. 'Solyc00g174340.2' would become just 'Solyc00g174340'.",
+        "--remove-point-suffix", help="Some gene id formats carry an '.annotation-version' suffix that is in some cases not welcome. Use this flag to remove it: e.g. 'Solyc00g174340.2' becomes 'Solyc00g174340'.",
         rich_help_panel=RENAME_PANEL,
     )] = False,
     gene_id_correspondences: Annotated[bool, typer.Option(
-        "--gene-id-correspondences", help="Whether to produce a tsv file with correspondences between old and renamed gene ids '{annotation-name}_renamed_correspondences.tsv'.",
+        "--gene-id-correspondences", help="Whether to produce a TSV file with correspondences between old and renamed gene ids '{annotation-name}_renamed_correspondences.tsv'.",
         rich_help_panel=RENAME_PANEL,
     )] = False,
+
+    # 2. Subfeature & Model Options
     keep_existing_ids_if_derived_from_base_id: Annotated[bool, typer.Option(
         "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id.",
         rich_help_panel=SUBFEATURE_PANEL,
@@ -76,8 +80,14 @@ def main(
         "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
         rich_help_panel=SUBFEATURE_PANEL,
     )] = False,
+
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -88,6 +98,8 @@ def main(
         "-o", "--output-file", help="Path to the output annotation file.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_renamed.gff3",
+
+    # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
@@ -103,6 +115,11 @@ def main(
 
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    annotation_file = annot_in
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs

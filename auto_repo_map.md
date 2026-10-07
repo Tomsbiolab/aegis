@@ -356,7 +356,7 @@
         - `def gff(self,`
         - `def gtf(self,`
         - `def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False, quiet:bool=False,`
-        - `def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False,`
+        - `def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False,`
       - motifs.py
         - `class AnnotationMotifs (AnnotationComponent):`
         - `def find_and_plot(self, query_genes:list[str], motif:str, motif_length:int, glistname:str, tf_motif_tag:str, backlist:list[str]=[], backlistname:str="", filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "motifs", subfolder: bool = False, use_annot_dir: bool = False, quiet:bool=False):`
@@ -888,6 +888,13 @@
     - test_cli_subset.py
       - `def test_cli_subset_gene_cap_smoke(test_data_dir, tmp_path):`
       - `def test_cli_subset_chr_cap_smoke(test_data_dir, tmp_path):`
+    - test_cli_suite.py
+      - `def test_all_cli_help(cmd):`
+      - `def test_list_subcommands_help():`
+      - `def test_motif_search_options():`
+      - `def test_prune_keep_option():`
+      - `def test_merge_overlap_options():`
+      - `def test_orthology_blast_panel():`
     - test_cli_summary.py
       - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`

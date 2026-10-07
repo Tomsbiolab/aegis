@@ -332,23 +332,23 @@ def main(
         callback=split_callback,
         rich_help_panel=ORTHOLOGY_PANEL,
     )] = ["ALL"],
-    include_single_blasts: Annotated[bool, typer.Option(
-        "-b", "--include-single-blasts", 
-        help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary.",
-        rich_help_panel=ORTHOLOGY_PANEL,
+
+    # 2. BLASTp Options
+    skip_all_blasts: Annotated[bool, typer.Option(
+        "--skip-all-blasts", 
+        help="Skip all protein BLASTs.",
+        rich_help_panel=BLAST_PANEL,
     )] = False,
     skip_rbhs: Annotated[bool, typer.Option(
         "--skip-RBHs", 
         help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary.",
-        rich_help_panel=ORTHOLOGY_PANEL,
+        rich_help_panel=BLAST_PANEL,
     )] = False,
-    skip_all_blasts: Annotated[bool, typer.Option(
-        "--skip-all-blasts", 
-        help="Skip all protein BLASTs.",
-        rich_help_panel=ORTHOLOGY_PANEL,
+    include_single_blasts: Annotated[bool, typer.Option(
+        "-b", "--include-single-blasts", 
+        help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary.",
+        rich_help_panel=BLAST_PANEL,
     )] = False,
-
-    # 2. BLASTp Options
     identity: Annotated[float, typer.Option(
         "-i", "--identity", 
         help="Minimum identity threshold for protein BLAST hits.",
@@ -365,52 +365,7 @@ def main(
         rich_help_panel=BLAST_PANEL,
     )] = 0.00001,
 
-    # 3. Output & Filtering Options
-    confidence: Annotated[list[str], typer.Option(
-        "--confidence", 
-        help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
-        callback=split_callback,
-        rich_help_panel=OUTPUT_PANEL,
-    )] = ["high", "medium", "lower"],
-    include_NAs: Annotated[bool, typer.Option(
-        "-na", "--include-NAs", 
-        help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    skip_cardinality: Annotated[bool, typer.Option(
-        "-sc", "--skip-cardinality", 
-        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    tiered_cardinality: Annotated[bool, typer.Option(
-        "--tiered-cardinality", 
-        help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    include_duplicates: Annotated[bool, typer.Option(
-        "--include-duplicates", 
-        help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    split_scores: Annotated[bool, typer.Option(
-        "--split-scores", 
-        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-    strip_gene_tags: Annotated[bool, typer.Option(
-        "--strip-gene-tags", 
-        help="Strip gene tags, i.e. remove 'gene-' prefix from gene IDs. e.g., 'gene-LOC100263960' to 'LOC100263960'.",
-        rich_help_panel=OUTPUT_PANEL,
-    )] = False,
-
-    # 4. Genetic Codes
-    taxonomy: TaxonomyOption = "plant",
-    genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
-    mito_code: MitoCodeOption = None,
-    plastid_code: PlastidCodeOption = None,
-
-    # 5. Core Input / Output Configuration
+    # 3. Core Input / Output Configuration
     genome_files_opt: Annotated[list[str], typer.Option(
         "-g", "--genome-files", "--genomes",
         help="Genome assemblies corresponding to annotation files (optional if passed as positional arguments). Provide in the same order as annotations.",
@@ -456,6 +411,51 @@ def main(
         help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
         rich_help_panel=IO_PANEL,
     )] = "equivalences{other_tags}.tsv",
+
+    # 4. Output & Filtering Options
+    confidence: Annotated[list[str], typer.Option(
+        "--confidence", 
+        help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
+        callback=split_callback,
+        rich_help_panel=OUTPUT_PANEL,
+    )] = ["high", "medium", "lower"],
+    include_NAs: Annotated[bool, typer.Option(
+        "-na", "--include-NAs", 
+        help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",
+        rich_help_panel=OUTPUT_PANEL,
+    )] = False,
+    skip_cardinality: Annotated[bool, typer.Option(
+        "-sc", "--skip-cardinality", 
+        help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
+        rich_help_panel=OUTPUT_PANEL,
+    )] = False,
+    tiered_cardinality: Annotated[bool, typer.Option(
+        "--tiered-cardinality", 
+        help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
+        rich_help_panel=OUTPUT_PANEL,
+    )] = False,
+    include_duplicates: Annotated[bool, typer.Option(
+        "--include-duplicates", 
+        help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
+        rich_help_panel=OUTPUT_PANEL,
+    )] = False,
+    split_scores: Annotated[bool, typer.Option(
+        "--split-scores", 
+        help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
+        rich_help_panel=OUTPUT_PANEL,
+    )] = False,
+    strip_gene_tags: Annotated[bool, typer.Option(
+        "--strip-gene-tags", 
+        help="Strip gene tags, i.e. remove 'gene-' prefix from gene IDs. e.g., 'gene-LOC100263960' to 'LOC100263960'.",
+        rich_help_panel=OUTPUT_PANEL,
+    )] = False,
+
+    # 5. Genetic Codes
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
 
     # 6. Execution / Debugging
     threads: Annotated[int, typer.Option(

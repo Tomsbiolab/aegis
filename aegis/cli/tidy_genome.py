@@ -5,19 +5,19 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, CDS_PANEL
-
-GENOME_CLEANING_PANEL = "Genome Cleaning & Renaming"
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, COORDS_PANEL, GENOME_CLEANING_PANEL, detect_file_type
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     genome_file: Annotated[str, typer.Argument(
-        help="Path to the input genome FASTA file."
-    )],
-    annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file. If provided, it will be processed to match the cleaned genome."
+        help="Path to the input genome FASTA file (or provide via -g/--genome)."
     )] = "",
+    annotation_file: Annotated[str, typer.Argument(
+        help="Optional path to input annotation GFF/GTF file (or provide via -a/--annotation). If provided, it will be processed to match the cleaned genome."
+    )] = "",
+
+    # 1. Genome Cleaning & Renaming
     remove_scaffolds: Annotated[bool, typer.Option(
         "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome.",
         rich_help_panel=GENOME_CLEANING_PANEL,
@@ -35,23 +35,7 @@ def main(
         rich_help_panel=GENOME_CLEANING_PANEL,
     )] = "",
 
-    min_codon_len: Annotated[int, typer.Option(
-        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
-        rich_help_panel=CDS_PANEL,
-    )] = 2,
-    recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
-        rich_help_panel=CDS_PANEL,
-    )] = False,
-    reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
-        rich_help_panel=CDS_PANEL,
-    )] = False,
-    skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
-        rich_help_panel=CDS_PANEL,
-    )] = False,
-
+    # 2. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
         rich_help_panel=FASTA_HEADER_PANEL,
@@ -69,12 +53,21 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
+    # 3. Input / Output Options
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     genome_name: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -82,7 +75,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_genome_file: Annotated[str, typer.Option(
-        "-og", "-o", "--output-genome-file", "--output-file", help="Path to the output genome filename, with or without extension.",
+        "-og", "--output-genome-file", help="Path to the output genome filename, with or without extension.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-name}_tidy.fasta",
     output_annot_file: Annotated[str, typer.Option(
@@ -90,6 +83,25 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_tidy.gff3",
 
+    # 4. Coordinate & Phase Options (when paired annotation is provided)
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
+        rich_help_panel=COORDS_PANEL,
+    )] = 2,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    skip_coordinate_polishing: Annotated[bool, typer.Option(
+        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+
+    # 5. Execution & Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -106,6 +118,21 @@ def main(
     - Rename chromosomes based on a provided map file.
     - Remove scaffolds, unplaced contigs, and organellar DNA.
     """
+    if verbose:
+        quiet = False
+
+    gen_in = genome_file_opt if genome_file_opt else genome_file
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+
+    if not gen_in:
+        raise typer.BadParameter("Missing required genome file. Provide as positional argument or via -g/--genome.")
+
+    # Swap if accidentally provided in reverse order
+    if annot_in and detect_file_type(gen_in) == "annotation" and detect_file_type(annot_in) == "fasta":
+        gen_in, annot_in = annot_in, gen_in
+
+    genome_file = gen_in
+    annotation_file = annot_in
 
     if genome_name == "{genome-file}":
         genome_name = os.path.splitext(os.path.basename(genome_file))[0]

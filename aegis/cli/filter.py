@@ -22,8 +22,8 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = "",
 
     # 1. Filtering Options
     coding_only: Annotated[bool, typer.Option(
@@ -67,14 +67,18 @@ def main(
         "-m", "--main", help="Include only the main transcript and main CDS per gene.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
-    include_UTRs: Annotated[bool, typer.Option(
-        "-u", "--include-UTRs/--strip-utrs", help="Include UTRs in output GFF (default: True).",
+    strip_utrs: Annotated[bool, typer.Option(
+        "--strip-utrs", "--no-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
         rich_help_panel=FILTER_PANEL,
-    )] = True,
+    )] = False,
 
     # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -101,6 +105,13 @@ def main(
     """
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    annotation_file = annot_in
+
+    include_UTRs = not strip_utrs
     if coding_only and non_coding_only:
         raise typer.BadParameter("Cannot specify both --coding-only and --non-coding-only.")
 

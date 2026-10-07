@@ -31,7 +31,7 @@ def test_cli_summary_multi_annot_smoke(test_data_dir, tmp_path):
     a1 = test_data_dir / "input/annotation/minimal.gff3"
     a2 = test_data_dir / "input/annotation/extract_test.gff3"
 
-    res_multi = runner.invoke(app, [str(a1), str(a2), "-a", "Ann1,Ann2", "-d", str(tmp_path)])
+    res_multi = runner.invoke(app, [str(a1), str(a2), "-an", "Ann1,Ann2", "-d", str(tmp_path)])
     assert res_multi.exit_code == 0, f"Multi-annotation run failed: {res_multi.stdout}"
 
 

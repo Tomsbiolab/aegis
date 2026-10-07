@@ -1177,7 +1177,7 @@ class AnnotationExport(AnnotationComponent):
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False,
+    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False,
         #deprecated arguments
         custom_path: str = "", output_file: str = ""):
 
@@ -1230,6 +1230,8 @@ class AnnotationExport(AnnotationComponent):
                         continue
 
                     for t in g.transcripts.values():
+                        if only_main and not t.main:
+                            continue
                         if skip_coding and t.coding:
                             continue
                         if skip_non_coding and not t.coding:

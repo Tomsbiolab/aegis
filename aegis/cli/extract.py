@@ -8,6 +8,7 @@ from ..genome import Genome
 from ..annotation import Annotation
 from .utils import (
     split_callback,
+    detect_file_type,
     TaxonomyOption,
     GeneticCodeOption,
     AutoOrganelleCodesOption,
@@ -21,6 +22,7 @@ from .utils import (
     FASTA_HEADER_PANEL,
     CDS_PANEL,
     OUTPUT_HEADER_PANEL,
+    EXTRACTION_PANEL,
 )
 
 FEATURES = ["gene", "transcript", "CDS", "protein", "promoter"]
@@ -37,18 +39,16 @@ RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA",
                 "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
                 "SRP_RNA", "RNase_MRP_RNA"]
 
-EXTRACTION_PANEL = "Feature Extraction Options"
-
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = "",
     genome_file: Annotated[str, typer.Argument(
-        help="Path to the input genome FASTA file."
-    )],
+        help="Path to the input genome FASTA file (or provide via -g/--genome)."
+    )] = "",
 
     # 1. Feature Extraction Options
     features: Annotated[List[str], typer.Option(
@@ -97,19 +97,75 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
     strip_stop: Annotated[Optional[bool], typer.Option(
-        "--strip-stop/--no-strip-stop", help="Explicitly enable/disable stripping stop codons across both proteins and CDSs (overrides defaults).",
+        "--strip-stop/--no-strip-stop", help="Global override: explicitly enable or disable stripping stop codons across both proteins and CDSs.",
         rich_help_panel=EXTRACTION_PANEL,
     )] = None,
     keep_stop: Annotated[bool, typer.Option(
-        "--keep-stop", help="Keep trailing stop codon (* in proteins) when exporting protein sequences (by default trailing stop codons are stripped).",
+        "--keep-stop", "--keep-protein-stop", help="Keep trailing stop codon (* in proteins) when exporting protein sequences (by default trailing stop codons are stripped).",
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
     strip_stop_cds: Annotated[bool, typer.Option(
-        "--strip-stop-cds", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon).",
+        "--strip-stop-cds", "--strip-cds-stop", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon).",
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
 
-    # 2. CDS Inference & Reworking
+    # 2. Output Sequence Header Options
+    feature_id: Annotated[str, typer.Option(
+        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
+        rich_help_panel=OUTPUT_HEADER_PANEL,
+    )] = "feature",
+    detailed_headers: Annotated[bool, typer.Option(
+        "-dh", "--detailed-headers", "--verbose-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
+        rich_help_panel=OUTPUT_HEADER_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/features/",
+
+    # 4. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 5. Genetic Codes
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
+    mitochondria_chroms: MitochondriaChromsOption = [],
+    chloroplast_chroms: ChloroplastChromsOption = [],
+    initiator_methionine: InitiatorMethionineOption = "canonical",
+
+    # 6. CDS Inference & Reworking
     infer_missing_CDSs: Annotated[bool, typer.Option(
         "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
         rich_help_panel=CDS_PANEL,
@@ -163,55 +219,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 3. Output Sequence Header Options
-    feature_id: Annotated[str, typer.Option(
-        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
-        rich_help_panel=OUTPUT_HEADER_PANEL,
-    )] = "feature",
-    detailed_headers: Annotated[bool, typer.Option(
-        "-dh", "--detailed-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
-        rich_help_panel=OUTPUT_HEADER_PANEL,
-    )] = False,
-
-    # 4. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
-    # 5. Genetic Codes
-    taxonomy: TaxonomyOption = "plant",
-    genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
-    mito_code: MitoCodeOption = None,
-    plastid_code: PlastidCodeOption = None,
-    mitochondria_chroms: MitochondriaChromsOption = [],
-    chloroplast_chroms: ChloroplastChromsOption = [],
-    initiator_methionine: InitiatorMethionineOption = "canonical",
-
-    # 6. Input / Output Options
-    genome_name: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/features/",
-
-    # 7. Execution / Debugging
+    # 7. Execution & Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -233,6 +241,24 @@ def main(
     """
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    genome_in = genome_file_opt if genome_file_opt else genome_file
+
+    if not annot_in or not genome_in:
+        if not annot_in and not genome_in:
+            raise typer.BadParameter("Both an annotation GFF/GTF file and a genome FASTA file must be provided.")
+        elif not annot_in:
+            raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+        else:
+            raise typer.BadParameter("Missing required genome file. Provide as positional argument or via -g/--genome.")
+
+    # Swap if accidentally provided in reverse order
+    if detect_file_type(annot_in) == "fasta" and detect_file_type(genome_in) == "annotation":
+        annot_in, genome_in = genome_in, annot_in
+
+    annotation_file = annot_in
+    genome_file = genome_in
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs

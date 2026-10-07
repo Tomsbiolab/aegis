@@ -1,33 +1,45 @@
 import typer
 import os
-
+from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation, read_file_with_fallback
-from .utils import IO_PANEL, EXEC_PANEL
+from .utils import IO_PANEL, EXEC_PANEL, PRUNE_PANEL
 
 features = ["gene", "transcript"]
-PRUNE_PANEL = "Pruning Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
 @app.command()
 def main(
-    annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
-    target_ids: Annotated[str, typer.Argument(
-        help="Input file with list of IDs (one per line) OR a comma-separated list of IDs to remove."
-    )],
+    annotation_file: Annotated[Optional[str], typer.Argument(
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = None,
+    target_ids: Annotated[Optional[str], typer.Argument(
+        help="Input file with list of IDs (one per line) OR a comma-separated list of IDs (or provide via -i/--ids)."
+    )] = None,
 
     # 1. Pruning Options
     feature_type: Annotated[str, typer.Option(
-        "-f", "--feature-type", "--feature", help=f"Feature level to be removed based on input IDs. Choose from {features}.",
+        "-f", "--feature-type", "--feature", help=f"Feature level to prune based on input IDs. Choose from {features}.",
         rich_help_panel=PRUNE_PANEL,
     )] = "gene",
+    keep: Annotated[bool, typer.Option(
+        "-k", "--keep", "--whitelist", "--invert", help="Invert selection: retain only the specified IDs and remove all others.",
+        rich_help_panel=PRUNE_PANEL,
+    )] = False,
 
     # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    target_ids_opt: Annotated[str, typer.Option(
+        "-i", "--ids", "--target-ids", help="Input file with list of IDs OR comma-separated list of IDs. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
     annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
     output_dir: Annotated[str, typer.Option(
@@ -50,10 +62,21 @@ def main(
     )] = False,
 ):
     """
-    Remove a list of IDs (from a file or comma-separated argument) from an annotation.
+    Remove (or retain with --keep) a list of IDs (from a file or comma-separated argument) in an annotation.
     """
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    ids_in = target_ids_opt if target_ids_opt else target_ids
+
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    if not ids_in:
+        raise typer.BadParameter("Missing required target IDs. Provide as positional argument or via -i/--ids.")
+
+    annotation_file = annot_in
+    target_ids = ids_in
 
     if feature_type not in features:
         raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
@@ -85,10 +108,18 @@ def main(
     if not input_ids:
         raise typer.BadParameter("No valid IDs provided to prune.")
 
-    if feature_type == "gene":
-        annotation.remove_genes(to_remove=input_ids, override_rescue=True, quiet=quiet)
+    if keep:
+        if feature_type == "gene":
+            to_remove = set(annotation.genes.keys()) - input_ids
+            annotation.remove_genes(to_remove=to_remove, override_rescue=True, quiet=quiet)
+        else:
+            to_remove = set(annotation.transcripts.keys()) - input_ids
+            annotation.remove_transcripts(to_remove=to_remove, remove_genes_accordingly=True, quiet=quiet)
     else:
-        annotation.remove_transcripts(to_remove=input_ids, remove_genes_accordingly=True, quiet=quiet)
+        if feature_type == "gene":
+            annotation.remove_genes(to_remove=input_ids, override_rescue=True, quiet=quiet)
+        else:
+            annotation.remove_transcripts(to_remove=input_ids, remove_genes_accordingly=True, quiet=quiet)
 
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"

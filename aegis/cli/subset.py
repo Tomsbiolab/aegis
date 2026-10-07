@@ -11,23 +11,24 @@ from ..annotation import Annotation
 from ..genome import Genome
 from .utils import split_callback, SUBSET_PANEL, FASTA_HEADER_PANEL, IO_PANEL, EXEC_PANEL
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
-    annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
-    genome_file: Annotated[str, typer.Argument(
-        help="Path to the input genome FASTA file."
-    )] = "",
+    annotation_file: Annotated[Optional[str], typer.Argument(
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = None,
+    genome_file: Annotated[Optional[str], typer.Argument(
+        help="Path to the input genome FASTA file (optional; or provide via -g/--genome)."
+    )] = None,
 
+    # 1. Subset Criteria
     chosen_chromosomes: Annotated[List[str], typer.Option(
-        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting annotation gff (and assembly fasta) subset(s). Add them and separate them by commas e.g. --chromosomes 'chr1,chr3'.",
+        "-c", "--chromosomes", help="Overrides --chr-cap. Only the chosen chromosomes/scaffolds will be in the resulting subset(s). Add them separated by commas e.g. --chromosomes 'chr1,chr3'.",
         callback=split_callback,
         rich_help_panel=SUBSET_PANEL,
     )] = [],
     chr_cap: Annotated[Optional[int], typer.Option(
-        "--chr-cap", help="Add a chromosome cap to generate an annotation gff (and assembly fasta) subset(s). Set to 0 to disable.",
+        "--chr-cap", help="Add a chromosome cap to generate an annotation (and assembly fasta) subset(s). Set to 0 to disable.",
         rich_help_panel=SUBSET_PANEL,
     )] = 2,
     no_chr_cap: Annotated[bool, typer.Option(
@@ -35,7 +36,7 @@ def main(
         rich_help_panel=SUBSET_PANEL,
     )] = False,
     gene_cap: Annotated[Optional[int], typer.Option(
-        "--gene-cap", help="Add a total gene number cap to reduce size of gff subset. Set to 0 to disable. The gene cap will affect scaffolds/chromosomes as uniformly as possible.",
+        "--gene-cap", help="Add a total gene number cap to reduce size of GFF subset. Set to 0 to disable. Affects scaffolds/chromosomes as uniformly as possible.",
         rich_help_panel=SUBSET_PANEL,
     )] = 3000,
     no_gene_cap: Annotated[bool, typer.Option(
@@ -43,7 +44,7 @@ def main(
         rich_help_panel=SUBSET_PANEL,
     )] = False,
     min_genes: Annotated[Optional[int], typer.Option(
-        "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chosen-chromosomes if used. Set to 0 to disable.",
+        "--min-genes", help="Minimum total number of genes in the subset. Overrides --chr-cap if needed. Does not override --chromosomes if used. Set to 0 to disable.",
         rich_help_panel=SUBSET_PANEL,
     )] = 1500,
     no_min_genes: Annotated[bool, typer.Option(
@@ -55,6 +56,37 @@ def main(
         rich_help_panel=SUBSET_PANEL,
     )] = None,
 
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/subsets/",
+    output_annot_file: Annotated[str, typer.Option(
+        "-oa", "--output-annot-file", "--output-annotation-file", "--output-file", help="Path to the output annotation filename, including extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_subset.gff3",
+    output_genome_file: Annotated[str, typer.Option(
+        "-og", "--output-genome-file", help="Path to the output genome filename, including extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-name}_subset.fasta",
+
+    # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
         rich_help_panel=FASTA_HEADER_PANEL,
@@ -68,27 +100,7 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/subsets/",
-    output_annot_file: Annotated[str, typer.Option(
-        "-oa", "-o", "--output-annot-file", "--output-file", help="Path to the output annotation filename, including extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_subset.gff3",
-    output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Path to the output genome filename, including extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-name}_subset.fasta",
-
+    # 4. Execution & Debugging
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
@@ -99,10 +111,23 @@ def main(
     )] = False,
 ):
     """
-    Obtain subsets of an annotation file, random or directed. Ramdom subsets prioritise chromosomal features if available. A lite version of a gff file and its corresponding genome fasta file can be useful for debugging/trialing tools.
+    Obtain subsets of an annotation file, random or directed. Random subsets prioritize chromosomal features if available.
     """
     if verbose:
         quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    genome_in = genome_file_opt if genome_file_opt else genome_file
+
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+
+    from .utils import detect_file_type
+    if genome_in and detect_file_type(annot_in) == "fasta" and detect_file_type(genome_in) == "annotation":
+        annot_in, genome_in = genome_in, annot_in
+
+    annotation_file = annot_in
+    genome_file = genome_in if genome_in else ""
 
     if seed is not None:
         random.seed(seed)
