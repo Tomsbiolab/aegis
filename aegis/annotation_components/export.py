@@ -99,7 +99,6 @@ class AnnotationExport(AnnotationComponent):
         used_id: str = "protein",
         unique_proteins_per_gene: bool = False,
         only_cds_main: bool = True,
-        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         use_name_not_id: bool = False,
         filepath: str | None = None,
         output_dir: str | None = None,
@@ -108,14 +107,6 @@ class AnnotationExport(AnnotationComponent):
         subfolder: bool = False,
         subfolder_name: str = "features",
         extension: str = ".fasta",
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
-        table: int | str | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         quiet: bool = True,
         strip_stop: bool = True,
         #deprecated arguments
@@ -143,18 +134,7 @@ class AnnotationExport(AnnotationComponent):
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(
-                mode=mode,
-                quiet=quiet,
-                adjust_internal_shifts=adjust_internal_shifts,
-                table=table,
-                taxonomy=taxonomy,
-                auto_organelle_codes=auto_organelle_codes,
-                mito_table=mito_table,
-                plastid_table=plastid_table,
-                mitochondria_chroms=mitochondria_chroms,
-                chloroplast_chroms=chloroplast_chroms,
-            )
+            self._annot.generate_proteins(quiet=quiet)
 
         extra_suffixes = ["proteins"]
 
@@ -265,15 +245,6 @@ class AnnotationExport(AnnotationComponent):
         subfolder_name: str = "features",
         extension: str = ".fasta",
         quiet: bool = False,
-        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
-        table: int | str | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         strip_stop: bool = True,
         #deprecated arguments
         custom_path: str = "",
@@ -291,18 +262,7 @@ class AnnotationExport(AnnotationComponent):
         if subfolder_name != "features":
             subfolder = True
 
-        self._annot.generate_protein_equivalences(
-            mode=mode,
-            quiet=quiet,
-            adjust_internal_shifts=adjust_internal_shifts,
-            table=table,
-            taxonomy=taxonomy,
-            auto_organelle_codes=auto_organelle_codes,
-            mito_table=mito_table,
-            plastid_table=plastid_table,
-            mitochondria_chroms=mitochondria_chroms,
-            chloroplast_chroms=chloroplast_chroms,
-        )
+        self._annot.generate_protein_equivalences(quiet=quiet)
 
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
@@ -375,15 +335,6 @@ class AnnotationExport(AnnotationComponent):
         extension: str = ".fasta",
         quiet: bool = False,
         protein_oriented: bool = True,
-        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
-        table: int | str | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         strip_stop: bool = False,
         #deprecated arguments
         custom_path: str = "",
@@ -406,18 +357,7 @@ class AnnotationExport(AnnotationComponent):
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
         if protein_oriented and not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(
-                mode=mode,
-                quiet=quiet,
-                adjust_internal_shifts=adjust_internal_shifts,
-                table=table,
-                taxonomy=taxonomy,
-                auto_organelle_codes=auto_organelle_codes,
-                mito_table=mito_table,
-                plastid_table=plastid_table,
-                mitochondria_chroms=mitochondria_chroms,
-                chloroplast_chroms=chloroplast_chroms,
-            )
+            self._annot.generate_proteins(quiet=quiet)
 
         all_CDS_seqs = {}
         for genes in self._annot.chrs.values():
@@ -427,9 +367,6 @@ class AnnotationExport(AnnotationComponent):
                         for c in t.CDSs.values():
                             raw_cds = ""
                             if protein_oriented:
-                                if c.protein is None:
-                                    table_to_use = table if table is not None else getattr(self._annot, "table", 1)
-                                    c.generate_protein(mode=mode, quiet=quiet, adjust_internal_shifts=adjust_internal_shifts, table=table_to_use)
                                 if c.protein is not None and c.protein.nuc_seq != "":
                                     raw_cds = c.protein.nuc_seq
                             else:
@@ -442,20 +379,7 @@ class AnnotationExport(AnnotationComponent):
                                         if c.protein.seq.endswith("*"):
                                             raw_cds = raw_cds[:-3]
                                     else:
-                                        table_to_use = table
-                                        if table_to_use is None:
-                                            if hasattr(self._annot, "get_chromosome_translation_table"):
-                                                table_to_use = self._annot.get_chromosome_translation_table(
-                                                    c.ch,
-                                                    taxonomy=taxonomy,
-                                                    auto_organelle_codes=auto_organelle_codes,
-                                                    mito_table=mito_table,
-                                                    plastid_table=plastid_table,
-                                                    mitochondria_chroms=mitochondria_chroms,
-                                                    chloroplast_chroms=chloroplast_chroms,
-                                                )
-                                            else:
-                                                table_to_use = getattr(self._annot, "table", 1)
+                                        table_to_use = self._annot.translation_table(c.ch)
                                         _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
                                         if raw_cds[-3:].upper() in def_stops:
                                             raw_cds = raw_cds[:-3]
@@ -497,15 +421,6 @@ class AnnotationExport(AnnotationComponent):
         subfolder_name: str = "features",
         extension: str = ".fasta",
         protein_oriented: bool = True,
-        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
-        table: int | str | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         strip_stop: bool = False,
         quiet: bool = False,
         #deprecated arguments
@@ -580,18 +495,7 @@ class AnnotationExport(AnnotationComponent):
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
         if protein_oriented and not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(
-                mode=mode,
-                quiet=True,
-                adjust_internal_shifts=adjust_internal_shifts,
-                table=table,
-                taxonomy=taxonomy,
-                auto_organelle_codes=auto_organelle_codes,
-                mito_table=mito_table,
-                plastid_table=plastid_table,
-                mitochondria_chroms=mitochondria_chroms,
-                chloroplast_chroms=chloroplast_chroms,
-            )
+            self._annot.generate_proteins(quiet=True)
 
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
@@ -613,9 +517,6 @@ class AnnotationExport(AnnotationComponent):
 
                         for c in candidate_cds_list:
                             if protein_oriented:
-                                if c.protein is None:
-                                    table_to_use = table if table is not None else getattr(self._annot, "table", 1)
-                                    c.generate_protein(mode=mode, quiet=True, adjust_internal_shifts=adjust_internal_shifts, table=table_to_use)
                                 if c.protein is not None and c.protein.nuc_seq != "":
                                     temp_cs.append(c)
                             else:
@@ -670,20 +571,7 @@ class AnnotationExport(AnnotationComponent):
                                 if c.protein.seq.endswith("*"):
                                     cds_seq = cds_seq[:-3]
                             else:
-                                table_to_use = table
-                                if table_to_use is None:
-                                    if hasattr(self._annot, "get_chromosome_translation_table"):
-                                        table_to_use = self._annot.get_chromosome_translation_table(
-                                            c.ch,
-                                            taxonomy=taxonomy,
-                                            auto_organelle_codes=auto_organelle_codes,
-                                            mito_table=mito_table,
-                                            plastid_table=plastid_table,
-                                            mitochondria_chroms=mitochondria_chroms,
-                                            chloroplast_chroms=chloroplast_chroms,
-                                        )
-                                    else:
-                                        table_to_use = getattr(self._annot, "table", 1)
+                                table_to_use = self._annot.translation_table(c.ch)
                                 _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
                                 if cds_seq[-3:].upper() in def_stops:
                                     cds_seq = cds_seq[:-3]

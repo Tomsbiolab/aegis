@@ -55,7 +55,12 @@
       - `def correct_gene_transcript_and_subfeature_coordinates(self, skip_correction:bool=False, quiet:bool=True):`
       - `def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):`
       - `def clear_promoters(self):`
-      - `def get_chromosome_translation_table(`
+      - `def _store_genetic_codes(`
+      - `def set_genetic_codes(`
+      - `def genetic_codes(self) -> dict:`
+      - `def _validate_organelle_chroms(self):`
+      - `def translation_table(self, chrom: str) -> int | str:`
+      - `def _print_genetic_code_info(self):`
       - `def generate_proteins(`
       - `def get_protein_qc_summary(self) -> dict[str, int]:`
       - `def generate_protein_equivalences(`
@@ -931,7 +936,7 @@
     - test_export_cds.py
       - `def test_export_cds_protein_oriented_and_raw(test_data_dir, tmp_path):`
       - `def test_export_unique_proteins_per_gene(test_data_dir, tmp_path):`
-      - `def test_export_cds_with_table_none(test_data_dir, tmp_path):`
+      - `def test_set_genetic_codes_clears_proteins_and_exports_follow(tmp_path):`
       - `def test_export_unique_CDSs_per_gene(test_data_dir, tmp_path):`
       - `def test_export_cds_and_proteins_with_taxonomy(test_data_dir, tmp_path):`
       - `def test_export_protein_strip_stop_default(test_data_dir, tmp_path):`

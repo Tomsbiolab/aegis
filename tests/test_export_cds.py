@@ -57,15 +57,38 @@ def test_export_unique_proteins_per_gene(test_data_dir, tmp_path):
     assert len(uniq_headers) < len(all_headers)
 
 
-def test_export_cds_with_table_none(test_data_dir, tmp_path):
-    gff3_path = test_data_dir / "input/annotation/extract_test.gff3"
-    fasta_path = test_data_dir / "input/fasta/extract_test.fasta"
-
+def test_set_genetic_codes_clears_proteins_and_exports_follow(tmp_path):
+    # ATG TGA TGG TAA: TGA is a stop in table 1 but W in the vertebrate mitochondrial code (2)
+    fasta_path = tmp_path / "genome.fasta"
+    fasta_path.write_text(">chrX\nCCCATGTGATGGTAACCC\n")
+    gff3_path = tmp_path / "annot.gff3"
+    gff3_path.write_text(
+        "##gff-version 3\n"
+        "chrX\ttest\tgene\t4\t15\t.\t+\t.\tID=g1\n"
+        "chrX\ttest\tmRNA\t4\t15\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chrX\ttest\texon\t4\t15\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chrX\ttest\tCDS\t4\t15\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
     genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
     annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+    out_file = tmp_path / f"{annot.id}_proteins_p_id_main.fasta"
 
-    annot.export.CDSs(output_dir=str(tmp_path), table=None, quiet=True)
-    annot.export.unique_CDSs(output_dir=str(tmp_path), table=None, quiet=True)
+    assert annot.translation_table("chrX") == 1
+    annot.export.proteins(output_dir=str(tmp_path), verbose=False, quiet=True)
+    assert out_file.read_text().splitlines()[1] == "M*W"
+
+    annot.set_genetic_codes(taxonomy="vertebrate", mitochondria_chroms=["chrX"])
+    assert annot.contains_protein_sequences is False
+    assert annot.translation_table("chrX") == 2
+    annot.export.proteins(output_dir=str(tmp_path), verbose=False, quiet=True)
+    assert out_file.read_text().splitlines()[1] == "MWW"
+
+    # Re-applying the same configuration keeps the proteins
+    annot.set_genetic_codes(taxonomy="vertebrate", mitochondria_chroms="chrX")
+    assert annot.contains_protein_sequences is True
+
+    with pytest.raises(ValueError, match="Specified chloroplast chromosome 'missing' was not found"):
+        annot.set_genetic_codes(chloroplast_chroms=["missing"])
 
 
 def test_export_unique_CDSs_per_gene(test_data_dir, tmp_path):
@@ -104,11 +127,13 @@ def test_export_cds_and_proteins_with_taxonomy(test_data_dir, tmp_path):
     genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
     annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
 
-    # Test that taxonomy argument works smoothly in all export functions
-    annot.export.proteins(output_dir=str(tmp_path), taxonomy="plant", quiet=True)
-    annot.export.unique_proteins(output_dir=str(tmp_path), taxonomy="vertebrate", quiet=True)
-    annot.export.CDSs(output_dir=str(tmp_path), taxonomy="yeast", quiet=True)
-    annot.export.unique_CDSs(output_dir=str(tmp_path), taxonomy="invertebrate", quiet=True)
+    # Every export works with each taxonomy preset set on the annotation
+    for taxonomy in ("plant", "vertebrate", "yeast", "invertebrate"):
+        annot.set_genetic_codes(taxonomy=taxonomy)
+        annot.export.proteins(output_dir=str(tmp_path), quiet=True)
+        annot.export.unique_proteins(output_dir=str(tmp_path), quiet=True)
+        annot.export.CDSs(output_dir=str(tmp_path), quiet=True)
+        annot.export.unique_CDSs(output_dir=str(tmp_path), quiet=True)
 
 
 def test_export_protein_strip_stop_default(test_data_dir, tmp_path):

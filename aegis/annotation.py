@@ -110,20 +110,8 @@ class Annotation():
         self.reset_phases_zero = reset_phases_zero
         self._protein_qc_summary = None
 
-        self.taxonomy = taxonomy
-        res_table, res_mito, res_plastid = resolve_taxonomy_tables(
-            taxonomy=taxonomy,
-            table=table,
-            mito_table=mito_table,
-            plastid_table=plastid_table,
-        )
         self.adjust_internal_shifts = adjust_internal_shifts
-        self.table = res_table
-        self.auto_organelle_codes = auto_organelle_codes
-        self.mito_table = res_mito
-        self.plastid_table = res_plastid
-        self.mitochondria_chroms = mitochondria_chroms
-        self.chloroplast_chroms = chloroplast_chroms
+        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_codes=auto_organelle_codes, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
 
         self.genome = genome
         
@@ -330,6 +318,8 @@ class Annotation():
 
         self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
+        self._validate_organelle_chroms()
+
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
             self.rework_CDSs(
                 override=rework_all_CDSs,
@@ -337,12 +327,6 @@ class Annotation():
                 fallback_to_trim=fallback_to_trim,
                 min_codon_len=min_codon_len,
                 quiet=quiet,
-                table=table,
-                auto_organelle_codes=auto_organelle_codes,
-                mito_table=mito_table,
-                plastid_table=plastid_table,
-                mitochondria_chroms=mitochondria_chroms,
-                chloroplast_chroms=chloroplast_chroms,
                 allow_internal_stops=allow_internal_stops,
                 allow_partial=allow_partial,
                 enforce_start_codon=enforce_start_codon,
@@ -1671,75 +1655,106 @@ class Annotation():
                     t.clear_promoter()
         self.contains_promoters = False
 
-    def get_chromosome_translation_table(
+    def _store_genetic_codes(
         self,
-        chrom: str,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str = "plant",
         table: int | str | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        auto_organelle_codes: bool | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
+        auto_organelle_codes: bool = True,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
-    ) -> int | str:
-        """
-        Resolves the genetic code translation table for a specific chromosome,
-        taking into account taxonomy presets, organelle presets, and chromosome name heuristics.
-        """
-        if taxonomy is None:
-            taxonomy = getattr(self, "taxonomy", "plant")
-        if auto_organelle_codes is None:
-            auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
-        if mitochondria_chroms is None:
-            mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
-        if chloroplast_chroms is None:
-            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
-
-        cur_table = table if table is not None else getattr(self, "table", 1)
-        cur_mito = mito_table if mito_table is not None else getattr(self, "mito_table", None)
-        cur_plastid = plastid_table if plastid_table is not None else getattr(self, "plastid_table", None)
-
-        res_table, res_mito, res_plastid = resolve_taxonomy_tables(
+    ):
+        self.taxonomy = taxonomy
+        self.table, self.mito_table, self.plastid_table = resolve_taxonomy_tables(
             taxonomy=taxonomy,
-            table=cur_table,
-            mito_table=cur_mito,
-            plastid_table=cur_plastid,
+            table=table,
+            mito_table=mito_table,
+            plastid_table=plastid_table,
         )
-
-        user_mito_set: set[str] = set()
-        if mitochondria_chroms:
-            if isinstance(mitochondria_chroms, str):
-                user_mito_set = {c.strip() for c in mitochondria_chroms.split(",") if c.strip()}
+        self.auto_organelle_codes = auto_organelle_codes
+        parsed = []
+        for chroms in (mitochondria_chroms, chloroplast_chroms):
+            if not chroms:
+                parsed.append(())
+            elif isinstance(chroms, str):
+                parsed.append(tuple(c.strip() for c in chroms.split(",") if c.strip()))
             else:
-                user_mito_set = set(mitochondria_chroms)
+                parsed.append(tuple(chroms))
+        self.mitochondria_chroms, self.chloroplast_chroms = parsed
 
-        user_chloro_set: set[str] = set()
-        if chloroplast_chroms:
-            if isinstance(chloroplast_chroms, str):
-                user_chloro_set = {c.strip() for c in chloroplast_chroms.split(",") if c.strip()}
-            else:
-                user_chloro_set = set(chloroplast_chroms)
+    def set_genetic_codes(
+        self,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str = "plant",
+        table: int | str | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        auto_organelle_codes: bool = True,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+    ):
+        """
+        Replaces the genetic code configuration used to translate CDSs. Tables
+        left as None follow the taxonomy preset. Existing proteins are cleared
+        if the configuration changes, since they were translated with the old codes.
+        """
+        previous = self.genetic_codes
+        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_codes=auto_organelle_codes, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+        self._validate_organelle_chroms()
+        if self.genetic_codes != previous:
+            self.clear_proteins()
 
-        if chrom in user_mito_set:
-            return res_mito
-        elif chrom in user_chloro_set:
-            return res_plastid
-        elif auto_organelle_codes:
+    @property
+    def genetic_codes(self) -> dict:
+        """The genetic code configuration used to translate CDSs."""
+        return {
+            "taxonomy": self.taxonomy,
+            "table": self.table,
+            "mito_table": self.mito_table,
+            "plastid_table": self.plastid_table,
+            "auto_organelle_codes": self.auto_organelle_codes,
+            "mitochondria_chroms": self.mitochondria_chroms,
+            "chloroplast_chroms": self.chloroplast_chroms,
+        }
+
+    def _validate_organelle_chroms(self):
+        all_known = set(self.chrs.keys())
+        if self.genome:
+            all_known.update(self.genome.scaffolds.keys())
+        for kind, chroms in (("mitochondrial", self.mitochondria_chroms), ("chloroplast", self.chloroplast_chroms)):
+            for chrom in chroms:
+                if chrom not in all_known:
+                    raise ValueError(f"Specified {kind} chromosome '{chrom}' was not found in the annotation or genome.")
+
+    def translation_table(self, chrom: str) -> int | str:
+        """
+        Returns the genetic code table used for a chromosome: user-listed organelle
+        chromosomes first, then (with auto_organelle_codes) organelle scaffolds of the
+        genome and organelle-like chromosome names, otherwise the nuclear table.
+        """
+        if chrom in self.mitochondria_chroms:
+            return self.mito_table
+        if chrom in self.chloroplast_chroms:
+            return self.plastid_table
+        if self.auto_organelle_codes:
             scaffold = self.genome.scaffolds.get(chrom) if self.genome else None
             if scaffold is not None and getattr(scaffold, "mitochondria", False):
-                return res_mito
-            elif scaffold is not None and getattr(scaffold, "chloroplast", False):
-                return res_plastid
-            else:
-                lower_chrom = chrom.lower()
-                if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
-                    return res_mito
-                elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
-                    return res_plastid
-                else:
-                    return res_table
-        else:
-            return res_table
+                return self.mito_table
+            if scaffold is not None and getattr(scaffold, "chloroplast", False):
+                return self.plastid_table
+            lower_chrom = chrom.lower()
+            if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
+                return self.mito_table
+            if lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
+                return self.plastid_table
+        return self.table
+
+    def _print_genetic_code_info(self):
+        names = {}
+        for key in ("table", "mito_table", "plastid_table"):
+            t = getattr(self, key)
+            names[key] = NCBI_GENETIC_CODES.get(t, {}).get("name", "Custom") if isinstance(t, int) else "Custom"
+        print(f"Info: Genetic code configuration [taxonomy='{self.taxonomy}']: nuclear={self.table} ({names['table']}), mitochondrial={self.mito_table} ({names['mito_table']}), plastid={self.plastid_table} ({names['plastid_table']})")
 
     def generate_proteins(
         self,
@@ -1756,95 +1771,15 @@ class Annotation():
         always_resolve_strand: bool = True,
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        table: int | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
     ):
-        if taxonomy is None:
-            taxonomy = getattr(self, "taxonomy", "plant")
-        if adjust_internal_shifts is None:
-            adjust_internal_shifts = getattr(self, "adjust_internal_shifts", "intra_exon")
-        if auto_organelle_codes is None:
-            auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
-        if mitochondria_chroms is None:
-            mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
-        if chloroplast_chroms is None:
-            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
-
-        cur_table = table if table is not None else getattr(self, "table", None)
-        cur_mito = mito_table if mito_table is not None else getattr(self, "mito_table", None)
-        cur_plastid = plastid_table if plastid_table is not None else getattr(self, "plastid_table", None)
-
-        table, mito_table, plastid_table = resolve_taxonomy_tables(
-            taxonomy=taxonomy,
-            table=cur_table,
-            mito_table=cur_mito,
-            plastid_table=cur_plastid,
-        )
-
-        if not quiet and auto_organelle_codes:
-            t_name = NCBI_GENETIC_CODES.get(table, {}).get("name", "Custom") if isinstance(table, int) else "Custom"
-            m_name = NCBI_GENETIC_CODES.get(mito_table, {}).get("name", "Custom") if isinstance(mito_table, int) else "Custom"
-            p_name = NCBI_GENETIC_CODES.get(plastid_table, {}).get("name", "Custom") if isinstance(plastid_table, int) else "Custom"
-            print(f"Info: Genetic code configuration [taxonomy='{taxonomy}']: nuclear={table} ({t_name}), mitochondrial={mito_table} ({m_name}), plastid={plastid_table} ({p_name})")
-
-        user_mito_set: set[str] = set()
-        if mitochondria_chroms:
-            if isinstance(mitochondria_chroms, str):
-                raw_m = [c.strip() for c in mitochondria_chroms.split(",") if c.strip()]
-            else:
-                raw_m = list(mitochondria_chroms)
-            all_known = set(self.chrs.keys())
-            if self.genome:
-                all_known.update(self.genome.scaffolds.keys())
-            for mc in raw_m:
-                if mc not in all_known:
-                    raise ValueError(f"Specified mitochondrial chromosome '{mc}' was not found in the annotation or genome.")
-            user_mito_set = set(raw_m)
-
-        user_chloro_set: set[str] = set()
-        if chloroplast_chroms:
-            if isinstance(chloroplast_chroms, str):
-                raw_c = [c.strip() for c in chloroplast_chroms.split(",") if c.strip()]
-            else:
-                raw_c = list(chloroplast_chroms)
-            all_known = set(self.chrs.keys())
-            if self.genome:
-                all_known.update(self.genome.scaffolds.keys())
-            for cc in raw_c:
-                if cc not in all_known:
-                    raise ValueError(f"Specified chloroplast chromosome '{cc}' was not found in the annotation or genome.")
-            user_chloro_set = set(raw_c)
+        if not quiet and self.auto_organelle_codes:
+            self._print_genetic_code_info()
 
         for chrom, genes in self.chrs.items():
             if self.genome is not None and chrom not in self.genome.scaffolds:
                 continue
 
-            if chrom in user_mito_set:
-                chrom_table = mito_table
-            elif chrom in user_chloro_set:
-                chrom_table = plastid_table
-            elif auto_organelle_codes:
-                scaffold = self.genome.scaffolds.get(chrom) if self.genome else None
-                if scaffold is not None and getattr(scaffold, "mitochondria", False):
-                    chrom_table = mito_table
-                elif scaffold is not None and getattr(scaffold, "chloroplast", False):
-                    chrom_table = plastid_table
-                else:
-                    lower_chrom = chrom.lower()
-                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
-                        chrom_table = mito_table
-                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
-                        chrom_table = plastid_table
-                    else:
-                        chrom_table = table
-            else:
-                chrom_table = table
+            chrom_table = self.translation_table(chrom)
 
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -1863,7 +1798,7 @@ class Annotation():
                             always_resolve_strand=always_resolve_strand,
                             ignore_ambiguous_strands=ignore_ambiguous_strands,
                             quiet=quiet,
-                            adjust_internal_shifts=adjust_internal_shifts,
+                            adjust_internal_shifts=self.adjust_internal_shifts,
                             table=chrom_table,
                         )
                     if correct_CDS:
@@ -1942,30 +1877,10 @@ class Annotation():
 
     def generate_protein_equivalences(
         self,
-        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
         quiet: bool = True,
-        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool | None = None,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        table: int | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
     ):
         if not self.contains_protein_sequences:
-            self.generate_proteins(
-                mode=mode,
-                quiet=quiet,
-                adjust_internal_shifts=adjust_internal_shifts,
-                taxonomy=taxonomy,
-                table=table,
-                auto_organelle_codes=auto_organelle_codes,
-                mito_table=mito_table,
-                plastid_table=plastid_table,
-                mitochondria_chroms=mitochondria_chroms,
-                chloroplast_chroms=chloroplast_chroms,
-            )
+            self.generate_proteins(quiet=quiet)
 
         all_protein_seqs = {}
         self.all_protein_ids = {}
@@ -2002,6 +1917,8 @@ class Annotation():
                     for c in t.CDSs.values():
                         c.clear_protein()
         self.contains_protein_sequences = False
+        self.protein_equivalences = {}
+        self._protein_qc_summary = None
 
     def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):
         random_ids = []
@@ -2534,13 +2451,6 @@ class Annotation():
         stop_codons: tuple[str, ...] | None = None,
         min_codon_len: int = 2,
         quiet: bool = False,
-        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str | None = None,
-        table: int | str | None = None,
-        auto_organelle_codes: bool | None = None,
-        mito_table: int | str | None = None,
-        plastid_table: int | str | None = None,
-        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
-        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
         enforce_start_codon: bool = True,
         must_have_stop: bool = True,
         tolerated_stops: int | None = 0,
@@ -2551,84 +2461,13 @@ class Annotation():
     ):
         start_time = time.time()
 
-        if taxonomy is None:
-            taxonomy = getattr(self, "taxonomy", "plant")
-        if auto_organelle_codes is None:
-            auto_organelle_codes = getattr(self, "auto_organelle_codes", True)
-        if mitochondria_chroms is None:
-            mitochondria_chroms = getattr(self, "mitochondria_chroms", None)
-        if chloroplast_chroms is None:
-            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
-
-        cur_table = table if table is not None else getattr(self, "table", None)
-        cur_mito = mito_table if mito_table is not None else getattr(self, "mito_table", None)
-        cur_plastid = plastid_table if plastid_table is not None else getattr(self, "plastid_table", None)
-
-        table, mito_table, plastid_table = resolve_taxonomy_tables(
-            taxonomy=taxonomy,
-            table=cur_table,
-            mito_table=cur_mito,
-            plastid_table=cur_plastid,
-        )
-
-        if not quiet and auto_organelle_codes:
-            t_name = NCBI_GENETIC_CODES.get(table, {}).get("name", "Custom") if isinstance(table, int) else "Custom"
-            m_name = NCBI_GENETIC_CODES.get(mito_table, {}).get("name", "Custom") if isinstance(mito_table, int) else "Custom"
-            p_name = NCBI_GENETIC_CODES.get(plastid_table, {}).get("name", "Custom") if isinstance(plastid_table, int) else "Custom"
-            print(f"Info: Genetic code configuration [taxonomy='{taxonomy}']: nuclear={table} ({t_name}), mitochondrial={mito_table} ({m_name}), plastid={plastid_table} ({p_name})")
-            chloroplast_chroms = getattr(self, "chloroplast_chroms", None)
-
-        user_mito_set: set[str] = set()
-        if mitochondria_chroms:
-            if isinstance(mitochondria_chroms, str):
-                raw_m = [c.strip() for c in mitochondria_chroms.split(",") if c.strip()]
-            else:
-                raw_m = list(mitochondria_chroms)
-            all_known = set(self.chrs.keys())
-            if self.genome:
-                all_known.update(self.genome.scaffolds.keys())
-            for mc in raw_m:
-                if mc not in all_known:
-                    raise ValueError(f"Specified mitochondrial chromosome '{mc}' was not found in the annotation or genome.")
-            user_mito_set = set(raw_m)
-
-        user_chloro_set: set[str] = set()
-        if chloroplast_chroms:
-            if isinstance(chloroplast_chroms, str):
-                raw_c = [c.strip() for c in chloroplast_chroms.split(",") if c.strip()]
-            else:
-                raw_c = list(chloroplast_chroms)
-            all_known = set(self.chrs.keys())
-            if self.genome:
-                all_known.update(self.genome.scaffolds.keys())
-            for cc in raw_c:
-                if cc not in all_known:
-                    raise ValueError(f"Specified chloroplast chromosome '{cc}' was not found in the annotation or genome.")
-            user_chloro_set = set(raw_c)
+        if not quiet and self.auto_organelle_codes:
+            self._print_genetic_code_info()
 
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
-    
+
         for chrom, genes in self.chrs.items():
-            if chrom in user_mito_set:
-                chrom_table = mito_table
-            elif chrom in user_chloro_set:
-                chrom_table = plastid_table
-            elif auto_organelle_codes:
-                scaffold = self.genome.scaffolds.get(chrom) if self.genome else None
-                if scaffold is not None and getattr(scaffold, "mitochondria", False):
-                    chrom_table = mito_table
-                elif scaffold is not None and getattr(scaffold, "chloroplast", False):
-                    chrom_table = plastid_table
-                else:
-                    lower_chrom = chrom.lower()
-                    if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
-                        chrom_table = mito_table
-                    elif lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
-                        chrom_table = plastid_table
-                    else:
-                        chrom_table = table
-            else:
-                chrom_table = table
+            chrom_table = self.translation_table(chrom)
 
             for g in genes.values():
                 progress_bar.update(1)
