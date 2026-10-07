@@ -870,54 +870,31 @@
       - `def test_missing_contig_raises_value_error(self, tmp_path):`
       - `def test_autodetect_chrmt_and_chrpt_by_name(self, tmp_path):`
     - test_cli_extract.py
-      - `def test_aegis_extract_cli(test_data_dir, tmp_path, options, expected_filename):`
-      - `def test_extract_cli_translation_options(test_data_dir, tmp_path):`
-      - `def test_extract_cli_unknown_mito_contig(test_data_dir, tmp_path):`
-      - `def test_extract_cli_invalid_adjust_shifts(test_data_dir, tmp_path):`
-      - `def test_extract_cli_keep_stop(test_data_dir, tmp_path):`
-      - `def test_extract_cli_strip_stop_cds(test_data_dir, tmp_path):`
-      - `def test_extract_cli_skip_coordinate_polishing(test_data_dir, tmp_path):`
-      - `def test_extract_cli_no_cds_suggestion(tmp_path):`
-      - `def test_extract_cli_infer_missing_cdss(tmp_path):`
+      - `def test_extract_cli_smoke(test_data_dir, tmp_path, feature_type, extra_args):`
+      - `def test_extract_cli_validation_errors(test_data_dir, tmp_path):`
+      - `def test_extract_cli_infer_missing_cdss_smoke(tmp_path):`
     - test_cli_filter.py
-      - `def test_filter_coding_only(rich_gff3_file, tmp_path):`
-      - `def test_filter_non_coding_only(rich_gff3_file, tmp_path):`
-      - `def test_filter_rna_classes(rich_gff3_file, tmp_path):`
-      - `def test_filter_pseudogenes(pseudogene_gff3_file, rich_gff3_file, tmp_path):`
-      - `def test_tidy_removes_empty_genes_with_features_flag(rich_gff3_file, tmp_path):`
+      - `def test_filter_smoke(rich_gff3_file, tmp_path):`
+      - `def test_filter_conflicting_options(rich_gff3_file, tmp_path):`
+      - `def test_filter_invalid_inputs(rich_gff3_file, tmp_path):`
     - test_cli_split.py
       - `def populus_test_files(tmp_path):`
       - `def test_classify_feature_smart():`
       - `def test_classify_feature_case_sensitive():`
-      - `def test_split_coupled_genome_and_annotation(populus_test_files, tmp_path):`
-      - `def test_split_genome_only_with_keep_description(populus_test_files, tmp_path):`
-      - `def test_split_annotation_only(populus_test_files, tmp_path):`
-      - `def test_split_positional_reverse_order(populus_test_files, tmp_path):`
-      - `def test_split_with_regex(populus_test_files, tmp_path):`
-      - `def test_split_with_split_map(populus_test_files, tmp_path):`
-      - `def test_tidy_genome_keep_description(populus_test_files, tmp_path):`
-      - `def test_split_with_punctuation_and_jaawwd(tmp_path):`
       - `def test_classify_feature_sweet_potato_cultivar_prefix():`
+      - `def test_split_coupled_genome_and_annotation_smoke(populus_test_files, tmp_path):`
+      - `def test_split_with_regex_smoke(populus_test_files, tmp_path):`
     - test_cli_subset.py
-      - `def test_cli_subset_no_gene_cap(test_data_dir, tmp_path):`
-      - `def test_cli_subset_gene_cap_zero(test_data_dir, tmp_path):`
-      - `def test_cli_subset_gene_cap_enforced(test_data_dir, tmp_path):`
-      - `def test_cli_subset_no_chr_cap(test_data_dir, tmp_path):`
-      - `def test_cli_subset_chr_cap_and_seed(test_data_dir, tmp_path):`
+      - `def test_cli_subset_gene_cap_smoke(test_data_dir, tmp_path):`
+      - `def test_cli_subset_chr_cap_smoke(test_data_dir, tmp_path):`
     - test_cli_summary.py
       - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_multi_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_export(test_data_dir, tmp_path):`
       - `def test_cli_summary_fatal_mismatch_halt(tmp_path):`
-      - `def test_cli_summary_multi_annot_fatal_mismatch_hint(tmp_path):`
-      - `def test_cli_summary_disjoint_contigs_notice(tmp_path):`
-      - `def test_cli_summary_help_text():`
-      - `def test_cli_summary_multi_genome_synonyms(tmp_path):`
-      - `def test_cli_summary_multi_genome_asymmetric_contig(tmp_path):`
       - `def test_cli_summary_multi_genome_mismatched_count(tmp_path):`
-      - `def test_cli_summary_multi_genome_completely_different_species(tmp_path):`
-      - `def test_cli_summary_protein_qc_metrics(test_data_dir, tmp_path):`
+      - `def test_cli_summary_help_text():`
     - test_cli_summary_genome.py
       - `def test_cli_summary_genome_smoke(test_data_dir):`
       - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`
@@ -926,14 +903,8 @@
       - `def test_cli_summary_genome_soft_masked(tmp_path):`
     - test_cli_tidy.py
       - `def test_tidy_rework_cds_requires_genome(tmp_path):`
-      - `def test_tidy_rework_all_cds_with_genome(tmp_path):`
-      - `def test_tidy_rework_cds_fallback_to_trim(tmp_path):`
-      - `def test_tidy_cli_translation_options(tmp_path):`
-      - `def test_tidy_cli_unknown_mito_contig(tmp_path):`
-      - `def test_tidy_cli_invalid_adjust_shifts(tmp_path):`
-      - `def test_tidy_cli_min_codon_len(tmp_path):`
-      - `def test_tidy_cli_recalculate_phases(tmp_path):`
-      - `def test_tidy_cli_reset_phases_zero(tmp_path):`
+      - `def test_tidy_cli_smoke(tmp_path):`
+      - `def test_tidy_cli_validation_errors(tmp_path):`
     - test_cli_utils.py
       - `def test_split_callback_string_comma():`
       - `def test_split_callback_single_string():`
