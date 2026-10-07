@@ -227,7 +227,8 @@ class AnnotationExport(AnnotationComponent):
                         if c.protein.summary_tag and verbose:
                             f_out.write(f"|{c.protein.summary_tag}")
                         if verbose:
-                            f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
+                            table_tag = "custom" if isinstance(c.protein.table, dict) else c.protein.table
+                            f_out.write(f"|readthrough:{c.protein.readthrough}|table:{table_tag}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
 
                         prot_seq = c.protein.seq
                         if strip_stop and prot_seq.endswith("*"):

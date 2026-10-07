@@ -31,6 +31,7 @@ from .gene import Gene
 from .transcript import Transcript
 from .subfeatures import Exon, UTR
 from .hits import BlastHit
+from .misc_features import INITIATOR_METHIONINE_MODES
 from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
@@ -71,7 +72,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:Literal["canonical", "all", "none"]="canonical"):
         
         start_time = time.time()
 
@@ -111,6 +112,9 @@ class Annotation():
         self._protein_qc_summary = None
 
         self.adjust_internal_shifts = adjust_internal_shifts
+        if initiator_methionine not in INITIATOR_METHIONINE_MODES:
+            raise ValueError(f"initiator_methionine must be one of {INITIATOR_METHIONINE_MODES}, got '{initiator_methionine}'.")
+        self.initiator_methionine = initiator_methionine
         self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_codes=auto_organelle_codes, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
 
         self.genome = genome
@@ -1726,27 +1730,31 @@ class Annotation():
                 if chrom not in all_known:
                     raise ValueError(f"Specified {kind} chromosome '{chrom}' was not found in the annotation or genome.")
 
-    def translation_table(self, chrom: str) -> int | str:
+    def chromosome_compartment(self, chrom: str) -> Literal["nuclear", "mitochondria", "chloroplast"]:
         """
-        Returns the genetic code table used for a chromosome: user-listed organelle
-        chromosomes first, then (with auto_organelle_codes) organelle scaffolds of the
-        genome and organelle-like chromosome names, otherwise the nuclear table.
+        Genetic compartment a chromosome is translated as: user-listed organelle
+        chromosomes first, then (with auto_organelle_codes) the organelle classification
+        of the genome scaffold, otherwise nuclear.
         """
         if chrom in self.mitochondria_chroms:
-            return self.mito_table
+            return "mitochondria"
         if chrom in self.chloroplast_chroms:
+            return "chloroplast"
+        if self.auto_organelle_codes and self.genome is not None:
+            scaffold = self.genome.get_scaffold(chrom)
+            if scaffold is not None and scaffold.mitochondria:
+                return "mitochondria"
+            if scaffold is not None and scaffold.chloroplast:
+                return "chloroplast"
+        return "nuclear"
+
+    def translation_table(self, chrom: str) -> int | str:
+        """Returns the genetic code table used to translate CDSs on a chromosome."""
+        compartment = self.chromosome_compartment(chrom)
+        if compartment == "mitochondria":
+            return self.mito_table
+        if compartment == "chloroplast":
             return self.plastid_table
-        if self.auto_organelle_codes:
-            scaffold = self.genome.scaffolds.get(chrom) if self.genome else None
-            if scaffold is not None and getattr(scaffold, "mitochondria", False):
-                return self.mito_table
-            if scaffold is not None and getattr(scaffold, "chloroplast", False):
-                return self.plastid_table
-            lower_chrom = chrom.lower()
-            if lower_chrom in ("m", "chrm", "mitochondria", "mitochondrion", "mt", "chrmt"):
-                return self.mito_table
-            if lower_chrom in ("c", "chrc", "chloroplast", "pltd", "pt", "chrpt"):
-                return self.plastid_table
         return self.table
 
     def _print_genetic_code_info(self):
@@ -1800,6 +1808,7 @@ class Annotation():
                             quiet=quiet,
                             adjust_internal_shifts=self.adjust_internal_shifts,
                             table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
                         )
                     if correct_CDS:
                         t.update(quiet=quiet)
@@ -1813,9 +1822,11 @@ class Annotation():
         - total_cds: Total CDS features.
         - total_proteins: CDSs with translated protein sequences.
         - complete_proteins: Translated proteins with valid start codon, stop codon, no surplus, no early stop.
-        - partial_proteins: Proteins missing start codon, missing stop codon, or containing surplus/gaps.
-        - partial_5prime: Proteins missing valid start codon.
-        - partial_3prime: Proteins missing stop codon or with nucleotide surplus.
+        - alt_start_proteins: Complete proteins whose start codon is an alternative (non-curated) NCBI initiator.
+        - partial_proteins: Proteins missing a start codon or a stop codon.
+        - partial_5prime: Proteins missing valid start codon (or with skipped 5' CDS bases).
+        - partial_3prime: Proteins missing stop codon.
+        - ambiguous_proteins: Proteins with residues translated from ambiguous codons (X).
         - truncated_proteins: Proteins with premature internal stop codons.
         - frameshifted_cds: CDSs with internal phase shifts / frameshifts (intra-exon or intron).
         - phase_mismatches: CDSs with phase mismatch across introns.
@@ -1832,6 +1843,8 @@ class Annotation():
         total_cds = 0
         total_proteins = 0
         complete_proteins = 0
+        alt_start_proteins = 0
+        ambiguous_proteins = 0
         partial_proteins = 0
         partial_5p = 0
         partial_3p = 0
@@ -1856,6 +1869,10 @@ class Annotation():
                                 truncated_proteins += 1
                             if not p.partial and not p.truncated:
                                 complete_proteins += 1
+                                if p.start_status == "alternative":
+                                    alt_start_proteins += 1
+                            if p.gaps:
+                                ambiguous_proteins += 1
                             if getattr(p, "partial_5prime", False):
                                 partial_5p += 1
                             if getattr(p, "partial_3prime", False):
@@ -1865,10 +1882,12 @@ class Annotation():
             "total_cds": total_cds,
             "total_proteins": total_proteins,
             "complete_proteins": complete_proteins,
+            "alt_start_proteins": alt_start_proteins,
             "partial_proteins": partial_proteins,
             "partial_5prime": partial_5p,
             "partial_3prime": partial_3p,
             "truncated_proteins": truncated_proteins,
+            "ambiguous_proteins": ambiguous_proteins,
             "frameshifted_cds": frameshifted_cds,
             "phase_mismatches": len(intron_phase_mismatches),
         }
@@ -2486,6 +2505,7 @@ class Annotation():
                         orf_choice_mode=orf_choice_mode,
                         quiet=quiet,
                         table=chrom_table,
+                        initiator_methionine=self.initiator_methionine,
                     )
                     t.update(quiet=quiet)
 
@@ -2501,6 +2521,7 @@ class Annotation():
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
                             table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
                         )
                         t.update(quiet=quiet)
 
@@ -2516,6 +2537,7 @@ class Annotation():
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
                             table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
                         )
                         t.update(quiet=quiet)
 
@@ -2531,6 +2553,7 @@ class Annotation():
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
                             table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
                         )
                         t.update(quiet=quiet)
 

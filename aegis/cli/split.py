@@ -8,7 +8,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from ..genome import Genome
+from ..genome import Genome, Scaffold
 from ..utils.misc import open_file
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -488,7 +488,7 @@ def main(
                     is_chrom = bool(scf.chromosome and not scf.organelle and not scf.unknown_chromosome)
             else:
                 nl = ft_id.lower()
-                is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+                is_organelle = Scaffold.organelle_type(ft_id) is not None
                 is_chrom = bool((nl.startswith("chr") or nl.startswith("chromosome") or ft_id.isdigit()) and not is_organelle)
 
             if is_chrom:

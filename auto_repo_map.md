@@ -16,7 +16,7 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:Literal["canonical", "all", "none"]="canonical"):`
       - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
@@ -59,6 +59,7 @@
       - `def set_genetic_codes(`
       - `def genetic_codes(self) -> dict:`
       - `def _validate_organelle_chroms(self):`
+      - `def chromosome_compartment(self, chrom: str) -> Literal["nuclear", "mitochondria", "chloroplast"]:`
       - `def translation_table(self, chrom: str) -> int | str:`
       - `def _print_genetic_code_info(self):`
       - `def generate_proteins(`
@@ -196,6 +197,7 @@
       - `def alternative_transcript_rescue(self) -> list:`
     - genome.py
       - `class Scaffold():`
+      - `def organelle_type(name: str, description: str = "") -> str | None:`
       - `def __init__(self, name, sequence, original_name:str="", description:str=""):`
       - `def update(self, new_name:str=""):`
       - `def seq_hash(self) -> str:`
@@ -232,15 +234,18 @@
       - `def __init__(self, source, score, evalue):`
     - misc_features.py
       - `class Protein():`
-      - `def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, nucleotide_surplus:bool, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None):`
+      - `def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:int=0, initiator_methionine:str="canonical"):`
       - `def copy(self):`
       - `def get_blast_hits_key(self, source_priority:list) -> tuple:`
       - `def compare_blast_hits(self, other:Protein, source_priority:list) -> bool:`
       - `def blast_hits(self):`
-      - `def gaps(self):`
+      - `def ambiguous_residues(self) -> int:`
+      - `def gaps(self) -> bool:`
+      - `def nucleotide_surplus(self) -> bool:`
       - `def __len__(self) -> int:`
       - `def size(self) -> int:`
       - `def genomic_span(self) -> int:`
+      - `def _grade_start(self) -> str:`
       - `def ATG_start(self) -> bool:`
       - `def end_stop(self) -> bool:`
       - `def early_stop(self) -> bool:`
@@ -248,6 +253,8 @@
       - `def segments(self) -> tuple[tuple[int, int], ...]:`
       - `def partial_5prime(self) -> bool:`
       - `def partial_3prime(self) -> bool:`
+      - `def partial(self) -> bool:`
+      - `def truncated(self) -> bool:`
       - `def summary_tag(self) -> str:`
       - `class Promoter(Feature):`
       - `def __init__(self, promoter_type, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
@@ -440,6 +447,7 @@
         - `def format_human_readable(size: int | float, is_bp: bool = True) -> str:`
         - `def format_number(val: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
         - `def format_diff(diff: int | float | None, human_readable: bool = False, is_terminal: bool = True, is_pct: bool = False) -> str:`
+        - `def describe_genetic_code(table) -> str:`
         - `def render_terminal_table(headers: list[str], rows: list[list[str]], section_title: str = "", summary_rows: list[list[str]] | None = None) -> str:`
         - `def main(`
         - `def emit_mismatch_hint():`
@@ -467,6 +475,9 @@
         - `def main(`
       - utils.py
         - `def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:`
+        - `def taxonomy_callback(value: str) -> str:`
+        - `def genetic_code_callback(value: Optional[int]) -> Optional[int]:`
+        - `def initiator_methionine_callback(value: str) -> str:`
       - __init__.py
       - __main__.py
     - **utils/**
@@ -478,7 +489,10 @@
         - `def sequence_hash(in_seq: str) -> str:`
         - `def resolve_taxonomy_tables(`
         - `def _build_extended_codon_table(base_dict: dict[str, str]) -> tuple[dict[str, str], defaultdict]:`
+        - `def _resolve_table_id(table: str) -> int:`
         - `def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict[str, str], dict[str, str], defaultdict, tuple[str, ...], tuple[str, ...]]:`
+        - `def get_start_codons(table: int | str | dict[str, str] = 1) -> tuple[str, ...]:`
+        - `def get_alt_start_codons(table: int | str | dict[str, str] = 1) -> tuple[str, ...]:`
         - `def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:`
         - `def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):`
         - `def find_ORFs(`
@@ -834,16 +848,21 @@
       - `def test_subset_chr_cap_and_seed(self, test_data_dir):`
       - `class TestReworkCDS:`
       - `def test_rework_cds(self, arabidopsis_tair10_fasta_file, arabidopsis_araport11_no_CDS_gff3_file, arabidopsis_araport11_with_CDS_gff3_file, tmp_path):`
-      - `class MockScaffold:`
-      - `def __init__(self, seq: str):`
       - `class MockGenome:`
       - `def __init__(self, seq_dict: dict[str, str]):`
+      - `def get_scaffold(self, scaffold_id: str):`
       - `class TestAnnotationReworkCDSsFallback:`
       - `def test_rework_cdss_fallback_to_trim_false(self, tmp_path):`
       - `def test_rework_cdss_fallback_to_trim_true(self, tmp_path):`
       - `class TestAnnotationGenerateProteinsCorrectCDS:`
       - `def test_generate_proteins_without_correct_cds(self, tmp_path):`
       - `def test_generate_proteins_with_correct_cds(self, tmp_path):`
+      - `class TestProteinFlags:`
+      - `def _protein(tmp_path, seq, segments):`
+      - `def test_corrected_frameshift_is_complete(self, tmp_path):`
+      - `def test_bases_after_stop_are_not_partial(self, tmp_path):`
+      - `def test_missing_stop_is_3prime_partial(self, tmp_path):`
+      - `def test_initial_phase_is_5prime_partial(self, tmp_path):`
       - `class TestOrganelleTranslation:`
       - `def test_autodetect_mitochondria(self, tmp_path):`
       - `def test_disable_auto_organelle_codes(self, tmp_path):`
@@ -1013,6 +1032,8 @@
       - `def test_non_chromosome(self):`
       - `def test_mitochondria_detection(self):`
       - `def test_chloroplast_detection(self):`
+      - `def test_organelle_classification(self, name, description, expected):`
+      - `def test_organelle_flags_survive_renaming(self):`
       - `def test_unknown_chromosome(self):`
       - `def test_update_with_new_name(self):`
       - `def test_copy(self):`
@@ -1118,6 +1139,10 @@
       - `def test_orf_or_start_fallback_trims_from_5prime(self):`
       - `class TestGenerateProtein:`
       - `def _make_cds(make_CDS_segment, make_CDS, seq_len: int, strand: str = "+"):`
+      - `def test_start_codon_follows_table(self, make_CDS_segment, make_CDS, table, expected_start):`
+      - `def test_start_status_and_initiator_methionine(self, make_CDS_segment, make_CDS, seq, table, initiator_methionine, expected_status, expected_seq):`
+      - `def test_skipped_5prime_bases_are_not_a_start(self):`
+      - `def test_genetic_code_tables_follow_ncbi(self):`
       - `def test_standard_protein(self, make_CDS_segment, make_CDS):`
       - `def test_no_start_codon(self, make_CDS_segment, make_CDS):`
       - `def test_late_start_in_frame(self, make_CDS_segment, make_CDS):`

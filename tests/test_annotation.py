@@ -12,7 +12,7 @@ from aegis.gene import Gene
 from aegis.transcript import Transcript
 
 from aegis.annotation import Annotation
-from aegis.genome import Genome
+from aegis.genome import Genome, Scaffold
 from aegis.utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3, detect_file_format
 from aegis.utils.misc import read_file_with_fallback
 from aegis.utils.genefunctions import sort_and_update_genes
@@ -2673,18 +2673,16 @@ class TestReworkCDS:
 # Rework CDS Fallback and Generate Proteins Correct CDS
 # ============================================================
 
-class MockScaffold:
-    def __init__(self, seq: str):
-        self.seq = seq
-
-
 class MockGenome:
     def __init__(self, seq_dict: dict[str, str]):
         self.name = "mock_genome"
-        self.scaffolds = {k: MockScaffold(v) for k, v in seq_dict.items()}
+        self.scaffolds = {k: Scaffold(k, v) for k, v in seq_dict.items()}
         self.dapfit = False
         self.dapmod = False
         self.confrenamed = False
+
+    def get_scaffold(self, scaffold_id: str):
+        return self.scaffolds.get(scaffold_id)
 
 
 class TestAnnotationReworkCDSsFallback:
@@ -2778,6 +2776,55 @@ class TestAnnotationGenerateProteinsCorrectCDS:
 # ============================================================
 # Organelle Translation and Genetic Codes
 # ============================================================
+
+class TestProteinFlags:
+    @staticmethod
+    def _protein(tmp_path, seq, segments):
+        """Single-transcript annotation on chr1 = seq; segments are (start, end, phase) CDS lines."""
+        lines = [
+            "##gff-version 3",
+            f"chr1\ttest\tgene\t1\t{len(seq)}\t.\t+\t.\tID=g1",
+            f"chr1\ttest\tmRNA\t1\t{len(seq)}\t.\t+\t.\tID=t1;Parent=g1",
+            f"chr1\ttest\texon\t1\t{len(seq)}\t.\t+\t.\tID=e1;Parent=t1",
+        ] + [f"chr1\ttest\tCDS\t{a}\t{b}\t.\t+\t{ph}\tID=c1;Parent=t1" for a, b, ph in segments]
+        gff_file = tmp_path / "flags.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": seq}), quiet=True)
+        annot.generate_proteins(quiet=True)
+        return annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].protein
+
+    def test_corrected_frameshift_is_complete(self, tmp_path):
+        # ATG AAA CTT | T (skipped) | GAC TAA: +1 shift encoded by a 3n+1 first segment
+        p = self._protein(tmp_path, "ATGAAACTTTGACTAA", [(1, 10, 0), (11, 16, 0)])
+        assert p.seq == "MKLD*"
+        assert p.frameshifts == 1
+        assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
+        assert p.partial is False
+        assert p.nucleotide_surplus is False
+        assert "frameshift" in p.summary_tag
+
+    def test_bases_after_stop_are_not_partial(self, tmp_path):
+        # ATG AAA TAA + 2 extra bases
+        p = self._protein(tmp_path, "ATGAAATAAGC", [(1, 11, 0)])
+        assert p.trimmed_3p == 2
+        assert p.partial_3prime is False
+        assert p.nucleotide_surplus is True
+
+    def test_missing_stop_is_3prime_partial(self, tmp_path):
+        # ATG AAA AAA + 2 bases, no stop
+        p = self._protein(tmp_path, "ATGAAAAAAGC", [(1, 11, 0)])
+        assert p.trimmed_3p == 2
+        assert p.partial_3prime is True
+        assert p.partial_5prime is False
+
+    def test_initial_phase_is_5prime_partial(self, tmp_path):
+        # Phase 2: AT skipped, then GAA ATG TAA; the first full codon is not the annotated start
+        p = self._protein(tmp_path, "ATGAAATGTAA", [(1, 11, 2)])
+        assert p.trimmed_5p == 2
+        assert p.start_status == "none"
+        assert p.partial_5prime is True
+        assert p.partial_3prime is False
+
 
 class TestOrganelleTranslation:
     def test_autodetect_mitochondria(self, tmp_path):
@@ -2900,7 +2947,8 @@ class TestOrganelleTranslation:
 
         genome = MockGenome({"chrMT": "ATGTGATAA", "chrPt": "GTGAAATAA"})
 
-        # Plant taxonomy (default): chrMT uses Table 1 -> M**, chrPt uses Table 11 -> VK*
+        # Plant taxonomy (default): chrMT uses Table 1 -> M**, chrPt uses Table 11 where the
+        # GTG initiator is translated as M -> MK*
         annot_plant = Annotation(str(gff_file), genome=genome, quiet=True)
         annot_plant.generate_proteins(mode="end", quiet=True)
 
@@ -2910,7 +2958,13 @@ class TestOrganelleTranslation:
 
         cds_pt_plant = annot_plant.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"]
         assert cds_pt_plant.protein is not None
-        assert cds_pt_plant.protein.seq == "VK*"
+        assert cds_pt_plant.protein.seq == "MK*"
+        assert cds_pt_plant.protein.start_status == "canonical"
+
+        # Literal translation of the initiator when requested
+        annot_literal = Annotation(str(gff_file), genome=genome, initiator_methionine="none", quiet=True)
+        annot_literal.generate_proteins(mode="end", quiet=True)
+        assert annot_literal.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"].protein.seq == "VK*"
 
         # Vertebrate taxonomy: chrMT uses Table 2 -> MW*
         annot_vert = Annotation(str(gff_file), genome=genome, taxonomy="vertebrate", quiet=True)

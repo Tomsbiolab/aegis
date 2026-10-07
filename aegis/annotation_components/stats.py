@@ -13,6 +13,7 @@ from statistics import mean
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron
 from .base import AnnotationComponent
+from ..genome import Scaffold
 
 KEY_DESCRIPTIONS = {
     # Mean metrics
@@ -201,7 +202,7 @@ class AnnotationStats(AnnotationComponent):
         def sort_key(item):
             name = item["contig"]
             nl = name.lower()
-            if "mit" in nl or "mt" in nl or "pt" in nl or "chlor" in nl or "cp" in nl:
+            if Scaffold.organelle_type(name) is not None:
                 cat = 3
             elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
                 cat = 1

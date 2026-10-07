@@ -136,7 +136,7 @@ class TestCDS:
         # Suppose protein spans 1010..1099 and 2000..2050
         cds.protein = Protein(
             prot_id="p1", sequence="M" * 47, chrom="chr1",
-            start=1010, end=2050, nucleotide_surplus=False, readthrough="end",
+            start=1010, end=2050, readthrough="end",
             nuc_seq="ATG" * 47,
             segments=((1010, 1099), (2000, 2050))
         )
@@ -165,7 +165,7 @@ class TestCDS:
         # Protein spans 2000..2090 (5' piece, length 91) and 1020..1099 (3' piece, length 80)
         cds.protein = Protein(
             prot_id="p1", sequence="M" * 57, chrom="chr1",
-            start=1020, end=2090, nucleotide_surplus=False, readthrough="end",
+            start=1020, end=2090, readthrough="end",
             nuc_seq="ATG" * 57,
             segments=((1020, 1099), (2000, 2090))
         )

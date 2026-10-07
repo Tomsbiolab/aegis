@@ -56,120 +56,167 @@ iupac_dna_nucleotides = {
 
 codon_dict = {'TTT': 'F', 'TTC': 'F', 'TTA': 'L', 'TTG': 'L', 'TCT': 'S', 'TCC': 'S', 'TCA': 'S', 'TCG': 'S', 'TAT': 'Y', 'TAC': 'Y', 'TGT': 'C', 'TGC': 'C', 'TGG': 'W', 'CTT': 'L', 'CTC': 'L', 'CTA': 'L', 'CTG': 'L', 'CCT': 'P', 'CCC': 'P', 'CCA': 'P', 'CCG': 'P', 'CAT': 'H', 'CAC': 'H', 'CAA': 'Q', 'CAG': 'Q', 'CGT': 'R', 'CGC': 'R', 'CGA': 'R', 'CGG': 'R', 'ATT': 'I', 'ATC': 'I', 'ATA': 'I', 'ATG': 'M', 'ACT': 'T', 'ACC': 'T', 'ACA': 'T', 'ACG': 'T', 'AAT': 'N', 'AAC': 'N', 'AAA': 'K', 'AAG': 'K', 'AGT': 'S', 'AGC': 'S', 'AGA': 'R', 'AGG': 'R', 'GTT': 'V', 'GTC': 'V', 'GTA': 'V', 'GTG': 'V', 'GCT': 'A', 'GCC': 'A', 'GCA': 'A', 'GCG': 'A', 'GAT': 'D', 'GAC': 'D', 'GAA': 'E', 'GAG': 'E', 'GGT': 'G', 'GGC': 'G', 'GGA': 'G', 'GGG': 'G', "TAA": "*", "TAG": "*", "TGA": "*"}
 
+# Codon assignments and "stops" match NCBI's gc.prt (v4.6). NCBI's initiator codons are split
+# in two: "starts" is a curated, strict subset (e.g. table 1 is ATG only) used for ORF
+# prediction, since rare initiators would extend predicted ORFs upstream; "alt_starts" holds
+# NCBI's remaining initiators (e.g. CTG/TTG in table 1), which only grade the start codon of
+# proteins as alternative instead of missing. Pass start_codons=/stop_codons= explicitly to
+# find_ORFs and the protein generation methods to use other sets. Tables 27-31 are not
+# included: their stop codons are context-dependent and also encode amino acids.
 NCBI_GENETIC_CODES: dict[int, dict] = {
     1: {
         "name": "Standard",
         "diff": {},
         "stops": ("TAA", "TAG", "TGA"),
         "starts": ("ATG",),
+        "alt_starts": ("CTG", "TTG"),
     },
     2: {
         "name": "Vertebrate Mitochondrial",
         "diff": {"AGA": "*", "AGG": "*", "ATA": "M", "TGA": "W"},
         "stops": ("TAA", "TAG", "AGA", "AGG"),
         "starts": ("ATG", "ATA", "ATT", "ATC", "GTG"),
+        "alt_starts": (),
     },
     3: {
         "name": "Yeast Mitochondrial",
         "diff": {"ATA": "M", "CTT": "T", "CTC": "T", "CTA": "T", "CTG": "T", "TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "ATA", "GTG"),
+        "alt_starts": (),
     },
     4: {
         "name": "Mold, Protozoan, and Coelenterate Mitochondrial and Mycoplasma/Spiroplasma",
         "diff": {"TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "ATA", "ATT", "ATC", "GTG", "TTG"),
+        "alt_starts": ("CTG", "TTA"),
     },
     5: {
         "name": "Invertebrate Mitochondrial",
         "diff": {"AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "ATA", "ATT", "ATC", "GTG", "TTG"),
+        "alt_starts": (),
     },
     6: {
         "name": "Ciliate, Dasycladacean and Hexamita Nuclear",
         "diff": {"TAA": "Q", "TAG": "Q"},
         "stops": ("TGA",),
         "starts": ("ATG",),
+        "alt_starts": (),
     },
     9: {
         "name": "Echinoderm and Flatworm Mitochondrial",
         "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "GTG"),
+        "alt_starts": (),
     },
     10: {
         "name": "Euplotid Nuclear",
         "diff": {"TGA": "C"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG",),
+        "alt_starts": (),
     },
     11: {
         "name": "Bacterial, Archaeal and Plant Plastid",
         "diff": {},
         "stops": ("TAA", "TAG", "TGA"),
         "starts": ("ATG", "GTG", "TTG"),
+        "alt_starts": ("ATA", "ATC", "ATT", "CTG"),
     },
     12: {
         "name": "Alternative Yeast Nuclear",
         "diff": {"CTG": "S"},
         "stops": ("TAA", "TAG", "TGA"),
         "starts": ("ATG", "CTG"),
+        "alt_starts": (),
     },
     13: {
         "name": "Ascidian Mitochondrial",
         "diff": {"AGA": "G", "AGG": "G", "ATA": "M", "TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "ATA", "GTG", "TTG"),
+        "alt_starts": (),
     },
     14: {
         "name": "Alternative Flatworm Mitochondrial",
-        "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W", "TAA": "Y"},
+        "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "TGA": "W", "TAA": "Y"},
         "stops": ("TAG",),
         "starts": ("ATG",),
+        "alt_starts": (),
+    },
+    15: {
+        "name": "Blepharisma Macronuclear",
+        "diff": {"TAG": "Q"},
+        "stops": ("TAA", "TGA"),
+        "starts": ("ATG",),
+        "alt_starts": (),
     },
     16: {
         "name": "Chlorophycean Mitochondrial",
         "diff": {"TAG": "L"},
         "stops": ("TAA", "TGA"),
         "starts": ("ATG",),
+        "alt_starts": (),
     },
     21: {
         "name": "Trematode Mitochondrial",
         "diff": {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "GTG"),
+        "alt_starts": (),
     },
     22: {
         "name": "Scenedesmus obliquus Mitochondrial",
         "diff": {"TCA": "*", "TAG": "L"},
         "stops": ("TAA", "TCA", "TGA"),
         "starts": ("ATG",),
+        "alt_starts": (),
     },
     23: {
         "name": "Thraustochytrium Mitochondrial",
         "diff": {"TTA": "*"},
         "stops": ("TAA", "TAG", "TGA", "TTA"),
         "starts": ("ATG", "GTG", "ATT"),
+        "alt_starts": (),
     },
     24: {
         "name": "Rhabdopleuridae Mitochondrial",
         "diff": {"AGA": "S", "AGG": "K", "TGA": "W"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "GTG"),
+        "alt_starts": ("CTG", "TTG"),
     },
     25: {
         "name": "Candidate Division SR1 and Gracilibacteria",
         "diff": {"TGA": "G"},
         "stops": ("TAA", "TAG"),
         "starts": ("ATG", "GTG", "TTG"),
+        "alt_starts": (),
     },
     26: {
         "name": "Pachysolen tannophilus Nuclear",
         "diff": {"CTG": "A"},
         "stops": ("TAA", "TAG", "TGA"),
         "starts": ("ATG",),
+        "alt_starts": ("CTG",),
+    },
+    32: {
+        "name": "Balanophoraceae Plastid",
+        "diff": {"TAG": "W"},
+        "stops": ("TAA", "TGA"),
+        "starts": ("ATG", "GTG", "TTG"),
+        "alt_starts": ("ATA", "ATC", "ATT", "CTG"),
+    },
+    33: {
+        "name": "Cephalodiscidae Mitochondrial",
+        "diff": {"TAA": "Y", "TGA": "W", "AGA": "S", "AGG": "K"},
+        "stops": ("TAG",),
+        "starts": ("ATG", "GTG"),
+        "alt_starts": ("CTG", "TTG"),
     },
 }
 
@@ -241,6 +288,15 @@ _GENETIC_CODE_CACHE: dict[int, tuple[dict[str, str], dict[str, str], defaultdict
     1: (codon_dict, extended_codon_dict, byte_dict, ("TAA", "TAG", "TGA"), ("ATG",))
 }
 
+def _resolve_table_id(table: str) -> int:
+    """Resolves an NCBI genetic code given as a numeric string or a table name to its ID."""
+    if table.isdigit():
+        return int(table)
+    for t_id, info in NCBI_GENETIC_CODES.items():
+        if info["name"].lower() == table.lower():
+            return t_id
+    raise ValueError(f"Unknown genetic code name: '{table}'. Available IDs: {list(NCBI_GENETIC_CODES.keys())}")
+
 def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict[str, str], dict[str, str], defaultdict, tuple[str, ...], tuple[str, ...]]:
     """
     Returns (base_codon_dict, extended_codon_dict, byte_dict, default_stops, default_starts)
@@ -250,15 +306,7 @@ def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict
     if table is None:
         table = 1
     if isinstance(table, str):
-        if table.isdigit():
-            table = int(table)
-        else:
-            for t_id, info in NCBI_GENETIC_CODES.items():
-                if info["name"].lower() == table.lower():
-                    table = t_id
-                    break
-            else:
-                raise ValueError(f"Unknown genetic code name: '{table}'. Available IDs: {list(NCBI_GENETIC_CODES.keys())}")
+        table = _resolve_table_id(table)
 
     if isinstance(table, int):
         if table in _GENETIC_CODE_CACHE:
@@ -282,6 +330,24 @@ def get_genetic_code_tables(table: int | str | dict[str, str] = 1) -> tuple[dict
         return base, ext, b_dict, stops, starts
     else:
         raise TypeError(f"table must be an int, str, or dict, got {type(table).__name__}")
+
+def get_start_codons(table: int | str | dict[str, str] = 1) -> tuple[str, ...]:
+    """Curated (strict) start codons of an NCBI genetic code table (ID or name). Custom dictionary tables only use ATG."""
+    if isinstance(table, dict):
+        return ("ATG",)
+    return get_genetic_code_tables(table)[4]
+
+def get_alt_start_codons(table: int | str | dict[str, str] = 1) -> tuple[str, ...]:
+    """NCBI initiator codons of a table beyond its curated start codons. Custom dictionary tables have none."""
+    if isinstance(table, dict):
+        return ()
+    if table is None:
+        table = 1
+    if isinstance(table, str):
+        table = _resolve_table_id(table)
+    if table not in NCBI_GENETIC_CODES:
+        raise ValueError(f"Unsupported NCBI genetic code ID: {table}. Supported tables: {list(NCBI_GENETIC_CODES.keys())}")
+    return NCBI_GENETIC_CODES[table]["alt_starts"]
 
 def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:
     """

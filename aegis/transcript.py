@@ -350,6 +350,7 @@ class Transcript(Feature):
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
         table: int | str | dict[str, str] = 1,
+        initiator_methionine: Literal["canonical", "all", "none"] = "canonical",
     ):
         """
         Extracts the best protein/ORF across the spliced exons of the transcript,
@@ -382,6 +383,7 @@ class Transcript(Feature):
                 ignore_ambiguous_strands=ignore_ambiguous_strands,
                 quiet=quiet,
                 table=table,
+                initiator_methionine=initiator_methionine,
             )
 
             if candidate_cds.protein is not None:

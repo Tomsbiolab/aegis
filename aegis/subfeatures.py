@@ -277,6 +277,7 @@ class CDS(Feature):
         quiet: bool = True,
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
         table: int | str | dict[str, str] = 1,
+        initiator_methionine: Literal["canonical", "all", "none"] = "canonical",
     ):
         if table is None:
             table = 1
@@ -337,6 +338,7 @@ class CDS(Feature):
             coding_parts = []
             segment_intervals = []
             pending_leftover = ""
+            frameshifts = 0
             n_segs = len(working_segs)
             for i, cs in enumerate(working_segs):
                 p = cs.phase or 0
@@ -354,6 +356,8 @@ class CDS(Feature):
                         coding_parts.append(pending_leftover + leading)
                     else:
                         trim_5p = p
+                        if pending_leftover or leading:
+                            frameshifts += 1
                     coding_parts.append(s[p : l - lo])
                     pending_leftover = s[l - lo :]
 
@@ -378,7 +382,9 @@ class CDS(Feature):
                     segment_intervals.append((int(g_start), int(g_end)))
 
             coding_seq = "".join(coding_parts)
-            nucleotide_surplus = True
+            trimmed_5p = cds_phase
+            trimmed_3p = len(pending_leftover)
+            nucleotide_surplus = bool(trimmed_5p or trimmed_3p)
             relative_coding_start = cds_phase
             relative_coding_end = relative_coding_start + len(coding_seq) - 1
 
@@ -387,8 +393,9 @@ class CDS(Feature):
             else:
                 corrected_segments = segment_intervals
         else:
+            cds_seq = self.seq
             coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(
-                self.seq, 
+                cds_seq, 
                 mode=mode, 
                 max_nucleotide_trim=max_nucleotide_trim, 
                 orf_choice_mode=orf_choice_mode, 
@@ -401,6 +408,11 @@ class CDS(Feature):
                 phase=cds_phase,
                 table=table,
             )
+            # An ORF chosen by an ORF mode defines its own start and end; otherwise skipped bases are trimmed CDS ends
+            orf_found = mode.startswith("orf") and not nucleotide_surplus
+            trimmed_5p = 0 if orf_found else relative_coding_start
+            trimmed_3p = 0 if orf_found else max(0, len(cds_seq) - 1 - relative_coding_end)
+            frameshifts = 0
             corrected_segments = (
                 map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
                 if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start
@@ -432,7 +444,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments))
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, initiator_methionine=initiator_methionine)
 
                 if not quiet and nucleotide_surplus:
                     print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")

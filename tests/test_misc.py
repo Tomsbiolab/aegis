@@ -551,6 +551,59 @@ class TestGenerateProtein:
         seg = make_CDS_segment("seg1", start=1000, end=1000 + seq_len - 1, strand=strand)
         return make_CDS(segments=[seg], strand=strand)
 
+    @pytest.mark.parametrize("table, expected_start", [(1, False), (11, True)])
+    def test_start_codon_follows_table(self, make_CDS_segment, make_CDS, table, expected_start):
+        # GTG AAA TAA: GTG is a start codon in table 11 (plastid/bacterial) but not in table 1
+        seq = "GTGAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end", table=table)
+        p = cds.protein
+        assert p.table == table
+        assert p.ATG_start is expected_start
+        assert p.partial_5prime is (not expected_start)
+
+    @pytest.mark.parametrize("seq, table, initiator_methionine, expected_status, expected_seq", [
+        # GTG is a curated start in table 11: M unless literal translation is requested
+        ("GTGAAATAA", 11, "canonical", "canonical", "MK*"),
+        ("GTGAAATAA", 11, "none", "canonical", "VK*"),
+        # CTG is only an alternative NCBI initiator in table 1: M only with "all"
+        ("CTGAAATAA", 1, "canonical", "alternative", "LK*"),
+        ("CTGAAATAA", 1, "all", "alternative", "MK*"),
+        # GTG is not an initiator in table 1
+        ("GTGAAATAA", 1, "all", "none", "VK*"),
+    ])
+    def test_start_status_and_initiator_methionine(self, make_CDS_segment, make_CDS, seq, table, initiator_methionine, expected_status, expected_seq):
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end", table=table, initiator_methionine=initiator_methionine)
+        p = cds.protein
+        assert p.start_status == expected_status
+        assert p.seq == expected_seq
+        # Alternative starts are 5' complete, only tagged as such
+        assert p.partial_5prime is (expected_status == "none")
+        assert ("alt_start" in p.summary_tag) is (expected_status == "alternative")
+
+    def test_skipped_5prime_bases_are_not_a_start(self):
+        from aegis.misc_features import Protein
+        # ATG translated after skipping CDS bases (e.g. phase 1) is not the annotated start
+        p = Protein("p", "MK*", "chr1", 1, 10, "end", nuc_seq="ATGAAATAA", trimmed_5p=1)
+        assert p.start_status == "none"
+        assert p.partial_5prime is True
+        with pytest.raises(ValueError):
+            Protein("p", "MK*", "chr1", 1, 10, "end", nuc_seq="ATGAAATAA", initiator_methionine="always")
+
+    def test_genetic_code_tables_follow_ncbi(self):
+        from aegis.utils.genefunctions import get_start_codons, get_alt_start_codons
+        assert translate("ATA", table=14) == "I"   # Alternative Flatworm Mitochondrial
+        assert translate("TAG", table=15) == "Q"   # Blepharisma Macronuclear
+        assert translate("TAG", table=32) == "W"   # Balanophoraceae Plastid
+        assert translate("AGG", table=33) == "K"   # Cephalodiscidae Mitochondrial
+        assert get_start_codons(1) == ("ATG",)
+        assert get_alt_start_codons(1) == ("CTG", "TTG")
+        assert get_alt_start_codons(2) == ()
+        assert get_alt_start_codons({"TGA": "W"}) == ()
+
     def test_standard_protein(self, make_CDS_segment, make_CDS):
         # ATG AAA TAA  ->  M K *
         seq = "ATGAAATAA"
@@ -607,7 +660,9 @@ class TestGenerateProtein:
             cds.generate_protein(mode="end")
         p = cds.protein
         assert p.gaps is True
-        assert p.partial is True # gaps = partial
+        assert p.ambiguous_residues == 1
+        assert p.partial is False # ambiguity is counted separately, the protein has start and stop
+        assert "ambiguous" in p.summary_tag
 
     def test_orf_extraction(self, make_CDS_segment, make_CDS):
         # GGG ATG AAA TAA (12 nt)
@@ -843,17 +898,17 @@ class TestGenerateProtein:
 
     def test_protein_partial_5prime_and_3prime(self):
         from aegis.misc_features import Protein
-        p1 = Protein("p1", "LKKK*", "chr1", 100, 200, False, "end")
+        p1 = Protein("p1", "LKKK*", "chr1", 100, 200, "end")
         assert p1.partial_5prime is True   # starts with L, not M
         assert p1.partial_3prime is False  # ends with *
         assert p1.partial is True
 
-        p2 = Protein("p2", "MKKKP", "chr1", 100, 200, False, "end")
+        p2 = Protein("p2", "MKKKP", "chr1", 100, 200, "end")
         assert p2.partial_5prime is False  # starts with M
         assert p2.partial_3prime is True   # no stop codon
         assert p2.partial is True
 
-        p3 = Protein("p3", "MKKK*", "chr1", 100, 200, False, "end")
+        p3 = Protein("p3", "MKKK*", "chr1", 100, 200, "end")
         assert p3.partial_5prime is False
         assert p3.partial_3prime is False
         assert p3.partial is False

@@ -16,7 +16,7 @@ from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
-from .utils import split_callback
+from .utils import split_callback, TaxonomyOption, GeneticCodeOption, AutoOrganelleCodesOption, MitoCodeOption, PlastidCodeOption
 from time import time
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -439,6 +439,15 @@ def main(
     )] = False,
 
     # ==========================================
+    # Genetic Codes (applied to every annotation)
+    # ==========================================
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
+
+    # ==========================================
     # Execution/Debugging
     # ==========================================
     threads: Annotated[int, typer.Option(
@@ -641,7 +650,7 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, skip_coordinate_polishing=True))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, skip_coordinate_polishing=True, taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_codes=auto_organelle_codes))
 
         if strip_gene_tags:
             annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)

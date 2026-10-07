@@ -6,8 +6,10 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from ..genome import Genome
+from ..genome import Genome, Scaffold
+from ..utils.genefunctions import NCBI_GENETIC_CODES
 from .summary_genome import pair_genome_features, PairedFeature, normalize_chr_name
+from .utils import TaxonomyOption, GeneticCodeOption, AutoOrganelleCodesOption, MitoCodeOption, PlastidCodeOption
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -82,6 +84,12 @@ def format_diff(diff: int | float | None, human_readable: bool = False, is_termi
         if isinstance(diff, int):
             return f"{sign}{diff:,}"
     return f"{sign}{diff}"
+
+
+def describe_genetic_code(table) -> str:
+    """Formats a genetic code table as 'ID (name)' for reporting."""
+    name = NCBI_GENETIC_CODES.get(table, {}).get("name") if isinstance(table, int) else None
+    return f"{table} ({name})" if name else str(table)
 
 
 def render_terminal_table(headers: list[str], rows: list[list[str]], section_title: str = "", summary_rows: list[list[str]] | None = None) -> str:
@@ -193,6 +201,11 @@ def main(
     gwh: Annotated[bool, typer.Option(
         "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
     )] = False,
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
 ):
     """
     Outputs summary statistics and chromosome breakdown for one or more annotations,
@@ -345,6 +358,11 @@ def main(
                 genome=assigned_genome,
                 quiet=True,
                 skip_coordinate_polishing=True,
+                taxonomy=taxonomy,
+                table=genetic_code,
+                mito_table=mito_code,
+                plastid_table=plastid_code,
+                auto_organelle_codes=auto_organelle_codes,
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)
@@ -484,7 +502,7 @@ def main(
 
     def contig_sort_key(name: str):
         nl = name.lower()
-        if "mit" in nl or "mt" in nl or "pt" in nl or "chlor" in nl or "cp" in nl:
+        if Scaffold.organelle_type(name) is not None:
             cat = 3
         elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
             cat = 1
@@ -506,7 +524,7 @@ def main(
                             filtered_contigs.append(cname)
                         continue
                 nl = cname.lower()
-                is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+                is_organelle = Scaffold.organelle_type(cname) is not None
                 if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle:
                     filtered_contigs.append(cname)
             all_contig_names = filtered_contigs
@@ -716,8 +734,10 @@ def main(
         summary_metrics.extend([
             ("Translated Proteins", "total_proteins", False),
             ("Complete Proteins", "complete_proteins", False),
+            ("  of which Alternative Start", "alt_start_proteins", False),
             ("Partial Proteins", "partial_proteins", False),
             ("Truncated Proteins", "truncated_proteins", False),
+            ("Proteins with Ambiguous Residues", "ambiguous_proteins", False),
             ("Phase-shifted / Frameshifted CDSs", "frameshifted_cds", False),
             ("Out-of-bounds Features", "out_of_bounds", False),
             ("Contigs Missing in Genome", "missing_chroms", False),
@@ -726,7 +746,7 @@ def main(
 
     def get_annot_metric_val(annot: Annotation, metric_key: str):
         stats_data = annot.stats.data
-        if metric_key in ("total_proteins", "complete_proteins", "partial_proteins", "truncated_proteins", "frameshifted_cds", "phase_mismatches"):
+        if metric_key in ("total_proteins", "complete_proteins", "alt_start_proteins", "partial_proteins", "truncated_proteins", "ambiguous_proteins", "frameshifted_cds", "phase_mismatches"):
             qc = annot.get_protein_qc_summary()
             return qc.get(metric_key, 0)
         if metric_key == "total_genes":
@@ -849,6 +869,26 @@ def main(
             summary_table_rows.append(term_row)
             summary_file_rows.append(file_row)
 
+    # Genetic codes used to translate the proteins behind the protein statistics
+    genetic_code_headers = ["Annotation", "Taxonomy", "Nuclear", "Mitochondrial", "Plastid", "Organelle contigs"]
+    genetic_code_rows = []
+    if has_genomes and not contigs_only:
+        labels = {"mitochondria": "mito", "chloroplast": "plastid"}
+        for a in annotations:
+            organelle_contigs = []
+            for chrom in a.chrs:
+                compartment = a.chromosome_compartment(chrom)
+                if compartment != "nuclear":
+                    organelle_contigs.append(f"{chrom} ({labels[compartment]})")
+            genetic_code_rows.append([
+                a.name,
+                a.taxonomy,
+                describe_genetic_code(a.table),
+                describe_genetic_code(a.mito_table),
+                describe_genetic_code(a.plastid_table),
+                ", ".join(organelle_contigs) if organelle_contigs else "-",
+            ])
+
     # 9. Terminal Output Rendering
     if not quiet:
         output_blocks = []
@@ -872,6 +912,9 @@ def main(
         if not contigs_only and summary_table_rows:
             section_lbl = "Annotation Summary Statistics"
             output_blocks.append(render_terminal_table(summary_headers, summary_table_rows, section_title=section_lbl))
+
+        if genetic_code_rows:
+            output_blocks.append(render_terminal_table(genetic_code_headers, genetic_code_rows, section_title="Genetic Codes"))
 
         if output_blocks:
             typer.echo("\n".join(output_blocks))
@@ -897,6 +940,12 @@ def main(
                 f.write("# Summary Statistics\n")
                 f.write("\t".join(summary_headers) + "\n")
                 for r in summary_file_rows:
+                    f.write("\t".join(r) + "\n")
+
+            if genetic_code_rows:
+                f.write("\n# Genetic Codes\n")
+                f.write("\t".join(genetic_code_headers) + "\n")
+                for r in genetic_code_rows:
                     f.write("\t".join(r) + "\n")
 
         if not quiet:
