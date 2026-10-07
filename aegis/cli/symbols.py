@@ -92,8 +92,8 @@ def main(
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 
-    if output_file == "{annotation-name}_symbols.gff3":
-        output_file = f"{annotation_name}_symbols.gff3"
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
 
     annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file)
 

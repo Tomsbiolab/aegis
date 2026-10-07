@@ -132,8 +132,10 @@ def main(
         # Invert based on detected input format
         target_format = "gtf" if detected_in_format == "gff3" else "gff3"
 
-    if output_file == "{annotation-name}.{ext}":
-        output_file = f"{annotation_name}.{target_format}"
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
+    if "{ext}" in output_file:
+        output_file = output_file.replace("{ext}", target_format)
     elif not output_file.endswith(f".{target_format}") and not output_file.endswith(".gff") and not output_file.endswith(".gtf") and not output_file.endswith(".gff3"):
         output_file += f".{target_format}"
 

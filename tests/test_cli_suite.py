@@ -2,7 +2,7 @@ import pytest
 from typer.testing import CliRunner
 from aegis.cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"COLUMNS": "120"})
 
 COMMANDS = [
     "extract",
@@ -81,3 +81,41 @@ def test_orthology_blast_panel():
     assert "BLASTp Options" in res.stdout
     assert "--skip-all-blasts" in res.stdout
     assert "--skip-RBHs" in res.stdout
+
+
+def test_list_options_suite():
+    """Test list genes and transcripts options."""
+    res_genes = runner.invoke(app, ["list", "genes", "--help"])
+    assert res_genes.exit_code == 0
+    assert "--biotypes" in res_genes.stdout
+    assert "--rna-classes" in res_genes.stdout
+
+    res_transcripts = runner.invoke(app, ["list", "transcripts", "--help"])
+    assert res_transcripts.exit_code == 0
+    assert "--biotypes" in res_transcripts.stdout
+    assert "--gene-id" in res_transcripts.stdout
+
+
+def test_filter_chromosomes_help():
+    """Test filter help displays -c / --chromosomes."""
+    res = runner.invoke(app, ["filter", "--help"])
+    assert res.exit_code == 0
+    assert "--chromosomes" in res.stdout
+    assert "-c" in res.stdout
+
+
+def test_summary_all_help():
+    """Test summary help displays -A / --all."""
+    res = runner.invoke(app, ["summary", "--help"])
+    assert res.exit_code == 0
+    assert "--all" in res.stdout
+    assert "-A" in res.stdout
+
+
+def test_motif_promoter_panel():
+    """Test motifs help displays -m / --motif in promoter panel."""
+    res = runner.invoke(app, ["motifs", "--help"])
+    assert res.exit_code == 0
+    assert "Promoter & Motif Options" in res.stdout
+    assert "--motif" in res.stdout
+    assert "--motif-tag" in res.stdout

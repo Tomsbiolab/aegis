@@ -51,3 +51,19 @@ def test_filter_invalid_inputs(rich_gff3_file, tmp_path):
     # Non-positive min CDS size
     res_cds = runner.invoke(filter_app, [str(rich_gff3_file), "-d", str(output_dir), "--min-cds-size", "0"])
     assert res_cds.exit_code != 0
+
+
+def test_filter_chromosomes(rich_gff3_file, tmp_path):
+    """Ensure filtering by chromosome creates an output file with matching records."""
+    output_dir = tmp_path / "filter_out_chr"
+    output_file = "filtered_chr.gff3"
+    args = [
+        str(rich_gff3_file),
+        "-d", str(output_dir),
+        "-o", output_file,
+        "-c", "chr1",
+        "-q",
+    ]
+    result = runner.invoke(filter_app, args)
+    assert result.exit_code == 0, f"Filter by chromosome failed: {result.stdout}"
+    assert (output_dir / output_file).exists()

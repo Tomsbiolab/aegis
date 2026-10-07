@@ -184,6 +184,10 @@ def main(
         "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs.",
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
+    include_all: Annotated[bool, typer.Option(
+        "-A", "--all", "--include-all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
+        rich_help_panel=SUMMARY_PANEL,
+    )] = False,
     human_readable: Annotated[bool, typer.Option(
         "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb).",
         rich_help_panel=SUMMARY_PANEL,
@@ -283,6 +287,9 @@ def main(
     if summary_only and contigs_only:
         typer.echo("Error: Cannot specify both --summary-only and --contigs-only.", err=True)
         raise typer.Exit(code=1)
+
+    if include_all:
+        chromosomes_only = False
 
     if verbose:
         quiet = False

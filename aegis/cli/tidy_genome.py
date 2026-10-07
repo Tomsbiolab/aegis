@@ -35,22 +35,22 @@ def main(
         rich_help_panel=GENOME_CLEANING_PANEL,
     )] = "",
 
-    # 2. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
+    # 2. Coordinate & Phase Options (when paired annotation is provided)
+    min_codon_len: Annotated[int, typer.Option(
+        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
+        rich_help_panel=COORDS_PANEL,
+    )] = 2,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=COORDS_PANEL,
     )] = False,
-    keep_description: Annotated[bool, typer.Option(
-        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file.",
-        rich_help_panel=FASTA_HEADER_PANEL,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    skip_coordinate_polishing: Annotated[bool, typer.Option(
+        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
+        rich_help_panel=COORDS_PANEL,
     )] = False,
 
     # 3. Input / Output Options
@@ -83,22 +83,22 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_tidy.gff3",
 
-    # 4. Coordinate & Phase Options (when paired annotation is provided)
-    min_codon_len: Annotated[int, typer.Option(
-        "--min-codon-len", help="Minimum codon length required for predicted ORFs (default: 2).",
-        rich_help_panel=COORDS_PANEL,
-    )] = 2,
-    recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
-        rich_help_panel=COORDS_PANEL,
+    # 4. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
-    reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
-    skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead.",
-        rich_help_panel=COORDS_PANEL,
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file.",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
     # 5. Execution & Debugging
@@ -187,11 +187,13 @@ def main(
         g.remove_organelles()
 
 
-    if output_genome_file == "{genome-name}_tidy.fasta":
-        output_genome_file = f"{genome_name}_tidy.fasta"
+    if "{genome-name}" in output_genome_file:
+        output_genome_file = output_genome_file.replace("{genome-name}", genome_name)
 
     if output_annot_file == "{annotation-name}_tidy.gff3":
         output_annot_file = f"{annotation_name}_matching_genome_tidy.gff3"
+    elif "{annotation-name}" in output_annot_file:
+        output_annot_file = output_annot_file.replace("{annotation-name}", annotation_name)
 
     g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description)
 

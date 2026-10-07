@@ -71,6 +71,11 @@ def main(
         "--strip-utrs", "--no-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
         rich_help_panel=FILTER_PANEL,
     )] = False,
+    chromosomes: Annotated[List[str], typer.Option(
+        "-c", "--chromosomes", help="Filter annotation to only include features located on specified chromosomes/scaffolds (comma-separated or repeated flag).",
+        callback=split_callback,
+        rich_help_panel=FILTER_PANEL,
+    )] = [],
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
@@ -134,8 +139,8 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
     subfolder = (output_dir == "./aegis_output/")
 
-    if output_file == "{annotation-name}_filtered":
-        output_file = f"{annotation_name}_filtered"
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
 
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
@@ -171,6 +176,10 @@ def main(
     # 6. Gene symbol filtering
     if has_symbol:
         annotation.remove_genes_without_symbols(quiet=quiet)
+
+    # 7. Chromosome filtering
+    if chromosomes:
+        annotation.subset(chosen_features=set(chromosomes), no_gene_cap=True, quiet=quiet)
 
     annotation.export.gff(
         output_dir=output_dir,

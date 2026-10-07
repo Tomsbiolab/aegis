@@ -121,6 +121,9 @@ def main(
         else:
             annotation.remove_transcripts(to_remove=input_ids, remove_genes_accordingly=True, quiet=quiet)
 
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
+
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
 

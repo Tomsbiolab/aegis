@@ -87,3 +87,10 @@ def test_cli_summary_help_text():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "USAGE SCENARIOS" in result.stdout
+
+
+def test_cli_summary_all_flag(test_data_dir, tmp_path):
+    """Ensure summary CLI runs successfully when -A / --all is provided."""
+    a1 = test_data_dir / "input/annotation/minimal.gff3"
+    result = runner.invoke(app, [str(a1), "-A", "-d", str(tmp_path), "-q"])
+    assert result.exit_code == 0, f"Summary with -A failed: {result.stdout}"

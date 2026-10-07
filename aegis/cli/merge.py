@@ -98,6 +98,9 @@ def main(
 
     if output_file == "{annotation-names}.gff3":
         output_file = None  # type: ignore
+    elif "{annotation-names}" in output_file:
+        names_tag = "_".join(annotation_names) if annotation_names else "merged"
+        output_file = output_file.replace("{annotation-names}", names_tag)
 
     if skip_renaming:
         features = []

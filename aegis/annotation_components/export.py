@@ -1177,7 +1177,7 @@ class AnnotationExport(AnnotationComponent):
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False,
+    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False, gene_id: bool = False,
         #deprecated arguments
         custom_path: str = "", output_file: str = ""):
 
@@ -1208,6 +1208,8 @@ class AnnotationExport(AnnotationComponent):
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
 
             header = ["transcript_id"]
+            if gene_id:
+                header.append("gene_id")
             if chromosomes or coordinates:
                 header.append("chromosome")
             if coordinates:
@@ -1238,6 +1240,8 @@ class AnnotationExport(AnnotationComponent):
                             continue
 
                         out = [t.id]
+                        if gene_id:
+                            out.append(g.id)
                         if chromosomes or coordinates:
                             out.append(chrom)
                         if coordinates:

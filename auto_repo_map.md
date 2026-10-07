@@ -356,7 +356,7 @@
         - `def gff(self,`
         - `def gtf(self,`
         - `def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False, quiet:bool=False,`
-        - `def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False,`
+        - `def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False, gene_id: bool = False,`
       - motifs.py
         - `class AnnotationMotifs (AnnotationComponent):`
         - `def find_and_plot(self, query_genes:list[str], motif:str, motif_length:int, glistname:str, tf_motif_tag:str, backlist:list[str]=[], backlistname:str="", filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "motifs", subfolder: bool = False, use_annot_dir: bool = False, quiet:bool=False):`
@@ -878,6 +878,12 @@
       - `def test_filter_smoke(rich_gff3_file, tmp_path):`
       - `def test_filter_conflicting_options(rich_gff3_file, tmp_path):`
       - `def test_filter_invalid_inputs(rich_gff3_file, tmp_path):`
+      - `def test_filter_chromosomes(rich_gff3_file, tmp_path):`
+    - test_cli_list.py
+      - `def test_list_genes_smoke(test_data_dir, tmp_path):`
+      - `def test_list_genes_biotype_filter(test_data_dir, tmp_path):`
+      - `def test_list_transcripts_with_gene_id(test_data_dir, tmp_path):`
+      - `def test_list_dynamic_template_expansion(test_data_dir, tmp_path):`
     - test_cli_split.py
       - `def populus_test_files(tmp_path):`
       - `def test_classify_feature_smart():`
@@ -895,6 +901,10 @@
       - `def test_prune_keep_option():`
       - `def test_merge_overlap_options():`
       - `def test_orthology_blast_panel():`
+      - `def test_list_options_suite():`
+      - `def test_filter_chromosomes_help():`
+      - `def test_summary_all_help():`
+      - `def test_motif_promoter_panel():`
     - test_cli_summary.py
       - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`
@@ -903,6 +913,7 @@
       - `def test_cli_summary_fatal_mismatch_halt(tmp_path):`
       - `def test_cli_summary_multi_genome_mismatched_count(tmp_path):`
       - `def test_cli_summary_help_text():`
+      - `def test_cli_summary_all_flag(test_data_dir, tmp_path):`
     - test_cli_summary_genome.py
       - `def test_cli_summary_genome_smoke(test_data_dir):`
       - `def test_cli_summary_genome_export(test_data_dir, tmp_path):`

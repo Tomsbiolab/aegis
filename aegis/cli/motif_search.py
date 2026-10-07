@@ -36,6 +36,14 @@ def main(
     )] = None,
 
     # 1. Promoter & Motif Options
+    motif_opt: Annotated[str, typer.Option(
+        "-m", "--motif", help="DNA motif pattern (plain sequence e.g. 'TATAAA' or regular expression e.g. 'TATA[AT]A'). Overrides positional argument if provided.",
+        rich_help_panel=PROMOTER_PANEL,
+    )] = "",
+    motif_length_opt: Annotated[Optional[int], typer.Option(
+        "-ml", "--motif-length", help="Actual span/length of the motif in bp. Automatically deduced for plain sequences (e.g. 'TATAAA' -> 6), but must be explicitly specified for regular expressions containing metacharacters (e.g. 'TATA[AT]A' has span 6 bp).",
+        rich_help_panel=PROMOTER_PANEL,
+    )] = None,
     promoter_size: Annotated[int, typer.Option(
         "-ps", "--promoter-size", help="Size of the promoter region in base pairs (bp) upstream of TSS or ATG depending on --promoter-type (default: 2000).",
         rich_help_panel=PROMOTER_PANEL,
@@ -44,10 +52,10 @@ def main(
         "-p", "--promoter-type", help="Reference point for promoter extraction: 'standard' (upstream of TSS), 'upstream_ATG' (upstream of main CDS ATG codon), or 'standard_plus_up_to_ATG' (upstream of TSS plus 5' UTR up to start codon).",
         rich_help_panel=PROMOTER_PANEL,
     )] = "standard",
-    motif_length_opt: Annotated[Optional[int], typer.Option(
-        "-ml", "--motif-length", help="Actual span/length of the motif in bp. Automatically deduced for plain sequences (e.g. 'TATAAA' -> 6), but must be explicitly specified for regular expressions containing metacharacters (e.g. 'TATA[AT]A' has span 6 bp).",
+    motif_tag: Annotated[str, typer.Option(
+        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'.",
         rich_help_panel=PROMOTER_PANEL,
-    )] = None,
+    )] = "query_motif",
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
@@ -62,10 +70,6 @@ def main(
         "-l", "--genelist", "--genelist-file", help="Input TSV/XLSX file with list of 'gene-id' entries. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
-    motif_opt: Annotated[str, typer.Option(
-        "-m", "--motif", help="DNA motif pattern (plain sequence or regular expression). Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
     annotation_name: Annotated[str, typer.Option(
         "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
@@ -78,10 +82,6 @@ def main(
         "--genelist-tag", help="Query gene list tag/name to improve output description.",
         rich_help_panel=IO_PANEL,
     )] = "query_genes",
-    motif_tag: Annotated[str, typer.Option(
-        "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'.",
-        rich_help_panel=IO_PANEL,
-    )] = "query_motif",
     header: Annotated[bool, typer.Option(
         "-H", "--header", help="Indicate the presence of a column header in the input genelist file.",
         rich_help_panel=IO_PANEL,
@@ -164,16 +164,10 @@ def main(
     else:
         subfolder = False
 
-    if header:
-        if genelist.endswith(".xlsx"):
-            df = pd.read_excel(genelist, skiprows=1, dtype=str)
-        else:
-            df = pd.read_csv(genelist, skiprows=1, dtype=str)
+    if genelist.endswith(".xlsx"):
+        df = pd.read_excel(genelist, header=0 if header else None, dtype=str)
     else:
-        if genelist.endswith(".xlsx"):
-            df = pd.read_excel(genelist, dtype=str)
-        else:
-            df = pd.read_csv(genelist, dtype=str)
+        df = pd.read_csv(genelist, sep=None, engine="python", header=0 if header else None, dtype=str)
 
     df = df.fillna("")
     genes = df.iloc[:, 0].tolist()

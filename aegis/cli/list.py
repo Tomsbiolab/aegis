@@ -1,10 +1,10 @@
 import typer
 import os
-from typing import Optional
+from typing import Optional, List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL
+from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL, split_callback
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -15,6 +15,11 @@ def genes(
     )] = None,
 
     # 1. Filtering Options
+    biotypes: Annotated[List[str], typer.Option(
+        "-b", "-r", "--biotypes", "--rna-classes", help="Filter by transcript biotype (e.g. 'mRNA,lncRNA'). Comma-separated list.",
+        callback=split_callback,
+        rich_help_panel=FILTER_PANEL,
+    )] = [],
     skip_coding: Annotated[bool, typer.Option(
         "--skip-coding", "--non-coding-only", help="Whether to skip coding genes.",
         rich_help_panel=FILTER_PANEL,
@@ -104,12 +109,15 @@ def genes(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
     
-    if output_file == "{annotation-name}_genes_list.tsv":
-        output_file = f"{annotation_name}_genes_list.tsv"
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
 
     os.makedirs(output_dir, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
+
+    if biotypes:
+        annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
 
     annotation.export.gene_list(
         output_dir=output_dir,
@@ -135,6 +143,11 @@ def transcripts(
     )] = None,
 
     # 1. Filtering Options
+    biotypes: Annotated[List[str], typer.Option(
+        "-b", "-r", "--biotypes", "--rna-classes", help="Filter by transcript biotype (e.g. 'mRNA,lncRNA'). Comma-separated list.",
+        callback=split_callback,
+        rich_help_panel=FILTER_PANEL,
+    )] = [],
     main_only: Annotated[bool, typer.Option(
         "-m", "--main", "--only-main", "--main-only", help="Only list the primary / main transcript for each gene.",
         rich_help_panel=FILTER_PANEL,
@@ -157,6 +170,10 @@ def transcripts(
     )] = False,
 
     # 2. Output Columns
+    gene_id: Annotated[bool, typer.Option(
+        "--gene-id", "--gene", help="Include parent gene ID in the output.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -224,12 +241,15 @@ def transcripts(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
     
-    if output_file == "{annotation-name}_transcripts_list.tsv":
-        output_file = f"{annotation_name}_transcripts_list.tsv"
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
 
     os.makedirs(output_dir, exist_ok=True)
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
+
+    if biotypes:
+        annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
 
     annotation.export.transcript_list(
         output_dir=output_dir,
@@ -245,6 +265,7 @@ def transcripts(
         skip_transposables=skip_transposables,
         gene_symbols=gene_symbols,
         only_main=main_only,
+        gene_id=gene_id,
         quiet=quiet,
     )
 

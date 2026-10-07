@@ -153,11 +153,11 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    if output_annot_file == "{annotation-name}_subset.gff3":
-        output_annot_file = f"{annotation_name}_subset.gff3"
+    if "{annotation-name}" in output_annot_file:
+        output_annot_file = output_annot_file.replace("{annotation-name}", annotation_name)
 
-    if output_genome_file == "{genome-name}_subset.fasta":
-        output_genome_file = f"{genome_name}_subset.fasta"
+    if "{genome-name}" in output_genome_file:
+        output_genome_file = output_genome_file.replace("{genome-name}", genome_name)
 
     fasta_exts = (".fa", ".fasta", ".fna", ".fas", ".fa.gz", ".fasta.gz", ".fna.gz")
     annot_exts = (".gff", ".gff3", ".gtf", ".gff.gz", ".gff3.gz", ".gtf.gz")
