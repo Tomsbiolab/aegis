@@ -526,13 +526,10 @@ class Genome():
 
             self.update()
 
-            if remove_organelles:
-                self.remove_organelles(export=export, output_dir=output_dir)
-
-            elif export:
+            if not remove_organelles and export:
                 self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
-        elif remove_organelles:
+        if remove_organelles:
             self.remove_organelles(export=export, output_dir=output_dir)
 
     def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):

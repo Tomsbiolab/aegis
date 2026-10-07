@@ -4,10 +4,7 @@ import os
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import IO_PANEL, EXEC_PANEL
-
-COLUMNS_PANEL = "Output Columns"
-FILTER_PANEL = "Filtering Options"
+from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -16,22 +13,6 @@ def genes(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_genes_list.tsv",
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Tab is default.",
-        rich_help_panel=IO_PANEL,
-    )] = "\t",
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -56,12 +37,13 @@ def genes(
         "--gene-symbols", help="Whether to include gene symbols in the output.",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
+
     skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", help="Whether to skip coding genes.",
+        "--skip-coding", "--non-coding-only", help="Whether to skip coding genes.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", help="Whether to skip non-coding genes.",
+        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding genes.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_pseudogenes: Annotated[bool, typer.Option(
@@ -72,6 +54,28 @@ def genes(
         "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
+
+    annotation_name: Annotated[str, typer.Option(
+        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_genes_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", help="Separator for the output file. Tab is default.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
+
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -80,6 +84,9 @@ def genes(
     """
     Lists genes from an annotation file and exports them to a TSV/CSV file.
     """
+    if verbose:
+        quiet = False
+
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
     
@@ -111,22 +118,6 @@ def transcripts(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_transcripts_list.tsv",
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Default is tab.",
-        rich_help_panel=IO_PANEL,
-    )] = "\t",
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -147,12 +138,13 @@ def transcripts(
         "--gene-symbols", help="Whether to include gene symbols in the output.",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
+
     skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", help="Whether to skip coding transcripts.",
+        "--skip-coding", "--non-coding-only", help="Whether to skip coding transcripts.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", help="Whether to skip non-coding transcripts.",
+        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding transcripts.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_pseudogenes: Annotated[bool, typer.Option(
@@ -163,6 +155,28 @@ def transcripts(
         "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
+
+    annotation_name: Annotated[str, typer.Option(
+        "-a", "--annotation-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_transcripts_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", help="Separator for the output file. Default is tab.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
+
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -171,6 +185,9 @@ def transcripts(
     """
     Lists transcripts from an annotation file and exports them to a TSV/CSV file.
     """
+    if verbose:
+        quiet = False
+
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
     

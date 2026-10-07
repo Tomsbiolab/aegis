@@ -16,8 +16,22 @@ from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
-from .utils import split_callback, TaxonomyOption, GeneticCodeOption, AutoOrganelleCodesOption, MitoCodeOption, PlastidCodeOption
+from .utils import (
+    split_callback,
+    TaxonomyOption,
+    GeneticCodeOption,
+    AutoOrganelleCodesOption,
+    MitoCodeOption,
+    PlastidCodeOption,
+    IO_PANEL,
+    EXEC_PANEL,
+    GENETIC_CODES_PANEL,
+    ORTHOLOGY_PANEL,
+    BLAST_PANEL,
+)
 from time import time
+
+OUTPUT_PANEL = "Output & Filtering Options"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -272,203 +286,202 @@ def best_summary_score(series):
 
 @app.command()
 def main(
-    annotation_files: Annotated[list[str], typer.Argument(
-        help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
+    files: Annotated[list[str], typer.Argument(
+        help="Path to input annotation GFF/GTF file(s) and corresponding genome FASTA file(s). Both can be provided directly as positional arguments (e.g. 'a1.gff a2.gff g1.fa g2.fa') or via options."
     )],
-    
-    # ==========================================
-    # CORE INPUT / OUTPUT CONFIGURATION
-    # ==========================================
-    genome_files: Annotated[list[str], typer.Option(
-        "-g", "--genome-files", 
-        help="Genome assemblies corresponding to annotation files. Provide them in the same number and order, separated by commas. e.g. -g genomefile1,genomefile2,genomefile3,genomefile4",
-        callback=split_callback,
-        rich_help_panel="Core Input/Output Configuration"
-    )],
-    annotation_names: Annotated[list[str], typer.Option(
-        "-a", "--annotation-names", 
-        help="Annotation versions, names or tags otherwise they will just be the annotation file basename without the extension. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. --annotation-names name1,name2,name3,name4",
-        callback=split_callback,
-        rich_help_panel="Core Input/Output Configuration"
-    )] = ["{annotation-filename(s)}"],
-    genome_names: Annotated[list[str], typer.Option(
-        "--genome-names", 
-        help="Genome versions, names or tags otherwise they will just be the genome file basename without the extension. Provide them in the same number and order as the corresponding genome files, separated by commas. e.g. --genome-names name1,name2,name3,name4",
-        callback=split_callback,
-        rich_help_panel="Core Input/Output Configuration"
-    )] = ["{genome-filename(s)}"],
-    group_names: Annotated[list[str], typer.Option(
-        "-gn", "--group-names", 
-        help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
-        callback=split_callback,
-        rich_help_panel="Core Input/Output Configuration"
-    )] = [],
-    reference_annotation: Annotated[str, typer.Option(
-        "-r", "--reference-annotation", 
-        help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
-        rich_help_panel="Core Input/Output Configuration"
-    )] = "None",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", 
-        help="Path to the output folder.",
-        rich_help_panel="Core Input/Output Configuration"
-    )] = "./aegis_output/orthologues/",
-    output_filename: Annotated[str, typer.Option(
-        "-o", "--output-file", 
-        help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
-        rich_help_panel="Core Input/Output Configuration"
-    )] = "equivalences{other_tags}.tsv",
 
-    # ==========================================
-    # Orthology Tool Options
-    # ==========================================
+    # 1. Orthology Tool Options
     skip_liftoff: Annotated[bool, typer.Option(
         "--skip-liftoff", 
         help="Skip Liftoff.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_lifton: Annotated[bool, typer.Option(
         "--skip-lifton", 
         help="Skip LiftOn.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_copies: Annotated[bool, typer.Option(
         "--skip-copies", 
         help="Liftoff and LiftOn are run in copies mode by default, flag to deactivate.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_mcscan: Annotated[bool, typer.Option(
         "--skip-mcscan", 
         help="Skip the JCVI toolkit synteny and collinearity analysis (MCscan). Useful when JCVI is causing compatibility issues.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_synteny: Annotated[bool, typer.Option(
         "--skip-synteny", 
         help="Skip conservation of synteny metrics whenever an annotation is lifted over to another genome.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_orthofinder: Annotated[bool, typer.Option(
         "--skip-orthofinder", 
         help="Skip the OrthoFinder analysis.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     pairwise_orthofinder: Annotated[bool, typer.Option(
         "--pairwise-orthofinder", 
         help="Execute OrthoFinder on independent annotation pairs. Overrides the default multi-annotation bulk analysis. Recommended for highly divergent taxa or targeted 1:1 orthologue mapping.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     lift_feature_types: Annotated[list[str], typer.Option(
         "--lift-feature-types", 
         help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", 
         callback=split_callback,
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = ["ALL"],
     include_single_blasts: Annotated[bool, typer.Option(
         "-b", "--include-single-blasts", 
         help="Decide whether to report unidirectional (i.e. just fw or rv) blasts in the orthologue summary.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_rbhs: Annotated[bool, typer.Option(
         "--skip-RBHs", 
         help="Decide whether to skip RBHs which are not RBBHs, these are reported by default in the orthologue summary.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
     skip_all_blasts: Annotated[bool, typer.Option(
         "--skip-all-blasts", 
         help="Skip all protein BLASTs.",
-        rich_help_panel="Orthology Tool Options"
+        rich_help_panel=ORTHOLOGY_PANEL,
     )] = False,
 
-    # ==========================================
-    # BLAST Options
-    # ==========================================
+    # 2. BLASTp Options
     identity: Annotated[float, typer.Option(
         "-i", "--identity", 
         help="Minimum identity threshold for protein BLAST hits.",
-        rich_help_panel="BLASTp Options"
+        rich_help_panel=BLAST_PANEL,
     )] = 30.0,
     coverage: Annotated[float, typer.Option(
         "-c", "--coverage", 
         help="Minimum coverage threshold for protein BLAST hits.",
-        rich_help_panel="BLASTp Options"
+        rich_help_panel=BLAST_PANEL,
     )] = 30.0,
     evalue: Annotated[float, typer.Option(
         "-e", "--evalue", 
         help="Maximum e-value threshold for protein BLAST hits.",
-        rich_help_panel="BLASTp Options"
+        rich_help_panel=BLAST_PANEL,
     )] = 0.00001,
 
-    # ==========================================
-    # Output Options
-    # ==========================================
+    # 3. Output & Filtering Options
     confidence: Annotated[list[str], typer.Option(
         "--confidence", 
         help="Filter the final output by confidence levels. Options: high, medium, lower. Separate by commas.",
         callback=split_callback,
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = ["high", "medium", "lower"],
     include_NAs: Annotated[bool, typer.Option(
         "-na", "--include-NAs", 
         help="Append all genes that have no equivalences (or were filtered out) at the end of the output.",
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = False,
     skip_cardinality: Annotated[bool, typer.Option(
         "-sc", "--skip-cardinality", 
         help="Skip the cardinality analysis (which marks gene pairs as 1:N, N:1, N:N, or 1:1) in the final output table (after the confidence level filter).",
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = False,
     tiered_cardinality: Annotated[bool, typer.Option(
         "--tiered-cardinality", 
         help="Report three separate cardinality columns (strict: just looking at high-confidence orthologues, moderate: high- and medium-confidence orthologues, relaxed: high-, medium- and lower-confidence orthologues).",
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = False,
     include_duplicates: Annotated[bool, typer.Option(
         "--include-duplicates", 
         help="Report equivalences from both from gene_id_A to gene_id_B as well as from gene_id_B to gene_id_A. These 'duplicate gene pairs' are not included by default.",
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = False,
     split_scores: Annotated[bool, typer.Option(
         "--split-scores", 
         help="Split the aggregated 'score' column into individual columns for Liftoff, LiftOn, Overlap, MCscan, BLASTp, and OrthoFinder.",
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = False,
     strip_gene_tags: Annotated[bool, typer.Option(
         "--strip-gene-tags", 
         help="Strip gene tags, i.e. remove 'gene-' prefix from gene IDs. e.g., 'gene-LOC100263960' to 'LOC100263960'.",
-        rich_help_panel="Output Options"
+        rich_help_panel=OUTPUT_PANEL,
     )] = False,
 
-    # ==========================================
-    # Genetic Codes (applied to every annotation)
-    # ==========================================
+    # 4. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
 
-    # ==========================================
-    # Execution/Debugging
-    # ==========================================
+    # 5. Core Input / Output Configuration
+    genome_files_opt: Annotated[list[str], typer.Option(
+        "-g", "--genome-files", "--genomes",
+        help="Genome assemblies corresponding to annotation files (optional if passed as positional arguments). Provide in the same order as annotations.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
+    annotation_files_opt: Annotated[list[str], typer.Option(
+        "-a", "--annotation-files", "--annotations",
+        help="Annotation files (optional if passed as positional arguments). Provide in the same order as genome files.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
+    annotation_names: Annotated[list[str], typer.Option(
+        "-an", "--annotation-names", 
+        help="Annotation versions, names or tags otherwise they will just be the annotation file basename without the extension. Provide in the same order as annotation files, separated by commas.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = ["{annotation-filename(s)}"],
+    genome_names: Annotated[list[str], typer.Option(
+        "-gn", "--genome-names", 
+        help="Genome versions, names or tags otherwise they will just be the genome file basename without the extension. Provide in the same order as genome files, separated by commas.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = ["{genome-filename(s)}"],
+    group_names: Annotated[list[str], typer.Option(
+        "--group-names", 
+        help="Optional grouping of input annotations, into species for example. Use NA as a placemarker for annotation files without a group label. e.g. --group-names group1,NA,group1,group2",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
+    reference_annotation: Annotated[str, typer.Option(
+        "-r", "--reference-annotation", 
+        help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
+        rich_help_panel=IO_PANEL,
+    )] = "None",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", 
+        help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/orthologues/",
+    output_filename: Annotated[str, typer.Option(
+        "-o", "--output-file", 
+        help="Output filename to be saved to output folder without extension. The '.tsv' extension will be added to the filename.",
+        rich_help_panel=IO_PANEL,
+    )] = "equivalences{other_tags}.tsv",
+
+    # 6. Execution / Debugging
     threads: Annotated[int, typer.Option(
         "-t", "--threads", 
         help="Number of threads.",
-        rich_help_panel="Execution/Debugging"
+        rich_help_panel=EXEC_PANEL,
     )] = 1,
     parallel_pairs: Annotated[bool, typer.Option(
         "--parallel-pairs", 
         help="Run independent pairwise comparisons concurrently. Strongly recommended for multiple genomes to optimize CPU scaling. The threads parameter will be distributed across the pairwise comparisons.",
-        rich_help_panel="Execution/Debugging"
+        rich_help_panel=EXEC_PANEL,
     )] = False,
     keep_intermediate: Annotated[bool, typer.Option(
         "-k", "--keep-intermediate", 
         help="Keep intermediate files, useful for identifying errors.",
-        rich_help_panel="Execution/Debugging"
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", 
+        help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
     verbose: Annotated[bool, typer.Option(
         "-v", "--verbose", 
         help="Verbose logging, useful if encountering a problem or error.",
-        rich_help_panel="Execution/Debugging"
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
@@ -500,6 +513,40 @@ def main(
 
     start = time()
 
+    if verbose:
+        quiet = False
+
+    annotation_files = list(annotation_files_opt) if annotation_files_opt else []
+    genome_files = list(genome_files_opt) if genome_files_opt else []
+
+    if not annotation_files and not genome_files:
+        from .utils import detect_file_type
+        pos_annots = []
+        pos_genomes = []
+        for f in files:
+            ftype = detect_file_type(f)
+            if ftype == "annotation":
+                pos_annots.append(f)
+            elif ftype == "fasta":
+                pos_genomes.append(f)
+            else:
+                lower = f.lower()
+                if any(ext in lower for ext in (".gff", ".gtf")):
+                    pos_annots.append(f)
+                else:
+                    pos_genomes.append(f)
+        if pos_annots and pos_genomes:
+            annotation_files = pos_annots
+            genome_files = pos_genomes
+        elif pos_annots and not pos_genomes:
+            annotation_files = pos_annots
+        else:
+            annotation_files = list(files)
+    elif not annotation_files and genome_files:
+        annotation_files = list(files)
+    elif annotation_files and not genome_files:
+        genome_files = list(files)
+
     print(f"Running command: {' '.join(sys.argv)}")
 
     valid_confidence_levels = {"high", "medium", "lower", "high_confidence", "medium_confidence", "lower_confidence", "highest"}
@@ -530,8 +577,7 @@ def main(
         print("Expected extensions: .gff, .gtf, .gff3, .fasta, .fa\n"
               "Some naming or downstream processing functionality may be compromised if extensions are missing.\n")
 
-    quiet=not(verbose)
-    synteny=not(skip_synteny)
+    synteny = not skip_synteny
     
     if len(annotation_files) < 2:
         raise typer.BadParameter(f"At least 2 annotation-files must be provided.")

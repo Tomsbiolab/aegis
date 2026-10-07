@@ -29,18 +29,31 @@ def main(
     motif_length: Annotated[int, typer.Argument(
         help="Actual length of motif."
     )],
-    header: Annotated[bool, typer.Option(
-        "-H", "--header", help="Use this flag to indicate the presence of a header in input genelist file.",
-        rich_help_panel=PROMOTER_PANEL,
-    )] = False,
+    # 1. Promoter & Motif Options
     promoter_size: Annotated[int, typer.Option(
-        "-ps", "--promoter-size", help=f"Only applies if promoter included in '-f'. Promoter size in bp upstream of TSS or ATG depending on '-p'.",
+        "-ps", "--promoter-size", help="Size of the promoter region in base pairs (bp) upstream of TSS or ATG depending on --promoter-type (default: 2000).",
         rich_help_panel=PROMOTER_PANEL,
     )] = 2000,
     promoter_type: Annotated[str, typer.Option(
-        "-p", "--promoter-type", help=f"Only applies if promoter included in '-f'. Defines the reference point for the promoter regions of '-ps' size. 'standard': Generated upstream of the transcript's start site (TSS); 'upstream_ATG': Generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard; 'standard_plus_up_to_ATG': Generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.",
+        "-p", "--promoter-type", help="Reference point for promoter extraction: 'standard' (upstream of TSS), 'upstream_ATG' (upstream of main CDS ATG codon), or 'standard_plus_up_to_ATG' (upstream of TSS plus 5' UTR up to start codon).",
         rich_help_panel=PROMOTER_PANEL,
     )] = "standard",
+
+    # 2. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
     annotation_name: Annotated[str, typer.Option(
         "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
@@ -57,30 +70,30 @@ def main(
         "--motif-tag", help="Motif tag/name to improve output description, e.g. '{TF}_{motif_name}'.",
         rich_help_panel=IO_PANEL,
     )] = "query_motif",
+    header: Annotated[bool, typer.Option(
+        "-H", "--header", help="Indicate the presence of a column header in the input genelist file.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output directory.",
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
+
+    # 4. Execution / Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Enable detailed console output.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
     Scans a set of “query” genes to locate all occurrences of a specified DNA motif within their upstream promoter regions.
     """
+    if verbose:
+        quiet = False
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]

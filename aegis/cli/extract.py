@@ -20,6 +20,7 @@ from .utils import (
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
     CDS_PANEL,
+    OUTPUT_HEADER_PANEL,
 )
 
 FEATURES = ["gene", "transcript", "CDS", "protein", "promoter"]
@@ -48,27 +49,8 @@ def main(
     genome_file: Annotated[str, typer.Argument(
         help="Path to the input genome FASTA file."
     )],
-    genome_name: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/features/",
-    feature_id: Annotated[str, typer.Option(
-        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "feature",
-    detailed_headers: Annotated[bool, typer.Option(
-        "-dh", "--detailed-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
 
+    # 1. Feature Extraction Options
     features: Annotated[List[str], typer.Option(
         "-f", "--features", help=f"Feature type(s) to extract, as a comma-separated list. Available options: {', '.join(FEATURES)}.",
         callback=split_callback,
@@ -84,7 +66,7 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = ["all", "main"],
     rna_classes: Annotated[List[str], typer.Option(
-        "-r", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
+        "-b", "-r", "--biotypes", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback,
         rich_help_panel=EXTRACTION_PANEL,
     )] = [],
@@ -127,6 +109,7 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
 
+    # 2. CDS Inference & Reworking
     infer_missing_CDSs: Annotated[bool, typer.Option(
         "--infer-missing-CDSs", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
         rich_help_panel=CDS_PANEL,
@@ -180,6 +163,17 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
+    # 3. Output Sequence Header Options
+    feature_id: Annotated[str, typer.Option(
+        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
+        rich_help_panel=OUTPUT_HEADER_PANEL,
+    )] = "feature",
+    detailed_headers: Annotated[bool, typer.Option(
+        "-dh", "--detailed-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
+        rich_help_panel=OUTPUT_HEADER_PANEL,
+    )] = False,
+
+    # 4. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
         rich_help_panel=FASTA_HEADER_PANEL,
@@ -193,6 +187,7 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
+    # 5. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -202,8 +197,27 @@ def main(
     chloroplast_chroms: ChloroplastChromsOption = [],
     initiator_methionine: InitiatorMethionineOption = "canonical",
 
+    # 6. Input / Output Options
+    genome_name: Annotated[str, typer.Option(
+        "-g", "-gn", "--genome-name", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    annotation_name: Annotated[str, typer.Option(
+        "-a", "-an", "--annotation-name", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/features/",
+
+    # 7. Execution / Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Enable detailed console output.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
@@ -217,6 +231,8 @@ def main(
     and ID labeling. Promoter generation supports multiple strategies,
     including upstream of TSS or ATG.
     """
+    if verbose:
+        quiet = False
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs

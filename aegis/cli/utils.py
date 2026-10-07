@@ -34,11 +34,65 @@ def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:
 # ---------------------------------------------------------------------------
 # Standard Rich help panel titles used across the AEGIS CLI suite
 # ---------------------------------------------------------------------------
-IO_PANEL = "Input / Output Options"
-EXEC_PANEL = "Execution / Debugging"
-FASTA_HEADER_PANEL = "FASTA Header Options"
-GENETIC_CODES_PANEL = "Genetic Codes"
+CORE_PANEL = "Core Command Options"
+FEATURE_PANEL = "Feature & Model Options"
+FILTER_PANEL = "Filtering Options"
+BIOTYPE_PANEL = "Biotype & RNA Filtering"
 CDS_PANEL = "CDS Inference & Reworking"
+COORDS_PANEL = "Coordinate & Phase Options"
+CLEANING_PANEL = "GFF Cleaning & Sanitisation"
+FORMATTING_PANEL = "Feature & Attribute Formatting"
+FORMAT_PANEL = "Format Options"
+RENAME_PANEL = "Feature ID Renaming"
+SUBFEATURE_PANEL = "Subfeature & Model Options"
+SPLIT_PANEL = "Split Criteria"
+SUBSET_PANEL = "Subset Criteria"
+SUMMARY_PANEL = "Summary & Comparison Options"
+GENOME_COMP_PANEL = "Summary & Comparison Options"
+OVERLAP_PANEL = "Overlap Criteria"
+MERGE_PANEL = "Overlap & Merging Options"
+PROMOTER_PANEL = "Promoter & Motif Options"
+SYMBOLS_PANEL = "Gene Symbol Options"
+PRUNE_PANEL = "Pruning Options"
+ORTHOLOGY_PANEL = "Orthology Tool Options"
+BLAST_PANEL = "BLASTp Options"
+GENOME_CLEANING_PANEL = "Genome Cleaning & Renaming"
+
+FASTA_HEADER_PANEL = "Reference FASTA Options"
+OUTPUT_HEADER_PANEL = "Output Sequence Header Options"
+GENETIC_CODES_PANEL = "Genetic Codes"
+IO_PANEL = "Input / Output Options"
+COLUMNS_PANEL = "Output Columns"
+EXEC_PANEL = "Execution / Debugging"
+
+
+def detect_file_type(filepath: str) -> str:
+    """Detect whether a file is FASTA or GFF/GTF annotation."""
+    import os
+    if not filepath or not os.path.exists(filepath):
+        return "unknown"
+    fasta_exts = (".fa", ".fasta", ".fna", ".fas", ".fa.gz", ".fasta.gz", ".fna.gz")
+    annot_exts = (".gff", ".gff3", ".gtf", ".gff.gz", ".gff3.gz", ".gtf.gz")
+    lower = filepath.lower()
+    if lower.endswith(fasta_exts):
+        return "fasta"
+    if lower.endswith(annot_exts):
+        return "annotation"
+    try:
+        from ..utils.misc import open_file
+        with open_file(filepath, "rt", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    return "fasta"
+                if line.startswith("##") or "\t" in line:
+                    return "annotation"
+                break
+    except Exception:
+        pass
+    return "unknown"
 
 
 def taxonomy_callback(value: str) -> str:

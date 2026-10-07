@@ -10,9 +10,7 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome, Scaffold
 from ..utils.misc import open_file
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL
-
-SPLIT_PANEL = "Split Criteria"
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SPLIT_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -282,34 +280,6 @@ def main(
     file2: Annotated[str, typer.Argument(
         help="Optional second input file (genome FASTA or annotation GFF/GTF)."
     )] = "",
-    annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_file: Annotated[str, typer.Option(
-        "-g", "--genome", help="Path to the input genome FASTA file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/split/",
-    output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_split{tag}.gff3",
-    output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-name}_split{tag}.fasta",
     split_by: Annotated[Optional[list[str]], typer.Option(
         "-s", "--split-by", help="Tag(s) or pattern(s) to split by (e.g. 'A,B', 'A,;D,', 'A,,D,', or multiple -s A, -s D,).",
         rich_help_panel=SPLIT_PANEL,
@@ -352,12 +322,45 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
+    annotation_file: Annotated[str, typer.Option(
+        "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file: Annotated[str, typer.Option(
+        "-g", "--genome", help="Path to the input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/split/",
+    output_annot_file: Annotated[str, typer.Option(
+        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_split{tag}.gff3",
+    output_genome_file: Annotated[str, typer.Option(
+        "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-name}_split{tag}.fasta",
+
     dry_run: Annotated[bool, typer.Option(
         "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
     write_empty_other: Annotated[bool, typer.Option(
         "--write-empty-other", help="Write '_split_other' files even if no scaffolds are unassigned.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
     quiet: Annotated[bool, typer.Option(
@@ -369,6 +372,8 @@ def main(
     Split an annotation (GFF/GTF) and/or genome assembly (FASTA) into distinct files
     based on genomic feature names, descriptions, haplotypes, or regex patterns.
     """
+    if verbose:
+        quiet = False
     # 1. Resolve input files (positional vs options)
     pos_files = [f for f in (file1, file2) if f]
 

@@ -6,9 +6,7 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..genome import Genome, Scaffold
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL
-
-GENOME_COMP_PANEL = "Genome Comparison Options"
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SUMMARY_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -334,62 +332,49 @@ def main(
     genome_files: Annotated[List[str], typer.Argument(
         help="Path to one or more input genome FASTA file(s)."
     )],
-    genome_names: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to output TSV/CSV file.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-
     reference: Annotated[bool, typer.Option(
         "-r", "--reference", help="Use first genome as reference (or specified via --ref-genome) and report relative differences (showing '= ref' for identical features/metrics).",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     ref_genome: Annotated[str, typer.Option(
         "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode).",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = "",
     diff_only: Annotated[bool, typer.Option(
         "--diff-only", help="Report only features and summary statistics where genomes differ from reference (automatically activates reference mode; hides rows that are '= ref').",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     include_all: Annotated[bool, typer.Option(
         "-a", "--all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     summary_only: Annotated[bool, typer.Option(
         "--summary-only", help="Report only assembly-level summary statistics without listing individual chromosomes.",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     contigs_only: Annotated[bool, typer.Option(
         "--contigs-only", "--scaffolds-only", help="Report only chromosome/scaffold statistics without the summary table.",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     chromosomes_only: Annotated[bool, typer.Option(
         "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs.",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     human_readable: Annotated[bool, typer.Option(
         "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb).",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     genome_size: Annotated[str, typer.Option(
         "-s", "--genome-size", help="Estimated/expected genome size (e.g. '135M', '1.2G', or '135000000') for calculating NG50, LG50, and auNG.",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = "",
     no_seq: Annotated[bool, typer.Option(
         "--no-seq", help="Disable sequence-level hash matching (rely on name and unequivocal size matching only).",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     sort_by: Annotated[str, typer.Option(
         "--sort-by", help="Sort order for chromosomes: 'name' (natural sort, default), 'size' (descending size), or 'order' (FASTA order).",
-        rich_help_panel=GENOME_COMP_PANEL,
+        rich_help_panel=SUMMARY_PANEL,
     )] = "name",
 
     header_id_tag: Annotated[str, typer.Option(
@@ -405,6 +390,23 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
+    genome_names: Annotated[str, typer.Option(
+        "-g", "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to output TSV/CSV file.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Output directory if output file name is not explicitly specified.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Suppress terminal output (useful when exporting to file).",
         rich_help_panel=EXEC_PANEL,
@@ -413,6 +415,8 @@ def main(
     """
     Summarise and compare chromosome sizes and assembly statistics for one or more genomes.
     """
+    if verbose:
+        quiet = False
     if not genome_files:
         typer.echo("Error: At least one genome FASTA file must be provided.", err=True)
         raise typer.Exit(code=1)

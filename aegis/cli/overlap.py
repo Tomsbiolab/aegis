@@ -18,54 +18,59 @@ def main(
     annotation_files: Annotated[List[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file(s) associated to the same genome assembly. Input only one to measure gene overlaps within a single annotation, input several to compare between annotation files."
     )],
+    # 1. Overlap Criteria
+    overlap_threshold: Annotated[int, typer.Option(
+        "-ot", "--overlap-threshold", help="Select the required overlap threshold to report a gene-id pair match (default: 6). Increase for more stringent comparisons, or decrease for more extensive reporting.",
+        rich_help_panel=OVERLAP_PANEL,
+    )] = 6,
+    include_NAs: Annotated[bool, typer.Option(
+        "-na", "--include-NAs", help="Whether to include unmapped / non-overlapping gene IDs in the output table.",
+        rich_help_panel=OVERLAP_PANEL,
+    )] = False,
+    simple: Annotated[bool, typer.Option(
+        "-s", "--simple", help="Whether to remove percentage overlap details at different feature levels for a simplified output table.",
+        rich_help_panel=OVERLAP_PANEL,
+    )] = False,
+
+    # 2. Input / Output Options
     annotation_names: Annotated[List[str], typer.Option(
-        "-a", "-an", "--annotation-names", "--annotation-name", help="Annotation versions, names or tags. Provide them in the same number and order as the corresponding annotation files, separated by commas. e.g. name1,name2",
+        "-a", "-an", "--annotation-names", "--annotation-name", help="Annotation versions, names or tags. Provide in the same order as annotation files, separated by commas.",
         callback=split_callback,
         rich_help_panel=IO_PANEL,
     )] = ["{annotation-filename(s)}"],
+    reference_annotation: Annotated[str, typer.Option(
+        "-r", "--reference-annotation", help="Select a single annotation (by name or filename) to use as reference. Only matches to/from this annotation are reported.",
+        rich_help_panel=IO_PANEL,
+    )] = "None",
+    original_annotation_files: Annotated[List[str], typer.Option(
+        "--original-annotation-files", help="Optional original annotation files before coordinate transfer / liftover to evaluate conservation of synteny.",
+        callback=split_callback,
+        rich_help_panel=IO_PANEL,
+    )] = [],
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output directory.",
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_filetag: Annotated[str, typer.Option(
-        "-t", "--output-filetag", "--filetag", help="Optional output filetag prefix to prevent auto-naming based on annotation names, specially useful when comparing several annotations.",
+        "-o", "-t", "--output-file", "--output-filetag", "--filetag", help="Output file prefix/name.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name(s)}",
-    overlap_threshold: Annotated[int, typer.Option(
-        "-o", "--overlap-threshold", help="Select the required overlap threshold to report a gene-id pair match. The default value of 6 is expected to result in a valid set of id equivalences between annotation files. Increase it for more stringent comparisons, or decrease it for more extensive reporting of overlaps.",
-        rich_help_panel=OVERLAP_PANEL,
-    )] = 6,
-    include_NAs: Annotated[bool, typer.Option(
-        "-na", "--include-NAs", help="Whether to include NAs in output file, i.e. whether gene ids without overlaps are listed or not.",
-        rich_help_panel=OVERLAP_PANEL,
-    )] = False,
-    simple: Annotated[bool, typer.Option(
-        "-s", "--simple", help="Whether to remove percentage overlap details at different feature levels for a more simple output table.",
-        rich_help_panel=OVERLAP_PANEL,
-    )] = False,
-    original_annotation_files: Annotated[List[str], typer.Option(
-        "--original-annotation-files", help="Should some of the annotations be a result of a liftover or coordinate transfer, you can optionally provide a list of the original files before the transfer, separated by commas. If at least 2 annotation files are being compared, conservation of synteny will be calculated wherever possible based on gene order before/after transfer. These original annotation files must be in the same number and order as the corresponding annotation files. Use NA as a placemarker for annotation files without an original annotation file. e.g. '-t original_file_1,NA,original_file_3'",
-        callback=split_callback,
-        rich_help_panel=IO_PANEL,
-    )] = [],
-    reference_annotation: Annotated[str, typer.Option(
-        "-r", "--reference-annotation", help="Select a single annotation, by providing its name/tag or filename, to use as a reference. Only matches to and from this annotation will be reported. Otherwise matches are reported between all annotations.",
-        rich_help_panel=IO_PANEL,
-    )] = "None",
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
+
+    # 3. Execution / Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Verbose logging, useful if encountering a problem or error.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
     Calculates degree of gene overlaps between annotations associated to the same assembly and results in a gene-id equivalence table. If only one annotation file is provided as input, gene overlaps within the same annotation will be measured.
     """
-
-    quiet = not verbose or quiet
+    if verbose:
+        quiet = False
     detailed_output = not simple
 
     if len(annotation_files) > 1 and annotation_files[-1].lower() in ("true", "false"):

@@ -4,48 +4,22 @@ import os
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback, IO_PANEL, EXEC_PANEL
+from .utils import split_callback, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 VALID_FEATURES: list[str] = ["gene", "transcript", "CDS", "exon", "UTR"]
-RENAME_PANEL = "Feature ID Renaming"
-SUBFEATURE_PANEL = "Subfeature & Model Options"
 
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation file.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_renamed.gff3",
     rename_features: Annotated[list[str], typer.Option(
         "-f", "--features", "--rename-features", help=f"Choose what feature levels will have ids renamed, separated by commas. Choose from: {VALID_FEATURES}.",
         callback=split_callback,
         rich_help_panel=RENAME_PANEL,
     )] = ["transcript", "CDS", "exon", "UTR"],
-    keep_existing_ids_if_derived_from_base_id: Annotated[bool, typer.Option(
-        "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-    keep_numbering: Annotated[bool, typer.Option(
-        "--keep-numbering", help="Try to retain original gene subfeature id numbering. I.e. rename a transcript id from 'gene_id_t004' to 'gene_id_T.4' without losing the original transcript number.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-    unique_cds_entry_ids: Annotated[bool, typer.Option(
-        "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False, 
     prefix: Annotated[str, typer.Option(
         "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. swich from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
         rich_help_panel=RENAME_PANEL,
@@ -71,7 +45,7 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = 3,
     strip_gene_tag: Annotated[bool, typer.Option(
-        "--remove-gene-tag", help="Some gffs have a flanking literal 'gene' tag. Use this flag to remove it. e.g. 'gene-Solyc00g174340' would become just 'Solyc00g174340'",
+        "--remove-gene-tag", "--strip-gene-tags", help="Some gffs have a flanking literal 'gene' tag. Use this flag to remove it. e.g. 'gene-Solyc00g174340' would become just 'Solyc00g174340'",
         rich_help_panel=RENAME_PANEL,
     )] = False,
     remove_point_suffix: Annotated[bool, typer.Option(
@@ -82,6 +56,18 @@ def main(
         "--gene-id-correspondences", help="Whether to produce a tsv file with correspondences between old and renamed gene ids '{annotation-name}_renamed_correspondences.tsv'.",
         rich_help_panel=RENAME_PANEL,
     )] = False,
+    keep_existing_ids_if_derived_from_base_id: Annotated[bool, typer.Option(
+        "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    keep_numbering: Annotated[bool, typer.Option(
+        "--keep-numbering", help="Try to retain original gene subfeature id numbering. I.e. rename a transcript id from 'gene_id_t004' to 'gene_id_T.4' without losing the original transcript number.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    unique_cds_entry_ids: Annotated[bool, typer.Option(
+        "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=SUBFEATURE_PANEL,
@@ -89,6 +75,22 @@ def main(
     no_collapse_CDSs: Annotated[bool, typer.Option(
         "--no-collapse-CDSs", help="Do not merge overlapping/adjacent CDS segments.",
         rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    annotation_name: Annotated[str, typer.Option(
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation file.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_renamed.gff3",
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
@@ -98,6 +100,9 @@ def main(
     """
     Rename feature ids of an annotation file.
     """
+
+    if verbose:
+        quiet = False
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_CDSs

@@ -475,6 +475,7 @@
         - `def main(`
       - utils.py
         - `def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:`
+        - `def detect_file_type(filepath: str) -> str:`
         - `def taxonomy_callback(value: str) -> str:`
         - `def genetic_code_callback(value: Optional[int]) -> Optional[int]:`
         - `def initiator_methionine_callback(value: str) -> str:`

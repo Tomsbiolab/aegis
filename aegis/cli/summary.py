@@ -18,9 +18,8 @@ from .utils import (
     IO_PANEL,
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
+    SUMMARY_PANEL,
 )
-
-SUMMARY_PANEL = "Summary & Comparison Options"
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -161,31 +160,6 @@ def main(
     files: Annotated[List[str], typer.Argument(
         help="Path to one or more annotation GFF/GTF file(s). (Optional: a single genome FASTA can be provided as the last argument, or explicitly via -g/--genome)."
     )],
-    genome: Annotated[Optional[List[str]], typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
-        rich_help_panel=IO_PANEL,
-    )] = None,
-    annotation_names: Annotated[str, typer.Option(
-        "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames).",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag (comma-separated if multiple genomes).",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to output summary table (TSV/CSV).",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder for stats and reports.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/stats/",
-    plots: Annotated[bool, typer.Option(
-        "--plots", help="Export distribution barplots and pie charts into output directory.",
-        rich_help_panel=IO_PANEL,
-    )] = False,
-
     reference: Annotated[bool, typer.Option(
         "-r", "--reference", help="Use first annotation as reference (or specified via --ref-annotation) and report relative differences.",
         rich_help_panel=SUMMARY_PANEL,
@@ -234,6 +208,35 @@ def main(
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
 
+    genome: Annotated[Optional[List[str]], typer.Option(
+        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
+        rich_help_panel=IO_PANEL,
+    )] = None,
+    annotation_names: Annotated[str, typer.Option(
+        "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames).",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag (comma-separated if multiple genomes).",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to output summary table (TSV/CSV).",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder for stats and reports.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/stats/",
+    plots: Annotated[bool, typer.Option(
+        "--plots", help="Export distribution barplots and pie charts into output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
+
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -263,6 +266,9 @@ def main(
     if summary_only and contigs_only:
         typer.echo("Error: Cannot specify both --summary-only and --contigs-only.", err=True)
         raise typer.Exit(code=1)
+
+    if verbose:
+        quiet = False
 
     # 1. Disambiguate positional arguments vs genome file
     raw_genome_files: list[str] = []

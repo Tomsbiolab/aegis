@@ -18,37 +18,16 @@ def main(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file. If provided, it will be processed to match the cleaned genome."
     )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output files will be saved.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_genome_file: Annotated[str, typer.Option(
-        "-og", "-o", "--output-genome-file", "--output-file", help="Path to the output genome filename, with or without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-name}_tidy.fasta",
-    output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_tidy.gff3",
-
     remove_scaffolds: Annotated[bool, typer.Option(
         "--remove-scaffolds", help="Enable the removal of scaffolds and unplaced contigs from the genome.",
         rich_help_panel=GENOME_CLEANING_PANEL,
     )] = False,
     remove_organelles: Annotated[bool, typer.Option(
-        "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes. Only effective if --remove-scaffolds is also enabled.",
+        "--remove-organelles", help="Remove mitochondrial and chloroplast chromosomes from the genome.",
         rich_help_panel=GENOME_CLEANING_PANEL,
     )] = False,
     remove_chr00: Annotated[bool, typer.Option(
-        "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unknown chromosomes. Only effective if --remove-scaffolds is also enabled.",
+        "--remove-chr00", help="Remove chromosomes named 'chr00' or similar, often representing unplaced/unknown chromosomes.",
         rich_help_panel=GENOME_CLEANING_PANEL,
     )] = False,
     rename_map: Annotated[str, typer.Option(
@@ -90,8 +69,33 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
 
+    genome_name: Annotated[str, typer.Option(
+        "-g", "-gn", "--genome-name", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    annotation_name: Annotated[str, typer.Option(
+        "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output files will be saved.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_genome_file: Annotated[str, typer.Option(
+        "-og", "-o", "--output-genome-file", "--output-file", help="Path to the output genome filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-name}_tidy.fasta",
+    output_annot_file: Annotated[str, typer.Option(
+        "-oa", "--output-annot-file", help="Path to the output annotation filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_tidy.gff3",
+
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Enable detailed console output.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
@@ -142,8 +146,18 @@ def main(
 
         chromosome_equivalences = g.rename_features_from_dic(rename_map=chromosome_rename_map)
 
+    if verbose:
+        quiet = False
+
     if remove_scaffolds:
-        g.remove_scaffolds(remove_00=remove_chr00, remove_organelles=remove_organelles)
+        g.remove_scaffolds(remove_00=remove_chr00)
+    elif remove_chr00:
+        new_scaffolds = {s_id: sc.copy() for s_id, sc in g.scaffolds.items() if not sc.unknown_chromosome}
+        g.scaffolds = new_scaffolds
+        g.update()
+
+    if remove_organelles:
+        g.remove_organelles()
 
 
     if output_genome_file == "{genome-name}_tidy.fasta":

@@ -15,74 +15,84 @@ def main(
     annotation_file: Annotated[str, typer.Argument(
         help="Path to the input annotation GFF/GTF file."
     )],
-    input_id_file: Annotated[str, typer.Argument(
-        help="Input file with list of ids, one per line."
+    target_ids: Annotated[str, typer.Argument(
+        help="Input file with list of IDs (one per line) OR a comma-separated list of IDs to remove."
     )],
+
+    # 1. Pruning Options
+    feature_type: Annotated[str, typer.Option(
+        "-f", "--feature-type", "--feature", help=f"Feature level to be removed based on input IDs. Choose from {features}.",
+        rich_help_panel=PRUNE_PANEL,
+    )] = "gene",
+
+    # 2. Input / Output Options
     annotation_name: Annotated[str, typer.Option(
         "-a", "-an", "--annotation-name", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-file}",
-    feature_type: Annotated[str, typer.Option(
-        "-f", "--feature-type", "--feature", help=f"Identify feature level to be removed, based on input ids. Choose from {features}.",
-        rich_help_panel=PRUNE_PANEL,
-    )] = "gene",
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output directory.",
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
+        "-o", "--output-file", help="Path to the output annotation filename, with or without extension.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_pruned",
+
+    # 3. Execution / Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Enable detailed console output.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
 ):
     """
-    Remove a list of ids, from a file, from the current annotation.
+    Remove a list of IDs (from a file or comma-separated argument) from an annotation.
     """
+    if verbose:
+        quiet = False
+
+    if feature_type not in features:
+        raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
     os.makedirs(output_dir, exist_ok=True)
-
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    subfolder = (output_dir == "./aegis_output/")
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 
-    if output_file == "{annotation-name}.{ext}":
-        output_file = f"{annotation_name}"
-
-    if feature_type not in features:
-        raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
-
-    if output_file == "{annotation-name}_pruned":
-        output_file = f"{annotation_name}_pruned"
-
     input_ids = set()
-   
-    encoding = read_file_with_fallback(input_id_file)
+    if os.path.isfile(target_ids):
+        encoding = read_file_with_fallback(target_ids)
+        with open(target_ids, encoding=encoding) as f_in:
+            for line in f_in:
+                if line.startswith("#"):
+                    continue
+                clean_id = line.strip()
+                if clean_id:
+                    input_ids.add(clean_id)
+    else:
+        for item in target_ids.split(","):
+            clean_id = item.strip()
+            if clean_id:
+                input_ids.add(clean_id)
 
-    f_in = open(input_id_file, encoding=encoding)
-    for line in f_in:
-        if line.startswith("#"):
-            continue
-        id = line.strip()
-        input_ids.add(id)
-    f_in.close()
+    if not input_ids:
+        raise typer.BadParameter("No valid IDs provided to prune.")
 
     if feature_type == "gene":
         annotation.remove_genes(to_remove=input_ids, override_rescue=True, quiet=quiet)
-    
     else:
         annotation.remove_transcripts(to_remove=input_ids, remove_genes_accordingly=True, quiet=quiet)
 
-    output_file += ".gff3"
+    if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
+        output_file += ".gff3"
+
     annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
 
 
