@@ -35,12 +35,10 @@ def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:
 # Standard Rich help panel titles used across the AEGIS CLI suite
 # ---------------------------------------------------------------------------
 EXTRACTION_PANEL = "Feature Extraction Options"
-FEATURE_PANEL = "Feature & Model Options"
+FEATURE_PANEL = "Feature & Biotype Filtering"
 FILTER_PANEL = "Filtering Options"
 MODEL_PANEL = "Structural Model Sanitisation"
 ATTR_PANEL = "Attribute & Metadata Formatting"
-CLEANING_PANEL = "Structural Model Sanitisation"
-FORMATTING_PANEL = "Attribute & Metadata Formatting"
 CDS_PANEL = "CDS Inference & Reworking"
 COORDS_PANEL = "Coordinate & Phase Options"
 FORMAT_PANEL = "Format Conversion Options"
@@ -60,7 +58,7 @@ GENOME_CLEANING_PANEL = "Genome Cleaning & Renaming"
 
 FASTA_HEADER_PANEL = "Reference FASTA Options"
 OUTPUT_HEADER_PANEL = "Output Sequence Header Options"
-OUTPUT_FILTER_PANEL = "Output & Filtering Options"
+OUTPUT_FILTER_PANEL = "Result Filtering & Table Formatting"
 GENETIC_CODES_PANEL = "Genetic Codes"
 IO_PANEL = "Input / Output Options"
 COLUMNS_PANEL = "Output Columns"

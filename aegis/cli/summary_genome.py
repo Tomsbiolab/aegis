@@ -330,8 +330,8 @@ def render_terminal_table(headers: list[str], rows: list[list[str]], summary_row
 @app.command()
 def main(
     genome_files: Annotated[List[str], typer.Argument(
-        help="Path to one or more input genome FASTA file(s)."
-    )],
+        help="Path to one or more input genome FASTA file(s) (or provide via -g/--genomes)."
+    )] = [],
     reference: Annotated[bool, typer.Option(
         "-r", "--reference", help="Use first genome as reference (or specified via --ref-genome) and report relative differences (showing '= ref' for identical features/metrics).",
         rich_help_panel=SUMMARY_PANEL,
@@ -344,10 +344,6 @@ def main(
         "--diff-only", help="Report only features and summary statistics where genomes differ from reference (automatically activates reference mode; hides rows that are '= ref').",
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
-    include_all: Annotated[bool, typer.Option(
-        "-A", "--all", "--include-all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
-        rich_help_panel=SUMMARY_PANEL,
-    )] = False,
     summary_only: Annotated[bool, typer.Option(
         "--summary-only", help="Report only assembly-level summary statistics without listing individual chromosomes.",
         rich_help_panel=SUMMARY_PANEL,
@@ -358,6 +354,10 @@ def main(
     )] = False,
     chromosomes_only: Annotated[bool, typer.Option(
         "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs.",
+        rich_help_panel=SUMMARY_PANEL,
+    )] = False,
+    include_all: Annotated[bool, typer.Option(
+        "-A", "--all", "--include-all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
     human_readable: Annotated[bool, typer.Option(
@@ -377,7 +377,21 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = "name",
 
-    # 2. Input / Output Options
+    # 2. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
     genome_files_opt: Annotated[Optional[List[str]], typer.Option(
         "-g", "--genomes", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Overrides positional arguments if provided.",
         rich_help_panel=IO_PANEL,
@@ -395,27 +409,13 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/stats/",
 
-    # 3. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
     # 4. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Suppress terminal output (useful when exporting to file).",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
@@ -424,8 +424,18 @@ def main(
     """
     if verbose:
         quiet = False
+
+    if genome_files_opt:
+        extra_genomes = []
+        for g_arg in genome_files_opt:
+            for part in g_arg.split(","):
+                part = part.strip()
+                if part:
+                    extra_genomes.append(part)
+        genome_files = extra_genomes + (genome_files or [])
+
     if not genome_files:
-        typer.echo("Error: At least one genome FASTA file must be provided.", err=True)
+        typer.echo("Error: At least one genome FASTA file must be provided. Provide as positional argument or via -g/--genomes.", err=True)
         raise typer.Exit(code=1)
 
     if summary_only and contigs_only:

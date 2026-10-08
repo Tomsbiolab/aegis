@@ -93,7 +93,7 @@ def main(
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to the output annotation filename, with or without extension.",
         rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_filtered",
+    )] = "{annotation-name}_filtered.gff3",
 
     # 3. Execution / Debugging
     quiet: Annotated[bool, typer.Option(

@@ -64,7 +64,7 @@ def main(
         - 'unique': Keep only one copy of each unique protein/CDS sequence across the entire output.""",
         callback=split_callback,
         rich_help_panel=EXTRACTION_PANEL,
-    )] = ["all", "main"],
+    )] = ["all"],
     rna_classes: Annotated[List[str], typer.Option(
         "-b", "-r", "--biotypes", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback,
@@ -109,33 +109,7 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
 
-    # 2. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", "--annotation-names", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", "--genome-names", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/features/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", "--output-prefix", help="Optional output filename or prefix.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-
-    # 3. Output Sequence Header Options
+    # 2. Output Sequence Header Options
     feature_id: Annotated[str, typer.Option(
         "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
         rich_help_panel=OUTPUT_HEADER_PANEL,
@@ -145,21 +119,7 @@ def main(
         rich_help_panel=OUTPUT_HEADER_PANEL,
     )] = False,
 
-    # 4. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
-    # 5. CDS Inference & Reworking
+    # 3. CDS Inference & Reworking
     infer_missing_cds: Annotated[bool, typer.Option(
         "--infer-missing-cds", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
         rich_help_panel=CDS_PANEL,
@@ -201,7 +161,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
     polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates).",
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ [default: disabled; preserves original coordinates].",
         rich_help_panel=CDS_PANEL,
     )] = False,
     recalculate_phases: Annotated[bool, typer.Option(
@@ -213,7 +173,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 6. Genetic Codes
+    # 4. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -222,6 +182,46 @@ def main(
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
     initiator_methionine: InitiatorMethionineOption = "canonical",
+
+    # 5. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 6. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="A name or tag for the annotation version (e.g., 'Araport11'). [default: a name derived from the annotation filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="A name or tag for the genome assembly (e.g., 'TAIR10'). [default: a name derived from the genome FASTA filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the directory where output FASTA files will be saved.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/features/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", "--output-prefix", help="Optional output filename or prefix.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
 
     # 7. Execution & Debugging
     quiet: Annotated[bool, typer.Option(

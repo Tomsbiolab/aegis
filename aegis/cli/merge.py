@@ -31,7 +31,22 @@ def main(
         rich_help_panel=MERGE_PANEL,
     )] = 100,
 
-    # 2. Input / Output Options
+    # 2. Subfeature & Model Options
+    skip_renaming: Annotated[bool, typer.Option(
+        "--skip-renaming",
+        help="Skip renaming of subgene features (transcript, CDS, exon, UTRs).",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    no_collapse_exons: Annotated[bool, typer.Option(
+        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    no_collapse_cds: Annotated[bool, typer.Option(
+        "--no-collapse-cds", help="Do not merge overlapping/adjacent CDS segments.",
+        rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
     annotation_files_opt: Annotated[List[str], typer.Option(
         "-a", "--annotations", "--annotation", "--annotation-files", "--annotation-file", "--annot",
         help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
@@ -53,28 +68,13 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "{annotation-names}.gff3",
 
-    # 3. Subfeature & Model Options
-    skip_renaming: Annotated[bool, typer.Option(
-        "--skip-renaming",
-        help="Skip renaming of subgene features (transcript, CDS, exon, UTRs).",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-    no_collapse_exons: Annotated[bool, typer.Option(
-        "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-    no_collapse_cds: Annotated[bool, typer.Option(
-        "--no-collapse-cds", help="Do not merge overlapping/adjacent CDS segments.",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
-
     # 4. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):

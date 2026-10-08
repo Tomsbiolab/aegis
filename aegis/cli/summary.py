@@ -159,7 +159,7 @@ def render_terminal_table(headers: list[str], rows: list[list[str]], section_tit
 def main(
     files: Annotated[List[str], typer.Argument(
         help="Path to one or more annotation GFF/GTF file(s). (Optional: a single genome FASTA can be provided as the last argument, or explicitly via -g/--genome)."
-    )],
+    )] = [],
     reference: Annotated[bool, typer.Option(
         "-r", "--reference", help="Use first annotation as reference (or specified via --ref-annotation) and report relative differences.",
         rich_help_panel=SUMMARY_PANEL,
@@ -193,7 +193,28 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
 
-    # 2. Input / Output Options
+    # 2. Genetic Codes
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
+
+    # 3. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 4. Input / Output Options
     annotation_files_opt: Annotated[Optional[List[str]], typer.Option(
         "-a", "--annotations", "--annotation", "--annotation-file", "--annotation-files", "--annot", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
         rich_help_panel=IO_PANEL,
@@ -223,34 +244,13 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = False,
 
-    # 3. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
-
-    # 4. Genetic Codes
-    taxonomy: TaxonomyOption = "plant",
-    genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
-    mito_code: MitoCodeOption = None,
-    plastid_code: PlastidCodeOption = None,
-
     # 5. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):

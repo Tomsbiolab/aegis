@@ -35,7 +35,7 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = 10,
     sep: Annotated[str, typer.Option(
-        "--separator", help="Choose a new gene id separator to include within the new gene id structure. e.g. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}.{suffix}' instead of '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}_{suffix}'; See --prefix option.",
+        "--sep", "--separator", help="Choose a new gene id separator to include within the new gene id structure. e.g. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}.{suffix}' instead of '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}_{suffix}'; See --prefix option.",
         rich_help_panel=RENAME_PANEL,
     )] = "_",
     g_id_digits: Annotated[int, typer.Option(
@@ -59,25 +59,7 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = False,
 
-    # 2. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation file.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_renamed.gff3",
-
-    # 3. Subfeature & Model Options
+    # 2. Subfeature & Model Options
     keep_existing_ids_if_derived_from_base_id: Annotated[bool, typer.Option(
         "--rename-minimal", help="Only rename a gene subfeature id if it does not include the parental 'gene_id' base. I.e. leave features such as 'gene_id_t001' untouched but rename 't001' as it does not contain the parental gene_id.",
         rich_help_panel=SUBFEATURE_PANEL,
@@ -99,13 +81,31 @@ def main(
         rich_help_panel=SUBFEATURE_PANEL,
     )] = False,
 
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation file.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_renamed.gff3",
+
     # 4. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):

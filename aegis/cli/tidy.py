@@ -42,60 +42,7 @@ def main(
         help="Optional path to genome FASTA file (or provide via -g/--genome). Required when using --rework-all-cds or --infer-missing-cds."
     )] = "",
 
-    # 1. Feature & Biotype Filtering
-    main_only: Annotated[bool, typer.Option(
-        "-m", "--main", help="Whether to include only a main transcript and main CDS per gene.",
-        rich_help_panel=FEATURE_PANEL,
-    )] = False,
-    strip_utrs: Annotated[bool, typer.Option(
-        "--strip-utrs", "--no-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
-        rich_help_panel=FEATURE_PANEL,
-    )] = False,
-    just_genes: Annotated[bool, typer.Option(
-        "--just-genes", help="Whether to only include gene level features.",
-        rich_help_panel=FEATURE_PANEL,
-    )] = False,
-    biotypes: Annotated[List[str], typer.Option(
-        "-b", "-r", "--biotypes", "--rna-classes", help="Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
-        callback=split_callback,
-        rich_help_panel=FEATURE_PANEL,
-    )] = [],
-    remove_genes_with_no_transcripts: Annotated[bool, typer.Option(
-        "--remove-genes-with-no-transcripts", help="Removes genes with no transcripts.",
-        rich_help_panel=FEATURE_PANEL,
-    )] = False,
-    remove_transcripts_with_no_exons: Annotated[bool, typer.Option(
-        "--remove-transcripts-with-no-exons", help="Removes transcripts with no exons.",
-        rich_help_panel=FEATURE_PANEL,
-    )] = False,
-
-    # 2. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_file_opt: Annotated[str, typer.Option(
-        "-g", "--genome", "--genomes", "--genome-file", help="Path to genome FASTA file. Overrides positional genome argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", "--genome-names", help="A name or tag for the genome assembly.",
-        rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_tidy.gff3",
-
-    # 3. Structural Model Sanitisation
+    # 1. Structural Model Sanitisation
     clean_features: Annotated[bool, typer.Option(
         "--clean-features", help="Removes non-standard features from a GFF for downstream compatibility.",
         rich_help_panel=MODEL_PANEL,
@@ -125,7 +72,7 @@ def main(
         rich_help_panel=MODEL_PANEL,
     )] = False,
 
-    # 4. Attribute & Metadata Formatting
+    # 2. Attribute & Metadata Formatting
     clean_attributes: Annotated[bool, typer.Option(
         "--clean-attributes", help="Removes non-standard attributes from a GFF.",
         rich_help_panel=ATTR_PANEL,
@@ -163,21 +110,34 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
 
-    # 5. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
+    # 3. Feature & Biotype Filtering
+    main_only: Annotated[bool, typer.Option(
+        "-m", "--main", help="Whether to include only a main transcript and main CDS per gene.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    strip_utrs: Annotated[bool, typer.Option(
+        "--strip-utrs", "--no-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    just_genes: Annotated[bool, typer.Option(
+        "--just-genes", help="Whether to only include gene level features.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    biotypes: Annotated[List[str], typer.Option(
+        "-b", "-r", "--biotypes", "--rna-classes", help="Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
+        callback=split_callback,
+        rich_help_panel=FEATURE_PANEL,
+    )] = [],
+    remove_genes_with_no_transcripts: Annotated[bool, typer.Option(
+        "--remove-genes-with-no-transcripts", help="Removes genes with no transcripts.",
+        rich_help_panel=FEATURE_PANEL,
+    )] = False,
+    remove_transcripts_with_no_exons: Annotated[bool, typer.Option(
+        "--remove-transcripts-with-no-exons", help="Removes transcripts with no exons.",
+        rich_help_panel=FEATURE_PANEL,
     )] = False,
 
-    # 6. CDS Inference & Reworking
+    # 4. CDS Inference & Reworking
     infer_missing_cds: Annotated[bool, typer.Option(
         "--infer-missing-cds", help="Detects and creates CDSs where missing, without overriding existing CDS annotations. Requires genome file.",
         rich_help_panel=CDS_PANEL,
@@ -219,7 +179,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
     skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing/--polish-coordinates", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead (default: false, coordinate polishing is active).",
+        "--skip-coordinate-polishing/--polish-coordinates", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
         rich_help_panel=CDS_PANEL,
     )] = False,
     recalculate_phases: Annotated[bool, typer.Option(
@@ -231,7 +191,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 7. Genetic Codes
+    # 5. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -239,6 +199,46 @@ def main(
     plastid_code: PlastidCodeOption = None,
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
+
+    # 6. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 7. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file_opt: Annotated[str, typer.Option(
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to genome FASTA file. Overrides positional genome argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="A name or tag for the genome assembly.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_tidy.gff3",
 
     # 8. Execution & Debugging
     quiet: Annotated[bool, typer.Option(

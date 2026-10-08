@@ -898,16 +898,13 @@
       - `def test_cli_subset_gene_cap_smoke(test_data_dir, tmp_path):`
       - `def test_cli_subset_chr_cap_smoke(test_data_dir, tmp_path):`
     - test_cli_suite.py
-      - `def test_all_cli_help(cmd):`
-      - `def test_list_subcommands_help():`
-      - `def test_motif_search_options():`
-      - `def test_prune_keep_option():`
-      - `def test_merge_overlap_options():`
-      - `def test_orthology_blast_panel():`
-      - `def test_list_options_suite():`
-      - `def test_filter_chromosomes_help():`
-      - `def test_summary_all_help():`
-      - `def test_motif_promoter_panel():`
+      - `def test_suite_panel_orders_all_tools():`
+      - `def test_suite_exec_panel_quiet_before_verbose():`
+      - `def test_extract_mode_default_and_help():`
+      - `def test_orthology_panel_title():`
+      - `def test_split_write_empty_other_panel():`
+      - `def test_separator_aliases():`
+      - `def test_motifs_positional_signature():`
     - test_cli_summary.py
       - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`

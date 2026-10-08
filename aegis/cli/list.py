@@ -15,51 +15,29 @@ def genes(
     )] = None,
 
     # 1. Filtering Options
+    coding_only: Annotated[bool, typer.Option(
+        "--coding-only", "--skip-non-coding", help="Whether to include only coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    non_coding_only: Annotated[bool, typer.Option(
+        "--non-coding-only", "--skip-coding", help="Whether to include only non-coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
     biotypes: Annotated[List[str], typer.Option(
         "-b", "-r", "--biotypes", "--rna-classes", help="Filter by transcript biotype (e.g. 'mRNA,lncRNA'). Comma-separated list.",
         callback=split_callback,
         rich_help_panel=FILTER_PANEL,
     )] = [],
-    skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", "--non-coding-only", help="Whether to skip coding genes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding genes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
     skip_pseudogenes: Annotated[bool, typer.Option(
         "--skip-pseudogenes", help="Whether to skip pseudogenes.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
-    skip_transposables: Annotated[bool, typer.Option(
-        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
+    skip_te: Annotated[bool, typer.Option(
+        "--skip-te", "--skip-transposables", help="Whether to skip transposable elements.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
 
-    # 2. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag. [default: derived from filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_genes_list.tsv",
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Tab is default.",
-        rich_help_panel=IO_PANEL,
-    )] = "\t",
-
-    # 3. Output Columns
+    # 2. Output Columns
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -85,13 +63,35 @@ def genes(
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
 
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_genes_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", "--separator", help="Separator for the output file. Tab is default.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
+
     # 4. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
@@ -119,6 +119,10 @@ def genes(
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
 
+    skip_coding = non_coding_only
+    skip_non_coding = coding_only
+    skip_transposables = skip_te
+
     annotation.export.gene_list(
         output_dir=output_dir,
         filename=output_file,
@@ -143,55 +147,33 @@ def transcripts(
     )] = None,
 
     # 1. Filtering Options
+    coding_only: Annotated[bool, typer.Option(
+        "--coding-only", "--skip-non-coding", help="Whether to include only coding transcripts.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    non_coding_only: Annotated[bool, typer.Option(
+        "--non-coding-only", "--skip-coding", help="Whether to include only non-coding transcripts.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    main_only: Annotated[bool, typer.Option(
+        "-m", "--main", "--only-main", "--main-only", help="Only list the primary / main transcript for each gene.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
     biotypes: Annotated[List[str], typer.Option(
         "-b", "-r", "--biotypes", "--rna-classes", help="Filter by transcript biotype (e.g. 'mRNA,lncRNA'). Comma-separated list.",
         callback=split_callback,
         rich_help_panel=FILTER_PANEL,
     )] = [],
-    main_only: Annotated[bool, typer.Option(
-        "-m", "--main", "--only-main", "--main-only", help="Only list the primary / main transcript for each gene.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_coding: Annotated[bool, typer.Option(
-        "--skip-coding", "--non-coding-only", help="Whether to skip coding transcripts.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_non_coding: Annotated[bool, typer.Option(
-        "--skip-non-coding", "--coding-only", help="Whether to skip non-coding transcripts.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
     skip_pseudogenes: Annotated[bool, typer.Option(
         "--skip-pseudogenes", help="Whether to skip pseudogenes.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
-    skip_transposables: Annotated[bool, typer.Option(
-        "--skip-transposables", "--skip-te", help="Whether to skip transposable elements.",
+    skip_te: Annotated[bool, typer.Option(
+        "--skip-te", "--skip-transposables", help="Whether to skip transposable elements.",
         rich_help_panel=FILTER_PANEL,
     )] = False,
 
-    # 2. Input / Output Options
-    annotation_file_opt: Annotated[str, typer.Option(
-        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag. [default: derived from filename]",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder.",
-        rich_help_panel=IO_PANEL,
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output filename, without extension.",
-        rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_transcripts_list.tsv",
-    sep: Annotated[str, typer.Option(
-        "-s", "--sep", help="Separator for the output file. Default is tab.",
-        rich_help_panel=IO_PANEL,
-    )] = "\t",
-
-    # 3. Output Columns
+    # 2. Output Columns
     gene_id: Annotated[bool, typer.Option(
         "--gene-id", "--gene", help="Include parent gene ID in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -217,13 +199,35 @@ def transcripts(
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
 
+    # 3. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag. [default: derived from filename]",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_transcripts_list.tsv",
+    sep: Annotated[str, typer.Option(
+        "-s", "--sep", "--separator", help="Separator for the output file. Default is tab.",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
+
     # 4. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
@@ -250,6 +254,10 @@ def transcripts(
 
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
+
+    skip_coding = non_coding_only
+    skip_non_coding = coding_only
+    skip_transposables = skip_te
 
     annotation.export.transcript_list(
         output_dir=output_dir,

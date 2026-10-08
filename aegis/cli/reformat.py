@@ -32,7 +32,21 @@ def main(
         rich_help_panel=FORMAT_PANEL,
     )] = False,
 
-    # 2. Input / Output Options
+    # 2. Coordinate & Phase Options
+    polish_coordinates: Annotated[bool, typer.Option(
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ [default: disabled; preserves original coordinates].",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    recalculate_phases: Annotated[bool, typer.Option(
+        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    reset_phases_zero: Annotated[bool, typer.Option(
+        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
         "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
@@ -49,20 +63,6 @@ def main(
         "-o", "--output-file", help="Path to the output annotation filename, with or without extension.",
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}.{ext}",
-
-    # 3. Coordinate & Phase Options
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ (default: False, preserves original coordinates).",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
-    recalculate_phases: Annotated[bool, typer.Option(
-        "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
-    reset_phases_zero: Annotated[bool, typer.Option(
-        "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
-        rich_help_panel=COORDS_PANEL,
-    )] = False,
 
     # 4. Execution / Debugging
     quiet: Annotated[bool, typer.Option(

@@ -135,11 +135,11 @@ def main(
 
     if len(annot_files) == 1:
         if output_filetag == "{annotation-name(s)}":
-            output_file = annotations[0].name
-        else:
+            output_file = f"{annotations[0].name}_self_overlaps_t{overlap_threshold}.csv"
+        elif output_filetag.lower().endswith(".csv") or output_filetag.lower().endswith(".tsv"):
             output_file = output_filetag
-            
-        output_file += f"_self_overlaps_t{overlap_threshold}.csv"
+        else:
+            output_file = f"{output_filetag}_self_overlaps_t{overlap_threshold}.csv"
 
         annotations[0].overlaps.detect()
         _ = annotations[0].overlaps.export(output_dir=output_dir, filename=output_file, verbose=detailed_output, overlap_threshold=overlap_threshold, export_self=True, save_csv=True, NAs=include_nas, quiet=quiet)
@@ -147,6 +147,8 @@ def main(
     elif len(annot_files) > 1:
         if output_filetag == "{annotation-name(s)}":
             output_filetag = ""
+        elif output_filetag.lower().endswith(".csv") or output_filetag.lower().endswith(".tsv"):
+            output_filetag = os.path.splitext(output_filetag)[0]
             
         export_group_equivalences(annotations, output_folder=output_dir, verbose=detailed_output, synteny=synteny, group_tag=output_filetag, overlap_threshold=overlap_threshold, include_NAs=include_nas, output_also_single_files=False, quiet=quiet)
 

@@ -22,14 +22,6 @@ def main(
         "-c", "--clear-existing-symbols", "--clear", help="Clears existing names and symbols from annotation file. Otherwise additional symbols are appended.",
         rich_help_panel=SYMBOLS_PANEL,
     )] = False,
-    header: Annotated[bool, typer.Option(
-        "-H", "--header", help="Indicate the presence of a column header in the input symbols file.",
-        rich_help_panel=SYMBOLS_PANEL,
-    )] = False,
-    sep: Annotated[str, typer.Option(
-        "--sep", "--separator", help="Column delimiter for input symbols file (default: tab).",
-        rich_help_panel=SYMBOLS_PANEL,
-    )] = "\t",
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
@@ -40,6 +32,14 @@ def main(
         "-s", "--symbols-file", "--symbols", help="Path to input TSV/XLSX symbols mapping file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
+    header: Annotated[bool, typer.Option(
+        "-H", "--header", help="Indicate the presence of a column header in the input symbols file.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
+    sep: Annotated[str, typer.Option(
+        "--sep", "--separator", help="Column delimiter for input symbols file (default: tab).",
+        rich_help_panel=IO_PANEL,
+    )] = "\t",
     annotation_name: Annotated[str, typer.Option(
         "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,

@@ -56,7 +56,25 @@ def main(
         rich_help_panel=SUBSET_PANEL,
     )] = None,
 
-    # 2. Input / Output Options
+    # 2. Reference FASTA Options
+    header_id_tag: Annotated[str, typer.Option(
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    header_id_regex: Annotated[str, typer.Option(
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = "",
+    gwh: Annotated[bool, typer.Option(
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome file.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
         "-a", "--annotation", "--annotations", "--annotation-file", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
@@ -78,35 +96,25 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/subsets/",
     output_annot_file: Annotated[str, typer.Option(
-        "-oa", "-o", "--output-annot-file", "--output-annotation-file", "--output-file", help="Path to the output annotation filename, including extension.",
+        "-oa", "--output-annot-file", "--output-annotation-file", help="Path to the output annotation filename, including extension.",
         rich_help_panel=IO_PANEL,
-    )] = "{annotation-name}_subset.gff3",
+    )] = "",
     output_genome_file: Annotated[str, typer.Option(
         "-og", "--output-genome-file", help="Path to the output genome filename, including extension.",
         rich_help_panel=IO_PANEL,
-    )] = "{genome-name}_subset.fasta",
-
-    # 3. Reference FASTA Options
-    header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
-        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
-    header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
-        rich_help_panel=FASTA_HEADER_PANEL,
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Generic output filename or prefix (applies to annotation and/or genome output).",
+        rich_help_panel=IO_PANEL,
     )] = "",
-    gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
-        rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
 
     # 4. Execution & Debugging
-    verbose: Annotated[bool, typer.Option(
-        "-v", "--verbose", help="Increase terminal reporting verbosity.",
-        rich_help_panel=EXEC_PANEL,
-    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
@@ -150,6 +158,27 @@ def main(
         genome_name = os.path.splitext(os.path.basename(genome_file))[0]
     elif genome_file == "":
         genome_name = "genome"
+
+    if output_file:
+        if not output_annot_file:
+            if not genome_file or output_file.lower().endswith((".gff", ".gff3", ".gtf")):
+                output_annot_file = output_file
+            else:
+                stem, ext = os.path.splitext(output_file)
+                ext = ext if ext else ".gff3"
+                output_annot_file = f"{stem}_subset{ext}"
+        if not output_genome_file and genome_file:
+            if output_file.lower().endswith((".fa", ".fasta", ".fna")):
+                output_genome_file = output_file
+            else:
+                stem, ext = os.path.splitext(output_file)
+                ext = ext if ext else ".fasta"
+                output_genome_file = f"{stem}_subset{ext}"
+
+    if not output_annot_file:
+        output_annot_file = "{annotation-name}_subset.gff3"
+    if not output_genome_file:
+        output_genome_file = "{genome-name}_subset.fasta"
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -253,7 +282,7 @@ def main(
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)
-        g.export(output_dir=output_dir, filename=output_genome_file, quiet=quiet)
+        g.export(output_dir=output_dir, filename=output_genome_file, keep_description=keep_description, quiet=quiet)
 
 if __name__ == "__main__":
     app()
