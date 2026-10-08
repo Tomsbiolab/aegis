@@ -154,10 +154,7 @@ def main(
     if genome_name == "{genome-file}":
         genome_name = os.path.splitext(os.path.basename(genome_file))[0]
 
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    subfolder = False
 
     if genelist.endswith(".xlsx"):
         df = pd.read_excel(genelist, header=0 if header else None, dtype=str)

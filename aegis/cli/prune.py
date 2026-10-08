@@ -20,6 +20,10 @@ def main(
     )] = None,
 
     # 1. Pruning Options
+    target_ids_opt: Annotated[str, typer.Option(
+        "-i", "--ids", "--target-ids", help="Input file with list of IDs OR comma-separated list of IDs. Overrides positional argument if provided.",
+        rich_help_panel=PRUNE_PANEL,
+    )] = "",
     feature_type: Annotated[str, typer.Option(
         "-f", "--feature-type", "--feature", help=f"Feature level to prune based on input IDs. Choose from {features}.",
         rich_help_panel=PRUNE_PANEL,
@@ -32,10 +36,6 @@ def main(
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
         "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
-    target_ids_opt: Annotated[str, typer.Option(
-        "-i", "--ids", "--target-ids", help="Input file with list of IDs OR comma-separated list of IDs. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
     annotation_name: Annotated[str, typer.Option(

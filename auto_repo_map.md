@@ -905,6 +905,13 @@
       - `def test_split_write_empty_other_panel():`
       - `def test_separator_aliases():`
       - `def test_motifs_positional_signature():`
+      - `def test_prune_ids_in_pruning_panel():`
+      - `def test_motifs_genelist_in_promoter_panel():`
+      - `def test_symbols_mapping_in_symbols_panel():`
+      - `def test_list_columns_panel_precedes_filtering():`
+      - `def test_extract_panel_order():`
+      - `def test_summary_reference_aliases():`
+      - `def test_tidy_coords_panel():`
     - test_cli_summary.py
       - `def test_cli_summary_single_annot_smoke(test_data_dir, tmp_path):`
       - `def test_cli_summary_with_genome_smoke(test_data_dir, tmp_path):`
@@ -1275,6 +1282,8 @@
       - `def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):`
       - `def test_assign_UTRs_plus_and_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):`
     - __init__.py
+    - **aegis_output/**
+      - **stats/**
     - **htmlcov/**
       - coverage_html_cb_dd2e7eb5.js
     - **test_data/**
