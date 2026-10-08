@@ -165,7 +165,7 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
     ref_annotation: Annotated[str, typer.Option(
-        "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference.",
+        "-ra", "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference.",
         rich_help_panel=SUMMARY_PANEL,
     )] = "",
     diff_only: Annotated[bool, typer.Option(

@@ -44,10 +44,10 @@ def main(
         "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
         rich_help_panel=COORDS_PANEL,
     )] = False,
-    skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing/--polish-coordinates", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
+    polish_coordinates: Annotated[bool, typer.Option(
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
         rich_help_panel=COORDS_PANEL,
-    )] = False,
+    )] = True,
 
     # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
@@ -140,10 +140,8 @@ def main(
     if (annotation_name == "{annotation-file}") and (annotation_file != ""):
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    skip_coordinate_polishing = not polish_coordinates
+    subfolder = False
         
     g = Genome(
         name=genome_name,

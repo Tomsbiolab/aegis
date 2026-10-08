@@ -128,10 +128,7 @@ def main(
         if feature not in VALID_FEATURES:
             raise typer.BadParameter(f"Invalid feature level: {feature}. Choose from: {VALID_FEATURES}")
 
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    subfolder = False
         
     if (remove_point_suffix or strip_gene_tag) and "gene" not in rename_features:
         typer.echo(f"'gene' was not included in features={rename_features} but --remove_point_suffix or --strip_gene_tag flags were used, therefore, 'gene' was added to the list of modified features.", err=True)

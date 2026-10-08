@@ -91,10 +91,7 @@ def main(
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_cds
 
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    subfolder = False
 
     if output_file == "{annotation-names}.gff3":
         output_file = None  # type: ignore

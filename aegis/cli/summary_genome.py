@@ -337,7 +337,7 @@ def main(
         rich_help_panel=SUMMARY_PANEL,
     )] = False,
     ref_genome: Annotated[str, typer.Option(
-        "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode).",
+        "-rg", "--ref-genome", help="Specify a particular genome name or 1-based index to use as reference (automatically activates reference mode).",
         rich_help_panel=SUMMARY_PANEL,
     )] = "",
     diff_only: Annotated[bool, typer.Option(

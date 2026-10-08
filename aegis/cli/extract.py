@@ -32,12 +32,7 @@ VALID_IDS = ["gene", "transcript", "CDS", "feature"]
 EXTRACTION_MODES = ["all", "main", "unique", "unique_per_gene"]
 
 PROMOTER_TYPES = ["standard", "upstream_ATG", "standard_plus_up_to_ATG"]
-
-RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
-                "miRNA_primary_transcript", "ncRNA", "lncRNA",
-                "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-                "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
-                "SRP_RNA", "RNase_MRP_RNA"]
+from ..conf import RNA_CLASSES
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -109,17 +104,7 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
 
-    # 2. Output Sequence Header Options
-    feature_id: Annotated[str, typer.Option(
-        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
-        rich_help_panel=OUTPUT_HEADER_PANEL,
-    )] = "feature",
-    detailed_headers: Annotated[bool, typer.Option(
-        "-dh", "--detailed-headers", "--verbose-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
-        rich_help_panel=OUTPUT_HEADER_PANEL,
-    )] = False,
-
-    # 3. CDS Inference & Reworking
+    # 2. CDS Inference & Reworking
     infer_missing_cds: Annotated[bool, typer.Option(
         "--infer-missing-cds", help="Detects and creates CDSs where missing, without overriding existing CDS annotations.",
         rich_help_panel=CDS_PANEL,
@@ -173,7 +158,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = False,
 
-    # 4. Genetic Codes
+    # 3. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -182,6 +167,16 @@ def main(
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
     initiator_methionine: InitiatorMethionineOption = "canonical",
+
+    # 4. Output Sequence Header Options
+    feature_id: Annotated[str, typer.Option(
+        "--feature-id", help=f"Specifies which feature ID to use in FASTA headers. E.g., use 'gene' to label all outputs (transcripts, proteins) with their parent gene ID. 'feature' uses the most specific ID available. Available: {', '.join(VALID_IDS)}.",
+        rich_help_panel=OUTPUT_HEADER_PANEL,
+    )] = "feature",
+    detailed_headers: Annotated[bool, typer.Option(
+        "-dh", "--detailed-headers", "--verbose-headers", help=f"Add extra details in fasta headers; scaffold/chromosome number, genome co-ordinates, and/or protein tags if applicable.",
+        rich_help_panel=OUTPUT_HEADER_PANEL,
+    )] = False,
 
     # 5. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(

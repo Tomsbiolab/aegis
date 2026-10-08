@@ -19,17 +19,13 @@ from .utils import (
     IO_PANEL,
     EXEC_PANEL,
     CDS_PANEL,
+    COORDS_PANEL,
     MODEL_PANEL,
     ATTR_PANEL,
     FEATURE_PANEL,
     FASTA_HEADER_PANEL,
 )
-
-RNA_CLASSES = ["mRNA", "antisense_lncRNA", "antisense_RNA", 
-                "miRNA_primary_transcript", "ncRNA", "lncRNA",
-                "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-                "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
-                "SRP_RNA", "RNase_MRP_RNA"]
+from ..conf import RNA_CLASSES
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -178,20 +174,22 @@ def main(
         "--adjust-internal-shifts", help="Frameshift / phase handling mode: 'intra_exon' (default), 'all', or 'none'.",
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
-    skip_coordinate_polishing: Annotated[bool, typer.Option(
-        "--skip-coordinate-polishing/--polish-coordinates", help="Do not mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
-        rich_help_panel=CDS_PANEL,
-    )] = False,
+
+    # 5. Coordinate & Phase Options
+    polish_coordinates: Annotated[bool, typer.Option(
+        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
+        rich_help_panel=COORDS_PANEL,
+    )] = True,
     recalculate_phases: Annotated[bool, typer.Option(
         "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
-        rich_help_panel=CDS_PANEL,
+        rich_help_panel=COORDS_PANEL,
     )] = False,
     reset_phases_zero: Annotated[bool, typer.Option(
         "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
-        rich_help_panel=CDS_PANEL,
+        rich_help_panel=COORDS_PANEL,
     )] = False,
 
-    # 5. Genetic Codes
+    # 6. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
     auto_organelle_codes: AutoOrganelleCodesOption = True,
@@ -284,10 +282,8 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    skip_coordinate_polishing = not polish_coordinates
+    subfolder = False
 
     for biotype in biotypes:
         if biotype not in RNA_CLASSES:

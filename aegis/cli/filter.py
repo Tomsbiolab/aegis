@@ -5,16 +5,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from .utils import split_callback, IO_PANEL, EXEC_PANEL, FILTER_PANEL
-
-RNA_CLASSES = [
-    "mRNA", "antisense_lncRNA", "antisense_RNA",
-    "miRNA_primary_transcript", "ncRNA", "lncRNA",
-    "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-    "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
-    "SRP_RNA", "RNase_MRP_RNA", "Y_RNA", "YRNA",
-    "scaRNA", "vault_RNA", "telomerase_RNA", "scRNA",
-    "RNase_P_RNA"
-]
+from ..conf import RNA_CLASSES
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -137,7 +128,7 @@ def main(
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
     os.makedirs(output_dir, exist_ok=True)
-    subfolder = (output_dir == "./aegis_output/")
+    subfolder = False
 
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)

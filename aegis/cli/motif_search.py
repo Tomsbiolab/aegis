@@ -35,6 +35,14 @@ def main(
         "-ml", "--motif-length", help="Actual span/length of the motif in bp. Automatically deduced for plain sequences (e.g. 'TATAAA' -> 6), but must be explicitly specified for regular expressions containing metacharacters (e.g. 'TATA[AT]A' has span 6 bp).",
         rich_help_panel=PROMOTER_PANEL,
     )] = None,
+    genelist: Annotated[str, typer.Option(
+        "-l", "--genelist", "--genelist-file", help="Input TSV/XLSX file with list of 'gene-id' entries.",
+        rich_help_panel=PROMOTER_PANEL,
+    )] = "",
+    header: Annotated[bool, typer.Option(
+        "-H", "--header", help="Indicate the presence of a column header in the input genelist file.",
+        rich_help_panel=PROMOTER_PANEL,
+    )] = False,
     promoter_size: Annotated[int, typer.Option(
         "-ps", "--promoter-size", help="Size of the promoter region in base pairs (bp) upstream of TSS or ATG depending on --promoter-type (default: 2000).",
         rich_help_panel=PROMOTER_PANEL,
@@ -75,10 +83,6 @@ def main(
         "-g", "--genome", "--genomes", "--genome-file", help="Path to input genome FASTA file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
     )] = "",
-    genelist: Annotated[str, typer.Option(
-        "-l", "--genelist", "--genelist-file", help="Input TSV/XLSX file with list of 'gene-id' entries.",
-        rich_help_panel=IO_PANEL,
-    )] = "",
     annotation_name: Annotated[str, typer.Option(
         "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
         rich_help_panel=IO_PANEL,
@@ -87,10 +91,6 @@ def main(
         "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag.",
         rich_help_panel=IO_PANEL,
     )] = "{genome-file}",
-    header: Annotated[bool, typer.Option(
-        "-H", "--header", help="Indicate the presence of a column header in the input genelist file.",
-        rich_help_panel=IO_PANEL,
-    )] = False,
     output_dir: Annotated[str, typer.Option(
         "-d", "--output-dir", help="Path to the output directory.",
         rich_help_panel=IO_PANEL,

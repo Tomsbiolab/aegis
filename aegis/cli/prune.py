@@ -84,8 +84,7 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    os.makedirs(output_dir, exist_ok=True)
-    subfolder = (output_dir == "./aegis_output/")
+    subfolder = False
 
     annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 

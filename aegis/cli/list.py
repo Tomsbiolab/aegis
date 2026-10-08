@@ -14,30 +14,7 @@ def genes(
         help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
     )] = None,
 
-    # 1. Filtering Options
-    coding_only: Annotated[bool, typer.Option(
-        "--coding-only", "--skip-non-coding", help="Whether to include only coding genes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    non_coding_only: Annotated[bool, typer.Option(
-        "--non-coding-only", "--skip-coding", help="Whether to include only non-coding genes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    biotypes: Annotated[List[str], typer.Option(
-        "-b", "-r", "--biotypes", "--rna-classes", help="Filter by transcript biotype (e.g. 'mRNA,lncRNA'). Comma-separated list.",
-        callback=split_callback,
-        rich_help_panel=FILTER_PANEL,
-    )] = [],
-    skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-    skip_te: Annotated[bool, typer.Option(
-        "--skip-te", "--skip-transposables", help="Whether to skip transposable elements.",
-        rich_help_panel=FILTER_PANEL,
-    )] = False,
-
-    # 2. Output Columns
+    # 1. Output Columns
     lengths: Annotated[bool, typer.Option(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -61,6 +38,29 @@ def genes(
     gene_symbols: Annotated[bool, typer.Option(
         "--gene-symbols", help="Whether to include gene symbols in the output.",
         rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+
+    # 2. Filtering Options
+    coding_only: Annotated[bool, typer.Option(
+        "--coding-only", "--skip-non-coding", help="Whether to include only coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    non_coding_only: Annotated[bool, typer.Option(
+        "--non-coding-only", "--skip-coding", help="Whether to include only non-coding genes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    biotypes: Annotated[List[str], typer.Option(
+        "-b", "-r", "--biotypes", "--rna-classes", help="Filter by transcript biotype (e.g. 'mRNA,lncRNA'). Comma-separated list.",
+        callback=split_callback,
+        rich_help_panel=FILTER_PANEL,
+    )] = [],
+    skip_pseudogenes: Annotated[bool, typer.Option(
+        "--skip-pseudogenes", help="Whether to skip pseudogenes.",
+        rich_help_panel=FILTER_PANEL,
+    )] = False,
+    skip_te: Annotated[bool, typer.Option(
+        "--skip-te", "--skip-transposables", help="Whether to skip transposable elements.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
 
     # 3. Input / Output Options
@@ -146,7 +146,33 @@ def transcripts(
         help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
     )] = None,
 
-    # 1. Filtering Options
+    # 1. Output Columns
+    gene_id: Annotated[bool, typer.Option(
+        "--gene-id", "--gene", help="Include parent gene ID in the output.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+    lengths: Annotated[bool, typer.Option(
+        "-l", "--lengths", help="Include feature lengths in the output.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+    coordinates: Annotated[bool, typer.Option(
+        "-c", "--coordinates", help="Include feature coordinates in the output.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+    chromosomes: Annotated[bool, typer.Option(
+        "-ch", "--chromosomes", help="Include chromosome/scaffold information in the output.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+    coding_info: Annotated[bool, typer.Option(
+        "--coding-info", help="Include whether a gene codes for a protein or not.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+    gene_symbols: Annotated[bool, typer.Option(
+        "--gene-symbols", help="Whether to include gene symbols in the output.",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = False,
+
+    # 2. Filtering Options
     coding_only: Annotated[bool, typer.Option(
         "--coding-only", "--skip-non-coding", help="Whether to include only coding transcripts.",
         rich_help_panel=FILTER_PANEL,
@@ -171,32 +197,6 @@ def transcripts(
     skip_te: Annotated[bool, typer.Option(
         "--skip-te", "--skip-transposables", help="Whether to skip transposable elements.",
         rich_help_panel=FILTER_PANEL,
-    )] = False,
-
-    # 2. Output Columns
-    gene_id: Annotated[bool, typer.Option(
-        "--gene-id", "--gene", help="Include parent gene ID in the output.",
-        rich_help_panel=COLUMNS_PANEL,
-    )] = False,
-    lengths: Annotated[bool, typer.Option(
-        "-l", "--lengths", help="Include feature lengths in the output.",
-        rich_help_panel=COLUMNS_PANEL,
-    )] = False,
-    coordinates: Annotated[bool, typer.Option(
-        "-c", "--coordinates", help="Include feature coordinates in the output.",
-        rich_help_panel=COLUMNS_PANEL,
-    )] = False,
-    chromosomes: Annotated[bool, typer.Option(
-        "-ch", "--chromosomes", help="Include chromosome/scaffold information in the output.",
-        rich_help_panel=COLUMNS_PANEL,
-    )] = False,
-    coding_info: Annotated[bool, typer.Option(
-        "--coding-info", help="Include whether a gene codes for a protein or not.",
-        rich_help_panel=COLUMNS_PANEL,
-    )] = False,
-    gene_symbols: Annotated[bool, typer.Option(
-        "--gene-symbols", help="Whether to include gene symbols in the output.",
-        rich_help_panel=COLUMNS_PANEL,
     )] = False,
 
     # 3. Input / Output Options

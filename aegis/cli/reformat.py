@@ -92,11 +92,7 @@ def main(
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
     os.makedirs(output_dir, exist_ok=True)
-
-    if output_dir == "./aegis_output/":
-        subfolder = True
-    else:
-        subfolder = False
+    subfolder = False
 
     encoding = read_file_with_fallback(annotation_file)
 
