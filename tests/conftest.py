@@ -2,6 +2,11 @@
 Shared Pytest fixtures for the Aegis test suite.
 """
 
+import os
+
+# Prevent Typer/Rich from forcing ANSI escape codes during testing (e.g. in GitHub Actions)
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
 import pytest
 from pathlib import Path
 

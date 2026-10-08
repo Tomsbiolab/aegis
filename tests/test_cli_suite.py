@@ -3,7 +3,7 @@ from typer.testing import CliRunner
 
 from aegis.cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"})
 
 
 def test_suite_panel_orders_all_tools():
