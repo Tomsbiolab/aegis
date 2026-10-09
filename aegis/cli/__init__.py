@@ -30,6 +30,7 @@ app.command(name="extract", help="Extract sequences from a genome based on an an
 app.command(name="filter", help="Filter an annotation file based on biotypes, RNA classes, transposable elements, pseudogenes, or features.")(filter_main)
 app.command(name="merge", help="Merge two annotation files.")(merge_main)
 app.command(name="motifs", help="Search for DNA motifs in promoter regions.")(motifs_main)
+app.command(name="motif-search", help="Search for DNA motifs in promoter regions.")(motifs_main)
 app.command(name="orthology", help="Pairwise orthology analysis between two annotations from different genome assembly.")(orthology_main)
 app.command(name="overlap", help="Detect overlaps between annotations associated to the same genome assembly.")(overlap_main)
 app.command(name="prune", help="Remove chosen gene or transcript models from an annotation.")(prune_main)

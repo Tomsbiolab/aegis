@@ -409,9 +409,9 @@ class AnnotationRedundancy(AnnotationComponent):
                         if ignore_removed:
                             if self._annot.chrs[chrom][o.id].quality.remove and not self._annot.chrs[chrom][o.id].quality.rescue:
                                 continue
-                        if (o.exon_query_percent == 0 and o.exon_target_percent == 0) and (g.start > self._annot.chrs[chrom][o.id].start or g.end < self._annot.chrs[chrom][o.id].end):
+                        if (o.exon_query_percent == 0 and o.exon_target_percent == 0) and (g.start >= self._annot.chrs[chrom][o.id].start or g.end <= self._annot.chrs[chrom][o.id].end):
                             g.quality.intron_nested = True
-                            if self._annot.chrs[chrom][o.id].start < g.start and self._annot.chrs[chrom][o.id].end > g.end:
+                            if self._annot.chrs[chrom][o.id].start <= g.start and self._annot.chrs[chrom][o.id].end >= g.end:
                                 g.quality.intron_nested_fully_contained = True
 
                             target_cds = self._annot.chrs[chrom][o.id].get_main_CDS_range()
@@ -430,7 +430,7 @@ class AnnotationRedundancy(AnnotationComponent):
                                 if t.main:
                                     if t.introns:
                                         for i in t.introns:
-                                            if i.start < g.start and i.end > g.end:
+                                            if i.start <= g.start and i.end >= g.end:
                                                 g.quality.intron_nested_single = True
                                                 break
                                         break

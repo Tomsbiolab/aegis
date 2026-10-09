@@ -519,7 +519,7 @@ class Gene(Feature):
             temp_attributes.extend(extra)
 
         attribute_string = ";".join(temp_attributes)
-        phase = self.phase if self.phase is not None else "."
+        phase = "."
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
     def __str__(self):

@@ -41,6 +41,42 @@ class TestScaffold:
         s = Scaffold("chrC", "ATGCGATCG")
         assert s.chloroplast is True
 
+    @pytest.mark.parametrize("name, description, expected", [
+        ("chrM", "", "mitochondria"),
+        ("chrMT", "", "mitochondria"),
+        ("MT", "", "mitochondria"),
+        ("Mt", "", "mitochondria"),
+        ("Ch_M", "", "mitochondria"),
+        ("mitochondrion", "", "mitochondria"),
+        ("ChrC", "", "chloroplast"),
+        ("chrPt", "", "chloroplast"),
+        ("Pt", "", "chloroplast"),
+        ("chloroplast", "", "chloroplast"),
+        ("NC_012920.1", "NC_012920.1 Homo sapiens mitochondrion, complete genome", "mitochondria"),
+        ("NC_000932.1", "NC_000932.1 Arabidopsis thaliana chloroplast, complete genome", "chloroplast"),
+        ("chr1", "", None),
+        ("chromosome_Sym", "", None),
+        ("ChrSyntenic_c", "", None),
+        ("scaffold_9", "", None),
+        ("M", "", None),
+        ("C", "", None),
+    ])
+    def test_organelle_classification(self, name, description, expected):
+        s = Scaffold(name, "ATGCGATCG", description=description)
+        assert Scaffold.organelle_type(name, description) == expected
+        assert s.mitochondria is (expected == "mitochondria")
+        assert s.chloroplast is (expected == "chloroplast")
+        assert s.organelle is (expected is not None)
+        if expected is not None:
+            assert s.chromosome is True
+
+    def test_organelle_flags_survive_renaming(self):
+        """DAP renaming turns organelles into chr0001...; they must stay organelles."""
+        s = Scaffold("chrM", "ATGCGATCG")
+        s.update(new_name="chr0001")
+        assert s.mitochondria is True
+        assert s.organelle is True
+
     def test_unknown_chromosome(self):
         """The 'chrUn' name is detected as unknown_chromosome."""
         s = Scaffold("chrUn", "ATGCGATCG")

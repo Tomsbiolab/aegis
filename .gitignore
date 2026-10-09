@@ -9,3 +9,4 @@ htmlcov/
 .vscode/settings.json
 aegis/*.dot
 aegis_output/
+private/

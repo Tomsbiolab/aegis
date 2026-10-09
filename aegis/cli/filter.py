@@ -4,17 +4,8 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback
-
-RNA_CLASSES = [
-    "mRNA", "antisense_lncRNA", "antisense_RNA",
-    "miRNA_primary_transcript", "ncRNA", "lncRNA",
-    "lnc_RNA", "pseudogenic_tRNA", "rRNA", "snoRNA",
-    "snRNA", "tRNA", "pre_miRNA", "tRNA_pseudogene",
-    "SRP_RNA", "RNase_MRP_RNA", "Y_RNA", "YRNA",
-    "scaRNA", "vault_RNA", "telomerase_RNA", "scRNA",
-    "RNase_P_RNA"
-]
+from .utils import split_callback, IO_PANEL, EXEC_PANEL, FILTER_PANEL
+from ..conf import RNA_CLASSES
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -22,58 +13,101 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     annotation_file: Annotated[str, typer.Argument(
-        help="Path to the input annotation GFF/GTF file."
-    )],
-    annotation_name: Annotated[str, typer.Option(
-        "-a", "--annotation-name", help="Annotation version, name or tag."
-    )] = "{annotation-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output directory."
-    )] = "./aegis_output/",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to the output annotation filename, with or without extension."
-    )] = "{annotation-name}_filtered",
+        help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
+    )] = "",
+
+    # 1. Filtering Options
     coding_only: Annotated[bool, typer.Option(
-        "--coding-only", help="Keep only protein-coding genes and transcripts (removes non-coding genes and non-coding transcripts from mixed genes)."
+        "--coding-only", "--skip-non-coding", help="Keep only protein-coding genes and transcripts (removes non-coding genes and non-coding transcripts from mixed genes).",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     non_coding_only: Annotated[bool, typer.Option(
-        "--non-coding-only", help="Keep only non-protein-coding genes and transcripts (removes coding genes and coding transcripts from mixed genes, keeping lncRNAs, etc.)."
+        "--non-coding-only", "--skip-coding", help="Keep only non-protein-coding genes and transcripts (removes coding genes and coding transcripts from mixed genes, keeping lncRNAs, etc.).",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     rna_classes: Annotated[List[str], typer.Option(
-        "-r", "--rna-classes", help="Filter transcripts by biotype (e.g. 'mRNA,lncRNA'). Provide a comma-separated list. Transcripts not in the list and genes without remaining transcripts are removed.",
-        callback=split_callback
+        "-b", "-r", "--biotypes", "--rna-classes", help="Filter transcripts by biotype (e.g. 'mRNA,lncRNA'). Provide a comma-separated list. Transcripts not in the list and genes without remaining transcripts are removed.",
+        callback=split_callback,
+        rich_help_panel=FILTER_PANEL,
     )] = [],
     skip_pseudogenes: Annotated[bool, typer.Option(
-        "--skip-pseudogenes", help="Remove pseudogenes from the annotation."
+        "--skip-pseudogenes", help="Remove pseudogenes from the annotation.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     pseudogenes_only: Annotated[bool, typer.Option(
-        "--pseudogenes-only", help="Keep only pseudogenes, removing non-pseudogene genes."
+        "--pseudogenes-only", help="Keep only pseudogenes, removing non-pseudogene genes.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     skip_te: Annotated[bool, typer.Option(
-        "--skip-te", "--skip-transposables", help="Remove transposable element genes from the annotation."
+        "--skip-te", "--skip-transposables", help="Remove transposable element genes from the annotation.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     te_only: Annotated[bool, typer.Option(
-        "--te-only", "--transposables-only", help="Keep only transposable element genes, removing non-TE genes."
+        "--te-only", "--transposables-only", help="Keep only transposable element genes, removing non-TE genes.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     min_cds_size: Annotated[Optional[int], typer.Option(
-        "--min-cds-size", help="Remove genes whose main CDS length (bp) is smaller than this threshold."
+        "--min-cds-size", "--min-cds-len", help="Remove genes whose main CDS length (bp) is smaller than this threshold.",
+        rich_help_panel=FILTER_PANEL,
     )] = None,
     has_symbol: Annotated[bool, typer.Option(
-        "--has-symbol", help="Keep only genes that have an assigned gene symbol."
+        "--has-symbol", help="Keep only genes that have an assigned gene symbol.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
     main_only: Annotated[bool, typer.Option(
-        "-m", "--main", help="Include only the main transcript and main CDS per gene."
+        "-m", "--main", help="Include only the main transcript and main CDS per gene.",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
-    include_UTRs: Annotated[bool, typer.Option(
-        "-u", "--include-UTRs", help="Include UTRs in output GFF."
+    strip_utrs: Annotated[bool, typer.Option(
+        "--strip-utrs", "--no-utrs", help="Strip UTRs from output GFF (by default, UTRs are retained).",
+        rich_help_panel=FILTER_PANEL,
     )] = False,
+    chromosomes: Annotated[List[str], typer.Option(
+        "-c", "--chromosomes", help="Filter annotation to only include features located on specified chromosomes/scaffolds (comma-separated or repeated flag).",
+        callback=split_callback,
+        rich_help_panel=FILTER_PANEL,
+    )] = [],
+
+    # 2. Input / Output Options
+    annotation_file_opt: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", "--annot-name", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to the output annotation filename, with or without extension.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-name}_filtered.gff3",
+
+    # 3. Execution / Debugging
     quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Enable detailed console output.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
     Filter an annotation file based on biotypes, RNA classes, transposable elements, pseudogenes, CDS size, or gene symbols.
     """
+    if verbose:
+        quiet = False
+
+    annot_in = annotation_file_opt if annotation_file_opt else annotation_file
+    if not annot_in:
+        raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
+    annotation_file = annot_in
+
+    include_UTRs = not strip_utrs
     if coding_only and non_coding_only:
         raise typer.BadParameter("Cannot specify both --coding-only and --non-coding-only.")
 
@@ -94,15 +128,15 @@ def main(
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
     os.makedirs(output_dir, exist_ok=True)
-    subfolder = (output_dir == "./aegis_output/")
+    subfolder = False
 
-    if output_file == "{annotation-name}_filtered":
-        output_file = f"{annotation_name}_filtered"
+    if "{annotation-name}" in output_file:
+        output_file = output_file.replace("{annotation-name}", annotation_name)
 
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
 
     # 1. Biotype filtering (coding vs non-coding)
     if coding_only:
@@ -133,6 +167,10 @@ def main(
     # 6. Gene symbol filtering
     if has_symbol:
         annotation.remove_genes_without_symbols(quiet=quiet)
+
+    # 7. Chromosome filtering
+    if chromosomes:
+        annotation.subset(chosen_features=set(chromosomes), no_gene_cap=True, quiet=quiet)
 
     annotation.export.gff(
         output_dir=output_dir,

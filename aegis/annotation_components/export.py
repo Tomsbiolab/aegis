@@ -11,6 +11,7 @@ import warnings
 from typing import Literal
 
 from ..utils.misc import start_progress_bar
+from ..utils.genefunctions import get_genetic_code_tables
 from .base import AnnotationComponent
 
 class AnnotationExport(AnnotationComponent):
@@ -91,9 +92,27 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+    def proteins(
+        self,
+        only_main: bool = True,
+        verbose: bool = True,
+        used_id: str = "protein",
+        unique_proteins_per_gene: bool = False,
+        only_cds_main: bool = True,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = True,
+        strip_stop: bool = True,
         #deprecated arguments
-        custom_filename: str="", custom_path:str=""):
+        custom_filename: str = "",
+        custom_path: str = "",
+    ):
 
         if custom_filename != "":
             warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
@@ -115,7 +134,7 @@ class AnnotationExport(AnnotationComponent):
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(mode=mode)
+            self._annot.generate_proteins(quiet=quiet)
 
         extra_suffixes = ["proteins"]
 
@@ -189,7 +208,7 @@ class AnnotationExport(AnnotationComponent):
                             if i > 0:
                                 add = True
                                 for c2 in final_cs:
-                                    if c1.equal_segments(c2):
+                                    if c1.equal_segments(c2) or (c1.protein is not None and c2.protein is not None and c1.protein.seq == c2.protein.seq):
                                         add = False
                                 if add:
                                     final_cs.append(c1)
@@ -208,13 +227,29 @@ class AnnotationExport(AnnotationComponent):
                         if c.protein.summary_tag and verbose:
                             f_out.write(f"|{c.protein.summary_tag}")
                         if verbose:
-                            f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
+                            table_tag = "custom" if isinstance(c.protein.table, dict) else c.protein.table
+                            f_out.write(f"|readthrough:{c.protein.readthrough}|table:{table_tag}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
 
-                        f_out.write(f"\n{c.protein.seq}\n")
+                        prot_seq = c.protein.seq
+                        if strip_stop and prot_seq.endswith("*"):
+                            prot_seq = prot_seq[:-1]
+                        f_out.write(f"\n{prot_seq}\n")
 
-    def unique_proteins(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+    def unique_proteins(
+        self,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = False,
+        strip_stop: bool = True,
         #deprecated arguments
-        custom_path:str=""):
+        custom_path: str = "",
+    ):
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -228,7 +263,7 @@ class AnnotationExport(AnnotationComponent):
         if subfolder_name != "features":
             subfolder = True
 
-        self._annot.generate_protein_equivalences(mode=mode, quiet=quiet)
+        self._annot.generate_protein_equivalences(quiet=quiet)
 
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
@@ -236,6 +271,8 @@ class AnnotationExport(AnnotationComponent):
             for protein_id in self._annot.protein_equivalences:
                 chrom, g, t, c = self._annot.all_protein_ids[protein_id]
                 sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
+                if strip_stop and sequence.endswith("*"):
+                    sequence = sequence[:-1]
                 f_out.write(f">{protein_id}\n{sequence}\n")
 
         now = time.time()
@@ -287,9 +324,22 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
 
-    def unique_CDSs(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False,
+    def unique_CDSs(
+        self,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = False,
+        protein_oriented: bool = True,
+        strip_stop: bool = False,
         #deprecated arguments
-        custom_path:str=""):
+        custom_path: str = "",
+    ):
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -301,7 +351,14 @@ class AnnotationExport(AnnotationComponent):
         
         start_time = time.time()
 
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=["unique_CDSs"], use_name_not_id=use_name_not_id)
+        extra_suffixes = ["unique_CDSs"]
+        if not protein_oriented:
+            extra_suffixes.append("raw")
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        if protein_oriented and not self._annot.contains_protein_sequences:
+            self._annot.generate_proteins(quiet=quiet)
 
         all_CDS_seqs = {}
         for genes in self._annot.chrs.values():
@@ -309,8 +366,25 @@ class AnnotationExport(AnnotationComponent):
                 if g.coding:
                     for t in g.transcripts.values():
                         for c in t.CDSs.values():
-                            if c.seq != "":
-                                all_CDS_seqs[c.id] = c.seq
+                            raw_cds = ""
+                            if protein_oriented:
+                                if c.protein is not None and c.protein.nuc_seq != "":
+                                    raw_cds = c.protein.nuc_seq
+                            else:
+                                if c.seq != "":
+                                    raw_cds = c.seq
+
+                            if raw_cds:
+                                if strip_stop and len(raw_cds) >= 3:
+                                    if protein_oriented and c.protein is not None:
+                                        if c.protein.seq.endswith("*"):
+                                            raw_cds = raw_cds[:-3]
+                                    else:
+                                        table_to_use = self._annot.translation_table(c.ch)
+                                        _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                        if raw_cds[-3:].upper() in def_stops:
+                                            raw_cds = raw_cds[:-3]
+                                all_CDS_seqs[c.id] = raw_cds
 
         progress_bar = start_progress_bar(total=len(all_CDS_seqs.keys()), description=f"Exporting unique {self._annot.id} CDSs", quiet=quiet, colour="91")
         
@@ -332,9 +406,28 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
 
-    def CDSs(self, only_main: bool = True, verbose: bool = True, used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+    def CDSs(
+        self,
+        only_main: bool = True,
+        verbose: bool = True,
+        used_id: str = "CDS",
+        unique_CDSs_per_gene: bool = False,
+        only_cds_main: bool = True,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        protein_oriented: bool = True,
+        strip_stop: bool = False,
+        quiet: bool = False,
         #deprecated arguments
-        custom_filename: str="", custom_path:str=""):
+        custom_filename: str = "",
+        custom_path: str = "",
+    ):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -367,6 +460,8 @@ class AnnotationExport(AnnotationComponent):
             subfolder = True
 
         extra_suffixes = ["CDSs"]
+        if not protein_oriented:
+            extra_suffixes.append("raw")
 
         if unique_CDSs_per_gene:
             only_main = False
@@ -400,28 +495,34 @@ class AnnotationExport(AnnotationComponent):
 
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
+        if protein_oriented and not self._annot.contains_protein_sequences:
+            self._annot.generate_proteins(quiet=True)
+
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
                     for t in g.transcripts.values():
+                        candidate_cds_list = []
                         if only_main:
                             if t.main:
                                 for c in t.CDSs.values():
-                                    if c.seq != "":
-                                        if only_cds_main:
-                                            if c.main:
-                                                temp_cs.append(c)
-                                        else:
-                                            temp_cs.append(c)
+                                    if only_cds_main and not c.main:
+                                        continue
+                                    candidate_cds_list.append(c)
                         else:
                             for c in t.CDSs.values():
+                                if only_cds_main and not c.main:
+                                    continue
+                                candidate_cds_list.append(c)
+
+                        for c in candidate_cds_list:
+                            if protein_oriented:
+                                if c.protein is not None and c.protein.nuc_seq != "":
+                                    temp_cs.append(c)
+                            else:
                                 if c.seq != "":
-                                    if only_cds_main:
-                                        if c.main:
-                                            temp_cs.append(c)
-                                    else:
-                                        temp_cs.append(c)
+                                    temp_cs.append(c)
 
                     if not unique_CDSs_per_gene:
                         final_cs = temp_cs.copy()
@@ -435,8 +536,14 @@ class AnnotationExport(AnnotationComponent):
                             if i > 0:
                                 add = True
                                 for c2 in final_cs:
-                                    if c1.equal_segments(c2):
-                                        add = False
+                                    if protein_oriented:
+                                        seq1 = c1.protein.nuc_seq if c1.protein is not None else ""
+                                        seq2 = c2.protein.nuc_seq if c2.protein is not None else ""
+                                        if c1.equal_segments(c2) or (seq1 != "" and seq1 == seq2):
+                                            add = False
+                                    else:
+                                        if c1.equal_segments(c2) or (c1.seq != "" and c1.seq == c2.seq):
+                                            add = False
                                 if add:
                                     final_cs.append(c1)
 
@@ -450,9 +557,27 @@ class AnnotationExport(AnnotationComponent):
                             f_out.write(f">{g.id}")
 
                         if verbose:
-                            f_out.write(f"|{c.strand}|{c.ch}|{c.start}:{c.end}")
+                            if protein_oriented and c.protein is not None:
+                                f_out.write(f"|{c.strand}|{c.ch}|{c.protein.start}:{c.protein.end}")
+                            else:
+                                f_out.write(f"|{c.strand}|{c.ch}|{c.start}:{c.end}")
 
-                        f_out.write(f"\n{c.seq}\n")
+                        if protein_oriented and c.protein is not None:
+                            cds_seq = c.protein.nuc_seq
+                        else:
+                            cds_seq = c.seq
+
+                        if strip_stop and len(cds_seq) >= 3:
+                            if protein_oriented and c.protein is not None:
+                                if c.protein.seq.endswith("*"):
+                                    cds_seq = cds_seq[:-3]
+                            else:
+                                table_to_use = self._annot.translation_table(c.ch)
+                                _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                if cds_seq[-3:].upper() in def_stops:
+                                    cds_seq = cds_seq[:-3]
+
+                        f_out.write(f"\n{cds_seq}\n")
 
 
     def transcripts(self, only_main: bool = True, verbose: bool = True, used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
@@ -873,7 +998,7 @@ class AnnotationExport(AnnotationComponent):
                         f_out.write("###\n")
 
     def gtf(self, 
-            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False,
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, strict_gtf_2_2: bool = False,
             # Deprecated arguments
             custom_path: str = "", tag: str = ".gtf"):
 
@@ -928,7 +1053,8 @@ class AnnotationExport(AnnotationComponent):
                         if gene_1bp_feature:
                             continue
 
-                    f_out.write(g.print_gtf())
+                    if not strict_gtf_2_2 or just_genes:
+                        f_out.write(g.print_gtf())
 
                     if just_genes:
                         continue
@@ -937,10 +1063,11 @@ class AnnotationExport(AnnotationComponent):
                         if main_only:
                             if not t.main:
                                 continue
-                        original_feature = t.feature
-                        t.feature = "transcript"
-                        f_out.write(t.print_gtf())
-                        t.feature = original_feature
+                        if not strict_gtf_2_2:
+                            original_feature = t.feature
+                            t.feature = "transcript"
+                            f_out.write(t.print_gtf())
+                            t.feature = original_feature
                         for e in t.exons:
                             f_out.write(e.print_gtf())
                         for c in t.CDSs.values():
@@ -952,7 +1079,16 @@ class AnnotationExport(AnnotationComponent):
                             if UTRs:
                                 if hasattr(c, "UTRs"):
                                     for u in c.UTRs:
-                                        f_out.write(u.print_gtf())
+                                        if strict_gtf_2_2:
+                                            orig_ft = u.feature
+                                            if u.prime == "5'":
+                                                u.feature = "5UTR"
+                                            elif u.prime == "3'":
+                                                u.feature = "3UTR"
+                                            f_out.write(u.print_gtf())
+                                            u.feature = orig_ft
+                                        else:
+                                            f_out.write(u.print_gtf())
 
                     if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
                         continue
@@ -1041,7 +1177,7 @@ class AnnotationExport(AnnotationComponent):
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False,
+    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False, gene_id: bool = False,
         #deprecated arguments
         custom_path: str = "", output_file: str = ""):
 
@@ -1072,6 +1208,8 @@ class AnnotationExport(AnnotationComponent):
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
 
             header = ["transcript_id"]
+            if gene_id:
+                header.append("gene_id")
             if chromosomes or coordinates:
                 header.append("chromosome")
             if coordinates:
@@ -1094,12 +1232,16 @@ class AnnotationExport(AnnotationComponent):
                         continue
 
                     for t in g.transcripts.values():
+                        if only_main and not t.main:
+                            continue
                         if skip_coding and t.coding:
                             continue
                         if skip_non_coding and not t.coding:
                             continue
 
                         out = [t.id]
+                        if gene_id:
+                            out.append(g.id)
                         if chromosomes or coordinates:
                             out.append(chrom)
                         if coordinates:

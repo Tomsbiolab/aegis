@@ -6,8 +6,20 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from ..genome import Genome
+from ..genome import Genome, Scaffold
+from ..utils.genefunctions import NCBI_GENETIC_CODES
 from .summary_genome import pair_genome_features, PairedFeature, normalize_chr_name
+from .utils import (
+    TaxonomyOption,
+    GeneticCodeOption,
+    AutoOrganelleCodesOption,
+    MitoCodeOption,
+    PlastidCodeOption,
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    SUMMARY_PANEL,
+)
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -84,6 +96,12 @@ def format_diff(diff: int | float | None, human_readable: bool = False, is_termi
     return f"{sign}{diff}"
 
 
+def describe_genetic_code(table) -> str:
+    """Formats a genetic code table as 'ID (name)' for reporting."""
+    name = NCBI_GENETIC_CODES.get(table, {}).get("name") if isinstance(table, int) else None
+    return f"{table} ({name})" if name else str(table)
+
+
 def render_terminal_table(headers: list[str], rows: list[list[str]], section_title: str = "", summary_rows: list[list[str]] | None = None) -> str:
     """Renders a cleanly formatted ASCII table with aligned columns."""
     all_rows = list(rows)
@@ -141,57 +159,99 @@ def render_terminal_table(headers: list[str], rows: list[list[str]], section_tit
 def main(
     files: Annotated[List[str], typer.Argument(
         help="Path to one or more annotation GFF/GTF file(s). (Optional: a single genome FASTA can be provided as the last argument, or explicitly via -g/--genome)."
-    )],
-    genome: Annotated[Optional[List[str]], typer.Option(
-        "-g", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g)."
-    )] = None,
-    annotation_names: Annotated[str, typer.Option(
-        "-a", "--annotation-names", "--annotation-name", help="Comma-separated annotation names or tags (defaults to filenames)."
-    )] = "",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag (comma-separated if multiple genomes)."
-    )] = "{genome-file}",
-    output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Path to output summary table (TSV/CSV)."
-    )] = "",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder for stats and reports."
-    )] = "./aegis_output/stats/",
+    )] = [],
     reference: Annotated[bool, typer.Option(
-        "-r", "--reference", help="Use first annotation as reference (or specified via --ref-annotation) and report relative differences."
+        "-r", "--reference", help="Use first annotation as reference (or specified via --ref-annotation) and report relative differences.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     ref_annotation: Annotated[str, typer.Option(
-        "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference."
+        "-ra", "--ref-annotation", "--ref-annot", help="Specify an annotation name or 1-based index to use as reference.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = "",
     diff_only: Annotated[bool, typer.Option(
-        "--diff-only", help="Report only features and summary statistics where annotations differ from reference (automatically activates reference mode; hides rows that are '= ref')."
+        "--diff-only", help="Report only features and summary statistics where annotations differ from reference (automatically activates reference mode; hides rows that are '= ref').",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     summary_only: Annotated[bool, typer.Option(
-        "--summary-only", help="Report only overall summary statistics without listing individual contigs."
+        "--summary-only", help="Report only overall summary statistics without listing individual contigs.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     contigs_only: Annotated[bool, typer.Option(
-        "--contigs-only", help="Report only contig-level statistics without the summary table."
+        "--contigs-only", help="Report only contig-level statistics without the summary table.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     chromosomes_only: Annotated[bool, typer.Option(
-        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs."
+        "--chromosomes-only", help="Report only chromosomes in table and exclude unplaced scaffolds/contigs.",
+        rich_help_panel=SUMMARY_PANEL,
+    )] = False,
+    include_all: Annotated[bool, typer.Option(
+        "-A", "--all", "--include-all", help="Include all scaffolds and contigs in the table, not just chromosomes.",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
     human_readable: Annotated[bool, typer.Option(
-        "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb)."
+        "-H", "--human-readable", help="Display sizes in human-readable units (e.g., Kb, Mb, Gb).",
+        rich_help_panel=SUMMARY_PANEL,
     )] = False,
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
-    )] = False,
-    plots: Annotated[bool, typer.Option(
-        "--plots", help="Export distribution barplots and pie charts into output directory."
-    )] = False,
+
+    # 2. Genetic Codes
+    taxonomy: TaxonomyOption = "plant",
+    genetic_code: GeneticCodeOption = 1,
+    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    mito_code: MitoCodeOption = None,
+    plastid_code: PlastidCodeOption = None,
+
+    # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 4. Input / Output Options
+    annotation_files_opt: Annotated[Optional[List[str]], typer.Option(
+        "-a", "--annotations", "--annotation", "--annotation-file", "--annotation-files", "--annot", help="Path to input annotation GFF/GTF file(s). Overrides positional arguments if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = None,
+    genome: Annotated[Optional[List[str]], typer.Option(
+        "-g", "--genome", "--genome-file", "--genome-files", "--genomes", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
+        rich_help_panel=IO_PANEL,
+    )] = None,
+    annotation_names: Annotated[str, typer.Option(
+        "-an", "--annotation-names", "--annotation-name", "--annot-names", "--annot-name", help="Comma-separated annotation names or tags (defaults to filenames).",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag (comma-separated if multiple genomes).",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Path to output summary table (TSV/CSV).",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder for stats and reports.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/stats/",
+    plots: Annotated[bool, typer.Option(
+        "--plots", help="Export distribution barplots and pie charts into output directory.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
+
+    # 5. Execution & Debugging
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
@@ -211,6 +271,15 @@ def main(
       4. Comparing annotations from DIFFERENT genomes/species (macro statistics):
          aegis summary speciesA.gff speciesB.gff --summary-only
     """
+    if annotation_files_opt:
+        extra_annots = []
+        for a_arg in annotation_files_opt:
+            for part in a_arg.split(","):
+                part = part.strip()
+                if part:
+                    extra_annots.append(part)
+        files = extra_annots + (files or [])
+
     if not files:
         typer.echo("Error: At least one annotation GFF/GTF file must be provided.", err=True)
         raise typer.Exit(code=1)
@@ -218,6 +287,12 @@ def main(
     if summary_only and contigs_only:
         typer.echo("Error: Cannot specify both --summary-only and --contigs-only.", err=True)
         raise typer.Exit(code=1)
+
+    if include_all:
+        chromosomes_only = False
+
+    if verbose:
+        quiet = False
 
     # 1. Disambiguate positional arguments vs genome file
     raw_genome_files: list[str] = []
@@ -343,7 +418,13 @@ def main(
                 name=aname,
                 annot_file_path=afile,
                 genome=assigned_genome,
-                quiet=True
+                quiet=True,
+                skip_coordinate_polishing=True,
+                taxonomy=taxonomy,
+                table=genetic_code,
+                mito_table=mito_code,
+                plastid_table=plastid_code,
+                auto_organelle_codes=auto_organelle_codes,
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)
@@ -483,7 +564,7 @@ def main(
 
     def contig_sort_key(name: str):
         nl = name.lower()
-        if "mit" in nl or "mt" in nl or "pt" in nl or "chlor" in nl or "cp" in nl:
+        if Scaffold.organelle_type(name) is not None:
             cat = 3
         elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
             cat = 1
@@ -505,7 +586,7 @@ def main(
                             filtered_contigs.append(cname)
                         continue
                 nl = cname.lower()
-                is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+                is_organelle = Scaffold.organelle_type(cname) is not None
                 if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle:
                     filtered_contigs.append(cname)
             all_contig_names = filtered_contigs
@@ -709,9 +790,17 @@ def main(
         ("Mean Intron Size (bp)", "mean_intron_size", False),
         ("Total Gene Span", "total_length_gene", False),
         ("Total mRNA Length", "total_length_mRNA", False),
+        ("Phase Mismatches across Introns", "phase_mismatches", False),
     ]
     if has_genomes:
         summary_metrics.extend([
+            ("Translated Proteins", "total_proteins", False),
+            ("Complete Proteins", "complete_proteins", False),
+            ("  of which Alternative Start", "alt_start_proteins", False),
+            ("Partial Proteins", "partial_proteins", False),
+            ("Truncated Proteins", "truncated_proteins", False),
+            ("Proteins with Ambiguous Residues", "ambiguous_proteins", False),
+            ("Phase-shifted / Frameshifted CDSs", "frameshifted_cds", False),
             ("Out-of-bounds Features", "out_of_bounds", False),
             ("Contigs Missing in Genome", "missing_chroms", False),
             ("Unannotated Scaffolds", "unannotated_scaffolds", False),
@@ -719,6 +808,9 @@ def main(
 
     def get_annot_metric_val(annot: Annotation, metric_key: str):
         stats_data = annot.stats.data
+        if metric_key in ("total_proteins", "complete_proteins", "alt_start_proteins", "partial_proteins", "truncated_proteins", "ambiguous_proteins", "frameshifted_cds", "phase_mismatches"):
+            qc = annot.get_protein_qc_summary()
+            return qc.get(metric_key, 0)
         if metric_key == "total_genes":
             return sum(len(genes) for genes in annot.chrs.values())
         if metric_key == "coding_genes":
@@ -839,6 +931,26 @@ def main(
             summary_table_rows.append(term_row)
             summary_file_rows.append(file_row)
 
+    # Genetic codes used to translate the proteins behind the protein statistics
+    genetic_code_headers = ["Annotation", "Taxonomy", "Nuclear", "Mitochondrial", "Plastid", "Organelle contigs"]
+    genetic_code_rows = []
+    if has_genomes and not contigs_only:
+        labels = {"mitochondria": "mito", "chloroplast": "plastid"}
+        for a in annotations:
+            organelle_contigs = []
+            for chrom in a.chrs:
+                compartment = a.chromosome_compartment(chrom)
+                if compartment != "nuclear":
+                    organelle_contigs.append(f"{chrom} ({labels[compartment]})")
+            genetic_code_rows.append([
+                a.name,
+                a.taxonomy,
+                describe_genetic_code(a.table),
+                describe_genetic_code(a.mito_table),
+                describe_genetic_code(a.plastid_table),
+                ", ".join(organelle_contigs) if organelle_contigs else "-",
+            ])
+
     # 9. Terminal Output Rendering
     if not quiet:
         output_blocks = []
@@ -862,6 +974,9 @@ def main(
         if not contigs_only and summary_table_rows:
             section_lbl = "Annotation Summary Statistics"
             output_blocks.append(render_terminal_table(summary_headers, summary_table_rows, section_title=section_lbl))
+
+        if genetic_code_rows:
+            output_blocks.append(render_terminal_table(genetic_code_headers, genetic_code_rows, section_title="Genetic Codes"))
 
         if output_blocks:
             typer.echo("\n".join(output_blocks))
@@ -887,6 +1002,12 @@ def main(
                 f.write("# Summary Statistics\n")
                 f.write("\t".join(summary_headers) + "\n")
                 for r in summary_file_rows:
+                    f.write("\t".join(r) + "\n")
+
+            if genetic_code_rows:
+                f.write("\n# Genetic Codes\n")
+                f.write("\t".join(genetic_code_headers) + "\n")
+                for r in genetic_code_rows:
                     f.write("\t".join(r) + "\n")
 
         if not quiet:

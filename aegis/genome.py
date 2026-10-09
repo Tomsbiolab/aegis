@@ -15,10 +15,36 @@ from aegis.utils.misc import open_file
 from aegis.utils.genefunctions import reverse_complement, sequence_hash
 
 class Scaffold():
-    mitochondria_suffixes = ["m", "M"]
-    chloroplast_suffixes = ["c", "C"]
     unknown_chromosome_names = ["chrUn", "chrun", "ChrUn", "Chrun", "chr00", "Chr00", "chr0", "Chr0"]
-    organelle_suffixes = mitochondria_suffixes + chloroplast_suffixes
+    # Bare "m"/"c" are deliberately excluded: single-letter names are also used for nuclear chromosomes or linkage groups
+    mitochondria_names = {"mt", "mito", "chrm", "chrmt", "mitochondria", "mitochondrion"}
+    chloroplast_names = {"pt", "chrc", "chrpt", "pltd", "plastid", "chloroplast"}
+    organelle_name_pattern = re.compile(r"^chr?[_.-]?([mc])$", re.IGNORECASE)
+    mitochondria_description_pattern = re.compile(r"\bmitochondri(?:on|al|a)\b", re.IGNORECASE)
+    chloroplast_description_pattern = re.compile(r"\b(?:chloroplast|plastid|apicoplast)\b", re.IGNORECASE)
+
+    @staticmethod
+    def organelle_type(name: str, description: str = "") -> str | None:
+        """
+        Classifies a sequence as "mitochondria", "chloroplast" or None from its name
+        (exact organelle names, or ch/chr followed by M or C) or, failing that, from
+        organelle keywords in its FASTA description.
+        """
+        lower_name = name.lower()
+        if lower_name in Scaffold.mitochondria_names:
+            return "mitochondria"
+        if lower_name in Scaffold.chloroplast_names:
+            return "chloroplast"
+        match = Scaffold.organelle_name_pattern.match(name)
+        if match:
+            return "mitochondria" if match.group(1).lower() == "m" else "chloroplast"
+        if description:
+            if Scaffold.mitochondria_description_pattern.search(description):
+                return "mitochondria"
+            if Scaffold.chloroplast_description_pattern.search(description):
+                return "chloroplast"
+        return None
+
     def __init__(self, name, sequence, original_name:str="", description:str=""):
 
         self.name = name
@@ -67,25 +93,24 @@ class Scaffold():
             self.number = ""
 
         if self.renamed and not self.name.startswith("chr"):
-            if len(self.number) == 2 or len(self.number) == 3 or self.name[-1].lower() in Scaffold.organelle_suffixes:
+            if len(self.number) == 2 or len(self.number) == 3:
                 self.chromosome = True
-                if self.name[-1].lower() in Scaffold.organelle_suffixes:
-                    self.organelle = True
-                    if self.name[-1].lower() in Scaffold.mitochondria_suffixes:
-                        self.mitochondria = True
-                    else:
-                        self.chloroplast = True
         else:
             if self.name.lower() in Scaffold.unknown_chromosome_names:
                 self.unknown_chromosome = True
             elif self.name.lower().startswith("ch"):
                 self.chromosome = True
-                if self.name[-1].lower() in Scaffold.organelle_suffixes:
-                    self.organelle = True
-                    if self.name[-1].lower() in Scaffold.mitochondria_suffixes:
-                        self.mitochondria = True
-                    else:
-                        self.chloroplast = True
+
+        # Organelle flags are only ever set, never cleared: renamed organelles
+        # (e.g. DAP renaming to chr0001) keep the classification of their original name.
+        organelle = Scaffold.organelle_type(self.name, self.description)
+        if organelle is not None:
+            self.chromosome = True
+            self.organelle = True
+            if organelle == "mitochondria":
+                self.mitochondria = True
+            else:
+                self.chloroplast = True
 
         if self.name.startswith("chr"):
             number_str = self.name[3:]
@@ -501,13 +526,10 @@ class Genome():
 
             self.update()
 
-            if remove_organelles:
-                self.remove_organelles(export=export, output_dir=output_dir)
-
-            elif export:
+            if not remove_organelles and export:
                 self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
 
-        elif remove_organelles:
+        if remove_organelles:
             self.remove_organelles(export=export, output_dir=output_dir)
 
     def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):

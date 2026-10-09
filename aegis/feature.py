@@ -10,6 +10,7 @@ import warnings
 
 from .utils.genefunctions import reverse_complement
 from .other_components import FeatureQuality, FeatureAttributes
+from .conf import default_features
 
 from functools import total_ordering
 
@@ -49,7 +50,7 @@ class Feature():
 
     # These attributes cannot be mistaken by misc attributes or any other
     attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
-    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
+    def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}, phase:int|None=None):
         
         self.id = feature_id
         self.original_id = feature_id
@@ -63,7 +64,7 @@ class Feature():
             self.strand = strand
         else:
             self.strand = "."
-        self.phase = None
+        self.phase = phase
         self.frame = None
         self.coding = False
         self.gene_id = None
@@ -236,13 +237,13 @@ class Feature():
             temp_attributes.extend(self.misc_attributes)
 
         attribute_string = ";".join(temp_attributes)
-        phase = self.phase if self.phase is not None else "."
+        phase = self.phase if (self.feature in default_features["CDS"] and self.phase is not None) else "."
 
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
     def print_gtf(self):
         attribute_string = "; ".join(self.gtf_attributes) # type: ignore
-        phase = self.phase if self.phase is not None else "."
+        phase = self.phase if (self.feature in default_features["CDS"] and self.phase is not None) else "."
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
     
     def copy(self):

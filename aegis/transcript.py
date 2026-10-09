@@ -1,4 +1,5 @@
 from __future__ import annotations
+import warnings
 from typing import Literal
 
 from .feature import Feature
@@ -44,12 +45,22 @@ class Transcript(Feature):
         if self.exons == []:
             self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
             self.generate_exons()
-            self.exons.sort()
+            if len(self.exons) > 1:
+                self.exons.sort()
         else:
-            self.exons.sort()
+            if len(self.exons) > 1:
+                self.exons.sort()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
 
+        if self.exons:
+            if len(self.exons) > 1:
+                self.exons.sort()
+            self.start = self.exons[0].start
+            self.end = self.exons[-1].end
+
         for i, c in enumerate(self.CDSs.values()):
+            if len(c.CDS_segments) > 1:
+                c.CDS_segments.sort()
             if i == 0:
                 c_start = c.start
                 c_end = c.end
@@ -62,12 +73,12 @@ class Transcript(Feature):
         if self.CDSs:
             if self.strand == "+":
                 for e in self.exons:
-                    if e.end > c_start and e.start < c_end:
+                    if e.end >= c_start and e.start <= c_end:
                         e.coding = True
                     
             elif self.strand == "-":
                 for e in self.exons:
-                    if e.start < c_end and e.end > c_start:
+                    if e.start <= c_end and e.end >= c_start:
                         e.coding = True
 
     def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):
@@ -106,6 +117,8 @@ class Transcript(Feature):
             rename = True
 
         if rename:
+            if len(self.exons) > 1:
+                self.exons.sort()
 
             if self.strand == "+" or self.strand == ".":
                 for x, e in enumerate(self.exons):
@@ -208,20 +221,44 @@ class Transcript(Feature):
                 merged = []
                 cur_start = cds.CDS_segments[0].start
                 cur_end = cds.CDS_segments[0].end
-                for x, seg in enumerate(cds.CDS_segments[1:]):
+                group_segs = [cds.CDS_segments[0]]
+                for seg in cds.CDS_segments[1:]:
                     if seg.start <= cur_end + 1:
-                        if seg.end > cur_end:
-                            cur_end = seg.end
-                    else:
-                        merged.append(Feature(cds.id, cds.CDS_segments[x].ch, cds.CDS_segments[x].source, "CDS", cds.CDS_segments[x].strand, cur_start, cur_end, cds.CDS_segments[x].score, parents))
-                        cur_start = seg.start
-                        cur_end = seg.end
+                        # Overlapping segments (seg.start <= cur_end) always collapse
+                        # Directly adjacent segments (seg.start == cur_end + 1) only collapse if phase-compatible
+                        prev_seg = group_segs[-1]
+                        phase_compatible = True
+                        is_adjacent = seg.start == cur_end + 1
+                        is_short_overlap = seg.start <= cur_end and (cur_end - seg.start + 1) in (1, 2)
+                        if (is_adjacent or is_short_overlap) and prev_seg.phase is not None and seg.phase is not None:
+                            overlap = (cur_end - seg.start + 1) if is_short_overlap else 0
+                            if cds.strand != "-":
+                                prev_lo = (prev_seg.size - prev_seg.phase) % 3
+                                phase_compatible = (prev_lo - overlap + seg.phase) % 3 == 0
+                            else:
+                                seg_lo = (seg.size - seg.phase) % 3
+                                phase_compatible = (seg_lo - overlap + prev_seg.phase) % 3 == 0
 
-                merged.append(Feature(cds.id, cds.CDS_segments[-1].ch, cds.CDS_segments[-1].source, "CDS", cds.CDS_segments[-1].strand, cur_start, cur_end, cds.CDS_segments[-1].score, parents))
+                        if phase_compatible:
+                            if seg.end > cur_end:
+                                cur_end = seg.end
+                            group_segs.append(seg)
+                            continue
+
+                    rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
+                    merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
+                    cur_start = seg.start
+                    cur_end = seg.end
+                    group_segs = [seg]
+
+                rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
+                merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
 
                 if len(merged) < len(cds.CDS_segments):
                     cds.CDS_segments = merged
                     self.collapsed_CDS_segments = True
+                    cds.update_phase(override=True, full_override=False)
+                    cds.update_frame()
                     cds.update()
                     
         if self.collapsed_CDS_segments:
@@ -301,8 +338,8 @@ class Transcript(Feature):
     def generate_best_protein(
         self,
         mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
-        start_codons: tuple[str, ...] = ("ATG",),
-        stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"),
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
         min_codon_len: int = 2,
         enforce_start_codon: bool = True,
         must_have_stop: bool = True,
@@ -311,7 +348,9 @@ class Transcript(Feature):
         max_nucleotide_trim: int | None = None,
         always_resolve_strand: bool = True,
         ignore_ambiguous_strands: bool = False,
-        quiet: bool = True
+        quiet: bool = True,
+        table: int | str | dict[str, str] = 1,
+        initiator_methionine: Literal["canonical", "all", "none"] = "canonical",
     ):
         """
         Extracts the best protein/ORF across the spliced exons of the transcript,
@@ -342,7 +381,9 @@ class Transcript(Feature):
                 correct_CDS=True,
                 always_resolve_strand=always_resolve_strand,
                 ignore_ambiguous_strands=ignore_ambiguous_strands,
-                quiet=quiet
+                quiet=quiet,
+                table=table,
+                initiator_methionine=initiator_methionine,
             )
 
             if candidate_cds.protein is not None:
@@ -364,6 +405,10 @@ class Transcript(Feature):
         if len(self.exons) != len(other.exons):
             almost_equal = False
         else:
+            if len(self.exons) > 1:
+                self.exons.sort()
+            if len(other.exons) > 1:
+                other.exons.sort()
             for n, exon in enumerate(self.exons):
                 if exon.start != other.exons[n].start or exon.end != other.exons[n].end:
                     almost_equal = False
@@ -382,6 +427,8 @@ class Transcript(Feature):
         """
 
         if self.temp_CDSs:
+            if len(self.temp_CDSs) > 1:
+                self.temp_CDSs.sort()
 
             parents = [self.id]
         
@@ -406,7 +453,7 @@ class Transcript(Feature):
                     for sn in range(1, len(self.temp_CDSs)):
                         prev = self.temp_CDSs[sn - 1]
                         curr = self.temp_CDSs[sn]
-                        if curr.start < prev.end:
+                        if curr.start <= prev.end:
                             more_than_1_CDS = True
                         seg_id = curr.id
                         if seg_id in seen_ids:
@@ -532,6 +579,7 @@ class Transcript(Feature):
             for c in self.CDSs.values():
                 c.UTRs = self.temp_UTRs
             self.temp_UTRs = None
+            self.update_UTRs()
 
     def generate_UTRs(self):
         if self.temp_UTRs:
@@ -543,7 +591,7 @@ class Transcript(Feature):
                 if c.strand != exon.strand:
                     continue
                 if exon.end <= c.CDS_segments[-1].end and exon.start >= c.CDS_segments[0].start:
-                    pass
+                    continue
                 if exon.end < c.CDS_segments[0].start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
@@ -583,6 +631,7 @@ class Transcript(Feature):
                             u.prime = "5'"
                             u.feature = "five_prime_UTR"
                         else:
+                            u.prime = "3'"
                             u.feature = "three_prime_UTR"
                 elif c.strand == "-":
                     for u in c.UTRs:
@@ -590,6 +639,7 @@ class Transcript(Feature):
                             u.prime = "5'"
                             u.feature = "five_prime_UTR"
                         else:
+                            u.prime = "3'"
                             u.feature = "three_prime_UTR"
 
                 c.full_UTR_exons = len(self.exons) - len(c.CDS_segments)
@@ -620,6 +670,8 @@ class Transcript(Feature):
         self.generated_exons = True
 
     def generate_introns(self):
+        if len(self.exons) > 1:
+            self.exons.sort()
         self.introns = []
         counter = 0
         parents = [self.id]
@@ -681,28 +733,42 @@ class Transcript(Feature):
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            transcript_seqs = ["", ""]
-            for exon in self.exons:
-                transcript_seqs[0] += exon.seq
-
-            for exon in reversed(self.exons):
-                transcript_seqs[1] += reverse_complement(exon.seq)
-
-            return transcript_seqs
+            if not self.exons:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+                warnings.warn(
+                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.exons) > 1:
+                self.exons.sort()
+            fw_seq = "".join(scf_seq[max(0, exon.start - 1):min(scf_len, exon.end)] for exon in self.exons)
+            return [fw_seq, reverse_complement(fw_seq)]
 
     @property
     def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            transcript_seqs = ["", ""]
-            for exon in self.exons:
-                transcript_seqs[0] += exon.hard_seq
-
-            for exon in reversed(self.exons):
-                transcript_seqs[1] += reverse_complement(exon.hard_seq)
-
-            return transcript_seqs
+            if not self.exons:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+                warnings.warn(
+                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.exons) > 1:
+                self.exons.sort()
+            fw_seq = "".join(scf_seq[max(0, exon.start - 1):min(scf_len, exon.end)] for exon in self.exons)
+            return [fw_seq, reverse_complement(fw_seq)]
     
     @property
     def size(self):

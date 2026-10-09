@@ -44,6 +44,7 @@ class GffEntry:
     pseudogene: bool
     transposable: bool
     decreasing_coordinates: bool
+    phase: int | None = None
 
 def parse_gff_parts(parts) -> GffEntry:
 
@@ -52,6 +53,9 @@ def parse_gff_parts(parts) -> GffEntry:
     feature = sys.intern(parts[2])
     strand = sys.intern(parts[6])
     score = sys.intern(parts[5])
+
+    raw_phase = parts[7]
+    phase = int(raw_phase) if (raw_phase in ("0", "1", "2") and feature in default_features["CDS"]) else None
 
     ch = sys.intern(parts[0].partition(":")[0]) if feature == "nucleotide_to_protein_match" else sys.intern(parts[0])
 
@@ -99,7 +103,8 @@ def parse_gff_parts(parts) -> GffEntry:
         parents=parents,
         pseudogene=pseudogene,
         transposable=transposable,
-        decreasing_coordinates=decreasing_coordinates
+        decreasing_coordinates=decreasing_coordinates,
+        phase=phase
     )
 
 def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):

@@ -2,6 +2,11 @@
 Shared Pytest fixtures for the Aegis test suite.
 """
 
+import os
+
+# Prevent Typer/Rich from forcing ANSI escape codes during testing (e.g. in GitHub Actions)
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
 import pytest
 from pathlib import Path
 
@@ -247,10 +252,10 @@ def make_transcript():
 @pytest.fixture
 def make_CDS_segment():
     """Create a Feature segment to use as a CDS segment."""
-    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None):
+    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None, phase=None):
         if parents is None: parents = ["mRNA1"]
         if attributes is None: attributes = {}
-        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy(), phase=phase)
     return _make
 
 @pytest.fixture

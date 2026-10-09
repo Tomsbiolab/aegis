@@ -8,8 +8,9 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from ..genome import Genome
+from ..genome import Genome, Scaffold
 from ..utils.misc import open_file
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SPLIT_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -279,71 +280,107 @@ def main(
     file2: Annotated[str, typer.Argument(
         help="Optional second input file (genome FASTA or annotation GFF/GTF)."
     )] = "",
-    annotation_file: Annotated[str, typer.Option(
-        "-a", "--annotation", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided."
-    )] = "",
-    genome_file: Annotated[str, typer.Option(
-        "-g", "--genome", help="Path to the input genome FASTA file. Overrides positional argument if provided."
-    )] = "",
     split_by: Annotated[Optional[list[str]], typer.Option(
         "-s", "--split-by", help="Tag(s) or pattern(s) to split by (e.g. 'A,B', 'A,;D,', 'A,,D,', or multiple -s A, -s D,).",
+        rich_help_panel=SPLIT_PANEL,
     )] = None,
     regex: Annotated[str, typer.Option(
-        "-r", "--regex", help="Optional regular expression pattern to extract the split tag from sequence ID or description (e.g. 'chromosome \\d+([A-Z])')."
+        "-r", "--regex", help="Optional regular expression pattern to extract the split tag from sequence ID or description (e.g. 'chromosome \\d+([A-Z])').",
+        rich_help_panel=SPLIT_PANEL,
     )] = "",
     match_mode: Annotated[str, typer.Option(
-        "-m", "--match-mode", help="Matching mode for split-by tags: 'smart' (default; checks chromosome/haplotype context and word boundaries), 'substring' (simple substring match), or 'exact' (exact word match)."
+        "-m", "--match-mode", help="Matching mode for split-by tags: 'smart' (default; checks chromosome/haplotype context and word boundaries), 'substring' (simple substring match), or 'exact' (exact word match).",
+        rich_help_panel=SPLIT_PANEL,
     )] = "smart",
     ignore_case: Annotated[bool, typer.Option(
-        "-i", "--ignore-case", help="Case-insensitive matching. By default, matching is case-sensitive."
+        "-i", "--ignore-case", help="Case-insensitive matching. By default, matching is case-sensitive.",
+        rich_help_panel=SPLIT_PANEL,
     )] = False,
     split_map: Annotated[str, typer.Option(
-        "--split-map", help="Path to a TSV file for explicit scaffold mapping. Format: 'scaffold_id<tab>split_group' per line."
+        "--split-map", help="Path to a TSV file for explicit scaffold mapping. Format: 'scaffold_id<tab>split_group' per line.",
+        rich_help_panel=SPLIT_PANEL,
     )] = "",
-    annotation_name: Annotated[str, typer.Option(
-        "-an", "--annotation-name", help="Annotation version, name or tag."
-    )] = "{annotation-file}",
-    genome_name: Annotated[str, typer.Option(
-        "-gn", "--genome-name", help="Genome assembly version, name or tag."
-    )] = "{genome-file}",
-    output_dir: Annotated[str, typer.Option(
-        "-d", "--output-dir", help="Path to the output folder."
-    )] = "./aegis_output/split/",
-    output_annot_file: Annotated[str, typer.Option(
-        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']"
-    )] = "{annotation-name}_split{tag}.gff3",
-    output_genome_file: Annotated[str, typer.Option(
-        "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']"
-    )] = "{genome-name}_split{tag}.fasta",
-    keep_description: Annotated[bool, typer.Option(
-        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files."
+    by_chromosome: Annotated[bool, typer.Option(
+        "-c", "--by-chromosome", "--by-chr", help="Preset: automatically partition each chromosome into its own split file (unplaced scaffolds into 'other').",
+        rich_help_panel=SPLIT_PANEL,
     )] = False,
     write_empty_other: Annotated[bool, typer.Option(
-        "--write-empty-other", help="Write '_split_other' files even if no scaffolds are unassigned."
+        "--write-empty-other", help="Write '_split_other' files even if no scaffolds are unassigned.",
+        rich_help_panel=SPLIT_PANEL,
     )] = False,
-    quiet: Annotated[bool, typer.Option(
-        "-q", "--quiet", help="Keeps terminal reporting to a minimum."
-    )] = False,
-    by_chromosome: Annotated[bool, typer.Option(
-        "-c", "--by-chromosome", "--by-chr", help="Preset: automatically partition each chromosome into its own split file (unplaced scaffolds into 'other')."
-    )] = False,
-    dry_run: Annotated[bool, typer.Option(
-        "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk."
-    )] = False,
+
+    # 2. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
-        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID')."
+        "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     header_id_regex: Annotated[str, typer.Option(
-        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)')."
+        "--header-id-regex", help="Extract chromosome/scaffold ID from FASTA header description using a regex capture group (e.g., 'OriSeqID=(\\S+)').",
+        rich_help_panel=FASTA_HEADER_PANEL,
     )] = "",
     gwh: Annotated[bool, typer.Option(
-        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers."
+        "--gwh", help="Preset for Genome Warehouse (GWH) FASTA files. Automatically extracts original sequence IDs from 'OriSeqID=...' in headers.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+    keep_description: Annotated[bool, typer.Option(
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files.",
+        rich_help_panel=FASTA_HEADER_PANEL,
+    )] = False,
+
+    # 3. Input / Output Options
+    annotation_file: Annotated[str, typer.Option(
+        "-a", "--annotation", "--annotations", "--annotation-file", help="Path to the input annotation GFF/GTF file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    genome_file: Annotated[str, typer.Option(
+        "-g", "--genome", "--genomes", "--genome-file", help="Path to the input genome FASTA file. Overrides positional argument if provided.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    annotation_name: Annotated[str, typer.Option(
+        "-an", "--annotation-name", "--annotation-names", help="Annotation version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{annotation-file}",
+    genome_name: Annotated[str, typer.Option(
+        "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag.",
+        rich_help_panel=IO_PANEL,
+    )] = "{genome-file}",
+    output_dir: Annotated[str, typer.Option(
+        "-d", "--output-dir", help="Path to the output folder.",
+        rich_help_panel=IO_PANEL,
+    )] = "./aegis_output/split/",
+    output_annot_file: Annotated[str, typer.Option(
+        "-oa", "--output-annot-file", help="Template for output annotation filename. Use '{tag}' or '{annotation-name}'. [default: '{annotation-name}_split{tag}.gff3']",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_genome_file: Annotated[str, typer.Option(
+        "-og", "--output-genome-file", help="Template for output genome filename. Use '{tag}' or '{genome-name}'. [default: '{genome-name}_split{tag}.fasta']",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+    output_file: Annotated[str, typer.Option(
+        "-o", "--output-file", help="Generic template for output file(s). Applies to annotation and/or genome output.",
+        rich_help_panel=IO_PANEL,
+    )] = "",
+
+    # 4. Execution & Debugging
+    dry_run: Annotated[bool, typer.Option(
+        "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    quiet: Annotated[bool, typer.Option(
+        "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
+        rich_help_panel=EXEC_PANEL,
+    )] = False,
+    verbose: Annotated[bool, typer.Option(
+        "-v", "--verbose", help="Increase terminal reporting verbosity.",
+        rich_help_panel=EXEC_PANEL,
     )] = False,
 ):
     """
     Split an annotation (GFF/GTF) and/or genome assembly (FASTA) into distinct files
     based on genomic feature names, descriptions, haplotypes, or regex patterns.
     """
+    if verbose:
+        quiet = False
     # 1. Resolve input files (positional vs options)
     pos_files = [f for f in (file1, file2) if f]
 
@@ -436,6 +473,27 @@ def main(
     else:
         genome_name = "genome"
 
+    if output_file:
+        if not output_annot_file and annotation_file:
+            if not genome_file or output_file.lower().endswith((".gff", ".gff3", ".gtf")):
+                output_annot_file = output_file
+            else:
+                stem, ext = os.path.splitext(output_file)
+                ext = ext if ext else ".gff3"
+                output_annot_file = f"{stem}_split{{tag}}{ext}" if "{tag}" not in output_file else output_file
+        if not output_genome_file and genome_file:
+            if not annotation_file or output_file.lower().endswith((".fa", ".fasta", ".fna")):
+                output_genome_file = output_file
+            else:
+                stem, ext = os.path.splitext(output_file)
+                ext = ext if ext else ".fasta"
+                output_genome_file = f"{stem}_split{{tag}}{ext}" if "{tag}" not in output_file else output_file
+
+    if not output_annot_file:
+        output_annot_file = "{annotation-name}_split{tag}.gff3"
+    if not output_genome_file:
+        output_genome_file = "{genome-name}_split{tag}.fasta"
+
     if not dry_run:
         os.makedirs(output_dir, exist_ok=True)
 
@@ -455,9 +513,9 @@ def main(
 
     if annotation_file:
         if genome_obj:
-            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet)
+            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, skip_coordinate_polishing=True)
         else:
-            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, quiet=quiet)
+            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, quiet=quiet, skip_coordinate_polishing=True)
 
     # 5. Classify features (scaffolds/chromosomes)
     # Collect all feature identifiers and their descriptions
@@ -488,7 +546,7 @@ def main(
                     is_chrom = bool(scf.chromosome and not scf.organelle and not scf.unknown_chromosome)
             else:
                 nl = ft_id.lower()
-                is_organelle = any(p in nl for p in ["mit", "mt", "pt", "chlor", "cp"])
+                is_organelle = Scaffold.organelle_type(ft_id) is not None
                 is_chrom = bool((nl.startswith("chr") or nl.startswith("chromosome") or ft_id.isdigit()) and not is_organelle)
 
             if is_chrom:

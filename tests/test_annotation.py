@@ -12,7 +12,7 @@ from aegis.gene import Gene
 from aegis.transcript import Transcript
 
 from aegis.annotation import Annotation
-from aegis.genome import Genome
+from aegis.genome import Genome, Scaffold
 from aegis.utils.gtf_gff import parse_gtf_attributes, format_gff3_attributes, convert_gtf_to_gff3, detect_file_format
 from aegis.utils.misc import read_file_with_fallback
 from aegis.utils.genefunctions import sort_and_update_genes
@@ -946,6 +946,80 @@ class TestAnnotationExportGtf:
             if len(parts) >= 3:
                 assert parts[2] == "gene"
 
+    def test_export_gtf_strict_2_2(self, sample_gff3_file, tmp_path):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), subfolder=True, strict_gtf_2_2=True, UTRs=True, quiet=True)
+        out_dir = tmp_path / "out_gtfs"
+        gtf_files = list(out_dir.glob("*.gtf"))
+        content = gtf_files[0].read_text()
+        lines = [l for l in content.strip().split("\n") if not l.startswith("#") and l != "###"]
+        features = [l.split("\t")[2] for l in lines if len(l.split("\t")) >= 3]
+        # Strict GTF 2.2 should not have gene or transcript lines
+        assert "gene" not in features
+        assert "transcript" not in features
+        # Features should only be exon, CDS, 5UTR, 3UTR, etc.
+        assert "exon" in features or "CDS" in features
+        for f in features:
+            assert f in ("exon", "CDS", "5UTR", "3UTR", "start_codon", "stop_codon")
+
+
+class TestPhaseWarnings:
+
+    def test_phase_mismatch_across_intron_warning(self, tmp_path):
+        # seg1: 1000..1099 (len 100), phase 0 -> leftover = 1. Expected seg2 phase = 2.
+        # seg2: 2000..2099 (len 100), phase 0 (mismatch: (1 + 0) % 3 != 0 across intron)
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True)
+        assert len(annot.warnings["phase_mismatch_across_intron"]) == 1
+
+    def test_recalculate_phases_resolves_mismatch(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True, recalculate_phases=True)
+        assert len(annot.warnings["phase_mismatch_across_intron"]) == 0
+        cds = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
+        assert cds.CDS_segments[1].phase == 2
+
+    def test_get_protein_qc_summary(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True)
+        qc = annot.get_protein_qc_summary()
+        assert qc["total_cds"] == 1
+        assert qc["phase_mismatches"] == 1
+        assert qc["frameshifted_cds"] == 1
+
 
 # ============================================================
 # Annotation — rename_chromosomes
@@ -1208,7 +1282,7 @@ class TestAnnotationReworkCDSs:
             quiet=True,
             genome=genome,
         )
-        annot.rework_CDSs(quiet=True)
+        annot.rework_CDSs(quiet=True, coding_ratio_threshold=0.65)
         return annot
 
     def test_all_transcripts_have_cds(self, reworked_annotation):
@@ -2581,7 +2655,7 @@ class TestReworkCDS:
         output_dir = tmp_path
 
         genome = Genome("TAIR10", arabidopsis_tair10_fasta_file)
-        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True)
+        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4)
 
         annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True)
 
@@ -2599,18 +2673,16 @@ class TestReworkCDS:
 # Rework CDS Fallback and Generate Proteins Correct CDS
 # ============================================================
 
-class MockScaffold:
-    def __init__(self, seq: str):
-        self.seq = seq
-
-
 class MockGenome:
     def __init__(self, seq_dict: dict[str, str]):
         self.name = "mock_genome"
-        self.scaffolds = {k: MockScaffold(v) for k, v in seq_dict.items()}
+        self.scaffolds = {k: Scaffold(k, v) for k, v in seq_dict.items()}
         self.dapfit = False
         self.dapmod = False
         self.confrenamed = False
+
+    def get_scaffold(self, scaffold_id: str):
+        return self.scaffolds.get(scaffold_id)
 
 
 class TestAnnotationReworkCDSsFallback:
@@ -2699,3 +2771,205 @@ class TestAnnotationGenerateProteinsCorrectCDS:
         assert cds.CDS_segments[0].start == 1
         assert cds.CDS_segments[0].end == 30
         assert cds.size == 30
+
+
+# ============================================================
+# Organelle Translation and Genetic Codes
+# ============================================================
+
+class TestProteinFlags:
+    @staticmethod
+    def _protein(tmp_path, seq, segments):
+        """Single-transcript annotation on chr1 = seq; segments are (start, end, phase) CDS lines."""
+        lines = [
+            "##gff-version 3",
+            f"chr1\ttest\tgene\t1\t{len(seq)}\t.\t+\t.\tID=g1",
+            f"chr1\ttest\tmRNA\t1\t{len(seq)}\t.\t+\t.\tID=t1;Parent=g1",
+            f"chr1\ttest\texon\t1\t{len(seq)}\t.\t+\t.\tID=e1;Parent=t1",
+        ] + [f"chr1\ttest\tCDS\t{a}\t{b}\t.\t+\t{ph}\tID=c1;Parent=t1" for a, b, ph in segments]
+        gff_file = tmp_path / "flags.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": seq}), quiet=True)
+        annot.generate_proteins(quiet=True)
+        return annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].protein
+
+    def test_corrected_frameshift_is_complete(self, tmp_path):
+        # ATG AAA CTT | T (skipped) | GAC TAA: +1 shift encoded by a 3n+1 first segment
+        p = self._protein(tmp_path, "ATGAAACTTTGACTAA", [(1, 10, 0), (11, 16, 0)])
+        assert p.seq == "MKLD*"
+        assert p.frameshifts == 1
+        assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
+        assert p.partial is False
+        assert p.nucleotide_surplus is False
+        assert "frameshift" in p.summary_tag
+
+    def test_bases_after_stop_are_not_partial(self, tmp_path):
+        # ATG AAA TAA + 2 extra bases
+        p = self._protein(tmp_path, "ATGAAATAAGC", [(1, 11, 0)])
+        assert p.trimmed_3p == 2
+        assert p.partial_3prime is False
+        assert p.nucleotide_surplus is True
+
+    def test_missing_stop_is_3prime_partial(self, tmp_path):
+        # ATG AAA AAA + 2 bases, no stop
+        p = self._protein(tmp_path, "ATGAAAAAAGC", [(1, 11, 0)])
+        assert p.trimmed_3p == 2
+        assert p.partial_3prime is True
+        assert p.partial_5prime is False
+
+    def test_initial_phase_is_5prime_partial(self, tmp_path):
+        # Phase 2: AT skipped, then GAA ATG TAA; the first full codon is not the annotated start
+        p = self._protein(tmp_path, "ATGAAATGTAA", [(1, 11, 2)])
+        assert p.trimmed_5p == 2
+        assert p.start_status == "none"
+        assert p.partial_5prime is True
+        assert p.partial_3prime is False
+
+
+class TestOrganelleTranslation:
+    def test_autodetect_mitochondria(self, tmp_path):
+        # TGA is Stop in Table 1 (Standard / Plant mitochondrial), but Trp (W) in Table 2 (Vertebrate Mitochondrial)
+        # ATGTGATAA: in Table 1 -> M** (stops at TGA); in Table 2 -> MW* (stops at TAA)
+        gff_content = (
+            "##gff-version 3\n"
+            "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
+            "chrM\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_mito;Parent=g_mito\n"
+            "chrM\ttest\texon\t1\t9\t.\t+\t.\tID=e_mito;Parent=t_mito\n"
+            "chrM\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_mito;Parent=t_mito\n"
+        )
+        gff_file = tmp_path / "mito_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chrM": "ATGTGATAA"})
+        genome.scaffolds["chrM"].mitochondria = True
+
+        # Default taxonomy="plant" uses Table 1 for mitochondria -> M**
+        annot_plant = Annotation(str(gff_file), genome=genome, quiet=True)
+        annot_plant.generate_proteins(mode="end", quiet=True)
+        cds_plant = annot_plant.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds_plant.protein is not None
+        assert cds_plant.protein.seq == "M**"
+
+        # Explicit taxonomy="vertebrate" uses Table 2 for mitochondria -> MW*
+        annot_vert = Annotation(str(gff_file), genome=genome, taxonomy="vertebrate", quiet=True)
+        annot_vert.generate_proteins(mode="end", quiet=True)
+        cds_vert = annot_vert.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds_vert.protein is not None
+        assert cds_vert.protein.seq == "MW*"
+
+    def test_disable_auto_organelle_codes(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
+            "chrM\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_mito;Parent=g_mito\n"
+            "chrM\ttest\texon\t1\t9\t.\t+\t.\tID=e_mito;Parent=t_mito\n"
+            "chrM\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_mito;Parent=t_mito\n"
+        )
+        gff_file = tmp_path / "mito_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chrM": "ATGTGATAA"})
+        genome.scaffolds["chrM"].mitochondria = True
+
+        # When auto_organelle_codes is False, Table 1 is used -> TGA is Stop (*), TAA is Stop (*) -> M**
+        annot = Annotation(str(gff_file), genome=genome, auto_organelle_codes=False, quiet=True)
+        annot.generate_proteins(mode="end", quiet=True)
+
+        cds = annot.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
+        assert cds.protein is not None
+        assert cds.protein.seq == "M**"
+
+    def test_user_specified_contig_override(self, tmp_path):
+        # Scaffold has non-standard name "scaff_custom" and mitochondria=False
+        gff_content = (
+            "##gff-version 3\n"
+            "scaff_custom\ttest\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+            "scaff_custom\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
+            "scaff_custom\ttest\texon\t1\t9\t.\t+\t.\tID=e1;Parent=t1\n"
+            "scaff_custom\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "custom_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"scaff_custom": "ATGTGATAA"})
+        # User manually specifies scaff_custom as mitochondria with vertebrate taxonomy -> Table 2 -> MW*
+        annot = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["scaff_custom"], taxonomy="vertebrate", quiet=True)
+        annot.generate_proteins(mode="end", quiet=True)
+
+        cds = annot.chrs["scaff_custom"]["g1"].transcripts["t1"].CDSs["cds1"]
+        assert cds.protein is not None
+        assert cds.protein.seq == "MW*"
+
+        # User explicitly overrides mito_table=2 even under default plant taxonomy
+        annot2 = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["scaff_custom"], mito_table=2, quiet=True)
+        annot2.generate_proteins(mode="end", quiet=True)
+        cds2 = annot2.chrs["scaff_custom"]["g1"].transcripts["t1"].CDSs["cds1"]
+        assert cds2.protein is not None
+        assert cds2.protein.seq == "MW*"
+
+    def test_missing_contig_raises_value_error(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t9\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chr1": "ATGTGATAA"})
+
+        # Unknown mitochondrial contig
+        with pytest.raises(ValueError, match="Specified mitochondrial chromosome 'nonexistent_chr' was not found"):
+            annot = Annotation(str(gff_file), genome=genome, mitochondria_chroms=["nonexistent_chr"], quiet=True)
+            annot.generate_proteins()
+
+        # Unknown chloroplast contig
+        with pytest.raises(ValueError, match="Specified chloroplast chromosome 'nonexistent_plastid' was not found"):
+            annot = Annotation(str(gff_file), genome=genome, chloroplast_chroms=["nonexistent_plastid"], quiet=True)
+            annot.generate_proteins()
+
+    def test_autodetect_chrmt_and_chrpt_by_name(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chrMT\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mt\n"
+            "chrMT\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_mt;Parent=g_mt\n"
+            "chrMT\ttest\texon\t1\t9\t.\t+\t.\tID=e_mt;Parent=t_mt\n"
+            "chrMT\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_mt;Parent=t_mt\n"
+            "chrPt\ttest\tgene\t1\t9\t.\t+\t.\tID=g_pt\n"
+            "chrPt\ttest\tmRNA\t1\t9\t.\t+\t.\tID=t_pt;Parent=g_pt\n"
+            "chrPt\ttest\texon\t1\t9\t.\t+\t.\tID=e_pt;Parent=t_pt\n"
+            "chrPt\ttest\tCDS\t1\t9\t.\t+\t0\tID=cds_pt;Parent=t_pt\n"
+        )
+        gff_file = tmp_path / "organelle_by_name_test.gff3"
+        gff_file.write_text(gff_content)
+
+        genome = MockGenome({"chrMT": "ATGTGATAA", "chrPt": "GTGAAATAA"})
+
+        # Plant taxonomy (default): chrMT uses Table 1 -> M**, chrPt uses Table 11 where the
+        # GTG initiator is translated as M -> MK*
+        annot_plant = Annotation(str(gff_file), genome=genome, quiet=True)
+        annot_plant.generate_proteins(mode="end", quiet=True)
+
+        cds_mt_plant = annot_plant.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
+        assert cds_mt_plant.protein is not None
+        assert cds_mt_plant.protein.seq == "M**"
+
+        cds_pt_plant = annot_plant.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"]
+        assert cds_pt_plant.protein is not None
+        assert cds_pt_plant.protein.seq == "MK*"
+        assert cds_pt_plant.protein.start_status == "canonical"
+
+        # Literal translation of the initiator when requested
+        annot_literal = Annotation(str(gff_file), genome=genome, initiator_methionine="none", quiet=True)
+        annot_literal.generate_proteins(mode="end", quiet=True)
+        assert annot_literal.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"].protein.seq == "VK*"
+
+        # Vertebrate taxonomy: chrMT uses Table 2 -> MW*
+        annot_vert = Annotation(str(gff_file), genome=genome, taxonomy="vertebrate", quiet=True)
+        annot_vert.generate_proteins(mode="end", quiet=True)
+
+        cds_mt_vert = annot_vert.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
+        assert cds_mt_vert.protein is not None
+        assert cds_mt_vert.protein.seq == "MW*"
