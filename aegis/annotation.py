@@ -31,7 +31,6 @@ from .gene import Gene
 from .transcript import Transcript
 from .subfeatures import Exon, UTR
 from .hits import BlastHit
-from .misc_features import INITIATOR_METHIONINE_MODES
 from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
@@ -72,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:Literal["canonical", "all", "none"]="canonical"):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         
         start_time = time.time()
 
@@ -112,9 +111,8 @@ class Annotation():
         self._protein_qc_summary = None
 
         self.adjust_internal_shifts = adjust_internal_shifts
-        if initiator_methionine not in INITIATOR_METHIONINE_MODES:
-            raise ValueError(f"initiator_methionine must be one of {INITIATOR_METHIONINE_MODES}, got '{initiator_methionine}'.")
         self.initiator_methionine = initiator_methionine
+        self.alt_start_methionine = alt_start_methionine
         self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_codes=auto_organelle_codes, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
 
         self.genome = genome
@@ -1809,6 +1807,7 @@ class Annotation():
                             adjust_internal_shifts=self.adjust_internal_shifts,
                             table=chrom_table,
                             initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
                         )
                     if correct_CDS:
                         t.update(quiet=quiet)
@@ -2506,6 +2505,7 @@ class Annotation():
                         quiet=quiet,
                         table=chrom_table,
                         initiator_methionine=self.initiator_methionine,
+                        alt_start_methionine=self.alt_start_methionine,
                     )
                     t.update(quiet=quiet)
 
@@ -2522,6 +2522,7 @@ class Annotation():
                             quiet=quiet,
                             table=chrom_table,
                             initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
                         )
                         t.update(quiet=quiet)
 
@@ -2538,6 +2539,7 @@ class Annotation():
                             quiet=quiet,
                             table=chrom_table,
                             initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
                         )
                         t.update(quiet=quiet)
 
@@ -2554,6 +2556,7 @@ class Annotation():
                             quiet=quiet,
                             table=chrom_table,
                             initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
                         )
                         t.update(quiet=quiet)
 

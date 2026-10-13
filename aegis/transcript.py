@@ -213,6 +213,9 @@ class Transcript(Feature):
         """
         Merges overlapping or directly adjacent CDS segments into single segments
         """
+        if self.temp_CDSs and not self.CDSs:
+            self.generate_CDSs()
+
         parents = [self.id]
         for cds in self.CDSs.values():
 
@@ -350,7 +353,8 @@ class Transcript(Feature):
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
         table: int | str | dict[str, str] = 1,
-        initiator_methionine: Literal["canonical", "all", "none"] = "canonical",
+        initiator_methionine: bool = True,
+        alt_start_methionine: bool = True,
     ):
         """
         Extracts the best protein/ORF across the spliced exons of the transcript,
@@ -384,6 +388,7 @@ class Transcript(Feature):
                 quiet=quiet,
                 table=table,
                 initiator_methionine=initiator_methionine,
+                alt_start_methionine=alt_start_methionine,
             )
 
             if candidate_cds.protein is not None:

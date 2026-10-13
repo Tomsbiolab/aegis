@@ -134,15 +134,7 @@ ChloroplastChromsOption = Annotated[List[str], typer.Option(
     "--chloroplast-chroms", callback=split_callback, rich_help_panel=GENETIC_CODES_PANEL,
     help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code."
 )]
-
-
-def initiator_methionine_callback(value: str) -> str:
-    if value not in ("canonical", "all", "none"):
-        raise typer.BadParameter(f"Invalid value '{value}'. Choose from: canonical, all, none.")
-    return value
-
-
-InitiatorMethionineOption = Annotated[str, typer.Option(
-    "--initiator-methionine", callback=initiator_methionine_callback, rich_help_panel=GENETIC_CODES_PANEL,
-    help="Which start codons are translated as M when they initiate a 5'-complete protein: 'canonical' (default: the curated start codons of the table, e.g. GTG/TTG in plastids), 'all' (also NCBI's alternative initiators, e.g. CTG/TTG in table 1), or 'none' (literal translation of the first codon)."
+InitiatorMethionineOption = Annotated[bool, typer.Option(
+    "--initiator-methionine/--no-initiator-methionine", rich_help_panel=GENETIC_CODES_PANEL,
+    help="Translate valid start codons at position 1 to Methionine (M) [default: enabled; matches NCBI RefSeq/UniProt standard]. Use --no-initiator-methionine for literal codon translation."
 )]

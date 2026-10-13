@@ -15,6 +15,7 @@ from .utils import (
     AutoOrganelleCodesOption,
     MitoCodeOption,
     PlastidCodeOption,
+    InitiatorMethionineOption,
     IO_PANEL,
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
@@ -199,6 +200,7 @@ def main(
     auto_organelle_codes: AutoOrganelleCodesOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
+    initiator_methionine: InitiatorMethionineOption = True,
 
     # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
@@ -425,6 +427,7 @@ def main(
                 mito_table=mito_code,
                 plastid_table=plastid_code,
                 auto_organelle_codes=auto_organelle_codes,
+                initiator_methionine=initiator_methionine, #type: ignore
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)

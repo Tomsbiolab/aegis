@@ -9,8 +9,6 @@ import copy
 from .feature import Feature
 from .utils.genefunctions import get_start_codons, get_alt_start_codons
 
-INITIATOR_METHIONINE_MODES = ("canonical", "all", "none")
-
 class Protein():
 
     __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "start_status")
@@ -29,19 +27,18 @@ class Protein():
     frameshifts: int
     start_status: str
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:int=0, initiator_methionine:str="canonical"):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:int=0, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         """
         trimmed_5p: CDS bases skipped before the first translated codon (nonzero
             initial phase or 5' trimming); the first codon is then not a start codon.
         trimmed_3p: CDS bases left untranslated after the last complete codon.
         frameshifts: segment junctions where bases were dropped to follow annotated
             phases (internal frameshifts corrected during translation).
-        initiator_methionine: which start codons are translated as M when they
-            initiate the protein (NCBI convention): "canonical" (curated starts of
-            the table), "all" (also alternative NCBI initiators) or "none".
+        initiator_methionine: whether valid start codons at position 1 are translated
+            as Methionine (M) [default: True, matching NCBI RefSeq/UniProt convention].
+        alt_start_methionine: whether alternative start codons (e.g. CTG in table 1/11)
+            are also translated as M when initiator_methionine is True [default: True].
         """
-        if initiator_methionine not in INITIATOR_METHIONINE_MODES:
-            raise ValueError(f"initiator_methionine must be one of {INITIATOR_METHIONINE_MODES}, got '{initiator_methionine}'.")
         self.id = prot_id
         self.table = table
         self.trimmed_5p = trimmed_5p
@@ -58,8 +55,9 @@ class Protein():
         self.nuc_seq = nuc_seq
 
         self.start_status = self._grade_start()
-        if self.start_status == "canonical" and initiator_methionine != "none" or self.start_status == "alternative" and initiator_methionine == "all":
-            self.seq = "M" + self.seq[1:]
+        if initiator_methionine:
+            if self.start_status == "canonical" or (self.start_status == "alternative" and alt_start_methionine):
+                self.seq = "M" + self.seq[1:]
 
     def copy(self):
         return copy.deepcopy(self)

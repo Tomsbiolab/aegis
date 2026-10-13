@@ -933,6 +933,7 @@ class TestAnnotationExportGtf:
         content = gtf_files[0].read_text()
         assert "#gtf-version 2.2" in content
         assert "gene1" in content
+        assert "###" not in content
 
     def test_export_gtf_just_genes(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -952,7 +953,8 @@ class TestAnnotationExportGtf:
         out_dir = tmp_path / "out_gtfs"
         gtf_files = list(out_dir.glob("*.gtf"))
         content = gtf_files[0].read_text()
-        lines = [l for l in content.strip().split("\n") if not l.startswith("#") and l != "###"]
+        assert "###" not in content
+        lines = [l for l in content.strip().split("\n") if not l.startswith("#")]
         features = [l.split("\t")[2] for l in lines if len(l.split("\t")) >= 3]
         # Strict GTF 2.2 should not have gene or transcript lines
         assert "gene" not in features
@@ -2962,7 +2964,7 @@ class TestOrganelleTranslation:
         assert cds_pt_plant.protein.start_status == "canonical"
 
         # Literal translation of the initiator when requested
-        annot_literal = Annotation(str(gff_file), genome=genome, initiator_methionine="none", quiet=True)
+        annot_literal = Annotation(str(gff_file), genome=genome, initiator_methionine=False, quiet=True)
         annot_literal.generate_proteins(mode="end", quiet=True)
         assert annot_literal.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"].protein.seq == "VK*"
 

@@ -45,6 +45,14 @@ def main(
         "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
         rich_help_panel=COORDS_PANEL,
     )] = False,
+    collapse_exons: Annotated[bool, typer.Option(
+        "--collapse-exons/--no-collapse-exons", help="Merge overlapping or adjacent exons [default: disabled; preserves original exons].",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    collapse_cds: Annotated[bool, typer.Option(
+        "--collapse-cds/--no-collapse-cds", help="Merge overlapping or adjacent CDS segments [default: disabled; preserves original CDS segments].",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
 
     # 3. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
@@ -87,6 +95,8 @@ def main(
 
     skip_coordinate_polishing = not polish_coordinates
     export_utrs = not strip_utrs
+    collapse_exons_opt = collapse_exons
+    collapse_CDSs_opt = collapse_cds
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -103,6 +113,8 @@ def main(
         skip_coordinate_polishing=skip_coordinate_polishing,
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
+        collapse_exons=collapse_exons_opt,
+        collapse_CDSs=collapse_CDSs_opt,
     )
 
     norm_in_format = input_format.lower().strip()

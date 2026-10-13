@@ -563,20 +563,20 @@ class TestGenerateProtein:
         assert p.ATG_start is expected_start
         assert p.partial_5prime is (not expected_start)
 
-    @pytest.mark.parametrize("seq, table, initiator_methionine, expected_status, expected_seq", [
+    @pytest.mark.parametrize("seq, table, initiator_methionine, alt_start_methionine, expected_status, expected_seq", [
         # GTG is a curated start in table 11: M unless literal translation is requested
-        ("GTGAAATAA", 11, "canonical", "canonical", "MK*"),
-        ("GTGAAATAA", 11, "none", "canonical", "VK*"),
-        # CTG is only an alternative NCBI initiator in table 1: M only with "all"
-        ("CTGAAATAA", 1, "canonical", "alternative", "LK*"),
-        ("CTGAAATAA", 1, "all", "alternative", "MK*"),
+        ("GTGAAATAA", 11, True, True, "canonical", "MK*"),
+        ("GTGAAATAA", 11, False, True, "canonical", "VK*"),
+        # CTG is only an alternative NCBI initiator in table 1: M only when alt_start_methionine is True
+        ("CTGAAATAA", 1, True, False, "alternative", "LK*"),
+        ("CTGAAATAA", 1, True, True, "alternative", "MK*"),
         # GTG is not an initiator in table 1
-        ("GTGAAATAA", 1, "all", "none", "VK*"),
+        ("GTGAAATAA", 1, True, True, "none", "VK*"),
     ])
-    def test_start_status_and_initiator_methionine(self, make_CDS_segment, make_CDS, seq, table, initiator_methionine, expected_status, expected_seq):
+    def test_start_status_and_initiator_methionine(self, make_CDS_segment, make_CDS, seq, table, initiator_methionine, alt_start_methionine, expected_status, expected_seq):
         cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
         with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
-            cds.generate_protein(mode="end", table=table, initiator_methionine=initiator_methionine)
+            cds.generate_protein(mode="end", table=table, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
         p = cds.protein
         assert p.start_status == expected_status
         assert p.seq == expected_seq
@@ -590,8 +590,6 @@ class TestGenerateProtein:
         p = Protein("p", "MK*", "chr1", 1, 10, "end", nuc_seq="ATGAAATAA", trimmed_5p=1)
         assert p.start_status == "none"
         assert p.partial_5prime is True
-        with pytest.raises(ValueError):
-            Protein("p", "MK*", "chr1", 1, 10, "end", nuc_seq="ATGAAATAA", initiator_methionine="always")
 
     def test_genetic_code_tables_follow_ncbi(self):
         from aegis.utils.genefunctions import get_start_codons, get_alt_start_codons

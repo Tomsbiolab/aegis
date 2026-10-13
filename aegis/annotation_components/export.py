@@ -1032,9 +1032,9 @@ class AnnotationExport(AnnotationComponent):
         with open(f"{final_output_path}", "w", encoding="utf-8") as f_out:
             f_out.write("#gtf-version 2.2\n")
 
-            for x1, genes in enumerate(self._annot.chrs.values()):
+            for genes in self._annot.chrs.values():
                 progress_bar.update(len(genes))
-                for x2, g in enumerate(genes.values()):
+                for g in genes.values():
 
                     if no_1bp_features:
                         gene_1bp_feature = False
@@ -1089,10 +1089,6 @@ class AnnotationExport(AnnotationComponent):
                                             u.feature = orig_ft
                                         else:
                                             f_out.write(u.print_gtf())
-
-                    if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
-                        continue
-                    f_out.write("###\n")
 
             progress_bar.close()
 

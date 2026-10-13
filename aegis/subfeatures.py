@@ -277,7 +277,8 @@ class CDS(Feature):
         quiet: bool = True,
         adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
         table: int | str | dict[str, str] = 1,
-        initiator_methionine: Literal["canonical", "all", "none"] = "canonical",
+        initiator_methionine: bool = True,
+        alt_start_methionine: bool = True,
     ):
         if table is None:
             table = 1
@@ -444,7 +445,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, initiator_methionine=initiator_methionine)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
 
                 if not quiet and nucleotide_surplus:
                     print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")

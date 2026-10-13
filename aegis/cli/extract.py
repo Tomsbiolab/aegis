@@ -166,7 +166,7 @@ def main(
     plastid_code: PlastidCodeOption = None,
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
-    initiator_methionine: InitiatorMethionineOption = "canonical",
+    initiator_methionine: InitiatorMethionineOption = True,
 
     # 4. Output Sequence Header Options
     feature_id: Annotated[str, typer.Option(
