@@ -719,23 +719,23 @@ class TestDetectPolycistronic:
         t = make_transcript(feature_id="t1", strand="+")
         seg = make_CDS_segment("cds1", strand="+", start=1000, end=1500)
         t.temp_CDSs = [seg]
-        assert t._detect_polycistronic() is None
+        assert t._detect_polycistronic() == []
         t.temp_CDSs = []
-        assert t._detect_polycistronic() is None
+        assert t._detect_polycistronic() == []
 
     def test_auto_generated_ids_without_overlap_is_none(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         seg1 = make_CDS_segment("t1_CDS_1000_1200", strand="+", start=1000, end=1200)
         seg2 = make_CDS_segment("t1_CDS_1300_1500", strand="+", start=1300, end=1500)
         t.temp_CDSs = [seg1, seg2]
-        assert t._detect_polycistronic() is None
+        assert t._detect_polycistronic() == []
 
     def test_shared_identical_id_without_overlap_is_none(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         seg1 = make_CDS_segment("cds1", strand="+", start=1000, end=1200)
         seg2 = make_CDS_segment("cds1", strand="+", start=1300, end=1500)
         t.temp_CDSs = [seg1, seg2]
-        assert t._detect_polycistronic() is None
+        assert t._detect_polycistronic() == []
 
     def test_multi_segment_grouped_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
@@ -744,28 +744,47 @@ class TestDetectPolycistronic:
         s3 = make_CDS_segment("cds_b", strand="+", start=1600, end=1800)
         s4 = make_CDS_segment("cds_b", strand="+", start=1900, end=2100)
         t.temp_CDSs = [s1, s2, s3, s4]
-        assert t._detect_polycistronic() == "multiple_CDSs_per_transcript"
+        assert t._detect_polycistronic() == ["possible_polycistronic_transcript"]
 
     def test_overlapping_distinct_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
         s2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
         t.temp_CDSs = [s1, s2]
-        assert t._detect_polycistronic() == "multiple_CDSs_per_transcript"
+        assert set(t._detect_polycistronic()) == {"overlapping_CDS_segments", "possible_polycistronic_transcript"}
 
     def test_overlapping_same_id_is_possible_polycistronic(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
         s2 = make_CDS_segment("cds_a", strand="+", start=1500, end=2000)
         t.temp_CDSs = [s1, s2]
-        assert t._detect_polycistronic() == "possible_polycistronic_transcript"
+        assert t._detect_polycistronic() == ["overlapping_CDS_segments"]
 
     def test_distinct_custom_ids_non_overlapping_is_possible_polycistronic(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         s1 = make_CDS_segment("cds_seg1", strand="+", start=1000, end=1200)
         s2 = make_CDS_segment("cds_seg2", strand="+", start=1300, end=1500)
         t.temp_CDSs = [s1, s2]
-        assert t._detect_polycistronic() == "possible_polycistronic_transcript"
+        assert t._detect_polycistronic() == ["independent_CDS_segment_ids"]
+
+    def test_canonical_gff3_polycistronic_eden_example(self, make_transcript, make_CDS_segment):
+        """
+        Canonical GFF3 specification example (mRNA00003 from canonical_gene_example.gff3):
+        Two logical CDSs (cds00003: 3301-3902, 5000-5500, 7000-7600 and
+        cds00004: 3391-3902, 5000-5500, 7000-7600) encoded under the same mRNA.
+        """
+        t = make_transcript(feature_id="mRNA00003", strand="+")
+        s1 = make_CDS_segment("cds00003", strand="+", start=3301, end=3902)
+        s2 = make_CDS_segment("cds00003", strand="+", start=5000, end=5500)
+        s3 = make_CDS_segment("cds00003", strand="+", start=7000, end=7600)
+        s4 = make_CDS_segment("cds00004", strand="+", start=3391, end=3902)
+        s5 = make_CDS_segment("cds00004", strand="+", start=5000, end=5500)
+        s6 = make_CDS_segment("cds00004", strand="+", start=7000, end=7600)
+        t.temp_CDSs = [s1, s2, s3, s4, s5, s6]
+        assert set(t._detect_polycistronic()) == {
+            "overlapping_CDS_segments",
+            "possible_polycistronic_transcript",
+        }
 
 
 class TestCoordinateEdgeCases:
@@ -776,7 +795,7 @@ class TestCoordinateEdgeCases:
         seg2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
         t.temp_CDSs = [seg1, seg2]
 
-        assert t._detect_polycistronic() == "multiple_CDSs_per_transcript"
+        assert set(t._detect_polycistronic()) == {"overlapping_CDS_segments", "possible_polycistronic_transcript"}
         t.generate_CDSs(quiet=True)
 
         assert len(t.CDSs) == 1

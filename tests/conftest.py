@@ -94,6 +94,11 @@ def multi_cds_ids_gff3_file():
     return str(TEST_DATA_DIR / "input/annotation/multi_cds_ids.gff3")
 
 @pytest.fixture
+def canonical_gene_example_gff3_file():
+    """Return path to canonical GFF3 specification example (EDEN gene with polycistronic mRNA00003)."""
+    return str(TEST_DATA_DIR / "input/annotation/canonical_gene_example.gff3")
+
+@pytest.fixture
 def transcript_no_parent_gff3_file():
     """Transcript without a Parent attribute (gene inferred)."""
     return str(TEST_DATA_DIR / "input/annotation/transcript_no_parent.gff3")

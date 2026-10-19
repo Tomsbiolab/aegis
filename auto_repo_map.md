@@ -319,7 +319,7 @@
       - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
       - `def generate_best_protein(`
       - `def almost_equal(self, other:Transcript):`
-      - `def _detect_polycistronic(self) -> str | None:`
+      - `def _detect_polycistronic(self) -> list[str]:`
       - `def generate_CDSs(self, quiet:bool=False, consider_read_utrs:bool=False):`
       - `def determine_main_CDS(self):`
       - `def assign_UTRs(self):`
@@ -554,6 +554,7 @@
       - `def pseudogene_gff3_file():`
       - `def exons_to_collapse_gff3_file():`
       - `def multi_cds_ids_gff3_file():`
+      - `def canonical_gene_example_gff3_file():`
       - `def transcript_no_parent_gff3_file():`
       - `def cds_no_parent_gff3_file():`
       - `def multiple_isoforms_gff3_file():`
@@ -797,6 +798,9 @@
       - `def test_cds_segments_combined(self, multi_cds_ids_gff3_file):`
       - `def test_two_exons(self, multi_cds_ids_gff3_file):`
       - `def test_polycistronic_warning_registered(self, multi_cds_ids_gff3_file):`
+      - `def test_overlapping_cds_warning_registered(self, tmp_path):`
+      - `def test_polycistronic_grouped_ids_warning_registered(self, tmp_path):`
+      - `def test_canonical_gene_example_polycistronic_warning(self, canonical_gene_example_gff3_file):`
       - `class TestTranscriptNoParentGFF3:`
       - `def test_gene_auto_created(self, transcript_no_parent_gff3_file):`
       - `def test_warning_raised(self, transcript_no_parent_gff3_file):`
@@ -1289,6 +1293,7 @@
       - `def test_overlapping_distinct_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):`
       - `def test_overlapping_same_id_is_possible_polycistronic(self, make_transcript, make_CDS_segment):`
       - `def test_distinct_custom_ids_non_overlapping_is_possible_polycistronic(self, make_transcript, make_CDS_segment):`
+      - `def test_canonical_gff3_polycistronic_eden_example(self, make_transcript, make_CDS_segment):`
       - `class TestCoordinateEdgeCases:`
       - `def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):`
       - `def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):`

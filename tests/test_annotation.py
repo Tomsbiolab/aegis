@@ -1612,12 +1612,78 @@ class TestMultiCDSIdsGFF3:
 
     def test_polycistronic_warning_registered(self, multi_cds_ids_gff3_file):
         annot = Annotation(multi_cds_ids_gff3_file, quiet=True)
-        assert "mRNA_mc1" in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA_mc1" in annot.warnings["independent_CDS_segment_ids"]
         t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
         assert not hasattr(t, "polycistronic")
         # Ensure repeated updates on already initialized annotation do not wipe warnings
         annot.update(quiet=True)
-        assert "mRNA_mc1" in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA_mc1" in annot.warnings["independent_CDS_segment_ids"]
+
+    def test_overlapping_cds_warning_registered(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t3000\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t3000\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t3000\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1000\t2000\t.\t+\t0\tID=cds1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1999\t3000\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        p = tmp_path / "overlap.gff3"
+        p.write_text(gff_content)
+        annot = Annotation(str(p), quiet=True)
+        assert "t1" in annot.warnings["overlapping_CDS_segments"]
+        assert "t1" not in annot.warnings["possible_polycistronic_transcript"]
+        assert "t1" not in annot.warnings["independent_CDS_segment_ids"]
+
+    def test_polycistronic_grouped_ids_warning_registered(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t4000\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t4000\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t4000\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1000\t1500\t.\t+\t0\tID=cds_a;Parent=t1\n"
+            "chr1\taegis\tCDS\t1600\t2000\t.\t+\t0\tID=cds_a;Parent=t1\n"
+            "chr1\taegis\tCDS\t2200\t2600\t.\t+\t0\tID=cds_b;Parent=t1\n"
+            "chr1\taegis\tCDS\t2700\t3200\t.\t+\t0\tID=cds_b;Parent=t1\n"
+        )
+        p = tmp_path / "polycistronic.gff3"
+        p.write_text(gff_content)
+        annot = Annotation(str(p), quiet=True)
+        assert "t1" in annot.warnings["possible_polycistronic_transcript"]
+        assert "t1" not in annot.warnings["independent_CDS_segment_ids"]
+        assert "t1" not in annot.warnings["overlapping_CDS_segments"]
+
+    def test_canonical_gene_example_polycistronic_warning(self, canonical_gene_example_gff3_file):
+        """
+        Canonical GFF3 specification example (canonical_gene_example.gff3, EDEN gene).
+        Exemplifies how multiple logical CDSs (cds00003 for edenprotein.3 and cds00004
+        for edenprotein.4) can theoretically be annotated under the same transcript (mRNA00003).
+        AEGIS warns about both possible_polycistronic_transcript and overlapping_CDS_segments,
+        while strictly preserving its 1 logical CDS per transcript invariant.
+        """
+        annot = Annotation(canonical_gene_example_gff3_file, quiet=True)
+        # mRNA00003 encodes 2 distinct logical CDSs with overlapping coordinates
+        assert "mRNA00003" in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00003" in annot.warnings["overlapping_CDS_segments"]
+        assert "mRNA00003" not in annot.warnings["independent_CDS_segment_ids"]
+
+        # mRNA00001 and mRNA00002 are monocistronic controls
+        assert "mRNA00001" not in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00001" not in annot.warnings["overlapping_CDS_segments"]
+        assert "mRNA00002" not in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00002" not in annot.warnings["overlapping_CDS_segments"]
+
+        # Confirm single-CDS invariant holds (1 logical CDS per transcript)
+        t3 = annot.chrs["ctg123"]["gene00001"].transcripts["mRNA00003"]
+        assert len(t3.CDSs) == 1
+        cds = next(iter(t3.CDSs.values()))
+        assert cds.main is True
+        assert t3.coding is True
+
+        # Warnings persist across updates
+        annot.update(quiet=True)
+        assert "mRNA00003" in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00003" in annot.warnings["overlapping_CDS_segments"]
 
 
 # ---- 8. Transcript without Parent (gene inferred) ----

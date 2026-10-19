@@ -175,8 +175,9 @@ class Annotation():
         keys = [
             "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
             "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
-            "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
-            "possible_polycistronic_transcript", "transcript_with_no_exons",
+            "missing_subfeature_parent_liftover", "overlapping_CDS_segments",
+            "possible_polycistronic_transcript", "independent_CDS_segment_ids",
+            "transcript_with_no_exons",
             "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
             "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
             "phase_mismatch_across_intron",
@@ -2429,20 +2430,23 @@ class Annotation():
 
     def detect_polycistronic_transcripts(self, quiet:bool=False):
         """
-        Detects polycistronic transcripts or multi-CDS annotation antipatterns across
-        the annotation based on raw temp_CDSs before CDS generation, and populates
-        self.warnings['multiple_CDSs_per_transcript'] and
-        self.warnings['possible_polycistronic_transcript'].
+        Detects polycistronic transcripts, overlapping CDS segments, or independent CDS segment ID
+        formatting across the annotation based on raw temp_CDSs before CDS generation, and populates
+        self.warnings['overlapping_CDS_segments'], self.warnings['possible_polycistronic_transcript'],
+        and self.warnings['independent_CDS_segment_ids'].
+
+        Exemplified by canonical_gene_example.gff3 (the Sequence Ontology / GFF3 specification EDEN gene example),
+        where mRNA00003 contains multiple logical CDSs (cds00003 and cds00004) under the same transcript.
         """
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     if t.temp_CDSs:
-                        warning = t._detect_polycistronic()
-                        if warning:
-                            self.warnings[warning].add(t.id)
-                            if not quiet:
+                        warnings = t._detect_polycistronic()
+                        for warning in warnings:
+                            if t.id not in self.warnings[warning] and not quiet:
                                 print(f"Warning: Transcript {t.id} flagged as {warning} ({self.id})")
+                            self.warnings[warning].add(t.id)
 
 
     def remove_missing_transcript_parent_references(self, quiet:bool=True):

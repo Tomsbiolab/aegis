@@ -419,20 +419,23 @@ class Transcript(Feature):
                     break
         return almost_equal
 
-    def _detect_polycistronic(self) -> str | None:
+    def _detect_polycistronic(self) -> list[str]:
         """
-        Evaluates raw parsed temp_CDSs for polycistronic structures or annotation antipatterns
-        prior to CDS generation or subfeature collapsing.
-        Returns the warning category to log in Annotation.warnings, or None if monocistronic:
-          - 'multiple_CDSs_per_transcript': Definite multi-CDS evidence (grouped IDs or overlapping distinct IDs).
-          - 'possible_polycistronic_transcript': Ambiguous structure (frameshifts/liftoff overlaps or distinct user segment IDs).
-          - None: Standard monocistronic CDS (identical IDs or auto-granted coordinate IDs without overlap).
+        Evaluates raw parsed temp_CDSs for polycistronic structures, overlapping segments,
+        and formatting inconsistencies prior to CDS generation.
+        Returns a list of warning flags (empty if standard monocistronic):
+          - 'overlapping_CDS_segments': Physical coordinate overlap between adjacent CDS segments.
+          - 'possible_polycistronic_transcript': Structural evidence of multiple CDSs (grouped IDs or overlapping distinct IDs).
+            Exemplified by the canonical GFF3 specification (canonical_gene_example.gff3),
+            where mRNA00003 defines two distinct logical CDSs (cds00003 and cds00004) under the same transcript.
+          - 'independent_CDS_segment_ids': Distinct IDs per segment without polycistronic evidence (GFF row-ID style).
         """
         if not self.temp_CDSs or len(self.temp_CDSs) <= 1:
-            return None
+            return []
 
         self.temp_CDSs.sort()
         segs = self.temp_CDSs
+        warnings = []
 
         auto_prefix = f"{self.id}_CDS_"
         all_auto_ids = all(getattr(s, "id", "").startswith(auto_prefix) for s in segs)
@@ -442,33 +445,32 @@ class Transcript(Feature):
             for i in range(1, len(segs))
         )
 
-        if all_auto_ids and not has_overlap:
-            return None
+        if has_overlap:
+            warnings.append("overlapping_CDS_segments")
 
         unique_ids = {s.id for s in segs if getattr(s, "id", "")}
         num_ids = len(unique_ids)
         num_segs = len(segs)
 
-        if num_ids > 1 and num_ids < num_segs:
-            return "multiple_CDSs_per_transcript"
+        # Polycistronic evidence:
+        # 1. Grouped IDs: e.g. seg1 & seg2 share ID_A, seg3 & seg4 share ID_B (1 < num_ids < num_segs)
+        # 2. Overlapping segments with distinct IDs (e.g. dual-coding / overlapping ORFs)
+        is_polycistronic = (num_ids > 1 and num_ids < num_segs) or (has_overlap and num_ids > 1)
 
-        if has_overlap and num_ids > 1:
-            return "multiple_CDSs_per_transcript"
+        if is_polycistronic:
+            warnings.append("possible_polycistronic_transcript")
+        elif num_ids > 1 and not all_auto_ids:
+            warnings.append("independent_CDS_segment_ids")
 
-        if has_overlap and num_ids <= 1:
-            return "possible_polycistronic_transcript"
-
-        if num_ids > 1 and not all_auto_ids:
-            return "possible_polycistronic_transcript"
-
-        return None
+        return warnings
 
     def generate_CDSs(self, quiet:bool=False, consider_read_utrs:bool=False):
         """
         Creates a CDS object based on the CDS segments of a transcript.
         AEGIS enforces 1 logical CDS per transcript. Any polycistronic or
-        multi-CDS structures are flagged via _detect_polycistronic() for
-        warning logs in Annotation.warnings.
+        multi-CDS structures (e.g. theoretical multi-CDS annotations as in
+        canonical_gene_example.gff3) are flagged via _detect_polycistronic()
+        for warning logs in Annotation.warnings.
         """
         if self.temp_CDSs:
             if len(self.temp_CDSs) > 1:
