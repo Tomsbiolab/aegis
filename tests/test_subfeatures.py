@@ -232,6 +232,39 @@ class TestCDS:
         reconstructed = "".join(cds.seq[s:e+1] for s, e in intervals)
         assert len(reconstructed) == len(cds.protein.nuc_seq)
 
+    def test_translation_attributes_read_from_segments(self, make_CDS, make_CDS_segment):
+        attributes = {"transl_table": "2", "exception": "ribosomal slippage", "Note": "x"}
+        segments = [
+            make_CDS_segment("s1", start=100, end=300, attributes={**attributes, "transl_except": "(pos:100..102%2Caa:Sec)"}),
+            make_CDS_segment("s2", start=400, end=600, attributes={**attributes, "transl_except": "(pos:400..402%2Caa:Sec),(pos:100..102%2Caa:Sec)"}),
+        ]
+        cds = make_CDS(segments=segments)
+        assert cds.transl_table == 2
+        assert cds.exception == "ribosomal slippage"
+        # Entries repeated across rows are merged
+        assert cds.transl_except == ((100, 102, "U"), (400, 402, "U"))
+
+    def test_translation_attributes_decoded(self, make_CDS, make_CDS_segment):
+        seg = make_CDS_segment("s1", attributes={"exception": "alternative start codon%2C annotated by transcript or proteomic data"})
+        assert make_CDS(segments=[seg]).exception == "alternative start codon, annotated by transcript or proteomic data"
+
+    def test_translation_attributes_absent(self, make_CDS):
+        cds = make_CDS()
+        assert (cds.transl_table, cds.transl_except, cds.exception) == (None, (), None)
+
+    def test_corrected_CDS_segments_keep_attributes(self, make_CDS, make_CDS_segment, monkeypatch):
+        class DummyScaffold:
+            seq = "GG" + "ATGAAATAA" + "GG"
+        class DummyGenome:
+            scaffolds = {"chr1": DummyScaffold()}
+            name = "dummy"
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", DummyGenome())
+        seg = make_CDS_segment("s1", start=1, end=13, phase=0, attributes={"transl_table": "1", "Note": "x"})
+        cds = make_CDS(segments=[seg])
+        cds.generate_protein(mode="orf", correct_CDS=True)
+        assert (cds.CDS_segments[0].start, cds.CDS_segments[0].end) == (3, 11)
+        assert cds.CDS_segments[0].misc_attributes == ["transl_table=1", "Note=x"]
+
     @staticmethod
     def _shift_protein(make_CDS, make_CDS_segment, monkeypatch, strand, segments, adjust_internal_shifts):
         class DummyScaffold:

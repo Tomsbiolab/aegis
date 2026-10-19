@@ -150,6 +150,27 @@ class TestFeatureComparisons:
 
 
 # ============================================================
+# GFF output
+# ============================================================
+
+class TestFeaturePrintGff:
+    ATTRIBUTES = {"transl_except": "(pos:100..102%2Caa:Sec)", "transl_table": "2", "exception": "ribosomal slippage", "Dbxref": "GeneID:1", "Note": "x"}
+
+    def test_clean_keeps_translation_attributes_on_CDS_rows(self, make_feature):
+        line = make_feature(feature_id="c1", feature="CDS", attributes=self.ATTRIBUTES).print_gff(clean=True)
+        attributes = line.strip().split("\t")[8].split(";")
+        assert attributes == ["ID=c1", "transl_except=(pos:100..102%2Caa:Sec)", "transl_table=2", "exception=ribosomal slippage"]
+
+    def test_clean_drops_everything_on_other_rows(self, make_feature):
+        line = make_feature(feature_id="e1", feature="exon", attributes=self.ATTRIBUTES).print_gff(clean=True)
+        assert line.strip().split("\t")[8] == "ID=e1"
+
+    def test_not_clean_keeps_all(self, make_feature):
+        line = make_feature(feature_id="c1", feature="CDS", attributes=self.ATTRIBUTES).print_gff(clean=False)
+        assert "Dbxref=GeneID:1" in line and "Note=x" in line and "transl_table=2" in line
+
+
+# ============================================================
 # Quality attributes (extra GFF attributes)
 # ============================================================
 

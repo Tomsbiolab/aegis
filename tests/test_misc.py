@@ -12,7 +12,8 @@ from aegis.utils.genefunctions import (
     find_ORFs,
     choose_orf,
     translate,
-    trim_surplus
+    trim_surplus,
+    parse_transl_except
 )
 
 from aegis.feature import Feature
@@ -445,6 +446,39 @@ class TestTranslate:
 
     def test_table_none_defaults_to_table_1(self):
         assert translate("ATGAAATAA", table=None) == "MK*"
+
+
+# ============================================================
+# parse_transl_except
+# ============================================================
+
+class TestParseTranslExcept:
+    def test_selenocysteine(self):
+        # GPX4
+        assert parse_transl_except("(pos:1105403..1105405%2Caa:Sec)") == ((1105403, 1105405, "U"),)
+
+    def test_multiple_entries(self):
+        # SELENON
+        value = "(pos:25802093..25802095%2Caa:Sec),(pos:25812789..25812791%2Caa:Sec)"
+        assert parse_transl_except(value) == ((25802093, 25802095, "U"), (25812789, 25812791, "U"))
+
+    def test_complement_and_other(self):
+        # AQP4 readthrough: the strand comes from the CDS, so complement() is dropped
+        assert parse_transl_except("(pos:complement(26856211..26856213)%2Caa:Other)") == ((26856211, 26856213, "X"),)
+
+    @pytest.mark.parametrize("value, expected", [
+        ("(pos:4261..4262%2Caa:TERM)", ((4261, 4262, "*"),)),  # ND1: stop completed by polyadenylation
+        ("(pos:5511%2Caa:TERM)", ((5511, 5511, "*"),)),  # ND2: single base
+    ])
+    def test_incomplete_stop(self, value, expected):
+        assert parse_transl_except(value) == expected
+
+    def test_three_letter_and_unknown_residues(self):
+        # VEGFA readthrough as Ser; unknown amino acid names are read as X
+        assert parse_transl_except("(pos:43784560..43784562,aa:Ser),(pos:1..3,aa:Foo)") == ((43784560, 43784562, "S"), (1, 3, "X"))
+
+    def test_unparseable(self):
+        assert parse_transl_except("not an exception") == ()
 
 
 # ============================================================

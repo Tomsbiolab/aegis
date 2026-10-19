@@ -243,12 +243,16 @@ class Transcript(Feature):
 
                     rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
                     merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
+                    if rep.misc_attributes:
+                        merged[-1].misc_attributes = rep.misc_attributes[:]
                     cur_start = seg.start
                     cur_end = seg.end
                     group_segs = [seg]
 
                 rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
                 merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
+                if rep.misc_attributes:
+                    merged[-1].misc_attributes = rep.misc_attributes[:]
 
                 if len(merged) < len(cds.CDS_segments):
                     cds.CDS_segments = merged

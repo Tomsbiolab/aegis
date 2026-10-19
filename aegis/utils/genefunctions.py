@@ -18,9 +18,11 @@ import time
 import warnings
 import itertools
 import hashlib
+import re
 
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import unquote
 
 # nucleotides
 _STR_FROM = "ACGTRYSWKMBDHVNXUacgtryswkmbdhvnxu-"
@@ -364,6 +366,27 @@ def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:
     normalized_seq = seq.upper().replace("U", "T")
     it = iter(normalized_seq.encode('ascii'))
     return "".join(map(b_dict.__getitem__, zip(it, it, it)))
+
+# One-letter residues for the amino acids named in INSDC/NCBI transl_except qualifiers
+TRANSL_EXCEPT_RESIDUES = {
+    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G", "His": "H", "Ile": "I",
+    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
+    "Sec": "U", "Pyl": "O", "Asx": "B", "Glx": "Z", "Xle": "J", "Other": "X", "TERM": "*",
+}
+_TRANSL_EXCEPT_RE = re.compile(r"pos:(?:complement\()?(\d+)(?:\.\.(\d+))?\)?\s*,\s*aa:([A-Za-z]+)")
+
+def parse_transl_except(value: str) -> tuple[tuple[int, int, str], ...]:
+    """
+    Parses a GFF transl_except value, e.g. "(pos:1105403..1105405%2Caa:Sec)" or
+    "(pos:complement(26856211..26856213)%2Caa:Other),(pos:5511%2Caa:TERM)", into
+    (start, end, residue) entries in genomic coordinates. The strand is implied by the CDS, so
+    complement() is dropped. Residues are one-letter codes (Sec: U, Pyl: O, Other: X, TERM: *);
+    unknown amino acid names are read as X.
+    """
+    entries = []
+    for start, end, aa in _TRANSL_EXCEPT_RE.findall(unquote(value)):
+        entries.append((int(start), int(end) if end else int(start), TRANSL_EXCEPT_RESIDUES.get(aa, "X")))
+    return tuple(entries)
 
 def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
 

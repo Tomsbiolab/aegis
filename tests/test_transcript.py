@@ -683,6 +683,20 @@ class TestCollapseCDSSegments:
         assert cds.start == 1000
         assert cds.end == 1300
 
+    def test_collapse_cds_keeps_segment_attributes(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        attributes = {"transl_except": "(pos:1000..1002%2Caa:Sec)", "Note": "x"}
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1098, phase=0, attributes=attributes)
+        seg2 = make_CDS_segment("s2", strand="+", start=1099, end=1200, phase=0, attributes=attributes)
+        cds = make_CDS(segments=[seg1, seg2], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert len(cds.CDS_segments) == 1
+        assert cds.CDS_segments[0].misc_attributes == ["transl_except=(pos:1000..1002%2Caa:Sec)", "Note=x"]
+        assert cds.transl_except == ((1000, 1002, "U"),)
+
     def test_collapse_cds_preserves_initial_phase_plus(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         # seg1 and seg2 contiguous: 1000..1099 (size 100, phase 1 -> 0 leftover) and 1100..1199 (phase 0)

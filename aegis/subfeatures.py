@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import warnings
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import unquote
 
 from .feature import Feature
 from .misc_features import Protein
-from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement
+from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement, parse_transl_except
 
 class CDS(Feature):
 
-    __slots__ = ('main', 'CDS_segments', 'full_UTR_exons', 'protein', 'UTRs')
+    __slots__ = ('main', 'CDS_segments', 'full_UTR_exons', 'protein', 'UTRs', 'transl_table', 'transl_except', 'exception')
 
     protein: Protein|None
     CDS_segments: list[Feature]
     UTRs: list[UTR]
     full_UTR_exons: int
     main:bool
+    transl_table: int|None
+    transl_except: tuple[tuple[int, int, str], ...]
+    exception: str|None
 
     def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)    
@@ -24,7 +28,30 @@ class CDS(Feature):
         self.update_span()
         self.full_UTR_exons = 0
         self.protein = None
+        self.read_translation_attributes()
         self.update()
+
+    def read_translation_attributes(self):
+        """
+        Reads the GFF attributes of the CDS segments that AEGIS cannot derive from its own translation:
+        transl_table (genetic code), transl_except (residues recoded at genomic codon positions) and
+        exception (why the annotated protein differs from the genome translation, e.g. ribosomal slippage).
+        NCBI repeats them on every CDS row; the first transl_table/exception found is used and
+        transl_except entries are merged across rows.
+        """
+        self.transl_table = None
+        self.exception = None
+        transl_except = set()
+        for cs in self.CDS_segments:
+            for attribute in cs.misc_attributes or ():
+                key, _, value = attribute.partition("=")
+                if key == "transl_table" and self.transl_table is None and value.strip().isdigit():
+                    self.transl_table = int(value)
+                elif key == "exception" and self.exception is None:
+                    self.exception = unquote(value)
+                elif key == "transl_except":
+                    transl_except.update(parse_transl_except(value))
+        self.transl_except = tuple(sorted(transl_except))
 
     def update_span(self):
         """
@@ -446,9 +473,14 @@ class CDS(Feature):
                         new_parents = self.parents[:]
                     else:
                         new_parents = []
+                    # Rows of one CDS share their attributes, so corrected rows keep those of the first one
+                    segment_attributes = self.CDS_segments[0].misc_attributes if self.CDS_segments else None
 
                     for start, end in corrected_segments:
-                        new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
+                        new_segment = Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature)
+                        if segment_attributes:
+                            new_segment.misc_attributes = segment_attributes[:]
+                        new_CDS_segments.append(new_segment)
 
                     self.CDS_segments = new_CDS_segments
 
