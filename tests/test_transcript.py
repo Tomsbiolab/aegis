@@ -714,6 +714,60 @@ class TestCollapseCDSSegments:
 # Boundary & overlap edge cases
 # ============================================================
 
+class TestDetectPolycistronic:
+    def test_single_segment_is_none(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg = make_CDS_segment("cds1", strand="+", start=1000, end=1500)
+        t.temp_CDSs = [seg]
+        assert t._detect_polycistronic() is None
+        t.temp_CDSs = []
+        assert t._detect_polycistronic() is None
+
+    def test_auto_generated_ids_without_overlap_is_none(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg1 = make_CDS_segment("t1_CDS_1000_1200", strand="+", start=1000, end=1200)
+        seg2 = make_CDS_segment("t1_CDS_1300_1500", strand="+", start=1300, end=1500)
+        t.temp_CDSs = [seg1, seg2]
+        assert t._detect_polycistronic() is None
+
+    def test_shared_identical_id_without_overlap_is_none(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg1 = make_CDS_segment("cds1", strand="+", start=1000, end=1200)
+        seg2 = make_CDS_segment("cds1", strand="+", start=1300, end=1500)
+        t.temp_CDSs = [seg1, seg2]
+        assert t._detect_polycistronic() is None
+
+    def test_multi_segment_grouped_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1200)
+        s2 = make_CDS_segment("cds_a", strand="+", start=1300, end=1500)
+        s3 = make_CDS_segment("cds_b", strand="+", start=1600, end=1800)
+        s4 = make_CDS_segment("cds_b", strand="+", start=1900, end=2100)
+        t.temp_CDSs = [s1, s2, s3, s4]
+        assert t._detect_polycistronic() == "multiple_CDSs_per_transcript"
+
+    def test_overlapping_distinct_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
+        s2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
+        t.temp_CDSs = [s1, s2]
+        assert t._detect_polycistronic() == "multiple_CDSs_per_transcript"
+
+    def test_overlapping_same_id_is_possible_polycistronic(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
+        s2 = make_CDS_segment("cds_a", strand="+", start=1500, end=2000)
+        t.temp_CDSs = [s1, s2]
+        assert t._detect_polycistronic() == "possible_polycistronic_transcript"
+
+    def test_distinct_custom_ids_non_overlapping_is_possible_polycistronic(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_seg1", strand="+", start=1000, end=1200)
+        s2 = make_CDS_segment("cds_seg2", strand="+", start=1300, end=1500)
+        t.temp_CDSs = [s1, s2]
+        assert t._detect_polycistronic() == "possible_polycistronic_transcript"
+
+
 class TestCoordinateEdgeCases:
     def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
@@ -722,10 +776,10 @@ class TestCoordinateEdgeCases:
         seg2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
         t.temp_CDSs = [seg1, seg2]
 
-        t.generate_CDSs(quiet=True, consider_polycistronic=True)
+        assert t._detect_polycistronic() == "multiple_CDSs_per_transcript"
+        t.generate_CDSs(quiet=True)
 
-        # Because they overlap at 1500, it should recognize multiple overlapping CDSs
-        assert len(t.CDSs) == 2 or t.polycistronic in ("yes", "maybe")
+        assert len(t.CDSs) == 1
 
     def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")

@@ -16,7 +16,7 @@
   - **aegis/**
     - annotation.py
       - `class Annotation():`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):`
       - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
@@ -47,7 +47,7 @@
       - `def _get_unique_transcript_id(self, t_id):`
       - `def _get_unique_gene_id(self, id):`
       - `def copy(self):`
-      - `def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):`
+      - `def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):`
       - `def update_features(self, standardise=False, quiet:bool=True):`
       - `def mark_transposable_element_genes(self, TE_genes_file):`
       - `def mark_rRNA_transcripts(self, rRNA_transcripts_file, clean:bool=True):`
@@ -81,6 +81,7 @@
       - `def detect_transcripts_with_no_exons(self, remove_transcripts:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False):`
       - `def remove_transcripts(self, to_remove:set, remove_genes_accordingly:bool=False,quiet:bool=False):`
       - `def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False):`
+      - `def detect_polycistronic_transcripts(self, quiet:bool=False):`
       - `def remove_missing_transcript_parent_references(self, quiet:bool=True):`
       - `def rework_CDSs(`
       - `def update_gene_and_transcript_list(self, quiet:bool=True):`
@@ -308,7 +309,7 @@
     - transcript.py
       - `class Transcript(Feature):`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
-      - `def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):`
+      - `def update(self, quiet:bool=False, consider_read_utrs:bool=False):`
       - `def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
       - `def rename_exons(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
       - `def rename_utrs(self, base_id:str, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):`
@@ -318,7 +319,8 @@
       - `def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):`
       - `def generate_best_protein(`
       - `def almost_equal(self, other:Transcript):`
-      - `def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):`
+      - `def _detect_polycistronic(self) -> str | None:`
+      - `def generate_CDSs(self, quiet:bool=False, consider_read_utrs:bool=False):`
       - `def determine_main_CDS(self):`
       - `def assign_UTRs(self):`
       - `def generate_UTRs(self):`
@@ -794,6 +796,7 @@
       - `class TestMultiCDSIdsGFF3:`
       - `def test_cds_segments_combined(self, multi_cds_ids_gff3_file):`
       - `def test_two_exons(self, multi_cds_ids_gff3_file):`
+      - `def test_polycistronic_warning_registered(self, multi_cds_ids_gff3_file):`
       - `class TestTranscriptNoParentGFF3:`
       - `def test_gene_auto_created(self, transcript_no_parent_gff3_file):`
       - `def test_warning_raised(self, transcript_no_parent_gff3_file):`
@@ -1278,6 +1281,14 @@
       - `def test_collapse_cds_does_not_merge_across_internal_phase_shift(self, make_transcript, make_CDS, make_CDS_segment):`
       - `def test_collapse_cds_preserves_1bp_overlap_frameshift(self, make_transcript, make_CDS, make_CDS_segment):`
       - `def test_collapse_cds_merges_1bp_overlap_compatible_phase(self, make_transcript, make_CDS, make_CDS_segment):`
+      - `class TestDetectPolycistronic:`
+      - `def test_single_segment_is_none(self, make_transcript, make_CDS_segment):`
+      - `def test_auto_generated_ids_without_overlap_is_none(self, make_transcript, make_CDS_segment):`
+      - `def test_shared_identical_id_without_overlap_is_none(self, make_transcript, make_CDS_segment):`
+      - `def test_multi_segment_grouped_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):`
+      - `def test_overlapping_distinct_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):`
+      - `def test_overlapping_same_id_is_possible_polycistronic(self, make_transcript, make_CDS_segment):`
+      - `def test_distinct_custom_ids_non_overlapping_is_possible_polycistronic(self, make_transcript, make_CDS_segment):`
       - `class TestCoordinateEdgeCases:`
       - `def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):`
       - `def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):`

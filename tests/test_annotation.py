@@ -1610,6 +1610,15 @@ class TestMultiCDSIdsGFF3:
         t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
         assert len(t.exons) == 2
 
+    def test_polycistronic_warning_registered(self, multi_cds_ids_gff3_file):
+        annot = Annotation(multi_cds_ids_gff3_file, quiet=True)
+        assert "mRNA_mc1" in annot.warnings["possible_polycistronic_transcript"]
+        t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
+        assert not hasattr(t, "polycistronic")
+        # Ensure repeated updates on already initialized annotation do not wipe warnings
+        annot.update(quiet=True)
+        assert "mRNA_mc1" in annot.warnings["possible_polycistronic_transcript"]
+
 
 # ---- 8. Transcript without Parent (gene inferred) ----
 

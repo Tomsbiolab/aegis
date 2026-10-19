@@ -11,7 +11,7 @@ class Transcript(Feature):
 
     __slots__ = (
         'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'main',
-        'miRNAs', 'renamed_exons', 'renamed_utrs', 'polycistronic',
+        'miRNAs', 'renamed_exons', 'renamed_utrs',
         'promoter', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
     )
 
@@ -33,7 +33,6 @@ class Transcript(Feature):
         self.miRNAs = []
         self.renamed_exons = False
         self.renamed_utrs = False
-        self.polycistronic = "no"
         self.introns = None
         self.promoter = None
 
@@ -41,16 +40,16 @@ class Transcript(Feature):
         self.collapsed_CDS_segments = False
         self.generated_exons = False
 
-    def update(self, quiet:bool=False, consider_read_utrs:bool=False, consider_polycistronic:bool=False):
+    def update(self, quiet:bool=False, consider_read_utrs:bool=False):
         if self.exons == []:
-            self.generate_CDSs(quiet=quiet, consider_read_utrs=True, consider_polycistronic=consider_polycistronic)
+            self.generate_CDSs(quiet=quiet, consider_read_utrs=True)
             self.generate_exons()
             if len(self.exons) > 1:
                 self.exons.sort()
         else:
             if len(self.exons) > 1:
                 self.exons.sort()
-            self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs, consider_polycistronic=consider_polycistronic)
+            self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs)
 
         if self.exons:
             if len(self.exons) > 1:
@@ -420,143 +419,93 @@ class Transcript(Feature):
                     break
         return almost_equal
 
-    def generate_CDSs(self, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False):
+    def _detect_polycistronic(self) -> str | None:
         """
-        Creates CDS objects are based on the CDS segments of a transcript.
-        Assumptions (when considering polycistronic transcripts):
-        1 - if more than 1 CDS segment shares an ID that means that we can rely
-            on the IDs to generate the different CDSs in a polycistronic gene
-        2 - polycistronic genes with non-overlapping CDSs are unlikely to exist
-            and if they do exist they are probably annotated as different ID
-            transcripts
-        The polycistronic considerations are meant to just record warnings
-        processing behaviour is not affected. AEGIS for the moment still
-        works with the assumption that annotation files typically have
-        1 CDS per transcript, and the checks are just meant to just
-        pick up warnings, wherever this rule is not followed.
+        Evaluates raw parsed temp_CDSs for polycistronic structures or annotation antipatterns
+        prior to CDS generation or subfeature collapsing.
+        Returns the warning category to log in Annotation.warnings, or None if monocistronic:
+          - 'multiple_CDSs_per_transcript': Definite multi-CDS evidence (grouped IDs or overlapping distinct IDs).
+          - 'possible_polycistronic_transcript': Ambiguous structure (frameshifts/liftoff overlaps or distinct user segment IDs).
+          - None: Standard monocistronic CDS (identical IDs or auto-granted coordinate IDs without overlap).
         """
+        if not self.temp_CDSs or len(self.temp_CDSs) <= 1:
+            return None
 
+        self.temp_CDSs.sort()
+        segs = self.temp_CDSs
+
+        auto_prefix = f"{self.id}_CDS_"
+        all_auto_ids = all(getattr(s, "id", "").startswith(auto_prefix) for s in segs)
+
+        has_overlap = any(
+            segs[i].start <= segs[i - 1].end
+            for i in range(1, len(segs))
+        )
+
+        if all_auto_ids and not has_overlap:
+            return None
+
+        unique_ids = {s.id for s in segs if getattr(s, "id", "")}
+        num_ids = len(unique_ids)
+        num_segs = len(segs)
+
+        if num_ids > 1 and num_ids < num_segs:
+            return "multiple_CDSs_per_transcript"
+
+        if has_overlap and num_ids > 1:
+            return "multiple_CDSs_per_transcript"
+
+        if has_overlap and num_ids <= 1:
+            return "possible_polycistronic_transcript"
+
+        if num_ids > 1 and not all_auto_ids:
+            return "possible_polycistronic_transcript"
+
+        return None
+
+    def generate_CDSs(self, quiet:bool=False, consider_read_utrs:bool=False):
+        """
+        Creates a CDS object based on the CDS segments of a transcript.
+        AEGIS enforces 1 logical CDS per transcript. Any polycistronic or
+        multi-CDS structures are flagged via _detect_polycistronic() for
+        warning logs in Annotation.warnings.
+        """
         if self.temp_CDSs:
             if len(self.temp_CDSs) > 1:
                 self.temp_CDSs.sort()
 
             parents = [self.id]
-        
             self.coding = True
-            if consider_polycistronic:
-                grant_ids = True
-                for segment in self.temp_CDSs:
-                    if segment.id != "":
-                        grant_ids = False
 
-                if grant_ids:
-                    for n, _ in enumerate(self.temp_CDSs):
-                        self.temp_CDSs[n].id = f"{self.id}_CDS1"
-
-                more_than_1_CDS = False
-                more_than_1_segment_with_same_ID = False
-                more_than_1_segment_with_different_ID = False
-                self.temp_CDSs.sort()
-                # more than 1 CDS is determined by overlaps
-                if len(self.temp_CDSs) > 1:
-                    seen_ids = {self.temp_CDSs[0].id}
-                    for sn in range(1, len(self.temp_CDSs)):
-                        prev = self.temp_CDSs[sn - 1]
-                        curr = self.temp_CDSs[sn]
-                        if curr.start <= prev.end:
-                            more_than_1_CDS = True
-                        seg_id = curr.id
-                        if seg_id in seen_ids:
-                            more_than_1_segment_with_same_ID = True
-                        else:
-                            more_than_1_segment_with_different_ID = True
-                            seen_ids.add(seg_id)
-                    if len(seen_ids) > 1:
-                        more_than_1_segment_with_different_ID = True
-                    if len(seen_ids) < len(self.temp_CDSs):
-                        more_than_1_segment_with_same_ID = True
-                if not more_than_1_CDS and self.temp_CDSs != []:
-                    if self.strand == "+":
-                        temp_id = self.temp_CDSs[0].id
-                    else:
-                        temp_id = self.temp_CDSs[-1].id
-                    self.CDSs[temp_id] = CDS(self.temp_CDSs, temp_id, 
-                                            self.temp_CDSs[0].ch, 
-                                            self.temp_CDSs[0].source, 
-                                            self.temp_CDSs[0].feature,
-                                            self.temp_CDSs[0].strand, 
-                                            self.temp_CDSs[0].start,
-                                            self.temp_CDSs[-1].end,
-                                            self.temp_CDSs[0].score,
-                                            parents)
-                    if more_than_1_segment_with_same_ID and more_than_1_segment_with_different_ID:
-                        if not quiet:
-                            print(f"Warning: Transcript {self.id} may be "
-                                "polycistronic although CDS segments were all "
-                                "combined into the same CDS since the most likely "
-                                "scenario is that some mistake has been made in the"
-                                " gff, please check")   
-                        self.polycistronic = "maybe"
-                elif more_than_1_CDS and more_than_1_segment_with_different_ID:
-                    CDS_temp = {}
-                    for c in self.temp_CDSs:
-                        if c.id not in CDS_temp:
-                            CDS_temp[c.id] = [c]
-                        else:
-                            CDS_temp[c.id].append(c)
-                    for c_id, segments in CDS_temp.items():
-                        self.CDSs[c_id] = CDS(segments, c_id, segments[0].ch,
-                                        segments[0].source, segments[0].feature,
-                                        segments[0].strand, segments[0].start,
-                                        segments[-1].end, segments[0].score,
-                                        parents)
-                    if not quiet:
-                        print(f"Warning: Transcript {self.id} is likely to be "
-                            "polycistronic since CDS segments overlap and they "
-                            "have different IDs, the CDS segments have been "
-                            "separated into their corresponding CDS ids, however, "
-                            "please check that it truly is a polycistronic gene "
-                            "and not a gff mistake")
-                    self.polycistronic = "yes" 
-                elif more_than_1_CDS:
-                    if not quiet:
-                        print(f"Error: Transcript {self.id} is likely to have a "
-                            "problem in the annotation of CDS segments (it could "
-                            "also be a consequence of liftoff) as the segments "
-                            "overlap but they share the same id, please fix the gff.")
-                    self.polycistronic = "maybe"
-                
-
+            if self.strand == "+":
+                temp_id = self.temp_CDSs[0].id
             else:
-                if self.strand == "+":
-                    temp_id = self.temp_CDSs[0].id
-                else:
-                    temp_id = self.temp_CDSs[-1].id
-                self.CDSs[temp_id] = CDS(self.temp_CDSs, temp_id, 
-                                        self.temp_CDSs[0].ch, 
-                                        self.temp_CDSs[0].source, 
-                                        self.temp_CDSs[0].feature,
-                                        self.temp_CDSs[0].strand, 
-                                        self.temp_CDSs[0].start,
-                                        self.temp_CDSs[-1].end,
-                                        self.temp_CDSs[0].score,
-                                        parents)
+                temp_id = self.temp_CDSs[-1].id
+
+            self.CDSs[temp_id] = CDS(
+                self.temp_CDSs, temp_id,
+                self.temp_CDSs[0].ch,
+                self.temp_CDSs[0].source,
+                self.temp_CDSs[0].feature,
+                self.temp_CDSs[0].strand,
+                self.temp_CDSs[0].start,
+                self.temp_CDSs[-1].end,
+                self.temp_CDSs[0].score,
+                parents
+            )
 
             self.temp_CDSs = None
 
         self.determine_main_CDS()
 
-        if not consider_read_utrs:
+        if not consider_read_utrs or not self.temp_UTRs:
             self.generate_UTRs()
         else:
-            # consider_read_utrs is True
-            if not self.temp_UTRs or self.polycistronic == "yes":
-                self.generate_UTRs()
-            else:
-                self.assign_UTRs()
+            self.assign_UTRs()
 
         for c in self.CDSs.values():
             c.update()
+
 
     def determine_main_CDS(self):
         if self.CDSs != {}:

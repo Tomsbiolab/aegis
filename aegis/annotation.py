@@ -71,7 +71,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, skip_coordinate_polishing:bool=False, coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         
         start_time = time.time()
 
@@ -318,7 +318,9 @@ class Annotation():
         if not quiet:
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
-        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+        self.detect_polycistronic_transcripts(quiet=quiet)
+
+        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
         self._validate_organelle_chroms()
 
@@ -334,7 +336,7 @@ class Annotation():
                 enforce_start_codon=enforce_start_codon,
                 orf_choice_mode=orf_choice_mode,
             )
-            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, skip_coordinate_polishing=skip_coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
         if rename_source:
             self.rename_source(rename_source)
@@ -1293,7 +1295,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, skip_coordinate_polishing:bool|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
         start_time = time.time()
 
         self._protein_qc_summary = None
@@ -1303,6 +1305,8 @@ class Annotation():
             reset_phases_zero = getattr(self, "reset_phases_zero", False)
         if "phase_mismatch_across_intron" in self.warnings:
             self.warnings["phase_mismatch_across_intron"].clear()
+
+        self.detect_polycistronic_transcripts(quiet=quiet)
 
         batch_size = 1000
         count = 0
@@ -1317,11 +1321,8 @@ class Annotation():
                     count = 0
                 g.collapse_subfeatures(exons=collapse_exons, CDSs=collapse_CDSs)
                 for t in g.transcripts.values():
-                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
-                    if t.polycistronic == "maybe":
-                        self.warnings["possible_polycistronic_transcript"].add(t.id) 
-                    elif t.polycistronic == "yes":
-                        self.warnings["multiple_CDSs_per_transcript"].add(t.id)
+                    t.update(quiet=quiet, consider_read_utrs=consider_read_utrs)
+
                     for c in t.CDSs.values():
                         if reset_phases_zero:
                             c.update_phase(override=True, full_override=True)
@@ -2425,6 +2426,24 @@ class Annotation():
 
         if removed:
             self.update_gene_and_transcript_list(quiet=quiet)
+
+    def detect_polycistronic_transcripts(self, quiet:bool=False):
+        """
+        Detects polycistronic transcripts or multi-CDS annotation antipatterns across
+        the annotation based on raw temp_CDSs before CDS generation, and populates
+        self.warnings['multiple_CDSs_per_transcript'] and
+        self.warnings['possible_polycistronic_transcript'].
+        """
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    if t.temp_CDSs:
+                        warning = t._detect_polycistronic()
+                        if warning:
+                            self.warnings[warning].add(t.id)
+                            if not quiet:
+                                print(f"Warning: Transcript {t.id} flagged as {warning} ({self.id})")
+
 
     def remove_missing_transcript_parent_references(self, quiet:bool=True):
 
