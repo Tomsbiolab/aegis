@@ -628,17 +628,24 @@ class Transcript(Feature):
     def generate_introns(self):
         if len(self.exons) > 1:
             self.exons.sort()
-        self.introns = []
-        counter = 0
         parents = [self.id]
-        for n, exon in enumerate(self.exons):
-            counter += 1
-            if n == (len(self.exons) - 1):
-                continue
-            self.introns.append(Intron(f"{self.id}_intron_{counter}", self.ch,
+        # Track the furthest exon end so far, as with overlapping/nested exons the
+        # previous exon in (start, end) order may not reach as far as earlier ones
+        intervals = []
+        covered_end = None
+        for exon in self.exons:
+            if covered_end is not None and exon.start > covered_end + 1:
+                intervals.append((covered_end + 1, exon.start - 1))
+            if covered_end is None or exon.end > covered_end:
+                covered_end = exon.end
+        # Introns are kept in coordinate order but numbered 5' to 3', as exons are
+        total = len(intervals)
+        self.introns = []
+        for n, (start, end) in enumerate(intervals):
+            number = total - n if self.strand == "-" else n + 1
+            self.introns.append(Intron(f"{self.id}_intron_{number}", self.ch,
                                        self.source, "intron", self.strand,
-                                       exon.end + 1, self.exons[n+1].start - 1,
-                                       self.score, parents))
+                                       start, end, self.score, parents))
         if self.strand == "+":
             for i in self.introns:
                 for c in self.CDSs.values():

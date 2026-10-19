@@ -39,12 +39,10 @@ class AnnotationOverlaps(AnnotationComponent):
         """
         start_time = time.time()
 
-        if not self._annot.sorted:
-            self._annot.sort_genes(processes=sort_processes)
-        
+        self._annot.sort_genes(processes=sort_processes)
+
         if other != None:
-            if not other.sorted:
-                other.sort_genes(processes=sort_processes)
+            other.sort_genes(processes=sort_processes)
 
         if self._annot.original_annotation is not None:
             self._annot.define_synteny(sort_processes=sort_processes)

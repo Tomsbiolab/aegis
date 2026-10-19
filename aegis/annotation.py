@@ -96,7 +96,6 @@ class Annotation():
         self.to_overlap = to_overlap
         self.overlapped_annotations = set()
         self.merged = False
-        self.sorted = False
         self.contains_promoters = False
 
         if coordinate_polishing not in ("none", "contain", "trim"):
@@ -1355,6 +1354,13 @@ class Annotation():
         if standardise_features:
             self.update_features(standardise=standardise_features, quiet=quiet)
         
+        if coordinate_polishing is None:
+            coordinate_polishing = getattr(self, "coordinate_polishing", "contain")
+
+        # Coordinates must be final and genes sorted before renaming, as ids are numbered by position
+        self.correct_gene_transcript_and_subfeature_coordinates(mode=coordinate_polishing, quiet=quiet)
+        self.sort_genes(processes=sort_processes)
+
         if rename_features:
             self.rename_ids(features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet)
 
@@ -1367,13 +1373,7 @@ class Annotation():
         if update_gene_and_transcript_list:
             self.update_gene_and_transcript_list(quiet=quiet)
 
-        if coordinate_polishing is None:
-            coordinate_polishing = getattr(self, "coordinate_polishing", "contain")
-
         self.homogenise_parents_for_shared_exons_utrs()
-        self.correct_gene_transcript_and_subfeature_coordinates(mode=coordinate_polishing, quiet=quiet)
-        if not self.sorted:
-            self.sort_genes(processes=sort_processes)
         if define_synteny:
             self.define_synteny(sort_processes=sort_processes)
         if self.original_annotation is not None:
@@ -1552,7 +1552,6 @@ class Annotation():
                                     if not quiet:
                                         print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
                                     c.start = seg_start
-                                    self.sorted = False
 
                             if c.end != seg_end:
                                 if skip_correction:
@@ -1563,7 +1562,6 @@ class Annotation():
                                     if not quiet:
                                         print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
                                     c.end = seg_end
-                                    self.sorted = False
 
                     if t.exons:
                         if len(t.exons) > 1:
@@ -1582,7 +1580,6 @@ class Annotation():
                                     if not quiet:
                                         print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                     first_exon.start = c.start
-                                    self.sorted = False
                             if c.end > last_exon.end:
                                 if skip_correction:
                                     self.warnings["cds_exceeds_exon"].add(c.id)
@@ -1592,7 +1589,6 @@ class Annotation():
                                     if not quiet:
                                         print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                     last_exon.end = c.end
-                                    self.sorted = False
 
                             for u in c.UTRs:
                                 if u.start < first_exon.start:
@@ -1604,7 +1600,6 @@ class Annotation():
                                         if not quiet:
                                             print(f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                         first_exon.start = u.start
-                                        self.sorted = False
                                 if u.end > last_exon.end:
                                     if skip_correction:
                                         self.warnings["utr_exceeds_exon"].add(u.id)
@@ -1614,7 +1609,6 @@ class Annotation():
                                         if not quiet:
                                             print(f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                         last_exon.end = u.end
-                                        self.sorted = False
 
                         if first_exon.start < t.start:
                             if not quiet:
@@ -1635,7 +1629,6 @@ class Annotation():
                                 t.start = first_exon.start
                                 t.end = last_exon.end
                                 transcripts_moved = True
-                                self.sorted = False
 
                     if t.start < g.start:
                         if skip_correction:
@@ -1646,7 +1639,6 @@ class Annotation():
                             if not quiet:
                                 print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
                             g.start = t.start
-                            self.sorted = False
                     if t.end > g.end:
                         if skip_correction:
                             self.warnings["transcript_exceeds_gene"].add(t.id)
@@ -1656,7 +1648,6 @@ class Annotation():
                             if not quiet:
                                 print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                             g.end = t.end
-                            self.sorted = False
                     if earliest_start is None or latest_end is None:
                         earliest_start = t.start
                         latest_end = t.end
@@ -1676,7 +1667,6 @@ class Annotation():
                                 print(f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
                             g.start = earliest_start
                             g.end = latest_end
-                            self.sorted = False
                         else:
                             self.warnings["gene_exceeds_transcripts"].add(g.id)
                             if not quiet:
@@ -2009,7 +1999,6 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 g.combine_transcripts(respect_non_coding=respect_non_coding, respect_non_combined=respect_non_combined, redetect_CDS=redetect_CDS, quiet=quiet)
-        self.sorted = False
         self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.tags.add("combined")
 
@@ -2041,7 +2030,6 @@ class Annotation():
                 progress_bar.update(len(sorted_genes))
 
         progress_bar.close()
-        self.sorted = True
         if not quiet:
             print(f"Sorted genes for {self.id}")
 
@@ -2049,8 +2037,7 @@ class Annotation():
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
         start_time = time.time()
-        if not self.sorted:
-            self.sort_genes(processes=sort_processes)
+        self.sort_genes(processes=sort_processes)
         # defining synteny
         for genes in self.chrs.values():
             gene_list = list(genes.values())
@@ -2360,7 +2347,6 @@ class Annotation():
                             self.all_gene_ids[temp_id] = chr
 
         self.merged = True
-        self.sorted = False
   
         self.clear_proteins()
         progress_bar.close()
@@ -2685,6 +2671,10 @@ class Annotation():
                         self.all_gene_ids[g_new.id] = chrom
 
                 g.transcripts = new_transcripts.copy()
+                # Trim the gene to its remaining transcripts, as its span may have come from those now split off
+                if g.transcripts:
+                    g.start = min(t.start for t in g.transcripts.values())
+                    g.end = max(t.end for t in g.transcripts.values())
             new_chrs[chrom] = new_genes.copy()
 
         for nc in new_chrs:
@@ -2770,6 +2760,9 @@ class Annotation():
         start_time = time.time()
 
         changed_features = set()
+
+        # Gene ids are numbered by position along each chromosome
+        self.sort_genes(processes=1)
 
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Renaming {self.id} gene ids", colour="38;2;156;42;42", quiet=quiet)
 

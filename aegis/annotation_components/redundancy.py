@@ -678,7 +678,6 @@ class AnnotationRedundancy(AnnotationComponent):
                                 self._annot.chrs[g.ch][o.id].clear_UTRs()
                                 g.clear_UTRs()
 
-        self._annot.sorted = False
 
     def _take_snapshot(self):
         snapshot = {}

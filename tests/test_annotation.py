@@ -580,11 +580,106 @@ class TestAnnotationUpdate:
 # ============================================================
 
 class TestAnnotationSortGenes:
-    def test_sort_sets_sorted_flag(self, multi_gene_gff3_file):
-        annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.sorted = False
-        annot.sort_genes(processes=1, quiet=True)
-        assert annot.sorted is True
+    @staticmethod
+    def _write_gff(tmp_path, name, lines):
+        gff = tmp_path / name
+        gff.write_text("##gff-version 3\n" + "".join("\t".join(l) + "\n" for l in lines))
+        return str(gff)
+
+    @staticmethod
+    def _gene(g_id, start, end, transcripts):
+        """transcripts: list of (t_id, t_start, t_end, [(e_start, e_end), ...])"""
+        lines = [("chr1", "aegis", "gene", str(start), str(end), ".", "+", ".", f"ID={g_id}")]
+        for t_id, t_start, t_end, exons in transcripts:
+            lines.append(("chr1", "aegis", "mRNA", str(t_start), str(t_end), ".", "+", ".", f"ID={t_id};Parent={g_id}"))
+            for n, (e_start, e_end) in enumerate(exons):
+                lines.append(("chr1", "aegis", "exon", str(e_start), str(e_end), ".", "+", ".", f"ID={t_id}.e{n+1};Parent={t_id}"))
+        return lines
+
+    def _unsorted_with_alt_gff(self, tmp_path):
+        lines = (
+            self._gene("late", 8000, 9000, [("late.t1", 8000, 9000, [(8000, 9000)])])
+            + self._gene("early", 1000, 2000, [("early.t1", 1000, 2000, [(1000, 2000)])])
+            + self._gene("alt", 4000, 6500, [
+                ("alt.t1", 4000, 5000, [(4000, 5000)]),
+                ("alt.t2", 4000, 6500, [(4000, 4500), (6000, 6500)]),
+            ])
+        )
+        return self._write_gff(tmp_path, "unsorted.gff3", lines)
+
+    def test_genes_sorted_after_load(self, tmp_path):
+        annot = Annotation(self._unsorted_with_alt_gff(tmp_path), quiet=True)
+        assert list(annot.chrs["chr1"].keys()) == ["early", "alt", "late"]
+
+    def test_update_sorts_genes_added_after_sorting(self, tmp_path):
+        annot = Annotation(self._unsorted_with_alt_gff(tmp_path), quiet=True)
+        annot.make_alternative_transcripts_into_genes(quiet=True)
+        starts = [g.start for g in annot.chrs["chr1"].values()]
+        assert len(starts) == 4
+        assert starts == sorted(starts)
+
+    @pytest.mark.parametrize("mode", ["none", "contain"])
+    def test_alternative_transcripts_into_genes_trims_genes(self, tmp_path, mode):
+        # The main transcript (longest exonic size) spans less than the alternative one
+        lines = self._gene("g1", 4000, 7100, [
+            ("g1.t1", 4000, 5000, [(4000, 5000)]),
+            ("g1.t2", 4000, 7100, [(4000, 4100), (7000, 7100)]),
+        ])
+        annot = Annotation(self._write_gff(tmp_path, "alt.gff3", lines), quiet=True, coordinate_polishing=mode)
+        assert annot.chrs["chr1"]["g1"].transcripts["g1.t1"].main
+
+        annot.make_alternative_transcripts_into_genes(quiet=True)
+
+        spans = sorted((g.start, g.end) for g in annot.chrs["chr1"].values())
+        assert spans == [(4000, 5000), (4000, 7100)]
+        for g in annot.chrs["chr1"].values():
+            t = list(g.transcripts.values())[0]
+            assert len(g.transcripts) == 1
+            assert (g.start, g.end) == (t.start, t.end)
+            assert g.id not in annot.warnings["gene_exceeds_transcripts"]
+
+    def test_rename_ids_numbers_genes_by_position(self, tmp_path):
+        annot = Annotation(self._unsorted_with_alt_gff(tmp_path), quiet=True)
+        # Scramble gene order without going through update()
+        annot.chrs["chr1"] = dict(reversed(list(annot.chrs["chr1"].items())))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="TST", quiet=True)
+        genes = list(annot.chrs["chr1"].values())
+        assert [g.original_id for g in genes] == ["early", "alt", "late"]
+        assert [g.id for g in genes] == ["TSTchr1g00100", "TSTchr1g00200", "TSTchr1g00300"]
+
+    def test_overlap_detection_sorts_genes(self, tmp_path):
+        lines = (
+            self._gene("gA", 1000, 2000, [("gA.t1", 1000, 2000, [(1000, 2000)])])
+            + self._gene("gB", 1500, 3000, [("gB.t1", 1500, 3000, [(1500, 3000)])])
+            + self._gene("gC", 9000, 9500, [("gC.t1", 9000, 9500, [(9000, 9500)])])
+            + self._gene("gD", 1800, 2500, [("gD.t1", 1800, 2500, [(1800, 2500)])])
+        )
+        annot = Annotation(self._write_gff(tmp_path, "overlap.gff3", lines), quiet=True)
+        # Unsorted order where the sweep would stop at gC before reaching gD
+        genes = annot.chrs["chr1"]
+        annot.chrs["chr1"] = {g_id: genes[g_id] for g_id in ["gA", "gB", "gC", "gD"]}
+        annot.overlaps.detect(quiet=True)
+        assert sorted(o.id for o in annot.chrs["chr1"]["gA"].overlaps["self"]) == ["gB", "gD"]
+        assert annot.chrs["chr1"]["gC"].overlaps["self"] == []
+
+    def test_transcripts_sorted_by_polished_coordinates(self, tmp_path):
+        # tB's mRNA line starts before tA's, but its exons start after them
+        lines = self._gene("g1", 1000, 6000, [
+            ("tB", 1000, 6000, [(3000, 3500), (5000, 6000)]),
+            ("tA", 2000, 4000, [(2000, 4000)]),
+        ])
+        gff = self._write_gff(tmp_path, "transcripts.gff3", lines)
+
+        annot = Annotation(gff, quiet=True, coordinate_polishing="contain")
+        g = annot.chrs["chr1"]["g1"]
+        assert list(g.transcripts.keys()) == ["tA", "tB"]
+        assert (g.transcripts["tB"].start, g.transcripts["tB"].end) == (3000, 6000)
+
+        annot = Annotation(gff, quiet=True, coordinate_polishing="none")
+        g = annot.chrs["chr1"]["g1"]
+        assert list(g.transcripts.keys()) == ["tB", "tA"]
 
     def test_sort_genes_order(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)

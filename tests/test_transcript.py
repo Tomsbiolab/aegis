@@ -436,6 +436,79 @@ class TestTranscriptExonSorting:
         assert t.introns[0].start == 2001
         assert t.introns[0].end == 2999
 
+    @pytest.mark.parametrize("strand", ["+", "-"])
+    def test_generate_introns_nested_exon(self, make_transcript, make_exon, strand):
+        t = make_transcript(strand=strand)
+        t.exons = [
+            make_exon("e1", start=1000, end=5000, strand=strand),
+            make_exon("e2", start=2000, end=3000, strand=strand),  # nested in e1
+            make_exon("e3", start=6000, end=7000, strand=strand),
+        ]
+
+        t.generate_introns()
+
+        # Only the gap after the furthest exon end (5000) is an intron
+        assert [(i.start, i.end) for i in t.introns] == [(5001, 5999)]
+
+    def test_generate_introns_overlapping_and_adjacent_exons(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        t.exons = [
+            make_exon("e1", start=1000, end=2000),
+            make_exon("e2", start=1500, end=2500),  # overlaps e1
+            make_exon("e3", start=2501, end=3000),  # adjacent to e2
+            make_exon("e4", start=4000, end=5000),
+        ]
+
+        t.generate_introns()
+
+        assert [(i.start, i.end) for i in t.introns] == [(3001, 3999)]
+        assert all(i.start <= i.end for i in t.introns)
+
+    def test_generate_introns_ids_are_consecutive(self, make_transcript, make_exon):
+        t = make_transcript(feature_id="T1", strand="+")
+        t.exons = [
+            make_exon("e1", start=1000, end=2000),
+            make_exon("e2", start=1500, end=1800),  # nested, produces no intron
+            make_exon("e3", start=3000, end=4000),
+            make_exon("e4", start=5000, end=6000),
+        ]
+
+        t.generate_introns()
+
+        assert [i.id for i in t.introns] == ["T1_intron_1", "T1_intron_2"]
+        assert [(i.start, i.end) for i in t.introns] == [(2001, 2999), (4001, 4999)]
+
+    def test_generate_introns_minus_strand_numbered_5_to_3(self, make_transcript, make_exon):
+        t = make_transcript(feature_id="T1", strand="-")
+        t.exons = [
+            make_exon("e1", start=1000, end=2000, strand="-"),
+            make_exon("e2", start=3000, end=4000, strand="-"),
+            make_exon("e3", start=5000, end=6000, strand="-"),
+        ]
+
+        t.generate_introns()
+
+        # Kept in coordinate order, numbered from the 5' end (rightmost on the minus strand)
+        assert [(i.start, i.end) for i in t.introns] == [(2001, 2999), (4001, 4999)]
+        assert [i.id for i in t.introns] == ["T1_intron_2", "T1_intron_1"]
+        assert all(i.original_id == i.id for i in t.introns)
+
+    def test_generate_introns_numbering_matches_exons(self, make_transcript, make_exon):
+        for strand in ("+", "-"):
+            t = make_transcript(feature_id="T1", strand=strand)
+            t.exons = [
+                make_exon("e1", start=1000, end=2000, strand=strand),
+                make_exon("e2", start=3000, end=4000, strand=strand),
+                make_exon("e3", start=5000, end=6000, strand=strand),
+            ]
+            t.rename_exons("T1")
+            t.generate_introns()
+            exon_number = {e.start: int(e.id.split("_e")[-1]) for e in t.exons}
+            for i in t.introns:
+                upstream_exon_start = max(s for s in exon_number if s < i.start) if strand == "+" else min(s for s in exon_number if s > i.end)
+                # Intron n lies between exon n and exon n+1 in transcription order
+                assert int(i.id.split("_intron_")[-1]) == exon_number[upstream_exon_start], strand
+
 
 # ============================================================
 # collapse_exons

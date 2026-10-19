@@ -429,8 +429,8 @@ class CDS(Feature):
             protein_seq = translate(coding_seq, table=table)
 
             if corrected_segments:
-                protein_start = corrected_segments[0][0]
-                protein_end = corrected_segments[-1][1]
+                protein_start = min(start for start, _ in corrected_segments)
+                protein_end = max(end for _, end in corrected_segments)
 
                 if correct_CDS:
 
