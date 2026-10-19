@@ -206,9 +206,3 @@ Chr1	Araport11	exon	5815928	5816058	.	+	.	ID=AT1G17000:exon:15;Parent=AT1G17000.
 Chr1	Araport11	exon	5816205	5816303	.	+	.	ID=AT1G17000:exon:16;Parent=AT1G17000.1;Name=AT1G17000:exon:16;Note=trehalose-phosphatase/synthase 3;curator_summary=Encodes an enzyme putatively involved in trehalose biosynthesis.  The protein has a trehalose synthase (TPS)-like domain that may or may not be active but no trehalose phosphatase (TPP)-like domain.;computational_description=trehalose-phosphatase/synthase 3
 Chr1	Araport11	exon	5816384	5816662	.	+	.	ID=AT1G17000:exon:17;Parent=AT1G17000.1;Name=AT1G17000:exon:17;Note=trehalose-phosphatase/synthase 3;curator_summary=Encodes an enzyme putatively involved in trehalose biosynthesis.  The protein has a trehalose synthase (TPS)-like domain that may or may not be active but no trehalose phosphatase (TPP)-like domain.;computational_description=trehalose-phosphatase/synthase 3
 Chr1	Araport11	protein	5812728	5816662	.	+	.	ID=AT1G17000.1-Protein;Name=AT1G17000.1;Derives_from=AT1G17000.1
-###
-# 3. Vitvi000224.t01: 5' partial CDS with phase 0 but lacking canonical start codon (from Grapevine T2T)
-chr01	GWAP	gene	2091229	2092023	.	-	.	ID=Vitvi000224
-chr01	GWAP	mRNA	2091229	2092023	.	-	.	ID=Vitvi000224.t01;Parent=Vitvi000224
-chr01	GWAP	exon	2091229	2092023	.	-	.	ID=Vitvi000224.t01.exon1;Parent=Vitvi000224.t01
-chr01	GWAP	CDS	2091444	2092022	.	-	0	ID=Vitvi000224.t01.CDS1;Parent=Vitvi000224.t01
