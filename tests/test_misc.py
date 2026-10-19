@@ -625,7 +625,7 @@ class TestGenerateProtein:
         assert p.seq == expected_seq
         # Alternative starts are 5' complete, only tagged as such
         assert p.partial_5prime is (expected_status == "none")
-        assert ("alt_start" in p.summary_tag) is (expected_status == "alternative")
+        assert ("alt_start" in p.tags) is (expected_status == "alternative")
 
     def test_skipped_5prime_bases_are_not_a_start(self):
         from aegis.misc_features import Protein
@@ -703,7 +703,7 @@ class TestGenerateProtein:
         assert p.gaps is True
         assert p.ambiguous_residues == 1
         assert p.partial is False # ambiguity is counted separately, the protein has start and stop
-        assert "ambiguous" in p.summary_tag
+        assert "ambiguous_residues" in p.tags
 
     def test_orf_extraction(self, make_CDS_segment, make_CDS):
         # GGG ATG AAA TAA (12 nt)

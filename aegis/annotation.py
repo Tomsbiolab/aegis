@@ -1925,7 +1925,8 @@ class Annotation():
 
     def get_protein_qc_summary(self) -> dict[str, int]:
         """
-        Computes summary metrics for CDSs and translated proteins across the annotation:
+        Computes summary metrics for CDSs and translated proteins across the annotation. Protein
+        metrics are counted from Protein.tags, as written in detailed FASTA headers:
         - total_cds: Total CDS features.
         - total_proteins: CDSs with translated protein sequences.
         - complete_proteins: Translated proteins with valid start codon, stop codon and no early stop.
@@ -1935,7 +1936,8 @@ class Annotation():
         - partial_3prime: Proteins missing stop codon.
         - ambiguous_proteins: Proteins with residues translated from ambiguous codons (X).
         - truncated_proteins: Proteins with premature internal stop codons.
-        - frameshifted_cds: CDSs with internal phase shifts / frameshifts (intra-exon or intron).
+        - frameshifted_proteins: Proteins translated across a frameshift (annotated overlap or gap, or adjusted phases).
+        - frameshifted_cds: CDSs with internal phase shifts / frameshifts (intra-exon or intron); needs no genome.
         - phase_mismatches: CDSs with phase mismatch across introns.
         """
         if hasattr(self, "_protein_qc_summary") and self._protein_qc_summary is not None:
@@ -1956,6 +1958,7 @@ class Annotation():
         partial_5p = 0
         partial_3p = 0
         truncated_proteins = 0
+        frameshifted_proteins = 0
         frameshifted_cds = 0
 
         intron_phase_mismatches = self.warnings.get("phase_mismatch_across_intron", set())
@@ -1970,20 +1973,24 @@ class Annotation():
                         p = c.protein
                         if p is not None and p.seq:
                             total_proteins += 1
-                            if p.partial:
+                            tags = p.tags
+                            partial = tags.get("partial", "")
+                            if partial:
                                 partial_proteins += 1
-                            if p.truncated:
+                                if "5'" in partial:
+                                    partial_5p += 1
+                                if "3'" in partial:
+                                    partial_3p += 1
+                            if "internal_stops" in tags:
                                 truncated_proteins += 1
-                            if not p.partial and not p.truncated:
+                            elif not partial:
                                 complete_proteins += 1
-                                if p.start_status == "alternative":
+                                if "alt_start" in tags:
                                     alt_start_proteins += 1
-                            if p.gaps:
+                            if "ambiguous_residues" in tags:
                                 ambiguous_proteins += 1
-                            if getattr(p, "partial_5prime", False):
-                                partial_5p += 1
-                            if getattr(p, "partial_3prime", False):
-                                partial_3p += 1
+                            if "frameshifts" in tags:
+                                frameshifted_proteins += 1
 
         summary = {
             "total_cds": total_cds,
@@ -1995,6 +2002,7 @@ class Annotation():
             "partial_3prime": partial_3p,
             "truncated_proteins": truncated_proteins,
             "ambiguous_proteins": ambiguous_proteins,
+            "frameshifted_proteins": frameshifted_proteins,
             "frameshifted_cds": frameshifted_cds,
             "phase_mismatches": len(intron_phase_mismatches),
         }

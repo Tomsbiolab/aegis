@@ -373,7 +373,8 @@ class CDS(Feature):
             coding_parts = []
             segment_intervals = []
             pending_leftover = ""
-            frameshifts = 0
+            # Bases dropped at each adjusted junction (index of its downstream segment in working_segs)
+            dropped_bases = {}
             n_segs = len(working_segs)
             for i, cs in enumerate(working_segs):
                 p = cs.phase or 0
@@ -391,7 +392,7 @@ class CDS(Feature):
                     else:
                         trim_5p = p
                         if pending_leftover or leading:
-                            frameshifts += 1
+                            dropped_bases[i] = len(pending_leftover) + len(leading)
                     lo = (l - p) % 3
                     coding_parts.append(s[p : l - lo])
                 else:
@@ -451,7 +452,7 @@ class CDS(Feature):
             # An ORF chosen by an ORF mode defines its own start and end; otherwise skipped bases are trimmed CDS ends
             trimmed_5p = 0 if orf_found else relative_coding_start
             trimmed_3p = 0 if orf_found else max(0, len(cds_seq) - 1 - relative_coding_end)
-            frameshifts = 0
+            dropped_bases = {}
             corrected_segments = (
                 map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
                 if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start
@@ -465,6 +466,7 @@ class CDS(Feature):
             if corrected_segments:
                 protein_start = min(start for start, _ in corrected_segments)
                 protein_end = max(end for _, end in corrected_segments)
+                frameshifts = self._junction_shifts(working_segs, dropped_bases, protein_start, protein_end)
 
                 if correct_CDS:
 
@@ -488,7 +490,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, exception=self.exception, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
             else:
                 self.protein = None
                 if not quiet:
@@ -497,6 +499,27 @@ class CDS(Feature):
             self.protein = None
             if not quiet:
                 print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+
+    def _junction_shifts(self, working_segs:list[Feature], dropped_bases:dict[int, int], protein_start:int, protein_end:int) -> tuple[int, ...]:
+        """
+        Net frameshift of each segment junction translated within protein_start..protein_end, in
+        transcript order (working_segs). Bases read twice at an annotated overlap of 1-2 bp count as
+        negative; bases skipped by an annotated gap of 1-2 bp, or dropped to follow the annotated
+        phases (dropped_bases), count as positive. Junctions without a net shift are left out.
+        """
+        shifts = []
+        for i in range(1, len(working_segs)):
+            prev_seg, cs = working_segs[i - 1], working_segs[i]
+            if self.strand != "-":
+                gap = cs.start - prev_seg.end - 1
+                translated = protein_start <= prev_seg.end and cs.start <= protein_end
+            else:
+                gap = prev_seg.start - cs.end - 1
+                translated = protein_start <= cs.end and prev_seg.start <= protein_end
+            shift = (gap if -2 <= gap <= 2 else 0) + dropped_bases.get(i, 0)
+            if translated and shift:
+                shifts.append(shift)
+        return tuple(shifts)
 
     def clear_protein(self):
         self.protein = None

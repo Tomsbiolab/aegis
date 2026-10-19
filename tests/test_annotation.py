@@ -1416,6 +1416,29 @@ class TestPhaseWarnings:
         assert qc["phase_mismatches"] == 1
         assert qc["frameshifted_cds"] == 1
 
+    def test_protein_qc_summary_counts_tags(self, tmp_path):
+        # t1: complete with a corrected +1 frameshift; t2: 3' partial with an internal stop
+        seq = "ATGAAACTTTGACTAA" + "ATGTAAAAA"
+        lines = [
+            "##gff-version 3",
+            f"chr1\ttest\tgene\t1\t{len(seq)}\t.\t+\t.\tID=g1",
+            "chr1\ttest\tmRNA\t1\t16\t.\t+\t.\tID=t1;Parent=g1",
+            "chr1\ttest\texon\t1\t16\t.\t+\t.\tID=e1;Parent=t1",
+            "chr1\ttest\tCDS\t1\t10\t.\t+\t0\tID=c1;Parent=t1",
+            "chr1\ttest\tCDS\t11\t16\t.\t+\t0\tID=c1;Parent=t1",
+            f"chr1\ttest\tmRNA\t17\t{len(seq)}\t.\t+\t.\tID=t2;Parent=g1",
+            f"chr1\ttest\texon\t17\t{len(seq)}\t.\t+\t.\tID=e2;Parent=t2",
+            f"chr1\ttest\tCDS\t17\t{len(seq)}\t.\t+\t0\tID=c2;Parent=t2",
+        ]
+        gff_file = tmp_path / "qc.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": seq}), quiet=True)
+        qc = annot.get_protein_qc_summary()
+        assert qc["total_proteins"] == 2
+        assert (qc["complete_proteins"], qc["frameshifted_proteins"]) == (1, 1)
+        assert (qc["partial_proteins"], qc["partial_5prime"], qc["partial_3prime"]) == (1, 0, 1)
+        assert qc["truncated_proteins"] == 1
+
 
 # ============================================================
 # Annotation — rename_chromosomes
@@ -3284,10 +3307,11 @@ class TestProteinFlags:
         # ATG AAA CTT | T (skipped) | GAC TAA: +1 shift encoded by a 3n+1 first segment
         p = self._protein(tmp_path, "ATGAAACTTTGACTAA", [(1, 10, 0), (11, 16, 0)])
         assert p.seq == "MKLD*"
-        assert p.frameshifts == 1
+        assert p.frameshifts == (1,)
+        assert p.tags["frameshifts"] == "+1"
         assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
         assert p.partial is False
-        assert "frameshift" in p.summary_tag
+        assert "frameshifts" in p.tags
 
     def test_bases_after_stop_are_not_partial(self, tmp_path):
         # ATG AAA TAA + 2 extra bases

@@ -224,11 +224,14 @@ class AnnotationExport(AnnotationComponent):
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 
-                        if c.protein.summary_tag and verbose:
-                            f_out.write(f"|{c.protein.summary_tag}")
                         if verbose:
-                            table_tag = "custom" if isinstance(c.protein.table, dict) else c.protein.table
-                            f_out.write(f"|readthrough:{c.protein.readthrough}|table:{table_tag}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
+                            tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
+                            location = ",".join(f"{start}..{end}" for start, end in c.protein.segments)
+                            if len(c.protein.segments) > 1:
+                                location = f"join({location})"
+                            if c.strand == "-":
+                                location = f"complement({location})"
+                            f_out.write(f"{tags}|{c.strand}|{c.protein.ch}|location={location}")
 
                         prot_seq = c.protein.seq
                         if strip_stop and prot_seq.endswith("*"):

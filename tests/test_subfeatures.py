@@ -266,17 +266,19 @@ class TestCDS:
         assert cds.CDS_segments[0].misc_attributes == ["transl_table=1", "Note=x"]
 
     @staticmethod
-    def _shift_protein(make_CDS, make_CDS_segment, monkeypatch, strand, segments, adjust_internal_shifts):
+    def _shift_protein(make_CDS, make_CDS_segment, monkeypatch, strand, segments, adjust_internal_shifts, mode="end", seq="ACGGCA" * 10, attributes=None, enforce_start_codon=False):
+        # Default sequence has no T, so no stop codons in any frame
         class DummyScaffold:
-            seq = "ACGGCA" * 10  # no T, so no stop codons in any frame
+            pass
+        DummyScaffold.seq = seq
         class DummyGenome:
             scaffolds = {"chr1": DummyScaffold()}
             name = "dummy"
         monkeypatch.setattr(Feature, "_ACTIVE_GENOME", DummyGenome())
-        segs = [make_CDS_segment(f"s{i}", strand=strand, start=a, end=b, phase=p) for i, (a, b, p) in enumerate(segments)]
+        segs = [make_CDS_segment(f"s{i}", strand=strand, start=a, end=b, phase=p, attributes=attributes) for i, (a, b, p) in enumerate(segments)]
         cds = make_CDS(segments=segs, strand=strand)
-        cds.generate_protein(mode="end", enforce_start_codon=False, adjust_internal_shifts=adjust_internal_shifts)
-        return cds.protein, DummyScaffold.seq
+        cds.generate_protein(mode=mode, enforce_start_codon=enforce_start_codon, adjust_internal_shifts=adjust_internal_shifts)
+        return cds.protein, seq
 
     # Phase mismatch (leftover 1 + phase 0) both at a contiguous junction (1..10 | 11..20) and across an intron (11..20 | 31..42)
     SHIFT_SEGMENTS_PLUS = [(1, 10, 0), (11, 20, 0), (31, 42, 0)]
@@ -286,19 +288,49 @@ class TestCDS:
         # Base 10 dropped at the contiguous junction; base 20 opens the first codon across the intron
         assert p.nuc_seq == seq[0:9] + seq[10:20] + seq[30:41]
         assert p.segments == ((1, 9), (11, 20), (31, 41))
-        assert p.frameshifts == 1
+        assert p.frameshifts == (1,)
 
     def test_all_shift_adjusts_every_junction(self, make_CDS, make_CDS_segment, monkeypatch):
         p, seq = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, "+", self.SHIFT_SEGMENTS_PLUS, "all")
         assert p.nuc_seq == seq[0:9] + seq[10:19] + seq[30:42]
         assert p.segments == ((1, 9), (11, 19), (31, 42))
-        assert p.frameshifts == 2
+        assert p.frameshifts == (1, 1)
 
     def test_intra_exon_shift_adjusts_only_contiguous_junction_minus(self, make_CDS, make_CDS_segment, monkeypatch):
         # Mirror of the plus case: 5' segment 33..42, contiguous 23..32, then intron down to 1..12
         p, _ = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, "-", [(1, 12, 0), (23, 32, 0), (33, 42, 0)], "intra_exon")
         assert p.segments == ((2, 12), (23, 32), (34, 42))
-        assert p.frameshifts == 1
+        assert p.frameshifts == (1,)
+
+    @pytest.mark.parametrize("strand, segments", [
+        # PEG10-like -1 frameshift: 1-bp overlap with phases consistent with reading the shared base twice
+        ("+", [(1, 10, 0), (10, 21, 2)]),
+        ("-", [(10, 21, 2), (21, 30, 0)]),
+    ])
+    def test_annotated_overlap_is_negative_shift(self, make_CDS, make_CDS_segment, monkeypatch, strand, segments):
+        p, _ = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, strand, segments, "intra_exon")
+        assert len(p.nuc_seq) == 21  # 10 + 12 - 1 trailing base: the shared base is translated twice
+        assert p.frameshifts == (-1,)
+
+    def test_annotated_gap_is_positive_shift(self, make_CDS, make_CDS_segment, monkeypatch):
+        # OAZ1-like +1 frameshift: base 11 skipped, phases consistent with the skip
+        p, _ = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, "+", [(1, 10, 0), (12, 22, 2)], "intra_exon")
+        assert p.frameshifts == (1,)
+
+    def test_shift_outside_ORF_not_reported(self, make_CDS, make_CDS_segment, monkeypatch):
+        # The +1 gap at base 11 lies upstream of the ORF (ATG at 31), so the ORF protein has no shift
+        seq = "ACGGCA" * 5 + "ATGAAACCCGGGTAA" + "ACGGCA" * 2 + "ACG"
+        segments = [(1, 10, 0), (12, 60, 2)]
+        p, _ = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, "+", segments, "intra_exon", seq=seq)
+        assert p.frameshifts == (1,)
+        p, _ = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, "+", segments, "intra_exon", mode="orf", seq=seq, enforce_start_codon=True)
+        assert p.start == 31
+        assert p.frameshifts == ()
+
+    def test_exception_reaches_protein(self, make_CDS, make_CDS_segment, monkeypatch):
+        p, _ = self._shift_protein(make_CDS, make_CDS_segment, monkeypatch, "+", [(1, 10, 0), (12, 22, 2)], "intra_exon", attributes={"exception": "ribosomal slippage"})
+        assert p.exception == "ribosomal slippage"
+        assert p.tags["exception"] == "ribosomal slippage"
 
 
 

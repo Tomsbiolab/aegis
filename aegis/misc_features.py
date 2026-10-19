@@ -11,7 +11,7 @@ from .utils.genefunctions import get_start_codons, get_alt_start_codons
 
 class Protein():
 
-    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "start_status")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "exception", "start_status")
 
     _blast_hits: list[BlastHit] | None
     _segments: tuple[tuple[int, int], ...] | None
@@ -24,16 +24,19 @@ class Protein():
     table: int | str | dict[str, str]
     trimmed_5p: int
     trimmed_3p: int
-    frameshifts: int
+    frameshifts: tuple[int, ...]
+    exception: str|None
     start_status: str
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:int=0, initiator_methionine:bool=True, alt_start_methionine:bool=True):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:tuple[int, ...]=(), exception:str|None=None, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         """
         trimmed_5p: CDS bases skipped before the first translated codon (nonzero
             initial phase or 5' trimming); the first codon is then not a start codon.
         trimmed_3p: CDS bases left untranslated after the last complete codon.
-        frameshifts: segment junctions where bases were dropped to follow annotated
-            phases (internal frameshifts corrected during translation).
+        frameshifts: net shift (in bases) of each translated segment junction in transcript
+            order: negative when bases are read twice (annotated overlap), positive when bases
+            are skipped (annotated gap, or dropped to follow annotated phases).
+        exception: GFF exception of the CDS (e.g. "ribosomal slippage"), if any.
         initiator_methionine: whether valid start codons at position 1 are translated
             as Methionine (M) [default: True, matching NCBI RefSeq/UniProt convention].
         alt_start_methionine: whether alternative start codons (e.g. CTG in table 1/11)
@@ -44,6 +47,7 @@ class Protein():
         self.trimmed_5p = trimmed_5p
         self.trimmed_3p = trimmed_3p
         self.frameshifts = frameshifts
+        self.exception = exception
         self.ch = chrom
         self.start = start
         self.end = end
@@ -175,19 +179,33 @@ class Protein():
         return self.early_stop
 
     @property
-    def summary_tag(self) -> str:
-        summary_tag = []
+    def internal_stops(self) -> int:
+        """Number of stop codons before the last residue."""
+        return self.seq[:-1].count("*")
+
+    @property
+    def tags(self) -> dict[str, str]:
+        """
+        Protein tags in output order, the single source for detailed FASTA headers and summaries.
+        Quality tags only appear when they apply; readthrough and table are always present.
+        """
+        tags = {}
         if self.partial:
-            summary_tag.append("partial")
-        if self.truncated:
-            summary_tag.append("truncated")
+            tags["partial"] = ",".join(end for end, is_partial in (("5'", self.partial_5prime), ("3'", self.partial_3prime)) if is_partial)
         if self.start_status == "alternative":
-            summary_tag.append("alt_start")
-        if self.gaps:
-            summary_tag.append("ambiguous")
+            tags["alt_start"] = self.nuc_seq[:3].upper()
+        if self.internal_stops:
+            tags["internal_stops"] = str(self.internal_stops)
+        if self.ambiguous_residues:
+            tags["ambiguous_residues"] = str(self.ambiguous_residues)
         if self.frameshifts:
-            summary_tag.append("frameshift")
-        return "_".join(summary_tag)
+            tags["frameshifts"] = ",".join(f"{shift:+d}" for shift in self.frameshifts)
+        if self.exception:
+            tags["exception"] = self.exception
+        tags["readthrough"] = self.readthrough
+        tags["table"] = "custom" if isinstance(self.table, dict) else str(self.table)
+        return tags
+
 
 
 class Promoter(Feature):

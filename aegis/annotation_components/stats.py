@@ -34,6 +34,7 @@ KEY_DESCRIPTIONS = {
     "complete_proteins":          "Number of complete proteins",
     "partial_proteins":           "Number of partial proteins",
     "truncated_proteins":         "Number of truncated proteins",
+    "frameshifted_proteins":      "Number of proteins translated across a frameshift",
     "frameshifted_cds":           "Number of phase-shifted / frameshifted CDSs",
     "phase_mismatches":           "Number of phase mismatches across introns",
     "CDSs_without_stop":          "Number of CDS without stop codon",
@@ -405,6 +406,7 @@ class AnnotationStats(AnnotationComponent):
         self.data["complete_proteins"]    = qc["complete_proteins"]
         self.data["partial_proteins"]     = qc["partial_proteins"]
         self.data["truncated_proteins"]   = qc["truncated_proteins"]
+        self.data["frameshifted_proteins"] = qc["frameshifted_proteins"]
         self.data["frameshifted_cds"]     = qc["frameshifted_cds"]
         self.data["phase_mismatches"]     = qc["phase_mismatches"]
 

@@ -803,6 +803,7 @@ def main(
             ("Partial Proteins", "partial_proteins", False),
             ("Truncated Proteins", "truncated_proteins", False),
             ("Proteins with Ambiguous Residues", "ambiguous_proteins", False),
+            ("Frameshifted Proteins", "frameshifted_proteins", False),
             ("Phase-shifted / Frameshifted CDSs", "frameshifted_cds", False),
             ("Out-of-bounds Features", "out_of_bounds", False),
             ("Contigs Missing in Genome", "missing_chroms", False),
@@ -811,7 +812,7 @@ def main(
 
     def get_annot_metric_val(annot: Annotation, metric_key: str):
         stats_data = annot.stats.data
-        if metric_key in ("total_proteins", "complete_proteins", "alt_start_proteins", "partial_proteins", "truncated_proteins", "ambiguous_proteins", "frameshifted_cds", "phase_mismatches"):
+        if metric_key in ("total_proteins", "complete_proteins", "alt_start_proteins", "partial_proteins", "truncated_proteins", "ambiguous_proteins", "frameshifted_proteins", "frameshifted_cds", "phase_mismatches"):
             qc = annot.get_protein_qc_summary()
             return qc.get(metric_key, 0)
         if metric_key == "total_genes":
