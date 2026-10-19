@@ -48,8 +48,11 @@ class Feature():
     _attributes: FeatureAttributes | None
     ch:str
 
-    # These attributes cannot be mistaken by misc attributes or any other
-    attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
+    # Structural keys and AEGIS's own processing state (written by AEGIS and recomputed rather than read back)
+    aegis_state_attributes:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
+    # Model status written by other tools (NCBI, Liftoff) that AEGIS derives from its own translation; kept, it would go stale once a model changes
+    derived_state_attributes:set = {"partial", "start_range", "end_range", "missing_start_codon", "missing_stop_codon", "inframe_stop_codon", "valid_orf", "valid_orfs"}
+    attributes_to_ignore_when_reading_gff:set = aegis_state_attributes | derived_state_attributes
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}, phase:int|None=None):
         
         self.id = feature_id

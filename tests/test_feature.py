@@ -58,6 +58,17 @@ class TestFeatureInit:
         assert any("Dbxref" in a for a in f.misc_attributes)
         assert any("custom" in a for a in f.misc_attributes)
 
+    def test_derived_state_attributes_not_read(self, make_feature):
+        # Partial/start/stop status from NCBI or Liftoff is derived by AEGIS itself; liftover metrics are kept
+        attributes = {
+            "partial": "true", "start_range": ".,1000", "end_range": "2000,.",
+            "missing_start_codon": "True", "missing_stop_codon": "True", "inframe_stop_codon": "False", "valid_ORF": "True",
+            "coverage": "0.98", "matches_ref_protein": "True", "transl_except": "(pos:1105403..1105405%2Caa:Sec)",
+        }
+        f = make_feature(feature_id="feat1", attributes=attributes)
+        keys = {a.split("=")[0] for a in f.misc_attributes}
+        assert keys == {"coverage", "matches_ref_protein", "transl_except"}
+
 
 # ============================================================
 # Methods
