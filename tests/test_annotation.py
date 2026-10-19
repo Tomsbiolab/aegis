@@ -794,17 +794,132 @@ class TestAnnotationCorrectCoordinates:
         assert gene.start <= t.start
         assert gene.end >= t.end
 
-    def test_fix_gene_too_long(self, sample_gff3_file):
+    def test_trim_gene_too_long(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         gene = annot.chrs["chr1"]["gene1"]
         # Make gene coordinates wider than all transcripts
         gene.start = 1
         gene.end = 50000
-        annot.correct_gene_transcript_and_subfeature_coordinates(quiet=True)
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="trim", quiet=True)
         # Gene should have been trimmed to match transcript extent
         t = list(gene.transcripts.values())[0]
         assert gene.start == t.start
         assert gene.end == t.end
+        assert "gene1" not in annot.warnings["gene_exceeds_transcripts"]
+
+    def test_contain_keeps_gene_too_long(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1
+        gene.end = 50000
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
+        # Excess gene region is kept but reported
+        assert gene.start == 1
+        assert gene.end == 50000
+        assert "gene1" in annot.warnings["gene_exceeds_transcripts"]
+
+    def test_contain_extends_gene_on_one_side_keeps_other(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        t = list(gene.transcripts.values())[0]
+        # Gene too short on the 5' side, too long on the 3' side
+        gene.start = 1500
+        gene.end = 8000
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
+        assert gene.start == t.start
+        assert gene.end == 8000
+
+    def test_none_leaves_coordinates_and_warns(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        t = list(gene.transcripts.values())[0]
+        gene.start = 1500
+        gene.end = 8000
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=True)
+        assert gene.start == 1500
+        assert gene.end == 8000
+        assert t.id in annot.warnings["transcript_exceeds_gene"]
+        assert "gene1" in annot.warnings["gene_exceeds_transcripts"]
+
+    def test_contain_extends_exons_to_cover_utrs(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        t = list(gene.transcripts.values())[0]
+        c = list(t.CDSs.values())[0]
+        # Simulate read-in UTRs extending past the exons
+        c.UTRs[0].start = 900
+        c.UTRs[-1].end = 5200
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
+        assert t.exons[0].start == 900
+        assert t.exons[-1].end == 5200
+        assert (t.start, t.end) == (900, 5200)
+        assert (gene.start, gene.end) == (900, 5200)
+
+    def test_none_reports_utrs_exceeding_exons(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        t = list(annot.chrs["chr1"]["gene1"].transcripts.values())[0]
+        u = list(t.CDSs.values())[0].UTRs[0]
+        u.start = 900
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=True)
+        assert t.exons[0].start == 1000
+        assert u.id in annot.warnings["utr_exceeds_exon"]
+
+    def test_invalid_mode(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        with pytest.raises(ValueError):
+            annot.correct_gene_transcript_and_subfeature_coordinates(mode="bogus", quiet=True)
+        with pytest.raises(ValueError):
+            Annotation(sample_gff3_file, quiet=True, coordinate_polishing="bogus")
+
+    def test_loading_respects_polishing_mode(self, tmp_path):
+        gff = tmp_path / "long_gene.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t500\t6000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=exon2;Parent=mRNA1\n"
+        )
+        for mode, expected in [("none", (500, 6000)), ("contain", (500, 6000)), ("trim", (1000, 5000))]:
+            annot = Annotation(str(gff), quiet=True, coordinate_polishing=mode)
+            g = annot.chrs["chr1"]["gene1"]
+            assert (g.start, g.end) == expected, mode
+
+    def test_transcript_coordinates_follow_polishing_mode(self, tmp_path):
+        gff = tmp_path / "long_transcript.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t900\t5000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t900\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=exon2;Parent=mRNA1\n"
+        )
+        annot = Annotation(str(gff), quiet=True, coordinate_polishing="none")
+        t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
+        assert (t.start, t.end) == (900, 5000)
+        assert "mRNA1" in annot.warnings["exon_transcript_boundary_mismatch"]
+
+        annot = Annotation(str(gff), quiet=True, coordinate_polishing="contain")
+        t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
+        assert (t.start, t.end) == (1000, 5000)
+
+    def test_nested_exons_use_latest_end(self, tmp_path):
+        gff = tmp_path / "nested_exons.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t5000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\texon\t2000\t3000\t.\t+\t.\tID=exon2;Parent=mRNA1\n"
+        )
+        annot = Annotation(str(gff), quiet=True, collapse_exons=False, coordinate_polishing="trim")
+        g = annot.chrs["chr1"]["gene1"]
+        t = g.transcripts["mRNA1"]
+        # Sorted by start, the nested exon comes last but does not hold the latest end
+        assert t.exons[-1].end == 3000
+        assert (t.start, t.end) == (1000, 5000)
+        assert (g.start, g.end) == (1000, 5000)
+        assert "mRNA1" not in annot.warnings["exon_transcript_boundary_mismatch"]
 
 
 # ============================================================
@@ -1411,12 +1526,21 @@ class TestCDSOnlyGFF3:
         annot.generate_introns()
         assert len(t.introns) == 2 # type: ignore
 
-    def test_gene_coordinates_corrected(self, cds_only_gff3_file):
-        """Gene coordinates are corrected to match the actual subfeature span"""
-        annot = Annotation(cds_only_gff3_file, quiet=True)
+    def test_gene_coordinates_trimmed(self, cds_only_gff3_file):
+        """In trim mode, gene coordinates are trimmed to match the actual subfeature span"""
+        annot = Annotation(cds_only_gff3_file, quiet=True, coordinate_polishing="trim")
         g = annot.chrs["chr1"]["gene_co1"]
         assert g.start == 1200
         assert g.end == 4800
+
+    def test_gene_coordinates_contained(self, cds_only_gff3_file):
+        """In contain mode, the gene keeps its excess region beyond the transcript"""
+        annot = Annotation(cds_only_gff3_file, quiet=True, coordinate_polishing="contain")
+        g = annot.chrs["chr1"]["gene_co1"]
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        assert (t.start, t.end) == (1200, 4800)
+        assert (g.start, g.end) == (1000, 5000)
+        assert "gene_co1" in annot.warnings["gene_exceeds_transcripts"]
 
 
 # ---- 3. No subfeatures (single-exon fallback) ----

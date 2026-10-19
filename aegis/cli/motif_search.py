@@ -173,7 +173,7 @@ def main(
         header_id_regex=header_id_regex if header_id_regex != "" else None,
         gwh=gwh,
     )
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, skip_coordinate_polishing=True)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, genome=genome, quiet=quiet, coordinate_polishing="none")
 
     annotation.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
 

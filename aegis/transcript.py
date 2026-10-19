@@ -51,12 +51,6 @@ class Transcript(Feature):
                 self.exons.sort()
             self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs)
 
-        if self.exons:
-            if len(self.exons) > 1:
-                self.exons.sort()
-            self.start = self.exons[0].start
-            self.end = self.exons[-1].end
-
         for i, c in enumerate(self.CDSs.values()):
             if len(c.CDS_segments) > 1:
                 c.CDS_segments.sort()

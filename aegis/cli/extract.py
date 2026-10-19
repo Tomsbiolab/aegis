@@ -145,10 +145,10 @@ def main(
         "--adjust-internal-shifts", help="Frameshift / phase handling mode for multi-segment CDS translation: 'intra_exon' (default: adjust shifts only across contiguous/overlapping exon segments, preserving continuous splicing across introns), 'all' (adjust across all junctions), or 'none' (translate continuous spliced sequence).",
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ [default: disabled; preserves original coordinates].",
+    coordinate_polishing: Annotated[str, typer.Option(
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates; inconsistencies are only logged as warnings), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites, and are logged as warnings), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). [default: 'none']",
         rich_help_panel=CDS_PANEL,
-    )] = False,
+    )] = "none",
     recalculate_phases: Annotated[bool, typer.Option(
         "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
         rich_help_panel=CDS_PANEL,
@@ -261,7 +261,8 @@ def main(
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_cds
-    skip_coordinate_polishing = not polish_coordinates
+    if coordinate_polishing not in ("none", "contain", "trim"):
+        raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
 
     for f_type in features:
         if f_type not in FEATURES:
@@ -322,7 +323,7 @@ def main(
         mitochondria_chroms=mitochondria_chroms,
         chloroplast_chroms=chloroplast_chroms,
         initiator_methionine=initiator_methionine,
-        skip_coordinate_polishing=skip_coordinate_polishing,
+        coordinate_polishing=coordinate_polishing,
         coding_ratio_threshold=coding_ratio_threshold,
         allow_internal_stops=allow_internal_stops,
         allow_partial=allow_partial,

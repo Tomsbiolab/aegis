@@ -176,10 +176,10 @@ def main(
     )] = "intra_exon",
 
     # 5. Coordinate & Phase Options
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
+    coordinate_polishing: Annotated[str, typer.Option(
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates; inconsistencies are only logged as warnings), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites, and are logged as warnings), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). [default: 'contain']",
         rich_help_panel=COORDS_PANEL,
-    )] = True,
+    )] = "contain",
     recalculate_phases: Annotated[bool, typer.Option(
         "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
         rich_help_panel=COORDS_PANEL,
@@ -282,7 +282,8 @@ def main(
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    skip_coordinate_polishing = not polish_coordinates
+    if coordinate_polishing not in ("none", "contain", "trim"):
+        raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
     subfolder = False
 
     for biotype in biotypes:
@@ -342,7 +343,7 @@ def main(
         plastid_table=plastid_code,
         mitochondria_chroms=mitochondria_chroms,
         chloroplast_chroms=chloroplast_chroms,
-        skip_coordinate_polishing=skip_coordinate_polishing,
+        coordinate_polishing=coordinate_polishing,
         coding_ratio_threshold=coding_ratio_threshold,
         allow_internal_stops=allow_internal_stops,
         allow_partial=allow_partial,

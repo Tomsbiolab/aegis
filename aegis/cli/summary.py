@@ -421,7 +421,7 @@ def main(
                 annot_file_path=afile,
                 genome=assigned_genome,
                 quiet=True,
-                skip_coordinate_polishing=True,
+                coordinate_polishing="none",
                 taxonomy=taxonomy,
                 table=genetic_code,
                 mito_table=mito_code,

@@ -86,7 +86,7 @@ def main(
 
     subfolder = False
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none")
 
     input_ids = set()
     if os.path.isfile(target_ids):

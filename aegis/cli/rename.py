@@ -148,7 +148,7 @@ def main(
         quiet=quiet,
         collapse_exons=collapse_exons,
         collapse_CDSs=collapse_CDSs,
-        skip_coordinate_polishing=True,
+        coordinate_polishing="none",
     )
 
     if "{annotation-name}" in output_file:

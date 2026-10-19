@@ -113,7 +113,7 @@ def main(
         quiet=quiet,
         collapse_exons=collapse_exons,
         collapse_CDSs=collapse_CDSs,
-        skip_coordinate_polishing=True,
+        coordinate_polishing="none",
     )
 
     for i, annotation_file in enumerate(annot_files[1:], start=1):
@@ -126,7 +126,7 @@ def main(
             quiet=quiet,
             collapse_exons=collapse_exons,
             collapse_CDSs=collapse_CDSs,
-            skip_coordinate_polishing=True,
+            coordinate_polishing="none",
         )
 
         if not quiet:

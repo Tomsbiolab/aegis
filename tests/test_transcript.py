@@ -393,8 +393,9 @@ class TestTranscriptExonSorting:
         t.update()
 
         assert [e.start for e in t.exons] == [1000, 3000]
+        # Transcript coordinates are left to Annotation coordinate polishing
         assert t.start == 1000
-        assert t.end == 4000
+        assert t.end == 5000
 
     def test_rename_exons_orders_before_naming_plus_strand(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
@@ -453,8 +454,9 @@ class TestCollapseExons:
         assert len(t.exons) == 1
         assert t.exons[0].start == 1000
         assert t.exons[0].end == 3000
+        # Transcript coordinates are left to Annotation coordinate polishing
         assert t.start == 1000
-        assert t.end == 3000
+        assert t.end == 5000
 
     def test_collapse_overlapping_exons(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
@@ -496,8 +498,9 @@ class TestCollapseExons:
         assert t.collapsed_exons is True
         assert len(t.exons) == 3
         assert [(e.start, e.end) for e in t.exons] == [(1000, 2500), (4000, 5000), (7000, 8000)]
+        # Transcript coordinates are left to Annotation coordinate polishing
         assert t.start == 1000
-        assert t.end == 8000
+        assert t.end == 5000
 
     def test_collapse_no_overlaps_unchanged(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
