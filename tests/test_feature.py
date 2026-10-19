@@ -147,3 +147,30 @@ class TestFeatureComparisons:
         f1 = make_feature(strand="+")
         f2 = make_feature(strand="-")
         assert not f1.equal_sequence(f2)
+
+
+# ============================================================
+# Quality attributes (extra GFF attributes)
+# ============================================================
+
+class TestFeatureQualityAttributes:
+    def test_gene_attributes(self, make_gene):
+        keys = [a.split("=")[0] for a in make_gene().quality.get_attributes()]
+        assert "gene_masked_fraction" in keys
+        assert "transcript_GC_content" in keys
+        assert "CDS_GC_content" in keys
+
+    def test_transcript_attributes(self, make_transcript):
+        keys = [a.split("=")[0] for a in make_transcript().quality.get_attributes()]
+        assert "transcript_masked_fraction" in keys
+        assert "gene_masked_fraction" not in keys
+
+    def test_CDS_attributes(self, make_CDS):
+        keys = [a.split("=")[0] for a in make_CDS().quality.get_attributes()]
+        assert "CDS_GC_content" in keys
+        assert "transcript_masked_fraction" not in keys
+
+    def test_gene_gff_with_extra_attributes(self, make_gene):
+        line = make_gene(feature_id="gene001").print_gff(extra_attributes=True)
+        assert "ID=gene001" in line
+        assert "reliable_score=0" in line

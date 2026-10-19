@@ -120,6 +120,11 @@ class FeatureQuality():
             self.gc_content = round((gc_count / self._feature.size), 1)
 
     def get_attributes(self) -> list[str]:
+        # Imported here as these modules import this one
+        from .gene import Gene
+        from .transcript import Transcript
+        from .subfeatures import CDS
+
         temp_attributes = []
 
         temp_attributes.append(f"reliable_score={self.reliable_score}")
