@@ -1300,6 +1300,7 @@
       - `def test_assign_UTRs_plus_and_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):`
     - __init__.py
     - **test_data/**
+      - **expected/**
       - **features_output/**
       - **gff_output/**
       - **input/**
