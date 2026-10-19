@@ -29,7 +29,7 @@ from pathlib import Path
 from .feature import Feature
 from .gene import Gene
 from .transcript import Transcript
-from .subfeatures import Exon, UTR
+from .subfeatures import Exon, UTR, CDS
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
@@ -42,6 +42,33 @@ from .annotation_components.redundancy import AnnotationRedundancy
 from .conf import default_noncoding_transcripts, default_features_r, default_features
 
 class Annotation():
+
+    WARNING_KEYS = (
+        "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
+        "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
+        "missing_subfeature_parent_liftover", "overlapping_CDS_segments",
+        "possible_polycistronic_transcript", "independent_CDS_segment_ids",
+        "transcript_with_no_exons",
+        "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
+        "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
+        "phase_mismatch_across_intron",
+        "cds_segment_coordinate_mismatch", "cds_exceeds_exon",
+        "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
+        "gene_exceeds_transcripts"
+    )
+
+    # Warnings that describe the state of the annotation object and can therefore be rechecked
+    # after modifications; the rest are only detectable while parsing the input file
+    RECHECKABLE_WARNING_KEYS = (
+        "phase_mismatch_across_intron",
+        "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "utr_exceeds_exon",
+        "exon_transcript_boundary_mismatch", "transcript_exceeds_gene", "gene_exceeds_transcripts",
+        "gene_with_no_transcripts", "transcript_with_no_exons",
+    )
+
+    @classmethod
+    def _new_warnings_dict(cls, keys:tuple[str, ...]|None=None) -> dict[str, set[str]]:
+        return {key: set() for key in (cls.WARNING_KEYS if keys is None else keys)}
 
     _stats: AnnotationStats
     _export: AnnotationExport
@@ -173,21 +200,11 @@ class Annotation():
         # Create a dictionary where every value is an empty set
         self.errors = {key: set() for key in keys}
         
-        keys = [
-            "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
-            "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
-            "missing_subfeature_parent_liftover", "overlapping_CDS_segments",
-            "possible_polycistronic_transcript", "independent_CDS_segment_ids",
-            "transcript_with_no_exons",
-            "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
-            "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
-            "phase_mismatch_across_intron",
-            "cds_segment_coordinate_mismatch", "cds_exceeds_exon",
-            "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
-            "gene_exceeds_transcripts"
-        ]
-
-        self.warnings = {key: set() for key in keys}
+        # Warnings describe the input annotation: they are recorded while loading (including
+        # the load-time update) and are not modified by later operations. See recheck_warnings()
+        # for the state of the annotation object after modifications.
+        self.warnings = self._new_warnings_dict()
+        self._recording_input_warnings = True
 
         del keys
         
@@ -272,7 +289,9 @@ class Annotation():
                         break
                 if not rogue_chromosome_format:
                     self.tags.add("dapfit")
-        self._genome_validation = None
+
+        # Validated on the parsed coordinates, before any update or polishing, as a load-time check
+        self._genome_validation = self._validate_against_genome(quiet=quiet)
 
         misc_attributes = False
         for genes in self.chrs.values():
@@ -324,6 +343,7 @@ class Annotation():
         self.detect_polycistronic_transcripts(quiet=quiet)
 
         self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+        self._recording_input_warnings = False
 
         self._validate_organelle_chroms()
 
@@ -427,25 +447,19 @@ class Annotation():
     @property
     def genome_validation(self) -> dict:
         """
-        Lazily evaluates and caches assembly-annotation validation findings.
-        Returns a dictionary with reconciliation findings.
+        Assembly-annotation validation findings for the input annotation, computed while loading.
         """
-        if getattr(self, "_genome_validation", None) is None:
-            self._genome_validation = self.validate_against_genome(quiet=True)
-        return self._genome_validation # type: ignore
+        return self._genome_validation
 
-    def validate_against_genome(self, quiet: bool = False) -> dict:
+    def _validate_against_genome(self, quiet: bool = False) -> dict:
         """
-        Validates annotation features against the associated genome assembly.
-        Cached when accessed via `annotation.genome_validation`.
+        Validates the input annotation features against the associated genome assembly. Run once
+        while loading, as its findings are recorded as input warnings.
         Distinguishes between:
           - Fatal mismatch: Zero contigs from annotation exist in genome assembly (leads to halt).
           - Warning discrepancies: Even a single contig missing or single feature out of bounds (leads to warning).
         Returns a dictionary summarizing findings.
         """
-        if getattr(self, "_genome_validation", None) is not None:
-            return self._genome_validation # type: ignore
-
         results = {
             "missing_chromosomes": [],
             "out_of_bounds_features": [],
@@ -456,7 +470,6 @@ class Annotation():
             "summary_message": "",
         }
         if self.genome is None or not getattr(self.genome, "scaffolds", None):
-            self._genome_validation = results
             return results
 
         genome_scaffolds = self.genome.scaffolds
@@ -477,22 +490,34 @@ class Annotation():
             )
             if not quiet:
                 print(f"\n[ERROR] {results['summary_message']}")
-            self._genome_validation = results
             return results
 
         out_of_bounds = []
         for ch in matching_chroms:
             genes = self.chrs[ch]
             scf_len = genome_scaffolds[ch].size
+            def exceeds(ft) -> bool:
+                return (ft.start is not None and ft.start < 1) or (ft.end is not None and ft.end > scf_len)
+
             for g in genes.values():
-                # Fast check on gene boundary
-                g_out = (g.start is not None and g.start < 1) or (g.end is not None and g.end > scf_len)
-                if g_out:
+                # Every feature level is checked, as in the input annotation subfeatures
+                # may extend beyond the scaffold even if their parents do not
+                exceeding = []
+                if exceeds(g):
+                    exceeding.append(g.id)
+                for t in g.transcripts.values():
+                    if exceeds(t):
+                        exceeding.append(t.id)
+                    exceeding.extend(e.id for e in t.exons if exceeds(e))
+                    for c in t.CDSs.values():
+                        if any(exceeds(cs) for cs in c.CDS_segments):
+                            exceeding.append(c.id)
+                        exceeding.extend(u.id for u in c.UTRs if exceeds(u))
+                    exceeding.extend(u.id for u in (t.temp_UTRs or []) if exceeds(u))
+                    exceeding.extend(cs.id for cs in (t.temp_CDSs or []) if exceeds(cs))
+                if exceeding:
                     out_of_bounds.append(g.id)
-                    self.warnings["feature_exceeds_scaffold_length"].add(g.id)
-                    for t in g.transcripts.values():
-                        if (t.start is not None and t.start < 1) or (t.end is not None and t.end > scf_len):
-                            self.warnings["feature_exceeds_scaffold_length"].add(t.id)
+                    self.warnings["feature_exceeds_scaffold_length"].update(exceeding)
 
         results["out_of_bounds_features"] = out_of_bounds
 
@@ -523,7 +548,6 @@ class Annotation():
             if not quiet:
                 print(f"\n[WARNING] {results['summary_message']}")
 
-        self._genome_validation = results
         return results
 
     def iter_genes(self):
@@ -1306,10 +1330,10 @@ class Annotation():
             recalculate_phases = getattr(self, "recalculate_phases", False)
         if reset_phases_zero is None:
             reset_phases_zero = getattr(self, "reset_phases_zero", False)
-        if "phase_mismatch_across_intron" in self.warnings:
-            self.warnings["phase_mismatch_across_intron"].clear()
+        # Checks only record into the input warnings during the load-time update
+        warnings_sink = self.warnings if getattr(self, "_recording_input_warnings", False) else self._new_warnings_dict()
 
-        self.detect_polycistronic_transcripts(quiet=quiet)
+        self.detect_polycistronic_transcripts(quiet=quiet, record_to=warnings_sink)
 
         batch_size = 1000
         count = 0
@@ -1327,24 +1351,14 @@ class Annotation():
                     t.update(quiet=quiet, consider_read_utrs=consider_read_utrs)
 
                     for c in t.CDSs.values():
+                        # Checked before phases are recalculated, so the input phases are assessed
+                        self._check_phase_mismatch_across_intron(c, warnings_sink)
                         if reset_phases_zero:
                             c.update_phase(override=True, full_override=True)
                             c.update_frame()
                         elif recalculate_phases:
                             c.update_phase(override=True, full_override=False)
                             c.update_frame()
-                        if len(c.CDS_segments) > 1:
-                            working_segs = c.CDS_segments if c.strand != "-" else list(reversed(c.CDS_segments))
-                            prev_cs = working_segs[0]
-                            prev_lo = (prev_cs.size - (prev_cs.phase or 0)) % 3 if prev_cs.phase is not None else None
-                            for next_cs in working_segs[1:]:
-                                if prev_lo is not None and next_cs.phase is not None and (prev_lo + next_cs.phase) % 3 != 0:
-                                    is_contiguous = (next_cs.start <= prev_cs.end + 2) if c.strand != "-" else (prev_cs.start <= next_cs.end + 2)
-                                    if not is_contiguous:
-                                        self.warnings["phase_mismatch_across_intron"].add(c.id)
-                                if next_cs.phase is not None:
-                                    prev_lo = (next_cs.size - next_cs.phase) % 3
-                                prev_cs = next_cs
                 g.update(quiet=quiet)
 
         if count > 0:
@@ -1354,11 +1368,20 @@ class Annotation():
         if standardise_features:
             self.update_features(standardise=standardise_features, quiet=quiet)
         
+        # Removals happen before renaming so that numbering has no gaps
+        self.detect_genes_with_no_transcripts(remove=remove_genes_with_no_transcripts, remove_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, quiet=quiet, record_to=warnings_sink)
+        self.detect_transcripts_with_no_exons(remove_transcripts=remove_transcripts_with_no_exons, remove_genes_accordingly=remove_genes_with_no_transcripts, quiet=quiet, record_to=warnings_sink)
+
         if coordinate_polishing is None:
             coordinate_polishing = getattr(self, "coordinate_polishing", "contain")
 
+        # Coordinate inconsistencies are always checked (and recorded during loading) on the
+        # unpolished coordinates, so warnings do not depend on the polishing mode
+        self.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=quiet, record_to=warnings_sink)
+        if coordinate_polishing != "none":
+            self.correct_gene_transcript_and_subfeature_coordinates(mode=coordinate_polishing, quiet=quiet)
+
         # Coordinates must be final and genes sorted before renaming, as ids are numbered by position
-        self.correct_gene_transcript_and_subfeature_coordinates(mode=coordinate_polishing, quiet=quiet)
         self.sort_genes(processes=sort_processes)
 
         if rename_features:
@@ -1366,9 +1389,6 @@ class Annotation():
 
         if remove_missing_transcript_parent_references:
             self.remove_missing_transcript_parent_references(quiet=quiet)
-
-        self.detect_genes_with_no_transcripts(remove=remove_genes_with_no_transcripts, remove_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, quiet=quiet)
-        self.detect_transcripts_with_no_exons(remove_transcripts=remove_transcripts_with_no_exons, remove_genes_accordingly=remove_genes_with_no_transcripts, quiet=quiet)
 
         if update_gene_and_transcript_list:
             self.update_gene_and_transcript_list(quiet=quiet)
@@ -1504,24 +1524,66 @@ class Annotation():
                     for t_id in mRNA_transcripts_to_remove:
                         del self.chrs[chrom][g.id].transcripts[t_id]   
 
-    def correct_gene_transcript_and_subfeature_coordinates(self, mode:Literal["none", "contain", "trim"]="contain", quiet:bool=True):
+    def _check_phase_mismatch_across_intron(self, c:CDS, record_to:dict[str, set[str]]):
+        """
+        Flags CDSs whose segment phases are inconsistent across a non-contiguous junction (an intron).
+        """
+        if len(c.CDS_segments) <= 1:
+            return
+        working_segs = c.CDS_segments if c.strand != "-" else list(reversed(c.CDS_segments))
+        prev_cs = working_segs[0]
+        prev_lo = (prev_cs.size - (prev_cs.phase or 0)) % 3 if prev_cs.phase is not None else None
+        for next_cs in working_segs[1:]:
+            if prev_lo is not None and next_cs.phase is not None and (prev_lo + next_cs.phase) % 3 != 0:
+                is_contiguous = (next_cs.start <= prev_cs.end + 2) if c.strand != "-" else (prev_cs.start <= next_cs.end + 2)
+                if not is_contiguous:
+                    record_to["phase_mismatch_across_intron"].add(c.id)
+            if next_cs.phase is not None:
+                prev_lo = (next_cs.size - next_cs.phase) % 3
+            prev_cs = next_cs
+
+    def recheck_warnings(self, quiet:bool=True) -> dict[str, set[str]]:
+        """
+        Runs the checks that describe the annotation object (coordinate hierarchy, phases across
+        introns, genes with no transcripts and transcripts with no exons) on its current state and
+        returns the findings, keyed as in self.warnings. Unlike self.warnings, which describes the
+        input annotation, this reflects any modifications made since loading. self.warnings is not
+        modified. Checks only possible while parsing the input (e.g. parent references) are not included.
+        """
+        rechecked = self._new_warnings_dict(self.RECHECKABLE_WARNING_KEYS)
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        self._check_phase_mismatch_across_intron(c, rechecked)
+        self.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=quiet, record_to=rechecked)
+        self.detect_genes_with_no_transcripts(quiet=quiet, record_to=rechecked)
+        self.detect_transcripts_with_no_exons(quiet=quiet, record_to=rechecked)
+        return rechecked
+
+    def correct_gene_transcript_and_subfeature_coordinates(self, mode:Literal["none", "contain", "trim"]="contain", quiet:bool=True, record_to:dict[str, set[str]]|None=None):
         """
         Enforces the coordinate hierarchy gene >= transcript >= exons >= CDSs/UTRs.
 
         mode:
-            "none": coordinates are left untouched; inconsistencies are logged as warnings.
+            "none": coordinates are left untouched; inconsistencies are recorded into record_to.
             "contain": CDSs and UTRs are kept within their transcript's exons (by extending
                 the first/last exon), transcripts span exactly their exons and genes are
                 extended to cover all their transcripts. Gene regions extending beyond
-                their transcripts (e.g. polyA sites or TF binding sites) are kept and
-                logged as 'gene_exceeds_transcripts' warnings.
+                their transcripts (e.g. polyA sites or TF binding sites) are kept.
             "trim": same as "contain", but genes are also trimmed to span exactly from
                 the start of their earliest transcript to the end of their latest one.
+
+        record_to: warnings dict where inconsistencies are recorded in "none" mode (not
+            recorded if None). Correcting modes do not record, as update() always checks
+            the unpolished coordinates first.
         """
         if mode not in ("none", "contain", "trim"):
             raise ValueError(f"Invalid coordinate polishing mode: '{mode}'. Choose from: 'none', 'contain', 'trim'.")
 
         skip_correction = mode == "none"
+        if record_to is None:
+            record_to = self._new_warnings_dict()
 
         if not quiet:
             if skip_correction:
@@ -1545,7 +1607,7 @@ class Annotation():
 
                             if c.start != seg_start:
                                 if skip_correction:
-                                    self.warnings["cds_segment_coordinate_mismatch"].add(c.id)
+                                    record_to["cds_segment_coordinate_mismatch"].add(c.id)
                                     if not quiet:
                                         print(f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
                                 else:
@@ -1555,7 +1617,7 @@ class Annotation():
 
                             if c.end != seg_end:
                                 if skip_correction:
-                                    self.warnings["cds_segment_coordinate_mismatch"].add(c.id)
+                                    record_to["cds_segment_coordinate_mismatch"].add(c.id)
                                     if not quiet:
                                         print(f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
                                 else:
@@ -1573,7 +1635,7 @@ class Annotation():
                         for c in t.CDSs.values():
                             if c.start < first_exon.start:
                                 if skip_correction:
-                                    self.warnings["cds_exceeds_exon"].add(c.id)
+                                    record_to["cds_exceeds_exon"].add(c.id)
                                     if not quiet:
                                         print(f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
                                 else:
@@ -1582,7 +1644,7 @@ class Annotation():
                                     first_exon.start = c.start
                             if c.end > last_exon.end:
                                 if skip_correction:
-                                    self.warnings["cds_exceeds_exon"].add(c.id)
+                                    record_to["cds_exceeds_exon"].add(c.id)
                                     if not quiet:
                                         print(f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
                                 else:
@@ -1593,7 +1655,7 @@ class Annotation():
                             for u in c.UTRs:
                                 if u.start < first_exon.start:
                                     if skip_correction:
-                                        self.warnings["utr_exceeds_exon"].add(u.id)
+                                        record_to["utr_exceeds_exon"].add(u.id)
                                         if not quiet:
                                             print(f"Warning: {u.id} start is earlier than for first {t.id} exon ({self.id})")
                                     else:
@@ -1602,7 +1664,7 @@ class Annotation():
                                         first_exon.start = u.start
                                 if u.end > last_exon.end:
                                     if skip_correction:
-                                        self.warnings["utr_exceeds_exon"].add(u.id)
+                                        record_to["utr_exceeds_exon"].add(u.id)
                                         if not quiet:
                                             print(f"Warning: {u.id} end extends beyond the last {t.id} exon ({self.id})")
                                     else:
@@ -1624,7 +1686,7 @@ class Annotation():
                                 print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
                         if t.start != first_exon.start or t.end != last_exon.end:
                             if skip_correction:
-                                self.warnings["exon_transcript_boundary_mismatch"].add(t.id)
+                                record_to["exon_transcript_boundary_mismatch"].add(t.id)
                             else:
                                 t.start = first_exon.start
                                 t.end = last_exon.end
@@ -1632,7 +1694,7 @@ class Annotation():
 
                     if t.start < g.start:
                         if skip_correction:
-                            self.warnings["transcript_exceeds_gene"].add(t.id)
+                            record_to["transcript_exceeds_gene"].add(t.id)
                             if not quiet:
                                 print(f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
                         else:
@@ -1641,7 +1703,7 @@ class Annotation():
                             g.start = t.start
                     if t.end > g.end:
                         if skip_correction:
-                            self.warnings["transcript_exceeds_gene"].add(t.id)
+                            record_to["transcript_exceeds_gene"].add(t.id)
                             if not quiet:
                                 print(f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
                         else:
@@ -1662,15 +1724,17 @@ class Annotation():
 
                 if earliest_start is not None and latest_end is not None:
                     if g.start < earliest_start or g.end > latest_end:
-                        if mode == "trim":
+                        if skip_correction:
+                            record_to["gene_exceeds_transcripts"].add(g.id)
+                            if not quiet:
+                                print(f"Warning: {g.id} extends beyond its transcripts ({self.id})")
+                        elif mode == "trim":
                             if not quiet:
                                 print(f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
                             g.start = earliest_start
                             g.end = latest_end
-                        else:
-                            self.warnings["gene_exceeds_transcripts"].add(g.id)
-                            if not quiet:
-                                print(f"Warning: {g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
+                        elif not quiet:
+                            print(f"{g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
         if not quiet:
             if skip_correction:
                 print(f"Checked feature coordinates (skipped correction) for {self.id}")
@@ -2381,17 +2445,20 @@ class Annotation():
                     del g.transcripts[t_id]
                     if not quiet:
                         print(f"{t_id} Warning: transcript with no exons was removed because of exon strand inconsistencies")
-                    self.warnings["transcript_with_no_exons"].add(t_id)
             for g_id in genes_to_remove:
                 del genes[g_id]
                 if not quiet:
                     print(f"{g_id} Warning: gene with no transcripts because of exon strand inconsistencies was removed")
-                self.warnings["gene_with_no_transcripts"].add(g_id)
 
         self.update_gene_and_transcript_list(quiet=quiet)
         self.remove_missing_transcript_parent_references(quiet=quiet)
 
-    def detect_transcripts_with_no_exons(self, remove_transcripts:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False):
+    def detect_transcripts_with_no_exons(self, remove_transcripts:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False, record_to:dict[str, set[str]]|None=None):
+        """
+        record_to: warnings dict where findings are recorded (not recorded if None).
+        """
+        if record_to is None:
+            record_to = self._new_warnings_dict()
         removed = False
         for genes in self.chrs.values():
             genes_to_remove = set()
@@ -2399,7 +2466,7 @@ class Annotation():
                 transcripts_to_remove = set()
                 for t in g.transcripts.values():
                     if t.exons == []:
-                        self.warnings["transcript_with_no_exons"].add(t.id)
+                        record_to["transcript_with_no_exons"].add(t.id)
                         if remove_transcripts:
                             transcripts_to_remove.add(t.id)
                             removed = True
@@ -2416,7 +2483,7 @@ class Annotation():
                 del genes[g_id]
                 if not quiet:
                     print(f"{g_id} Warning: gene with no transcripts, deleted because of lack of exons, was removed")
-                self.warnings["gene_with_no_transcripts"].add(g_id)
+                record_to["gene_with_no_transcripts"].add(g_id)
 
         if removed:
             self.update_gene_and_transcript_list(quiet=quiet)
@@ -2433,9 +2500,7 @@ class Annotation():
                 removed = True
                 if remove_genes_accordingly:
                     if self.chrs[chrom][g_id].transcripts == {}:
-                        if g_id not in self.warnings["gene_with_no_transcripts"]:
-                            del self.chrs[chrom][g_id]
-                            self.warnings["gene_with_no_transcripts"].add(g_id)
+                        del self.chrs[chrom][g_id]
             elif not quiet:
                 warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}", category=UserWarning)
 
@@ -2443,13 +2508,18 @@ class Annotation():
             self.update_gene_and_transcript_list(quiet=quiet)
             self.remove_missing_transcript_parent_references(quiet=quiet)
 
-    def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False):
+    def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False, record_to:dict[str, set[str]]|None=None):
+        """
+        record_to: warnings dict where findings are recorded (not recorded if None).
+        """
+        if record_to is None:
+            record_to = self._new_warnings_dict()
         removed = False
         for genes in self.chrs.values():
             genes_to_remove = set()
             for g in genes.values():
                 if g.transcripts == {}:
-                    self.warnings["gene_with_no_transcripts"].add(g.id)
+                    record_to["gene_with_no_transcripts"].add(g.id)
                     if remove:
                         removed = True
                         if g.pseudogene:
@@ -2466,7 +2536,7 @@ class Annotation():
         if removed:
             self.update_gene_and_transcript_list(quiet=quiet)
 
-    def detect_polycistronic_transcripts(self, quiet:bool=False):
+    def detect_polycistronic_transcripts(self, quiet:bool=False, record_to:dict[str, set[str]]|None=None):
         """
         Detects polycistronic transcripts, overlapping CDS segments, or independent CDS segment ID
         formatting across the annotation based on raw temp_CDSs before CDS generation, and populates
@@ -2475,16 +2545,20 @@ class Annotation():
 
         Exemplified by canonical_gene_example.gff3 (the Sequence Ontology / GFF3 specification EDEN gene example),
         where mRNA00003 contains multiple logical CDSs (cds00003 and cds00004) under the same transcript.
+
+        record_to: warnings dict where findings are recorded (defaults to self.warnings, as this is a load-time check).
         """
+        if record_to is None:
+            record_to = self.warnings
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     if t.temp_CDSs:
                         warnings = t._detect_polycistronic()
                         for warning in warnings:
-                            if t.id not in self.warnings[warning] and not quiet:
+                            if t.id not in record_to[warning] and not quiet:
                                 print(f"Warning: Transcript {t.id} flagged as {warning} ({self.id})")
-                            self.warnings[warning].add(t.id)
+                            record_to[warning].add(t.id)
 
 
     def remove_missing_transcript_parent_references(self, quiet:bool=True):

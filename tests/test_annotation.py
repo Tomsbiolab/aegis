@@ -796,11 +796,12 @@ class TestAnnotationRemoveTranscriptsWithNoExons:
         original_t_count = len(gene.transcripts)
         assert original_t_count >= 2
 
-        annot.detect_transcripts_with_no_exons(remove_transcripts=True, remove_genes_accordingly=True, quiet=True)
+        found = annot._new_warnings_dict()
+        annot.detect_transcripts_with_no_exons(remove_transcripts=True, remove_genes_accordingly=True, quiet=True, record_to=found)
         gene = annot.chrs["chr1"]["gene1"]
         assert "emptyT" not in gene.transcripts
-        assert "transcript_with_no_exons" in annot.warnings
-        assert "emptyT" in annot.warnings["transcript_with_no_exons"]
+        assert "emptyT" in found["transcript_with_no_exons"]
+        assert "emptyT" not in annot.warnings["transcript_with_no_exons"]
 
 
 # ============================================================
@@ -875,6 +876,130 @@ class TestAnnotationFilterByRnaClass:
 # Annotation — correct_gene_transcript_and_subfeature_coordinates
 # ============================================================
 
+class TestInputWarnings:
+    """Warnings describe the input annotation; recheck_warnings() describes the current object."""
+
+    FLAWED = (
+        "##gff-version 3\n"
+        "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=g1\n"
+        "chr1\taegis\tmRNA\t900\t5000\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=e2;Parent=t1\n"
+        "chr1\taegis\tCDS\t1100\t2000\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1\taegis\tCDS\t3000\t5200\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+    EXPECTED = {
+        "phase_mismatch_across_intron": {"c1"},
+        "cds_exceeds_exon": {"c1"},
+        "exon_transcript_boundary_mismatch": {"t1"},
+        "transcript_exceeds_gene": {"t1"},
+    }
+
+    @staticmethod
+    def _non_empty(w):
+        return {k: v for k, v in w.items() if v}
+
+    def _flawed(self, tmp_path):
+        gff = tmp_path / "flawed.gff3"
+        gff.write_text(self.FLAWED)
+        return str(gff)
+
+    @pytest.mark.parametrize("mode", ["none", "contain", "trim"])
+    def test_warnings_independent_of_polishing_mode(self, tmp_path, mode):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing=mode)
+        assert self._non_empty(annot.warnings) == self.EXPECTED
+
+    def test_later_operations_do_not_change_warnings(self, tmp_path):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing="none")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="NEW", quiet=True)
+        annot.update(quiet=True, coordinate_polishing="trim", recalculate_phases=True)
+        annot.update(quiet=True)
+        # No duplicates under new ids, no entries for states produced after loading
+        assert self._non_empty(annot.warnings) == self.EXPECTED
+
+    def test_recheck_reflects_object_state(self, tmp_path):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing="none")
+        rechecked = annot.recheck_warnings()
+        assert set(rechecked) == set(Annotation.RECHECKABLE_WARNING_KEYS)
+        assert self._non_empty(rechecked) == self.EXPECTED
+
+        annot.update(quiet=True, coordinate_polishing="contain", recalculate_phases=True)
+        assert self._non_empty(annot.recheck_warnings()) == {}
+        assert self._non_empty(annot.warnings) == self.EXPECTED
+
+    def test_recheck_does_not_modify_object(self, tmp_path):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing="none")
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        before = (annot.chrs["chr1"]["g1"].start, t.start, t.end, [(e.start, e.end) for e in t.exons])
+        warnings_before = {k: set(v) for k, v in annot.warnings.items()}
+        annot.recheck_warnings()
+        assert (annot.chrs["chr1"]["g1"].start, t.start, t.end, [(e.start, e.end) for e in t.exons]) == before
+        assert annot.warnings == warnings_before
+
+    @staticmethod
+    def _genome(tmp_path, scaffolds:dict[str, int]):
+        fasta = tmp_path / "genome.fa"
+        fasta.write_text("".join(f">{name}\n{'ACGT' * (size // 4)}\n" for name, size in scaffolds.items()))
+        return Genome("gen", str(fasta), quiet=True)
+
+    def test_genome_validation_recorded_at_load(self, tmp_path):
+        gff = tmp_path / "beyond.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t3500\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t3500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t3500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr9\taegis\tgene\t100\t200\t.\t+\t.\tID=g9\n"
+            "chr9\taegis\tmRNA\t100\t200\t.\t+\t.\tID=t9;Parent=g9\n"
+            "chr9\taegis\texon\t100\t200\t.\t+\t.\tID=e9;Parent=t9\n"
+        )
+        annot = Annotation(str(gff), genome=self._genome(tmp_path, {"chr1": 3000}), quiet=True)
+        # Recorded without accessing genome_validation
+        assert annot.warnings["feature_exceeds_scaffold_length"] == {"g1", "t1", "e1"}
+        assert annot.warnings["chromosome_not_in_genome"] == {"chr9"}
+        assert annot.genome_validation["out_of_bounds_features"] == ["g1"]
+
+        validation = annot.genome_validation
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="NEW", quiet=True)
+        annot.update(quiet=True)
+        # Input ids are kept and the validation is not recomputed
+        assert annot.warnings["feature_exceeds_scaffold_length"] == {"g1", "t1", "e1"}
+        assert annot.genome_validation is validation
+
+    @pytest.mark.parametrize("mode", ["none", "contain", "trim"])
+    def test_genome_validation_checks_subfeatures_on_input(self, tmp_path, mode):
+        # Gene and mRNA lie within the scaffold, but an exon and the CDS run beyond it
+        gff = tmp_path / "sub_beyond.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t2900\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t2900\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t1500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\texon\t2500\t3200\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\taegis\tCDS\t1200\t1500\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\taegis\tCDS\t2500\t3100\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        annot = Annotation(str(gff), genome=self._genome(tmp_path, {"chr1": 3000}), quiet=True, coordinate_polishing=mode)
+        # Same findings whatever the polishing does to the gene afterwards
+        assert annot.warnings["feature_exceeds_scaffold_length"] == {"e2", "c1"}
+        assert annot.genome_validation["out_of_bounds_features"] == ["g1"]
+
+    def test_genome_validation_without_genome(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        assert annot.genome_validation["has_warning"] is False
+        assert annot.warnings["feature_exceeds_scaffold_length"] == set()
+
+    def test_remove_transcripts_does_not_record(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        annot.remove_transcripts({"mRNA1"}, remove_genes_accordingly=True, quiet=True)
+        assert "gene1" not in annot.chrs["chr1"]
+        assert "gene1" not in annot.warnings["gene_with_no_transcripts"]
+
+
 class TestAnnotationCorrectCoordinates:
     def test_fix_transcript_extending_beyond_gene(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -900,7 +1025,7 @@ class TestAnnotationCorrectCoordinates:
         t = list(gene.transcripts.values())[0]
         assert gene.start == t.start
         assert gene.end == t.end
-        assert "gene1" not in annot.warnings["gene_exceeds_transcripts"]
+        assert "gene1" not in annot.recheck_warnings()["gene_exceeds_transcripts"]
 
     def test_contain_keeps_gene_too_long(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -908,10 +1033,12 @@ class TestAnnotationCorrectCoordinates:
         gene.start = 1
         gene.end = 50000
         annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
-        # Excess gene region is kept but reported
+        # Excess gene region is kept, and shows up when rechecking the object
         assert gene.start == 1
         assert gene.end == 50000
-        assert "gene1" in annot.warnings["gene_exceeds_transcripts"]
+        assert "gene1" in annot.recheck_warnings()["gene_exceeds_transcripts"]
+        # The input annotation had no such issue
+        assert "gene1" not in annot.warnings["gene_exceeds_transcripts"]
 
     def test_contain_extends_gene_on_one_side_keeps_other(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -930,11 +1057,23 @@ class TestAnnotationCorrectCoordinates:
         t = list(gene.transcripts.values())[0]
         gene.start = 1500
         gene.end = 8000
-        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=True)
+        found = annot._new_warnings_dict()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=True, record_to=found)
         assert gene.start == 1500
         assert gene.end == 8000
-        assert t.id in annot.warnings["transcript_exceeds_gene"]
-        assert "gene1" in annot.warnings["gene_exceeds_transcripts"]
+        assert t.id in found["transcript_exceeds_gene"]
+        assert "gene1" in found["gene_exceeds_transcripts"]
+        # Post-load checks never touch the input warnings
+        assert t.id not in annot.warnings["transcript_exceeds_gene"]
+
+    def test_correcting_modes_do_not_record(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1500
+        gene.end = 8000
+        found = annot._new_warnings_dict()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="trim", quiet=True, record_to=found)
+        assert all(not v for v in found.values())
 
     def test_contain_extends_exons_to_cover_utrs(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -955,9 +1094,8 @@ class TestAnnotationCorrectCoordinates:
         t = list(annot.chrs["chr1"]["gene1"].transcripts.values())[0]
         u = list(t.CDSs.values())[0].UTRs[0]
         u.start = 900
-        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=True)
+        assert u.id in annot.recheck_warnings()["utr_exceeds_exon"]
         assert t.exons[0].start == 1000
-        assert u.id in annot.warnings["utr_exceeds_exon"]
 
     def test_invalid_mode(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -1231,9 +1369,33 @@ class TestPhaseWarnings:
         gff_file.write_text(gff_content)
 
         annot = Annotation(str(gff_file), quiet=True, recalculate_phases=True)
-        assert len(annot.warnings["phase_mismatch_across_intron"]) == 0
         cds = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
         assert cds.CDS_segments[1].phase == 2
+        # The input mismatch is still recorded, while the resulting object is consistent
+        assert annot.warnings["phase_mismatch_across_intron"] == {"c1"}
+        assert annot.recheck_warnings()["phase_mismatch_across_intron"] == set()
+
+    def test_phase_mismatch_not_cleared_by_later_updates(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True)
+        annot.update(quiet=True, recalculate_phases=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="NEW", quiet=True)
+        annot.update(quiet=True)
+        assert annot.warnings["phase_mismatch_across_intron"] == {"c1"}
+        assert annot.recheck_warnings()["phase_mismatch_across_intron"] == set()
 
     def test_get_protein_qc_summary(self, tmp_path):
         gff_content = (
@@ -1463,10 +1625,11 @@ class TestAnnotationRemoveGenesWithNoTranscripts:
         annot.chrs["chr1"]["emptyG"] = empty_gene
         annot.all_gene_ids["emptyG"] = "chr1"
 
+        assert "emptyG" in annot.recheck_warnings()["gene_with_no_transcripts"]
         annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
         assert "emptyG" not in annot.chrs["chr1"]
-        assert "gene_with_no_transcripts" in annot.warnings
-        assert "emptyG" in annot.warnings["gene_with_no_transcripts"]
+        assert "emptyG" not in annot.warnings["gene_with_no_transcripts"]
+        assert annot.recheck_warnings()["gene_with_no_transcripts"] == set()
 
     def test_keeps_gene_with_transcripts(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -1657,7 +1820,13 @@ class TestCDSOnlyGFF3:
         t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
         assert (t.start, t.end) == (1200, 4800)
         assert (g.start, g.end) == (1000, 5000)
-        assert "gene_co1" in annot.warnings["gene_exceeds_transcripts"]
+        # In the input, the mRNA spans beyond its (CDS-derived) exons; the gene matches the mRNA
+        assert "mRNA_co1" in annot.warnings["exon_transcript_boundary_mismatch"]
+        assert "gene_co1" not in annot.warnings["gene_exceeds_transcripts"]
+        # Once the transcript is polished, the kept gene excess shows up in the object's state
+        rechecked = annot.recheck_warnings()
+        assert "gene_co1" in rechecked["gene_exceeds_transcripts"]
+        assert rechecked["exon_transcript_boundary_mismatch"] == set()
 
 
 # ---- 3. No subfeatures (single-exon fallback) ----

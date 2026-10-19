@@ -146,7 +146,7 @@ def main(
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
     coordinate_polishing: Annotated[str, typer.Option(
-        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates; inconsistencies are only logged as warnings), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites, and are logged as warnings), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). [default: 'none']",
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). Inconsistencies in the input annotation are reported as warnings whichever mode is chosen. [default: 'none']",
         rich_help_panel=CDS_PANEL,
     )] = "none",
     recalculate_phases: Annotated[bool, typer.Option(
