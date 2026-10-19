@@ -348,8 +348,10 @@ class Annotation():
         self._validate_organelle_chroms()
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
+            # Features are renamed as chosen (rename_features) by the update that follows
             self.rework_CDSs(
                 override=rework_all_CDSs,
+                rename_features=(),
                 coding_ratio_threshold=coding_ratio_threshold,
                 fallback_to_trim=fallback_to_trim,
                 min_codon_len=min_codon_len,
@@ -2622,7 +2624,23 @@ class Annotation():
         mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
         allow_internal_stops: bool = True,
         allow_partial: bool = True,
+        rename_features: tuple[str, ...] = ("CDS", "UTR"),
+        keep_subfeature_numbers: bool = False,
+        keep_existing_ids_if_derived_from_base_id: bool = False,
     ):
+        """
+        Replaces the CDSs of transcripts (all of them with override, otherwise only those of
+        non-coding transcripts) by the best ORF across their exons.
+
+        Renaming afterwards (see rename_ids), which applies to the whole annotation:
+        rename_features: feature levels renamed. Reworked CDSs and their regenerated UTRs get
+            provisional IDs, so by default only CDSs and UTRs are renamed; exons are not changed
+            by reworking. Pass () to keep all IDs as they are.
+        keep_subfeature_numbers: reuse the trailing number of current IDs. Reworked CDSs and
+            regenerated UTRs carry no meaningful number, and for NCBI-style IDs it is the
+            accession version (cds-NP_065184.2 -> CDS002), hence off by default.
+        keep_existing_ids_if_derived_from_base_id: keep IDs that already contain their gene ID.
+        """
         start_time = time.time()
 
         if not quiet and self.auto_organelle_codes:
@@ -2709,7 +2727,9 @@ class Annotation():
                 g.update(quiet=quiet)
 
         progress_bar.close()
-        self.update(rename_features=("CDS", "exon", "UTR"), quiet=quiet)
+        self.update(quiet=quiet)
+        if rename_features:
+            self.rename_ids(features=rename_features, keep_subfeature_numbers=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet)
         now = time.time()
         lapse = now - start_time
         if not quiet:
@@ -2984,6 +3004,9 @@ class Annotation():
 
                     if g.renamed_exons:
                         changed_features.add("exon")
+
+                if "UTR" in features or prefix:
+                    g.rename_utrs(sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
 
                     if g.renamed_utrs:
                         changed_features.add("UTR")

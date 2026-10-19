@@ -3165,7 +3165,8 @@ class TestReworkCDS:
         output_dir = tmp_path
 
         genome = Genome("TAIR10", arabidopsis_tair10_fasta_file)
-        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4)
+        # Renaming as aegis tidy does by default
+        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4, rename_features=("CDS", "exon", "UTR"))
 
         annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True)
 
@@ -3234,6 +3235,72 @@ class TestAnnotationReworkCDSsFallback:
         cds = list(t.CDSs.values())[0]
         assert cds.protein is not None
         assert len(cds.protein) == 10
+
+
+class TestAnnotationReworkCDSsRenaming:
+    # The ORF (4..15) leaves a 5' and a 3' UTR
+    GFF = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t18\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t18\t.\t+\t.\tID=my_exon;Parent=t1\n"
+    )
+
+    def _annotation(self, tmp_path, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF)
+        return Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG"}), quiet=True, **kwargs)
+
+    @staticmethod
+    def _ids(annot):
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        return [e.id for e in t.exons], list(t.CDSs), [u.id for c in t.CDSs.values() for u in c.UTRs]
+
+    def test_default_renames_CDSs_and_UTRs_only(self, tmp_path):
+        annot = self._annotation(tmp_path)
+        annot.rework_CDSs(quiet=True)
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
+
+    def test_no_renaming(self, tmp_path):
+        annot = self._annotation(tmp_path)
+        annot.rework_CDSs(quiet=True, rename_features=())
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS1"], ["t1_CDS1_u1", "t1_CDS1_u2"])
+
+    def test_rename_controls_are_passed_on(self, tmp_path):
+        annot = self._annotation(tmp_path)
+        annot.rework_CDSs(quiet=True, rename_features=("CDS",), keep_subfeature_numbers=True)
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["t1_CDS1_u1", "t1_CDS1_u2"])
+
+    def test_constructor_follows_rename_features(self, tmp_path):
+        # e.g. tidy --keep-original-subfeature-ids passes rename_features=()
+        annot = self._annotation(tmp_path, rework_all_CDSs=True, rename_features=())
+        assert self._ids(annot)[0] == ["my_exon"]
+
+
+class TestAnnotationRenameUTRs:
+    # Minus-strand mRNA CCC|ATGAAACCCTAA|GGG: CDS 4..15, UTRs 1..3 (3') and 16..18 (5')
+    GFF = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t18\t.\t-\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t18\t.\t-\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t18\t.\t-\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\tCDS\t4\t15\t.\t-\t0\tID=c1;Parent=t1\n"
+    )
+
+    def test_rename_ids_renames_UTRs(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF)
+        annot = Annotation(str(gff_file), quiet=True)
+        utrs = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs
+
+        annot.rename_ids(features=("UTR",), quiet=True)
+        renamed = sorted((u.start, u.id) for u in utrs)
+        assert renamed == [(1, "g1_u002"), (16, "g1_u001")]
+        assert "UTR" in annot.renamed_features
+
+        # Keeping the numbers of already renamed minus-strand UTRs leaves them unchanged
+        annot.rename_ids(features=("UTR",), keep_subfeature_numbers=True, quiet=True)
+        assert sorted((u.start, u.id) for u in utrs) == renamed
 
 
 class TestAnnotationGenerateProteinsCorrectCDS:

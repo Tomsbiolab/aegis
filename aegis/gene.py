@@ -416,7 +416,7 @@ class Gene(Feature):
                     key = (u.start, u.end, u.ch, u.strand)
                     if key not in rev_utr_names:
                         if keep_numbering and u.id_number != None:
-                            rev_utr_names[key] = str(u.id_number)
+                            rev_utr_names[key] = u.id_number
                         else:
                             rev_utr_names[key] = ""
 
