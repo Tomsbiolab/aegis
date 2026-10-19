@@ -248,6 +248,11 @@ class TestCDS:
         seg = make_CDS_segment("s1", attributes={"exception": "alternative start codon%2C annotated by transcript or proteomic data"})
         assert make_CDS(segments=[seg]).exception == "alternative start codon, annotated by transcript or proteomic data"
 
+    def test_unsupported_transl_table_ignored(self, make_CDS, make_CDS_segment):
+        # Tables 27-31 have context-dependent stops and are not supported
+        seg = make_CDS_segment("s1", attributes={"transl_table": "27"})
+        assert make_CDS(segments=[seg]).transl_table is None
+
     def test_translation_attributes_absent(self, make_CDS):
         cds = make_CDS()
         assert (cds.transl_table, cds.transl_except, cds.exception) == (None, (), None)
@@ -264,6 +269,58 @@ class TestCDS:
         cds.generate_protein(mode="orf", correct_CDS=True)
         assert (cds.CDS_segments[0].start, cds.CDS_segments[0].end) == (3, 11)
         assert cds.CDS_segments[0].misc_attributes == ["transl_table=1", "Note=x"]
+
+    @staticmethod
+    def _transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, seq, strand, transl_except):
+        class DummyScaffold:
+            pass
+        DummyScaffold.seq = seq
+        class DummyGenome:
+            scaffolds = {"chr1": DummyScaffold()}
+            name = "dummy"
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", DummyGenome())
+        seg = make_CDS_segment("s1", strand=strand, start=1, end=len(seq), phase=0, attributes={"transl_except": transl_except})
+        cds = make_CDS(segments=[seg], strand=strand)
+        cds.generate_protein(mode="end")
+        return cds.protein
+
+    @pytest.mark.parametrize("seq, strand, transl_except", [
+        ("ATGTGAAAATAA", "+", "(pos:4..6%2Caa:Sec)"),
+        ("TTATTTTCACAT", "-", "(pos:complement(7..9)%2Caa:Sec)"),  # reverse complement of the plus case
+    ])
+    def test_transl_except_recodes_codon(self, make_CDS, make_CDS_segment, monkeypatch, seq, strand, transl_except):
+        p = self._transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, seq, strand, transl_except)
+        assert p.seq == "MUK*"
+        assert p.internal_stops == 0
+        assert p.tags["transl_except"] == "(pos:4..6,aa:Sec)"
+
+    def test_transl_except_readthrough(self, make_CDS, make_CDS_segment, monkeypatch):
+        # VEGFA-like: a stop codon read as Ser
+        p = self._transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, "ATGTGAAAATAA", "+", "(pos:4..6%2Caa:Ser)")
+        assert p.seq == "MSK*"
+
+    @pytest.mark.parametrize("seq, strand, transl_except", [
+        ("ATGAAATA", "+", "(pos:7..8%2Caa:TERM)"),
+        ("TATTTCAT", "-", "(pos:complement(1..2)%2Caa:TERM)"),
+    ])
+    def test_transl_except_completes_stop(self, make_CDS, make_CDS_segment, monkeypatch, seq, strand, transl_except):
+        # ND1-like: the genome ends in TA, the stop codon is finished by polyadenylation
+        p = self._transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, seq, strand, transl_except)
+        assert p.seq == "MK*"
+        assert p.nuc_seq == "ATGAAATA"
+        assert p.segments == ((1, 8),)
+        assert (p.trimmed_3p, p.partial_3prime) == (0, False)
+        assert p.tags["transl_except"] == "(pos:7..8,aa:TERM)"
+
+    def test_transl_except_off_frame_ignored(self, make_CDS, make_CDS_segment, monkeypatch):
+        p = self._transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, "ATGTGAAAATAA", "+", "(pos:5..7%2Caa:Sec)")
+        assert p.seq == "M*K*"
+        assert "transl_except" not in p.tags
+
+    def test_transl_except_start_overrides_initiator_methionine(self, make_CDS, make_CDS_segment, monkeypatch):
+        # PTEN-L-like: CTG start read as Leu instead of the initiator Met
+        p = self._transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, "CTGAAATAA", "+", "(pos:1..3%2Caa:Leu)")
+        assert p.seq == "LK*"
 
     @staticmethod
     def _shift_protein(make_CDS, make_CDS_segment, monkeypatch, strand, segments, adjust_internal_shifts, mode="end", seq="ACGGCA" * 10, attributes=None, enforce_start_codon=False):

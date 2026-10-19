@@ -7,11 +7,11 @@ if TYPE_CHECKING:
 import copy
 
 from .feature import Feature
-from .utils.genefunctions import get_start_codons, get_alt_start_codons
+from .utils.genefunctions import get_start_codons, get_alt_start_codons, TRANSL_EXCEPT_NAMES
 
 class Protein():
 
-    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "exception", "start_status")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "exception", "transl_except", "start_status")
 
     _blast_hits: list[BlastHit] | None
     _segments: tuple[tuple[int, int], ...] | None
@@ -26,9 +26,10 @@ class Protein():
     trimmed_3p: int
     frameshifts: tuple[int, ...]
     exception: str|None
+    transl_except: tuple[tuple[int, int, str], ...]
     start_status: str
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:tuple[int, ...]=(), exception:str|None=None, initiator_methionine:bool=True, alt_start_methionine:bool=True):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:tuple[int, ...]=(), exception:str|None=None, transl_except:tuple[tuple[int, int, str], ...]=(), initiator_methionine:bool=True, alt_start_methionine:bool=True):
         """
         trimmed_5p: CDS bases skipped before the first translated codon (nonzero
             initial phase or 5' trimming); the first codon is then not a start codon.
@@ -37,6 +38,8 @@ class Protein():
             order: negative when bases are read twice (annotated overlap), positive when bases
             are skipped (annotated gap, or dropped to follow annotated phases).
         exception: GFF exception of the CDS (e.g. "ribosomal slippage"), if any.
+        transl_except: residues recoded from the CDS transl_except, as (start, end, residue)
+            1-based positions within nuc_seq; they take precedence over the initiator methionine.
         initiator_methionine: whether valid start codons at position 1 are translated
             as Methionine (M) [default: True, matching NCBI RefSeq/UniProt convention].
         alt_start_methionine: whether alternative start codons (e.g. CTG in table 1/11)
@@ -48,6 +51,7 @@ class Protein():
         self.trimmed_3p = trimmed_3p
         self.frameshifts = frameshifts
         self.exception = exception
+        self.transl_except = transl_except
         self.ch = chrom
         self.start = start
         self.end = end
@@ -59,7 +63,7 @@ class Protein():
         self.nuc_seq = nuc_seq
 
         self.start_status = self._grade_start()
-        if initiator_methionine:
+        if initiator_methionine and not any(start == 1 for start, _, _ in transl_except):
             if self.start_status == "canonical" or (self.start_status == "alternative" and alt_start_methionine):
                 self.seq = "M" + self.seq[1:]
 
@@ -202,6 +206,8 @@ class Protein():
             tags["frameshifts"] = ",".join(f"{shift:+d}" for shift in self.frameshifts)
         if self.exception:
             tags["exception"] = self.exception
+        if self.transl_except:
+            tags["transl_except"] = ",".join(f"(pos:{start}..{end},aa:{TRANSL_EXCEPT_NAMES[residue]})" for start, end, residue in self.transl_except)
         tags["readthrough"] = self.readthrough
         tags["table"] = "custom" if isinstance(self.table, dict) else str(self.table)
         return tags

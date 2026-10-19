@@ -383,7 +383,7 @@ class AnnotationExport(AnnotationComponent):
                                         if c.protein.seq.endswith("*"):
                                             raw_cds = raw_cds[:-3]
                                     else:
-                                        table_to_use = self._annot.translation_table(c.ch)
+                                        table_to_use = self._annot.translation_table(c.ch, c)
                                         _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
                                         if raw_cds[-3:].upper() in def_stops:
                                             raw_cds = raw_cds[:-3]
@@ -575,7 +575,7 @@ class AnnotationExport(AnnotationComponent):
                                 if c.protein.seq.endswith("*"):
                                     cds_seq = cds_seq[:-3]
                             else:
-                                table_to_use = self._annot.translation_table(c.ch)
+                                table_to_use = self._annot.translation_table(c.ch, c)
                                 _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
                                 if cds_seq[-3:].upper() in def_stops:
                                     cds_seq = cds_seq[:-3]

@@ -6,7 +6,7 @@ from urllib.parse import unquote
 
 from .feature import Feature
 from .misc_features import Protein
-from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement, parse_transl_except
+from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement, parse_transl_except, NCBI_GENETIC_CODES
 
 class CDS(Feature):
 
@@ -37,7 +37,7 @@ class CDS(Feature):
         transl_table (genetic code), transl_except (residues recoded at genomic codon positions) and
         exception (why the annotated protein differs from the genome translation, e.g. ribosomal slippage).
         NCBI repeats them on every CDS row; the first transl_table/exception found is used and
-        transl_except entries are merged across rows.
+        transl_except entries are merged across rows. Tables AEGIS does not support are ignored.
         """
         self.transl_table = None
         self.exception = None
@@ -45,7 +45,7 @@ class CDS(Feature):
         for cs in self.CDS_segments:
             for attribute in cs.misc_attributes or ():
                 key, _, value = attribute.partition("=")
-                if key == "transl_table" and self.transl_table is None and value.strip().isdigit():
+                if key == "transl_table" and self.transl_table is None and value.strip().isdigit() and int(value) in NCBI_GENETIC_CODES:
                     self.transl_table = int(value)
                 elif key == "exception" and self.exception is None:
                     self.exception = unquote(value)
@@ -424,6 +424,7 @@ class CDS(Feature):
                     segment_intervals.append((int(g_start), int(g_end)))
 
             coding_seq = "".join(coding_parts)
+            untranslated_3p = pending_leftover
             trimmed_5p = cds_phase
             trimmed_3p = len(pending_leftover)
             relative_coding_start = cds_phase
@@ -452,6 +453,7 @@ class CDS(Feature):
             # An ORF chosen by an ORF mode defines its own start and end; otherwise skipped bases are trimmed CDS ends
             trimmed_5p = 0 if orf_found else relative_coding_start
             trimmed_3p = 0 if orf_found else max(0, len(cds_seq) - 1 - relative_coding_end)
+            untranslated_3p = "" if orf_found else cds_seq[relative_coding_end + 1:]
             dropped_bases = {}
             corrected_segments = (
                 map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
@@ -462,6 +464,11 @@ class CDS(Feature):
         if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
 
             protein_seq = translate(coding_seq, table=table)
+            applied_transl_except = ()
+            if self.transl_except and corrected_segments:
+                protein_seq, corrected_segments, applied_transl_except, completed_stop_bases = self._apply_transl_except(protein_seq, corrected_segments, len(untranslated_3p))
+                coding_seq += untranslated_3p[:completed_stop_bases]
+                trimmed_3p -= completed_stop_bases
 
             if corrected_segments:
                 protein_start = min(start for start, _ in corrected_segments)
@@ -490,7 +497,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, exception=self.exception, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, exception=self.exception, transl_except=applied_transl_except, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
             else:
                 self.protein = None
                 if not quiet:
@@ -499,6 +506,49 @@ class CDS(Feature):
             self.protein = None
             if not quiet:
                 print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+
+    def _apply_transl_except(self, protein_seq:str, segments:list[tuple[int, int]], untranslated_3p:int) -> tuple[str, list[tuple[int, int]], tuple[tuple[int, int, str], ...], int]:
+        """
+        Recodes the residues annotated in transl_except (genomic codon positions) within the translated
+        intervals (segments, ascending). Entries outside the protein or off its reading frame are ignored.
+        A TERM entry right after the last translated codon, within the untranslated_3p bases left at the
+        CDS end, completes a stop codon the genome lacks (e.g. finished by polyadenylation): its bases
+        are added to the intervals and a stop is appended.
+        Returns the recoded protein, the intervals, the applied entries as (start, end, residue) 1-based
+        positions within the protein's nucleotide sequence, and the number of bases added for a completed stop.
+        """
+        ordered = list(segments) if self.strand != "-" else list(reversed(segments))
+        coding_length = sum(end - start + 1 for start, end in ordered)
+        residues = list(protein_seq)
+        applied = []
+        completed_stop_bases = 0
+        for start, end, residue in self.transl_except:
+            # First base of the codon in transcript order, and its offset within the translated intervals
+            first_base = start if self.strand != "-" else end
+            codon_offset = None
+            offset = 0
+            for seg_start, seg_end in ordered:
+                if seg_start <= first_base <= seg_end:
+                    codon_offset = offset + (first_base - seg_start if self.strand != "-" else seg_end - first_base)
+                    break
+                offset += seg_end - seg_start + 1
+
+            if codon_offset is not None:
+                if codon_offset % 3 == 0 and codon_offset // 3 < len(residues):
+                    residues[codon_offset // 3] = residue
+                    applied.append((codon_offset + 1, codon_offset + 3, residue))
+            elif residue == "*" and not completed_stop_bases:
+                last_start, last_end = ordered[-1]
+                length = end - start + 1
+                follows_last_codon = (start == last_end + 1) if self.strand != "-" else (end == last_start - 1)
+                if follows_last_codon and length <= untranslated_3p and coding_length % 3 == 0:
+                    ordered[-1] = (last_start, end) if self.strand != "-" else (start, last_end)
+                    residues.append("*")
+                    applied.append((coding_length + 1, coding_length + length, "*"))
+                    completed_stop_bases = length
+
+        segments = ordered if self.strand != "-" else list(reversed(ordered))
+        return "".join(residues), segments, tuple(sorted(applied)), completed_stop_bases
 
     def _junction_shifts(self, working_segs:list[Feature], dropped_bases:dict[int, int], protein_start:int, protein_end:int) -> tuple[int, ...]:
         """

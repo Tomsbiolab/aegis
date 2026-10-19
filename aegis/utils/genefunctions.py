@@ -373,6 +373,7 @@ TRANSL_EXCEPT_RESIDUES = {
     "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
     "Sec": "U", "Pyl": "O", "Asx": "B", "Glx": "Z", "Xle": "J", "Other": "X", "TERM": "*",
 }
+TRANSL_EXCEPT_NAMES = {residue: name for name, residue in TRANSL_EXCEPT_RESIDUES.items()}
 _TRANSL_EXCEPT_RE = re.compile(r"pos:(?:complement\()?(\d+)(?:\.\.(\d+))?\)?\s*,\s*aa:([A-Za-z]+)")
 
 def parse_transl_except(value: str) -> tuple[tuple[int, int, str], ...]:

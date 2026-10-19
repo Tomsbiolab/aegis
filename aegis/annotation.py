@@ -1854,8 +1854,13 @@ class Annotation():
                 return "chloroplast"
         return "nuclear"
 
-    def translation_table(self, chrom: str) -> int | str:
-        """Returns the genetic code table used to translate CDSs on a chromosome."""
+    def translation_table(self, chrom: str, cds: CDS | None = None) -> int | str:
+        """
+        Returns the genetic code table used to translate CDSs on a chromosome. A CDS given with its
+        own GFF transl_table attribute is translated with that table instead.
+        """
+        if cds is not None and cds.transl_table is not None:
+            return cds.transl_table
         compartment = self.chromosome_compartment(chrom)
         if compartment == "mitochondria":
             return self.mito_table
@@ -1893,8 +1898,6 @@ class Annotation():
             if self.genome is not None and chrom not in self.genome.scaffolds:
                 continue
 
-            chrom_table = self.translation_table(chrom)
-
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
@@ -1913,7 +1916,7 @@ class Annotation():
                             ignore_ambiguous_strands=ignore_ambiguous_strands,
                             quiet=quiet,
                             adjust_internal_shifts=self.adjust_internal_shifts,
-                            table=chrom_table,
+                            table=self.translation_table(chrom, c),
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
