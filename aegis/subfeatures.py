@@ -319,24 +319,27 @@ class CDS(Feature):
             adj_mode = "none"
 
         working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
-        has_internal_shift = False
-        shifts_to_adjust = False
+        # Indices (in working_segs) of the segments whose upstream junction gets its bases adjusted to the annotated phases
+        adjusted_junctions = set()
+        has_unadjusted_shift = False
         if len(working_segs) > 1 and all(cs.phase in (0, 1, 2) for cs in working_segs):
             prev_lo = (working_segs[0].size - (working_segs[0].phase or 0)) % 3
             prev_seg = working_segs[0]
-            for cs in working_segs[1:]:
+            for i, cs in enumerate(working_segs[1:], start=1):
                 if (prev_lo + (cs.phase or 0)) % 3 != 0:
-                    has_internal_shift = True
                     is_contig = (cs.start <= prev_seg.end + 2) if self.strand != "-" else (prev_seg.start <= cs.end + 2)
                     if adj_mode == "all" or (adj_mode == "intra_exon" and is_contig):
-                        shifts_to_adjust = True
+                        adjusted_junctions.add(i)
+                    else:
+                        has_unadjusted_shift = True
                 prev_lo = (cs.size - (cs.phase or 0)) % 3
                 prev_seg = cs
+        shifts_to_adjust = bool(adjusted_junctions)
 
-        if not quiet and has_internal_shift:
+        if not quiet:
             if shifts_to_adjust:
                 print(f"Warning: {self.id} has an internal phase shift at segment boundaries; junction bases were adjusted.")
-            else:
+            if has_unadjusted_shift:
                 print(f"Warning: {self.id} has a phase mismatch across introns; mature mRNA spliced continuously without adjusting junction bases.")
 
         if shifts_to_adjust and mode in ("start", "end"):
@@ -349,12 +352,11 @@ class CDS(Feature):
                 p = cs.phase or 0
                 s = cs.seq
                 l = len(s)
-                lo = (l - p) % 3
                 if i == 0:
                     trim_5p = p
+                    lo = (l - p) % 3
                     coding_parts.append(s[p : l - lo])
-                    pending_leftover = s[l - lo :]
-                else:
+                elif i in adjusted_junctions:
                     leading = s[:p]
                     if len(pending_leftover) + len(leading) == 3:
                         trim_5p = 0
@@ -363,14 +365,21 @@ class CDS(Feature):
                         trim_5p = p
                         if pending_leftover or leading:
                             frameshifts += 1
+                    lo = (l - p) % 3
                     coding_parts.append(s[p : l - lo])
-                    pending_leftover = s[l - lo :]
+                else:
+                    # Spliced continuously: the leftover bases of the previous segment open this segment's first codon
+                    trim_5p = 0
+                    lo = (len(pending_leftover) + l) % 3
+                    coding_parts.append(pending_leftover + s[: l - lo])
+                pending_leftover = s[l - lo :]
 
                 if i == n_segs - 1:
                     trim_3p = lo
+                elif i + 1 not in adjusted_junctions:
+                    trim_3p = 0
                 else:
-                    next_cs = working_segs[i + 1]
-                    next_p = next_cs.phase or 0
+                    next_p = working_segs[i + 1].phase or 0
                     if lo + next_p == 3:
                         trim_3p = 0
                     else:
