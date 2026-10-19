@@ -176,7 +176,7 @@ class Annotation():
             "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
             "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
             "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
-            "possible_policistronic_transcript", "transcript_with_no_exons",
+            "possible_polycistronic_transcript", "transcript_with_no_exons",
             "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
             "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
             "phase_mismatch_across_intron",
@@ -1319,7 +1319,7 @@ class Annotation():
                 for t in g.transcripts.values():
                     t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
                     if t.polycistronic == "maybe":
-                        self.warnings["possible_policistronic_transcript"].add(t.id) 
+                        self.warnings["possible_polycistronic_transcript"].add(t.id) 
                     elif t.polycistronic == "yes":
                         self.warnings["multiple_CDSs_per_transcript"].add(t.id)
                     for c in t.CDSs.values():

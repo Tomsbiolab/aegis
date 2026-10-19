@@ -220,7 +220,7 @@ class AnnotationExport(AnnotationComponent):
                         elif used_id == "CDS":
                             f_out.write(f">{c.id}")
                         elif used_id == "transcript":
-                            f_out.write(f">{c.parents[0]}")
+                            f_out.write(f">{t.id}")
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 
@@ -552,7 +552,7 @@ class AnnotationExport(AnnotationComponent):
                         if used_id == "CDS":
                             f_out.write(f">{c.id}")
                         elif used_id == "transcript":
-                            f_out.write(f">{c.parents[0]}")
+                            f_out.write(f">{t.id}")
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 

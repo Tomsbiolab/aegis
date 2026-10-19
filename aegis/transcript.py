@@ -429,6 +429,11 @@ class Transcript(Feature):
         2 - polycistronic genes with non-overlapping CDSs are unlikely to exist
             and if they do exist they are probably annotated as different ID
             transcripts
+        The polycistronic considerations are meant to just record warnings
+        processing behaviour is not affected. AEGIS for the moment still
+        works with the assumption that annotation files typically have
+        1 CDS per transcript, and the checks are just meant to just
+        pick up warnings, wherever this rule is not followed.
         """
 
         if self.temp_CDSs:
