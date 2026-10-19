@@ -346,8 +346,8 @@ class AnnotationStats(AnnotationComponent):
                                         self.data["mean_three_prime_UTR_size"].append(u3_size)
                                     # UTR introns: introns not inside the CDS
                                     if t.introns:
-                                        cds_start = c.CDS_segments[0].start
-                                        cds_end   = c.CDS_segments[-1].end
+                                        cds_start = c.start
+                                        cds_end   = c.end
                                         for i in t.introns:
                                             if not i.intra_coding:
                                                 if t.strand == "+":

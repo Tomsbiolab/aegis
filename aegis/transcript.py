@@ -542,26 +542,27 @@ class Transcript(Feature):
         for c in self.CDSs.values():
             c.UTRs = []
             parents = [self.id]
+            c.update_span()
             for exon in self.exons:
                 if c.strand != exon.strand:
                     continue
-                if exon.end <= c.CDS_segments[-1].end and exon.start >= c.CDS_segments[0].start:
+                if exon.end <= c.end and exon.start >= c.start:
                     continue
-                if exon.end < c.CDS_segments[0].start:
+                if exon.end < c.start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
                                       exon.score, parents))
-                elif exon.start < c.CDS_segments[0].start:
+                elif exon.start < c.start:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
-                                      exon.strand, exon.start, c.CDS_segments[0].start-1,
+                                      exon.strand, exon.start, c.start-1,
                                       exon.score, parents))
-                if exon.start > c.CDS_segments[-1].end:
+                if exon.start > c.end:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, exon.start, exon.end,
                                       exon.score, parents))
-                elif exon.end > c.CDS_segments[-1].end:
+                elif exon.end > c.end:
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
-                                      exon.strand, c.CDS_segments[-1].end+1, exon.end,
+                                      exon.strand, c.end+1, exon.end,
                                       exon.score, parents))
             c.UTRs.sort()
             if c.strand == "+" or c.strand == ".":

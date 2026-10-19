@@ -21,21 +21,25 @@ class CDS(Feature):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)    
         self.main = False
         self.CDS_segments = CDS_segments
-        if self.CDS_segments:
-            if len(self.CDS_segments) > 1:
-                self.CDS_segments.sort()
-            self.start = self.CDS_segments[0].start
-            self.end = self.CDS_segments[-1].end
+        self.update_span()
         self.full_UTR_exons = 0
         self.protein = None
         self.update()
 
-    def update(self):
+    def update_span(self):
+        """
+        Sorts CDS segments and sets the CDS start/end to the span they cover. Segments are
+        sorted by (start, end), so with overlapping/nested segments the last one does not
+        necessarily hold the latest end.
+        """
         if self.CDS_segments:
             if len(self.CDS_segments) > 1:
                 self.CDS_segments.sort()
             self.start = self.CDS_segments[0].start
-            self.end = self.CDS_segments[-1].end
+            self.end = max(cs.end for cs in self.CDS_segments)
+
+    def update(self):
+        self.update_span()
         self.update_phase()
         self.update_frame()
 

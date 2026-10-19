@@ -20,6 +20,53 @@ class TestCDS:
         assert cds.start == 1200
         assert cds.end == 4500
 
+    @pytest.mark.parametrize("strand", ["+", "-"])
+    def test_span_nested_segments(self, make_CDS, make_CDS_segment, strand):
+        # Sorted by (start, end), the nested segment comes last but does not hold the latest end
+        segments = [
+            make_CDS_segment("s1", strand=strand, start=1200, end=4000),
+            make_CDS_segment("s2", strand=strand, start=1500, end=1800),
+        ]
+        cds = make_CDS(segments=segments, strand=strand)
+        assert cds.CDS_segments[-1].end == 1800
+        assert (cds.start, cds.end) == (1200, 4000)
+
+    @pytest.mark.parametrize("strand", ["+", "-"])
+    def test_span_frameshift_overlap(self, make_CDS, make_CDS_segment, strand):
+        segments = [
+            make_CDS_segment("s1", strand=strand, start=100, end=400),
+            make_CDS_segment("s2", strand=strand, start=399, end=700),
+        ]
+        cds = make_CDS(segments=segments, strand=strand)
+        assert (cds.start, cds.end) == (100, 700)
+
+    def test_span_unsorted_segments(self, make_CDS, make_CDS_segment):
+        segments = [
+            make_CDS_segment("s2", start=3000, end=4500),
+            make_CDS_segment("s1", start=1200, end=2000),
+        ]
+        cds = make_CDS(segments=segments)
+        assert [s.start for s in cds.CDS_segments] == [1200, 3000]
+        assert (cds.start, cds.end) == (1200, 4500)
+
+    def test_update_recomputes_span(self, make_CDS):
+        cds = make_CDS()
+        cds.CDS_segments[0].start = 1100
+        cds.CDS_segments[0].end = 5000  # now contains the second segment
+        cds.update()
+        assert (cds.start, cds.end) == (1100, 5000)
+
+    def test_update_span_only_touches_coordinates(self, make_CDS, make_CDS_segment):
+        segments = [
+            make_CDS_segment("s1", start=1200, end=4000, phase=0),
+            make_CDS_segment("s2", start=1500, end=1800, phase=2),
+        ]
+        cds = make_CDS(segments=segments)
+        cds.start, cds.end = 1, 2
+        cds.update_span()
+        assert (cds.start, cds.end) == (1200, 4000)
+        assert [s.phase for s in cds.CDS_segments] == [0, 2]
+
     def test_update_size(self, make_CDS):
         cds = make_CDS()
         # Size should be sum of segment sizes

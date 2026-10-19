@@ -825,6 +825,37 @@ class TestCoordinateEdgeCases:
         assert utr_coords[0] == (1000, 1099, "5'")
         assert utr_coords[1] == (1601, 1800, "3'")
 
+    @pytest.mark.parametrize("strand,primes", [("+", ("5'", "3'")), ("-", ("3'", "5'"))])
+    def test_generate_UTRs_nested_CDS_segments(self, make_transcript, make_exon, make_CDS, make_CDS_segment, strand, primes):
+        t = make_transcript(feature_id="t1", strand=strand)
+        t.exons = [make_exon("e1", start=1000, end=5000, strand=strand)]
+        # Nested segment sorts last but the CDS really ends at 4000
+        cs1 = make_CDS_segment("cs1", strand=strand, start=1200, end=4000)
+        cs2 = make_CDS_segment("cs2", strand=strand, start=1500, end=1800)
+        cds = make_CDS(segments=[cs1, cs2], strand=strand, feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.generate_UTRs()
+
+        assert [(u.start, u.end, u.prime) for u in cds.UTRs] == [(1000, 1199, primes[0]), (4001, 5000, primes[1])]
+        for u in cds.UTRs:
+            for cs in cds.CDS_segments:
+                assert u.end < cs.start or u.start > cs.end
+
+    def test_generate_UTRs_uses_current_segments(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        t.exons = [make_exon("e1", start=1000, end=5000, strand="+")]
+        cs1 = make_CDS_segment("cs1", strand="+", start=1200, end=2000)
+        cds = make_CDS(segments=[cs1], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+        # Segment edited after construction without calling CDS.update()
+        cs1.end = 4500
+
+        t.generate_UTRs()
+
+        assert [(u.start, u.end) for u in cds.UTRs] == [(1000, 1199), (4501, 5000)]
+        assert cds.end == 4500
+
     def test_assign_UTRs_plus_and_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):
         # 1. Plus strand
         t_plus = make_transcript(feature_id="t_plus", strand="+")

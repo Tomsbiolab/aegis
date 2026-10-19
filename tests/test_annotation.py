@@ -903,6 +903,28 @@ class TestAnnotationCorrectCoordinates:
         t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
         assert (t.start, t.end) == (1000, 5000)
 
+    @pytest.mark.parametrize("mode", ["none", "contain", "trim"])
+    def test_nested_CDS_segments_consistent_span(self, tmp_path, mode):
+        gff = tmp_path / "nested_cds.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t5000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\tCDS\t1200\t4000\t.\t+\t0\tID=CDS1;Parent=mRNA1\n"
+            "chr1\taegis\tCDS\t1500\t1800\t.\t+\t0\tID=CDS1;Parent=mRNA1\n"
+        )
+        annot = Annotation(str(gff), quiet=True, collapse_CDSs=False, coordinate_polishing=mode)
+        t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
+        c = list(t.CDSs.values())[0]
+        assert len(c.CDS_segments) == 2
+        assert (c.start, c.end) == (1200, 4000)
+        assert c.id not in annot.warnings["cds_segment_coordinate_mismatch"]
+        assert [(u.start, u.end) for u in c.UTRs] == [(1000, 1199), (4001, 5000)]
+        # Polisher and CDS.update agree, so the span is stable
+        c.update()
+        assert (c.start, c.end) == (1200, 4000)
+
     def test_nested_exons_use_latest_end(self, tmp_path):
         gff = tmp_path / "nested_exons.gff3"
         gff.write_text(
