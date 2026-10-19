@@ -101,11 +101,6 @@ class Protein():
     def gaps(self) -> bool:
         return "X" in self.seq
 
-    @property
-    def nucleotide_surplus(self) -> bool:
-        """Whether CDS bases were left untranslated at either end (see trimmed_5p / trimmed_3p)."""
-        return bool(self.trimmed_5p or self.trimmed_3p)
-    
     def __len__(self) -> int:
         return len(self.seq)
 

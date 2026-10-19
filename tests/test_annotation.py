@@ -3287,7 +3287,6 @@ class TestProteinFlags:
         assert p.frameshifts == 1
         assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
         assert p.partial is False
-        assert p.nucleotide_surplus is False
         assert "frameshift" in p.summary_tag
 
     def test_bases_after_stop_are_not_partial(self, tmp_path):
@@ -3295,7 +3294,6 @@ class TestProteinFlags:
         p = self._protein(tmp_path, "ATGAAATAAGC", [(1, 11, 0)])
         assert p.trimmed_3p == 2
         assert p.partial_3prime is False
-        assert p.nucleotide_surplus is True
 
     def test_missing_stop_is_3prime_partial(self, tmp_path):
         # ATG AAA AAA + 2 bases, no stop

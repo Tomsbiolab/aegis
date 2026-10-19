@@ -1928,7 +1928,7 @@ class Annotation():
         Computes summary metrics for CDSs and translated proteins across the annotation:
         - total_cds: Total CDS features.
         - total_proteins: CDSs with translated protein sequences.
-        - complete_proteins: Translated proteins with valid start codon, stop codon, no surplus, no early stop.
+        - complete_proteins: Translated proteins with valid start codon, stop codon and no early stop.
         - alt_start_proteins: Complete proteins whose start codon is an alternative (non-curated) NCBI initiator.
         - partial_proteins: Proteins missing a start codon or a stop codon.
         - partial_5prime: Proteins missing valid start codon (or with skipped 5' CDS bases).

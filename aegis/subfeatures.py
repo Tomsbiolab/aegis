@@ -398,7 +398,6 @@ class CDS(Feature):
             coding_seq = "".join(coding_parts)
             trimmed_5p = cds_phase
             trimmed_3p = len(pending_leftover)
-            nucleotide_surplus = bool(trimmed_5p or trimmed_3p)
             relative_coding_start = cds_phase
             relative_coding_end = relative_coding_start + len(coding_seq) - 1
 
@@ -408,7 +407,7 @@ class CDS(Feature):
                 corrected_segments = segment_intervals
         else:
             cds_seq = self.seq
-            coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(
+            coding_seq, orf_found, relative_coding_start, relative_coding_end = trim_surplus(
                 cds_seq, 
                 mode=mode, 
                 max_nucleotide_trim=max_nucleotide_trim, 
@@ -423,7 +422,6 @@ class CDS(Feature):
                 table=table,
             )
             # An ORF chosen by an ORF mode defines its own start and end; otherwise skipped bases are trimmed CDS ends
-            orf_found = mode.startswith("orf") and not nucleotide_surplus
             trimmed_5p = 0 if orf_found else relative_coding_start
             trimmed_3p = 0 if orf_found else max(0, len(cds_seq) - 1 - relative_coding_end)
             frameshifts = 0
@@ -459,9 +457,6 @@ class CDS(Feature):
                     self.update()
 
                 self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
-
-                if not quiet and nucleotide_surplus:
-                    print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
             else:
                 self.protein = None
                 if not quiet:
@@ -469,10 +464,7 @@ class CDS(Feature):
         else:
             self.protein = None
             if not quiet:
-                if nucleotide_surplus:
-                    print(f"{self.id} has a nucleotide surplus and could not be translated to a protein with mode={mode}")
-                else:
-                    print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+                print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
 
     def clear_protein(self):
         self.protein = None

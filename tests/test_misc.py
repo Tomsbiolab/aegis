@@ -304,69 +304,77 @@ class TestLongestORF:
 class TestTrimSurplus:
     def test_divisible_by_3(self):
         seq = "ATGAAATAA"  # 9 nt, already divisible
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert out == seq
 
     def test_surplus_trimmed(self):
         seq = "ATGAAATAAG"  # 10 nt, surplus = 1
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
     
     def test_surplus_other(self):
 
         seq = "AGGAGATGTAAGATGAT"
-        out, surplus, _, _ = trim_surplus(seq, max_nucleotide_trim=6)
-        assert surplus is True
+        out, orf_found, _, _ = trim_surplus(seq, max_nucleotide_trim=6)
+        assert orf_found is False  # ORF needs more than 6 nt trimmed: falls back to 3' trimming
         assert len(out) % 3 == 0
         assert out == "AGGAGATGTAAGATG"
 
         seq = "AAATGTAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AATGTAA" 
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAATGTAAAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAATGTAAAAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAAATGTAAAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
     def test_trim_surplus_with_phase_1(self):
         seq = "AATGAAATAA"  # 10 nt, phase 1 -> skip 1 -> ATGAAATAA (9 nt)
-        out, surplus, cs, ce = trim_surplus(seq, mode="end", phase=1)
+        out, orf_found, cs, ce = trim_surplus(seq, mode="end", phase=1)
         assert out == "ATGAAATAA"
         assert cs == 1
         assert ce == 9
-        assert surplus is True
+        assert orf_found is False
 
     def test_trim_surplus_with_phase_2(self):
         seq = "CCATGAAATAA"  # 11 nt, phase 2 -> skip 2 -> ATGAAATAA (9 nt)
-        out, surplus, cs, ce = trim_surplus(seq, mode="end", phase=2)
+        out, orf_found, cs, ce = trim_surplus(seq, mode="end", phase=2)
         assert out == "ATGAAATAA"
         assert cs == 2
         assert ce == 10
-        assert surplus is True
+        assert orf_found is False
+
+    def test_orf_fallback_with_phase_keeps_phase_offset(self):
+        # No start codon: orf_or_end falls back to trimming, so the phase-skipped base is not part of an ORF
+        seq = "AGGGCCCAAA"  # 10 nt, phase 1 -> GGGCCCAAA (9 nt, no 3' surplus)
+        out, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_end", phase=1)
+        assert out == "GGGCCCAAA"
+        assert orf_found is False
+        assert (cs, ce) == (1, 9)
 
 
 # ============================================================
@@ -451,17 +459,17 @@ class TestTranslatePipeline:
     def test_orf_or_end_extracts_orf(self):
         # GGG ATG AAA TAA (12 nt, multiple of 3)
         seq = "GGGATGAAATAA"
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_end")
         assert trimmed == "ATGAAATAA"
-        assert surplus is False
+        assert orf_found is True
         prot = translate(trimmed)
         assert prot == "MK*"
 
     def test_orf_or_end_with_surplus(self):
-        # 13 nt = surplus flag should be False
+        # 13 nt: the ORF is found regardless of the 5' surplus
         seq = "GGGGATGAAATAA"
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
-        assert surplus is False
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_end")
+        assert orf_found is True
         prot = translate(trimmed)
         assert prot.startswith("M")
         assert prot.endswith("*")
@@ -469,16 +477,17 @@ class TestTranslatePipeline:
     def test_end_mode_trims_from_3prime(self):
         # 10 nt = end-trim removes 1 nt
         seq = "ATGAAATAAG"
-        trimmed, surplus, _, _ = trim_surplus(seq, mode="end")
+        trimmed, orf_found, _, _ = trim_surplus(seq, mode="end")
         assert len(trimmed) % 3 == 0
-        assert surplus is True
+        assert orf_found is False
         prot = translate(trimmed)
         assert prot == "MK*"
 
     def test_no_atg_in_sequence(self):
         # No ATG = orf mode yields no ORF, fallback to end-trimming
         seq = "GGGCCCAAA"
-        trimmed, surplus, _, _ = trim_surplus(seq, mode="orf_or_end")
+        trimmed, orf_found, _, _ = trim_surplus(seq, mode="orf_or_end")
+        assert orf_found is False
         prot = translate(trimmed)
         assert "M" not in prot
         assert prot == "GPK"
@@ -502,33 +511,33 @@ class TestTranslatePipeline:
     def test_start_mode_trims_from_5prime(self):
         # "AATGTAA" = start-trim removes 1 nt from 5' to get mult-of-3
         seq = "AATGTAA"
-        trimmed, surplus, _, _ = trim_surplus(seq, mode="start")
+        trimmed, orf_found, _, _ = trim_surplus(seq, mode="start")
         assert len(trimmed) % 3 == 0
-        assert surplus is True
+        assert orf_found is False
         assert trimmed.startswith("ATG")
 
     def test_orf_mode_no_orf_returns_empty(self):
         # No ATG in sequence -> mode="orf" must return empty sequence
         seq = "GGGCCCAAA"
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf")
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf")
         assert trimmed == ""
-        assert surplus is False
+        assert orf_found is False
         assert cs == 0
         assert ce == -1
 
     def test_orf_or_start_extracts_orf(self):
         # When ORF exists, mode="orf_or_start" should find and extract it
         seq = "GGGATGAAATAA"
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_start")
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_start")
         assert trimmed == "ATGAAATAA"
-        assert surplus is False
+        assert orf_found is True
 
     def test_orf_or_start_fallback_trims_from_5prime(self):
         # No ATG, surplus 1: trims 1 nt from 5'
         seq = "CGGGCCCAAA"  # 10 nt -> trims C -> GGGCCCAAA (9 nt)
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_start")
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_start")
         assert trimmed == "GGGCCCAAA"
-        assert surplus is True
+        assert orf_found is False
         assert cs == 1
         assert ce == 9
 
@@ -685,15 +694,27 @@ class TestGenerateProtein:
         assert p.end_stop is True
         assert p.truncated is True
 
-    def test_no_surplus_flagged(self, make_CDS_segment, make_CDS):
+    def test_orf_hit_has_no_trimmed_ends(self, make_CDS_segment, make_CDS):
         seq = "GGGGATGAAATAA"
         cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
         with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
             cds.generate_protein(mode="orf_or_end")
         p = cds.protein
-        assert p.nucleotide_surplus is False
+        assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
         assert p.seq.startswith("M")
         assert p.seq.endswith("*")
+
+    def test_orf_fallback_with_phase_is_5prime_partial(self, make_CDS_segment, make_CDS):
+        # No start codon, phase 1 and no 3' surplus: the fallback must still record the skipped 5' base
+        seq = "AGGGCCCAAA"
+        seg = make_CDS_segment("seg1", start=1000, end=1009, strand="+", phase=1)
+        cds = make_CDS(segments=[seg], strand="+")
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="orf_or_end")
+        p = cds.protein
+        assert p.seq == "GPK"
+        assert (p.trimmed_5p, p.trimmed_3p) == (1, 0)
+        assert p.partial_5prime is True
 
     def test_protein_with_phase_1_plus_strand(self, make_CDS_segment, make_CDS):
         # 10 nt, phase 1: first base 'A' skipped, translates 'ATGAAATAA' -> M K *

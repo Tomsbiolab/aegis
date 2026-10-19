@@ -529,12 +529,16 @@ def trim_surplus(
     max_nucleotide_trim: Maximum allowed nucleotides to trim when using ORF modes.
     phase: Number of bases to skip at the 5' end (reading frame phase: 0, 1, or 2).
     table: NCBI genetic code table ID (default: 1 for Standard) or custom dictionary.
+
+    Returns (out_seq, orf_found, coding_start, coding_end): orf_found is True when an ORF mode
+    chose an ORF (which then defines its own start and end) and False for plain trimming or
+    fallbacks; coding_start/coding_end are 0-based inclusive positions of out_seq within in_seq.
     """
 
     phase_offset = phase if phase in (1, 2) else 0
     available_len = max(0, len(in_seq) - phase_offset)
     surplus = available_len % 3
-    nucleotide_surplus = (surplus != 0 or phase_offset != 0)
+    orf_found = False
     coding_start = phase_offset
     coding_end = len(in_seq) - 1
 
@@ -565,7 +569,7 @@ def trim_surplus(
             out_seq = orf
             coding_start = orf_start + phase_offset
             coding_end = orf_end + phase_offset
-            nucleotide_surplus = False
+            orf_found = True
         else:
             if mode == "orf_or_end":
                 if surplus:
@@ -578,14 +582,13 @@ def trim_surplus(
 
             else: # mode == "orf"
                 out_seq = ""
-                nucleotide_surplus = False
                 coding_start = 0
                 coding_end = -1
 
     else:
         raise ValueError(f"Invalid mode: {mode}")
 
-    return out_seq, nucleotide_surplus, coding_start, coding_end
+    return out_seq, orf_found, coding_start, coding_end
 
 def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:
     genes = sorted(genes_dict.values())
