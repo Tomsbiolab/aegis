@@ -459,9 +459,10 @@ class Gene(Feature):
 
         collapsed_exons = False
         collapsed_CDS_segments = False
+        merged_exons = []
         for t in self.transcripts.values():
             if exons:
-                t.collapse_exons()
+                merged_exons.extend(t.collapse_exons())
                 if t.collapsed_exons == True:
                     collapsed_exons = True
             if CDSs:
@@ -470,20 +471,35 @@ class Gene(Feature):
                     collapsed_CDS_segments = True
 
         if collapsed_exons or collapsed_CDS_segments:
-            # Merged exons keep the id of their 5'-most exon; the gene's exons are only renamed if that id is
-            # also used by a different exon (e.g. the unmerged copy of a shared exon in another transcript)
-            if collapsed_exons and self._exon_ids_clash():
-                self.rename_exons()
+            # Merged exons keep the id of their 5'-most exon unless it is still used by another exon
+            self.resolve_exon_id_clashes(merged_exons)
             self.update(quiet=quiet)
 
-    def _exon_ids_clash(self) -> bool:
-        """Whether exons of the gene with different coordinates share an id."""
-        coordinates = {}
+    def resolve_exon_id_clashes(self, changed:list[Exon]):
+        """
+        Gives exons whose coordinates were changed (merged or extended) a new id, <id>_<n>, when their
+        id is also used by an exon with other coordinates, e.g. the unchanged copy of a shared exon in
+        another transcript. Changed copies with the same coordinates get the same new id; all other
+        exons keep theirs.
+        """
+        coordinates: dict[str, set[tuple[int, int]]] = {}
         for t in self.transcripts.values():
             for e in t.exons:
-                if coordinates.setdefault(e.id, (e.start, e.end)) != (e.start, e.end):
-                    return True
-        return False
+                coordinates.setdefault(e.id, set()).add((e.start, e.end))
+        used_ids = set(coordinates)
+        new_ids = {}
+        for e in changed:
+            if len(coordinates.get(e.id, ())) <= 1:
+                continue
+            key = (e.id, e.start, e.end)
+            if key not in new_ids:
+                n = 2
+                while f"{e.id}_{n}" in used_ids:
+                    n += 1
+                new_ids[key] = f"{e.id}_{n}"
+                used_ids.add(new_ids[key])
+            e.id = new_ids[key]
+            e.update_numbering()
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 

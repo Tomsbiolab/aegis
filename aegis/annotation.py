@@ -53,7 +53,7 @@ class Annotation():
         "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
         "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
         "phase_mismatch_across_intron",
-        "cds_segment_coordinate_mismatch", "cds_exceeds_exon",
+        "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron",
         "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
         "gene_exceeds_transcripts"
     )
@@ -62,7 +62,7 @@ class Annotation():
     # after modifications; the rest are only detectable while parsing the input file
     RECHECKABLE_WARNING_KEYS = (
         "phase_mismatch_across_intron", "overlapping_exons", "abutting_exons",
-        "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "utr_exceeds_exon",
+        "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron", "utr_exceeds_exon",
         "exon_transcript_boundary_mismatch", "transcript_exceeds_gene", "gene_exceeds_transcripts",
         "gene_with_no_transcripts", "transcript_with_no_exons",
     )
@@ -1587,7 +1587,9 @@ class Annotation():
         mode:
             "none": coordinates are left untouched; inconsistencies are recorded into record_to.
             "contain": CDSs and UTRs are kept within their transcript's exons (by extending
-                the first/last exon), transcripts span exactly their exons and genes are
+                the first/last exon, or the one exon a CDS row reaching into an intron overlaps;
+                rows within an intron or spanning one are only reported), transcripts span exactly
+                their exons and genes are
                 extended to cover all their transcripts. Gene regions extending beyond
                 their transcripts (e.g. polyA sites or TF binding sites) are kept.
             "trim": same as "contain", but genes are also trimmed to span exactly from
@@ -1615,6 +1617,7 @@ class Annotation():
                 earliest_start = None
                 latest_end = None
                 transcripts_moved = False
+                extended_exons = []
                 for t in g.transcripts.values():
 
                     for c in t.CDSs.values():
@@ -1645,6 +1648,35 @@ class Annotation():
                                     c.end = seg_end
 
                     if t.exons:
+                        # CDS rows must not reach into introns (parts beyond the first/last exon are checked below as
+                        # cds_exceeds_exon). When correcting, a row reaching past the one exon it overlaps extends that exon;
+                        # rows within an intron, spanning one, or whose fix would make two exons touch are only reported
+                        span_start = min(e.start for e in t.exons)
+                        span_end = max(e.end for e in t.exons)
+                        for c in t.CDSs.values():
+                            for cs in c.CDS_segments:
+                                start, end = max(cs.start, span_start), min(cs.end, span_end)
+                                if start > end or any(e.start <= start and end <= e.end for e in t.exons):
+                                    continue
+                                overlapping = [e for e in t.exons if e.start <= end and start <= e.end]
+                                if skip_correction:
+                                    record_to["cds_segment_in_intron"].add(c.id)
+                                    if not quiet:
+                                        print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron ({self.id})")
+                                    continue
+                                if len(overlapping) == 1:
+                                    exon = overlapping[0]
+                                    new_start, new_end = min(exon.start, start), max(exon.end, end)
+                                    # An extension touching another exon would remove a splice junction, so it is only reported
+                                    if not any(e is not exon and e.start <= new_end + 1 and new_start - 1 <= e.end for e in t.exons):
+                                        if not quiet:
+                                            print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron, proceeding to extend exon {exon.id} {self.id}")
+                                        exon.start, exon.end = new_start, new_end
+                                        extended_exons.append(exon)
+                                        continue
+                                if not quiet:
+                                    print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron and cannot be fixed by extending one exon ({self.id})")
+
                         if len(t.exons) > 1:
                             t.exons.sort()
                         # Exons are sorted by (start, end), so the first one has the earliest start,
@@ -1661,6 +1693,7 @@ class Annotation():
                                     if not quiet:
                                         print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                     first_exon.start = c.start
+                                    extended_exons.append(first_exon)
                             if c.end > last_exon.end:
                                 if skip_correction:
                                     record_to["cds_exceeds_exon"].add(c.id)
@@ -1670,6 +1703,7 @@ class Annotation():
                                     if not quiet:
                                         print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                     last_exon.end = c.end
+                                    extended_exons.append(last_exon)
 
                             for u in c.UTRs:
                                 if u.start < first_exon.start:
@@ -1681,6 +1715,7 @@ class Annotation():
                                         if not quiet:
                                             print(f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                         first_exon.start = u.start
+                                        extended_exons.append(first_exon)
                                 if u.end > last_exon.end:
                                     if skip_correction:
                                         record_to["utr_exceeds_exon"].add(u.id)
@@ -1690,6 +1725,7 @@ class Annotation():
                                         if not quiet:
                                             print(f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                         last_exon.end = u.end
+                                        extended_exons.append(last_exon)
 
                         if first_exon.start < t.start:
                             if not quiet:
@@ -1740,6 +1776,10 @@ class Annotation():
 
                 if transcripts_moved and len(g.transcripts) > 1:
                     g.sort_transcripts()
+
+                # An extended exon may now differ from a copy shared with another transcript under the same id
+                if extended_exons:
+                    g.resolve_exon_id_clashes(extended_exons)
 
                 if earliest_start is not None and latest_end is not None:
                     if g.start < earliest_start or g.end > latest_end:
@@ -2176,57 +2216,49 @@ class Annotation():
 
     def homogenise_shared_exons_utrs(self):
         """
-        Exons (and UTRs) of a gene with the same coordinates are one shared feature: they get the
-        parents of all their transcripts and the id of the first one, whether ids were renamed or kept.
+        Exons (and UTRs) of a gene with the same coordinates are one shared feature: they take the id of
+        the first one, whether ids were renamed or kept, and their parents are the transcripts of the gene
+        containing them (references to transcripts outside the gene are kept, see
+        remove_missing_transcript_parent_references), so features no longer shared after being merged
+        or extended lose the transcripts that no longer contain them.
+        Different features left with the same id (e.g. ids numbered per transcript, such as exon_3 being
+        a different exon in each transcript) keep it for the first one; the others get <id>_<n>.
         """
         for genes in self.chrs.values():
             for g in genes.values():
-                exon_groups: dict[tuple[int, int, str, str], list[Exon]] = {}
+                transcript_ids = {t.id for t in g.transcripts.values()}
+                exon_groups: dict[tuple[int, int, str, str], list[tuple[str, Exon]]] = {}
+                utr_groups: dict[tuple[int, int, str, str], list[tuple[str, UTR]]] = {}
                 for t in g.transcripts.values():
                     for e in t.exons:
-                        key = (e.start, e.end, e.ch, e.strand)
-                        if key not in exon_groups:
-                            exon_groups[key] = [e]
-                        else:
-                            exon_groups[key].append(e)
-
-                for group in exon_groups.values():
-                    if len(group) > 1:
-                        all_parents = set()
-                        for e in group:
-                            if e.parents:
-                                all_parents.update(e.parents)
-                        merged_parents = sorted(all_parents)
-                        for e in group:
-                            e.parents = merged_parents[:]
-                            e.id, e.id_number = group[0].id, group[0].id_number
-                    else:
-                        if group[0].parents:
-                            group[0].parents.sort()
-
-                utr_groups: dict[tuple[int, int, str, str], list[UTR]] = {}
-                for t in g.transcripts.values():
+                        exon_groups.setdefault((e.start, e.end, e.ch, e.strand), []).append((t.id, e))
                     for c in t.CDSs.values():
                         for u in c.UTRs:
-                            key = (u.start, u.end, u.ch, u.strand)
-                            if key not in utr_groups:
-                                utr_groups[key] = [u]
-                            else:
-                                utr_groups[key].append(u)
+                            utr_groups.setdefault((u.start, u.end, u.ch, u.strand), []).append((t.id, u))
 
-                for group in utr_groups.values():
-                    if len(group) > 1:
-                        all_parents = set()
-                        for u in group:
-                            if u.parents:
-                                all_parents.update(u.parents)
-                        merged_parents = sorted(all_parents)
-                        for u in group:
-                            u.parents = merged_parents[:]
-                            u.id, u.id_number = group[0].id, group[0].id_number
-                    else:
-                        if group[0].parents:
-                            group[0].parents.sort()
+                for groups in (exon_groups, utr_groups):
+                    for group in groups.values():
+                        first = group[0][1]
+                        containing = {t_id for t_id, _ in group}
+                        outside_gene = {p for _, f in group for p in (f.parents or []) if p not in transcript_ids}
+                        parents = sorted(containing | outside_gene)
+                        for _, f in group:
+                            f.parents = parents[:]
+                            f.id, f.id_number = first.id, first.id_number
+
+                    owners = {}
+                    used_ids = {group[0][1].id for group in groups.values()}
+                    for key, group in groups.items():
+                        f_id = group[0][1].id
+                        if owners.setdefault(f_id, key) == key:
+                            continue
+                        n = 2
+                        while f"{f_id}_{n}" in used_ids:
+                            n += 1
+                        used_ids.add(f"{f_id}_{n}")
+                        for _, f in group:
+                            f.id = f"{f_id}_{n}"
+                            f.update_numbering()
 
         self.shared_exons = True
         self.shared_UTRs = True

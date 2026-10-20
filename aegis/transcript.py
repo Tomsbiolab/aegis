@@ -176,11 +176,13 @@ class Transcript(Feature):
                             self.renamed_utrs = True
                             u.update_numbering()
 
-    def collapse_exons(self):
+    def collapse_exons(self) -> list[Exon]:
         """
         Merges overlapping or directly adjacent exons into single exons. A merged exon keeps the id
         and attributes of its 5'-most exon; exons that are not merged are kept as they are.
+        Returns the merged exons.
         """
+        merged_exons = []
         if len(self.exons) > 1:
 
             self.exons.sort()
@@ -205,9 +207,11 @@ class Transcript(Feature):
                     if rep.misc_attributes:
                         exon.misc_attributes = rep.misc_attributes[:]
                     merged.append(exon)
+                    merged_exons.append(exon)
                 self.collapsed_exons = True
                 self.exons = merged
                 self.update()
+        return merged_exons
 
     def collapse_CDS_segments(self):
         """

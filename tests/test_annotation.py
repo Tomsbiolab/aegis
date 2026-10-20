@@ -2343,24 +2343,29 @@ class TestAnnotationSharedExonParents:
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].end == 1300
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].id == "ov1_e001"
+        # Exon ids are numbered per transcript in the input (exon_3 is a different exon in each transcript):
+        # shared exons share the first id and different exons left with the same id get <id>_<n>
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].id == "exon_1"
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].id == "ov1_e002"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].id == "exon_2"
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].parents == ["mRNA_ov1", "mRNA_ov2"]
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].id == "ov1_e008"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].id == "exon_3"
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].parents == ["ncRNA1", "ncRNA2", "ncRNA3"]
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].id == "ov1_e004"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].id == "exon_1_3"
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].parents == ["ncRNA1", "ncRNA2"]
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].id == "ov1_e005"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].id == "exon_1_2"
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].start == 4500
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].end == 6000
+
+        exon_ids = {(e.start, e.end, e.strand): e.id for t in annot.chrs["chr1"]["gene_ov1"].transcripts.values() for e in t.exons}
+        assert len(set(exon_ids.values())) == len(exon_ids)
 
     def test_shared_parents_reformatting(self, shared_parents_gff3_file):
         annot = Annotation(shared_parents_gff3_file, quiet=True)
@@ -3410,6 +3415,78 @@ class TestAnnotationSharedExonsUTRs:
         assert [(e.id, e.parents) for e in exons] == [("g1.1_exon1", ["g1.1", "g1.2"])] * 2
 
 
+class TestCDSSegmentsInIntrons:
+    # Exons 1..100, 200..300, 400..500 (intron 101..199 and 301..399)
+    EXONS = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t500\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t200\t300\t.\t+\t.\tID=e2;Parent={e2_parents}\n"
+        "chr1\ttest\texon\t400\t500\t.\t+\t.\tID=e3;Parent=t1\n"
+    )
+
+    def _annotation(self, tmp_path, cds_rows, mode, extra="", e2_parents="t1"):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.EXONS.replace("{e2_parents}", e2_parents) + extra + "".join(f"chr1\ttest\tCDS\t{a}\t{b}\t.\t+\t0\tID=c1;Parent=t1\n" for a, b in cds_rows))
+        return Annotation(str(gff_file), quiet=True, coordinate_polishing=mode)
+
+    @staticmethod
+    def _exons(annot, t_id="t1"):
+        return [(e.start, e.end) for e in annot.chrs["chr1"]["g1"].transcripts[t_id].exons]
+
+    def test_row_reaching_into_intron_is_reported(self, tmp_path):
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode="none")
+        assert annot.warnings["cds_segment_in_intron"] == {"c1"}
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == {"c1"}
+        assert self._exons(annot) == [(1, 100), (200, 300), (400, 500)]
+
+    @pytest.mark.parametrize("mode", ["contain", "trim"])
+    def test_polishing_extends_the_overlapped_exon(self, tmp_path, mode):
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode=mode)
+        assert annot.warnings["cds_segment_in_intron"] == {"c1"}
+        assert self._exons(annot) == [(1, 100), (200, 320), (400, 500)]
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == set()
+
+    @pytest.mark.parametrize("cds_rows", [
+        [(50, 100), (150, 180), (200, 300)],  # a row within an intron
+        [(50, 100), (250, 420), (430, 450)],  # a row spanning an intron
+    ])
+    def test_rows_within_or_across_introns_are_only_reported(self, tmp_path, cds_rows):
+        annot = self._annotation(tmp_path, cds_rows, mode="contain")
+        assert self._exons(annot) == [(1, 100), (200, 300), (400, 500)]
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == {"c1"}
+
+    def test_row_reaching_the_next_exon_is_only_reported(self, tmp_path):
+        # Extending exon 2 to 399 would make it touch exon 3 and remove the splice junction
+        annot = self._annotation(tmp_path, [(50, 100), (200, 399), (400, 450)], mode="contain")
+        assert self._exons(annot) == [(1, 100), (200, 300), (400, 500)]
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == {"c1"}
+
+    def test_extended_shared_exon_keeps_only_its_own_transcript_as_parent(self, tmp_path):
+        # e2 is one GFF row shared by t1 and t2; only t1's copy is extended
+        t2 = (
+            "chr1\ttest\tmRNA\t200\t300\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\tCDS\t210\t290\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode="contain", extra=t2, e2_parents="t1,t2")
+        annot_exons = {t.id: [(e.start, e.end, e.parents) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert (200, 320, ["t1"]) in annot_exons["t1"]
+        assert annot_exons["t2"] == [(200, 300, ["t2"])]
+
+    def test_extended_exon_renamed_when_its_id_would_clash(self, tmp_path):
+        # e2 is shared with t2, whose CDS stays within it; extending t1's copy would leave two e2 exons
+        t2 = (
+            "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t200\t300\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\ttest\tCDS\t210\t290\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode="contain", extra=t2)
+        exons = {t.id: [(e.id, e.start, e.end) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        # Only t1's extended copy of e2 gets a new id
+        assert exons == {"t1": [("e1", 1, 100), ("e2_2", 200, 320), ("e3", 400, 500)], "t2": [("e2", 200, 300)]}
+
+
 class TestAnnotationCollapsing:
     @staticmethod
     def _annotation(tmp_path, body):
@@ -3431,7 +3508,27 @@ class TestAnnotationCollapsing:
         assert annot.warnings["abutting_exons"] == {"t1"}
         assert annot.recheck_warnings()["abutting_exons"] == set()
 
-    def test_exons_renamed_when_merged_id_would_clash(self, tmp_path):
+    def test_merging_a_shared_exon_updates_parents(self, tmp_path):
+        # e1 is shared by t1 and t2, but only t1 merges it with the abutting e2
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1,t2\n"
+            "chr1\ttest\texon\t31\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\texon\t50\t60\t.\t+\t.\tID=e3;Parent=t1,t2\n"
+        ))
+        exons = {t.id: [(e.start, e.end, e.parents) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert exons == {"t1": [(1, 40, ["t1"]), (50, 60, ["t1", "t2"])], "t2": [(1, 30, ["t2"]), (50, 60, ["t1", "t2"])]}
+
+    def test_parents_outside_the_gene_are_kept(self, tmp_path):
+        # References to transcripts that do not exist are kept unless remove_missing_transcript_parent_references
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t60\t.\t+\t.\tID=e1;Parent=t1,missing\n"
+        ))
+        assert annot.chrs["chr1"]["g1"].transcripts["t1"].exons[0].parents == ["missing", "t1"]
+
+    def test_merged_exon_renamed_when_its_id_would_clash(self, tmp_path):
         # e1 is shared by t1 and t2, but only t1 also has the overlapping e2
         annot = self._annotation(tmp_path, (
             "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
@@ -3440,8 +3537,9 @@ class TestAnnotationCollapsing:
             "chr1\ttest\texon\t20\t40\t.\t+\t.\tID=e2;Parent=t1\n"
             "chr1\ttest\texon\t50\t60\t.\t+\t.\tID=e3;Parent=t1,t2\n"
         ))
-        exons = {(e.start, e.end): e.id for t in annot.chrs["chr1"]["g1"].transcripts.values() for e in t.exons}
-        assert len(set(exons.values())) == len(exons) == 3
+        exons = {t.id: [(e.id, e.start, e.end) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        # Only t1's merged exon gets a new id; t2's unmerged e1 and the untouched e3 keep theirs
+        assert exons == {"t1": [("e1_2", 1, 40), ("e3", 50, 60)], "t2": [("e1", 1, 30), ("e3", 50, 60)]}
 
     def test_collapsing_CDS_rows_keeps_UTR_ids(self, tmp_path):
         annot = self._annotation(tmp_path, (
@@ -3454,6 +3552,22 @@ class TestAnnotationCollapsing:
         c = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
         assert [(s.start, s.end) for s in c.CDS_segments] == [(10, 69)]
         assert c.UTRs[0].id == "my_utr"
+
+
+class TestAnnotationUniqueSubfeatureIds:
+    def test_per_transcript_exon_ids_become_unique(self, tmp_path):
+        # e1 means a different exon in each transcript; nothing is merged or renamed
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t100\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t50\t100\t.\t+\t.\tID=e1;Parent=t2\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        assert [e.id for t in annot.chrs["chr1"]["g1"].transcripts.values() for e in t.exons] == ["e1", "e1_2"]
 
 
 class TestAnnotationRenameUTRs:
