@@ -3842,3 +3842,88 @@ class TestOrganelleTranslation:
         cds_mt_vert = annot_vert.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
         assert cds_mt_vert.protein is not None
         assert cds_mt_vert.protein.seq == "MW*"
+
+class TestReadUTRs:
+    # Exon 1..200 with CDS 11..103; derived UTRs are 1..10 and 104..200, the read 3' UTR stops at 150
+    HEADER = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t200\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t200\t.\t+\t.\tID=t1;Parent=g1\n"
+    )
+    EXON = "chr1\ttest\texon\t1\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+    CDS = "chr1\ttest\tCDS\t11\t103\t.\t+\t0\tID=c1;Parent=t1\n"
+    UTRS = (
+        "chr1\ttest\tfive_prime_UTR\t1\t10\t.\t+\t.\tID=u5;Parent=t1\n"
+        "chr1\ttest\tthree_prime_UTR\t104\t150\t.\t+\t.\tID=u3;Parent=t1\n"
+    )
+    # ATG at 11, 29 GCT codons and TAA ending at 103
+    SEQ = "C" * 10 + "ATG" + "GCT" * 29 + "TAA" + "C" * 97
+
+    def _annotation(self, tmp_path, body, genome=False, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.HEADER + body)
+        if genome:
+            fasta_file = tmp_path / "genome.fasta"
+            fasta_file.write_text(f">chr1\n{self.SEQ}\n")
+            kwargs["genome"] = Genome("genome", str(fasta_file), quiet=True)
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _utrs(annot):
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        return [(u.id, u.start, u.end) for c in t.CDSs.values() for u in c.UTRs]
+
+    @pytest.mark.parametrize("collapse_CDSs", [True, False])
+    def test_kept_on_load_and_after_updates(self, tmp_path, collapse_CDSs):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS, consider_read_utrs=True, collapse_CDSs=collapse_CDSs)
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 150)]
+        annot.update(quiet=True)
+        annot.rename_ids(features=("UTR",), quiet=True)
+        annot.update(quiet=True)
+        assert self._utrs(annot) == [("g1_u001", 1, 10), ("g1_u002", 104, 150)]
+        assert not annot.warnings["read_utrs_inconsistent"]
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    def test_derived_by_default_with_a_warning(self, tmp_path):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS)
+        assert self._utrs(annot) == [("u5", 1, 10), ("c1_u1", 104, 200)]
+        assert annot.warnings["read_utrs_differ_from_derived"] == {"t1"}
+
+    def test_no_warning_when_read_UTRs_are_the_derived_ones(self, tmp_path):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t150\t", "\t200\t"))
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 200)]
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    def test_inconsistent_ones_are_derived_with_a_warning(self, tmp_path):
+        # The 3' UTR overlaps the CDS
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t104\t150\t", "\t90\t150\t"), consider_read_utrs=True)
+        assert self._utrs(annot) == [("u5", 1, 10), ("c1_u1", 104, 200)]
+        assert annot.warnings["read_utrs_inconsistent"] == {"t1"}
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    @pytest.mark.parametrize("mode, exon_end", [("contain", 250), ("none", 200)])
+    def test_UTR_beyond_the_last_exon_is_kept(self, tmp_path, mode, exon_end):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t150\t", "\t250\t"), consider_read_utrs=True, coordinate_polishing=mode)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 250)]
+        assert [(e.start, e.end) for e in t.exons] == [(1, exon_end)]
+        assert annot.warnings["utr_exceeds_exon"] == {"u3"}
+
+    @pytest.mark.parametrize("consider_read_utrs", [False, True])
+    @pytest.mark.parametrize("collapse_CDSs", [True, False])
+    def test_build_the_exons_of_a_transcript_without_exons(self, tmp_path, consider_read_utrs, collapse_CDSs):
+        annot = self._annotation(tmp_path, self.CDS + self.UTRS, consider_read_utrs=consider_read_utrs, collapse_CDSs=collapse_CDSs)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert [(e.start, e.end) for e in t.exons] == [(1, 150)]
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 150)]
+        annot.update(quiet=True)
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 150)]
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    def test_reworked_CDS_derives_its_UTRs(self, tmp_path):
+        # The reworked CDS is the read one, but UTRs are only read for read CDSs
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS, genome=True, consider_read_utrs=True, rework_all_CDSs=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        c = next(iter(t.CDSs.values()))
+        assert (c.start, c.end) == (11, 103)
+        assert [(u.start, u.end) for u in c.UTRs] == [(1, 10), (104, 200)]

@@ -1060,3 +1060,137 @@ class TestCoordinateEdgeCases:
 
 
 
+# ============================================================
+# UTRs read from the GFF
+# ============================================================
+
+class TestReadUTRs:
+    """
+    Transcript as loaded from a GFF (rows staged in temp_CDSs/temp_UTRs): CDS 101..166 within exon 1..400
+    on +, CDS 235..300 on -, so the derived UTRs reach the exon ends while the read ones stop short of them.
+    """
+
+    @staticmethod
+    def _transcript(make_transcript, make_exon, make_CDS_segment, strand="+", exons=((1, 400),), cds=None, utrs=None, keep=False):
+        t = make_transcript(feature_id="t1", strand=strand, start=1, end=400)
+        t.exons = [make_exon(f"e{n}", start, end, strand=strand, parents=["t1"]) for n, (start, end) in enumerate(exons, 1)]
+        if cds is None:
+            cds = [(101, 166)] if strand == "+" else [(235, 300)]
+        if utrs is None:
+            utrs = [(50, 100), (167, 300)] if strand == "+" else [(101, 234), (301, 350)]
+        t.temp_CDSs = [make_CDS_segment("c1", strand=strand, start=start, end=end, parents=["t1"], phase=0) for start, end in cds]
+        t.temp_UTRs = [UTR(f"u{n}", "chr1", "aegis", "UTR", strand, start, end, ".", ["t1"]) for n, (start, end) in enumerate(utrs, 1)]
+        if keep:
+            t.keep_read_UTRs()
+        return t
+
+    @staticmethod
+    def _utrs(t):
+        return [(u.id, u.feature, u.start, u.end) for c in t.CDSs.values() for u in c.UTRs]
+
+    def test_derived_by_default(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment)
+        t.update()
+        assert self._utrs(t) == [("c1_u1", "five_prime_UTR", 1, 100), ("c1_u2", "three_prime_UTR", 167, 400)]
+        assert t.read_UTRs_CDS is None
+
+    def test_derived_UTR_keeps_the_id_of_a_read_one_with_its_coordinates(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, utrs=[(1, 100), (167, 300)])
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 1, 100), ("c1_u1", "three_prime_UTR", 167, 400)]
+
+    @pytest.mark.parametrize("strand, expected", [
+        ("+", [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]),
+        ("-", [("u1", "three_prime_UTR", 101, 234), ("u2", "five_prime_UTR", 301, 350)]),
+    ])
+    def test_kept_and_survive_updates(self, make_transcript, make_exon, make_CDS_segment, strand, expected):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, strand=strand, keep=True)
+        t.update()
+        assert self._utrs(t) == expected
+        t.update()
+        t.generate_CDSs()
+        assert self._utrs(t) == expected
+        assert t.temp_UTRs is None
+
+    def test_kept_when_CDS_segments_are_collapsed_first(self, make_transcript, make_exon, make_CDS_segment):
+        # Gene.collapse_subfeatures builds the CDS before Transcript.update
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, cds=[(101, 130), (131, 166)], keep=True)
+        t.collapse_CDS_segments()
+        assert t.collapsed_CDS_segments
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]
+
+    def test_renamed_UTRs_keep_their_new_ids(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.update()
+        t.rename_utrs(base_id="g1")
+        t.update()
+        assert [u_id for u_id, *_ in self._utrs(t)] == ["g1_u001", "g1_u002"]
+
+    def test_each_CDS_gets_its_own_list(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        read = t.temp_UTRs
+        t.update()
+        assert next(iter(t.CDSs.values())).UTRs is not read
+
+    def test_kept_beyond_the_outer_exons(self, make_transcript, make_exon, make_CDS_segment):
+        # Coordinate polishing extends the outer exons to them, as for CDS rows
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, exons=[(60, 300)], utrs=[(50, 100), (167, 350)], keep=True)
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 350)]
+        assert t.read_UTRs_CDS == (101, 166)
+
+    @pytest.mark.parametrize("exons, utrs, derived", [
+        # Overlapping the CDS
+        ([(1, 400)], [(50, 110), (167, 300)], [("c1_u1", 1, 100), ("c1_u2", 167, 400)]),
+        # Spanning an intron; the derived 5' UTR has the coordinates of the read one, so it keeps its id
+        ([(1, 200), (250, 400)], [(1, 100), (167, 260)], [("u1", 1, 100), ("c1_u1", 167, 200), ("c1_u2", 250, 400)]),
+        # Within an intron
+        ([(1, 200), (250, 400)], [(50, 100), (210, 240)], [("c1_u1", 1, 100), ("c1_u2", 167, 200), ("c1_u3", 250, 400)]),
+    ])
+    def test_inconsistent_ones_are_derived(self, make_transcript, make_exon, make_CDS_segment, exons, utrs, derived):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, exons=exons, utrs=utrs, keep=True)
+        t.update()
+        assert t.read_UTRs_CDS is None
+        assert [(u_id, start, end) for u_id, _, start, end in self._utrs(t)] == derived
+
+    def test_UTR_on_the_other_strand_is_inconsistent(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.temp_UTRs[1].strand = "-"
+        t.update()
+        assert t.read_UTRs_CDS is None
+
+    def test_derived_once_the_CDS_changes(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.update()
+        c = next(iter(t.CDSs.values()))
+        c.CDS_segments[0].end = 157
+        c.update_span()
+        t.update()
+        assert t.read_UTRs_CDS is None
+        assert [(u.start, u.end) for u in c.UTRs] == [(1, 100), (158, 400)]
+
+    def test_cleared_UTRs_are_derived(self, make_transcript, make_exon, make_CDS_segment):
+        # As when a CDS is reworked (generate_best_protein)
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.update()
+        t.clear_UTRs()
+        t.update()
+        assert t.read_UTRs_CDS is None
+        assert [(u.start, u.end) for c in t.CDSs.values() for u in c.UTRs] == [(1, 100), (167, 400)]
+
+    def test_not_kept_without_CDS_rows(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, cds=[], keep=True)
+        assert t.read_UTRs_CDS is None
+
+    @pytest.mark.parametrize("keep", [False, True])
+    @pytest.mark.parametrize("collapse_first", [False, True])
+    def test_build_the_exons_of_a_transcript_without_exons(self, make_transcript, make_exon, make_CDS_segment, keep, collapse_first):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, exons=(), cds=[(101, 130), (131, 166)], keep=keep)
+        if collapse_first:
+            t.collapse_CDS_segments()
+        t.update()
+        assert [(e.start, e.end) for e in t.exons] == [(50, 300)]
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]

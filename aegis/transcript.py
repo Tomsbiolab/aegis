@@ -11,7 +11,7 @@ from .utils.misc import unambiguous_numbers
 class Transcript(Feature):
 
     __slots__ = (
-        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'main',
+        'exons', 'CDSs', 'temp_CDSs', 'temp_UTRs', 'read_UTRs_CDS', 'main',
         'miRNAs', 'renamed_exons', 'renamed_utrs',
         'promoter', 'introns', 'collapsed_exons', 'collapsed_CDS_segments', 'generated_exons'
     )
@@ -22,6 +22,7 @@ class Transcript(Feature):
     UTRs: list[UTR]
     temp_CDSs: list[CDS|Feature]|None
     temp_UTRs: list[UTR]|None
+    read_UTRs_CDS: tuple[int, int]|None
     promoter: Promoter | None
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
@@ -30,6 +31,8 @@ class Transcript(Feature):
         self.CDSs = {}
         self.temp_CDSs = []
         self.temp_UTRs = []
+        # Span of the CDS whose read UTRs the transcript keeps instead of deriving them (see keep_read_UTRs)
+        self.read_UTRs_CDS = None
         self.main = False
         self.miRNAs = []
         self.renamed_exons = False
@@ -41,16 +44,17 @@ class Transcript(Feature):
         self.collapsed_CDS_segments = False
         self.generated_exons = False
 
-    def update(self, quiet:bool=False, consider_read_utrs:bool=False):
+    def update(self, quiet:bool=False):
         if self.exons == []:
-            self.generate_CDSs(quiet=quiet, consider_read_utrs=True)
+            # Without exons the UTRs read from the GFF are kept, and the exons are built from them and the CDS
+            self.generate_CDSs(quiet=quiet)
             self.generate_exons()
             if len(self.exons) > 1:
                 self.exons.sort()
         else:
             if len(self.exons) > 1:
                 self.exons.sort()
-            self.generate_CDSs(quiet=quiet, consider_read_utrs=consider_read_utrs)
+            self.generate_CDSs(quiet=quiet)
 
         for i, c in enumerate(self.CDSs.values()):
             if len(c.CDS_segments) > 1:
@@ -279,6 +283,37 @@ class Transcript(Feature):
         for c in self.CDSs.values():
             c.clear_UTRs()
         self.temp_UTRs = None
+        self.read_UTRs_CDS = None
+
+    def keep_read_UTRs(self):
+        """
+        Makes the transcript keep the UTRs read from the GFF instead of deriving them from its exons, for as
+        long as its CDS keeps the span it was read with and the UTRs fit the exons and CDS (see read_UTRs_fit).
+        Called before the CDS is generated from its rows.
+        """
+        if self.temp_UTRs and self.temp_CDSs:
+            self.read_UTRs_CDS = (min(cs.start for cs in self.temp_CDSs), max(cs.end for cs in self.temp_CDSs))
+
+    def read_UTRs_fit(self) -> bool:
+        """
+        Whether the read UTRs the transcript keeps still fit it: its CDS has the span the UTRs were read with,
+        and each UTR is on the CDS strand, outside the CDS and within one exon. Parts of a UTR beyond the
+        first or last exon are allowed, as coordinate polishing extends that exon (as for CDS rows).
+        """
+        if self.read_UTRs_CDS is None:
+            return False
+        span_start = min(e.start for e in self.exons)
+        span_end = max(e.end for e in self.exons)
+        for c in self.CDSs.values():
+            if (c.start, c.end) != self.read_UTRs_CDS:
+                return False
+            for u in c.UTRs:
+                if u.strand != c.strand or (u.start <= c.end and c.start <= u.end):
+                    return False
+                start, end = max(u.start, span_start), min(u.end, span_end)
+                if start <= end and not any(e.start <= start and end <= e.end for e in self.exons):
+                    return False
+        return True
 
     def generate_promoter(self, promoter_size:int, ch_size:int, promoter_type:str = "standard"):
         """
@@ -473,9 +508,9 @@ class Transcript(Feature):
 
         return warnings
 
-    def generate_CDSs(self, quiet:bool=False, consider_read_utrs:bool=False):
+    def generate_CDSs(self, quiet:bool=False):
         """
-        Creates a CDS object based on the CDS segments of a transcript.
+        Creates a CDS object based on the CDS segments of a transcript, and gives it its UTRs (see place_UTRs).
         AEGIS enforces 1 logical CDS per transcript. Any polycistronic or
         multi-CDS structures (e.g. theoretical multi-CDS annotations as in
         canonical_gene_example.gff3) are flagged via _detect_polycistronic()
@@ -508,15 +543,24 @@ class Transcript(Feature):
             self.temp_CDSs = None
 
         self.determine_main_CDS()
-
-        if not consider_read_utrs or not self.temp_UTRs:
-            self.generate_UTRs()
-        else:
-            self.assign_UTRs()
+        self.place_UTRs()
 
         for c in self.CDSs.values():
             c.update()
 
+    def place_UTRs(self):
+        """
+        Gives each CDS its UTRs. The UTRs read from the GFF are used while the transcript keeps them (see
+        keep_read_UTRs) and they fit it, or when it has no exons to derive UTRs from (its exons are then built
+        from the CDS and UTRs); otherwise the UTRs are derived from the exons, and read UTRs are no longer kept.
+        """
+        if self.temp_UTRs and (self.read_UTRs_CDS is not None or not self.exons):
+            self.assign_UTRs()
+        if not self.exons or self.read_UTRs_fit():
+            self.update_UTRs()
+        else:
+            self.read_UTRs_CDS = None
+            self.generate_UTRs()
 
     def determine_main_CDS(self):
         if self.CDSs != {}:
@@ -547,7 +591,7 @@ class Transcript(Feature):
         if self.temp_UTRs:
             self.temp_UTRs.sort()
             for c in self.CDSs.values():
-                c.UTRs = self.temp_UTRs
+                c.UTRs = self.temp_UTRs[:]
             self.temp_UTRs = None
             self.update_UTRs()
 

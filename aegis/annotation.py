@@ -55,7 +55,7 @@ class Annotation():
         "phase_mismatch_across_intron",
         "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron",
         "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
-        "gene_exceeds_transcripts"
+        "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived"
     )
 
     # Warnings that describe the state of the annotation object and can therefore be rechecked
@@ -343,7 +343,11 @@ class Annotation():
 
         self.detect_polycistronic_transcripts(quiet=quiet)
 
-        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+        if consider_read_utrs:
+            for t in self.iter_transcripts():
+                t.keep_read_UTRs()
+
+        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
         self._recording_input_warnings = False
 
         self._validate_organelle_chroms()
@@ -361,7 +365,7 @@ class Annotation():
                 enforce_start_codon=enforce_start_codon,
                 orf_choice_mode=orf_choice_mode,
             )
-            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
         if rename_source:
             self.rename_source(rename_source)
@@ -1324,7 +1328,7 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, coordinate_polishing:Literal["none", "contain", "trim"]|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, coordinate_polishing:Literal["none", "contain", "trim"]|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
         start_time = time.time()
 
         self._protein_qc_summary = None
@@ -1348,12 +1352,18 @@ class Annotation():
                 if count >= batch_size:
                     progress_bar.update(count)
                     count = 0
+                # UTRs read from the GFF are only staged until the first update, which decides whether they are used
+                read_UTRs = {}
                 for t in g.transcripts.values():
                     # Checked before collapsing, so the input exons are assessed
                     self._check_exon_overlaps(t, warnings_sink)
+                    if t.temp_UTRs:
+                        read_UTRs[t.id] = (t.read_UTRs_CDS is not None, {(u.start, u.end) for u in t.temp_UTRs})
                 g.collapse_subfeatures(exons=collapse_exons, CDSs=collapse_CDSs)
                 for t in g.transcripts.values():
-                    t.update(quiet=quiet, consider_read_utrs=consider_read_utrs)
+                    t.update(quiet=quiet)
+                    if t.id in read_UTRs:
+                        self._check_read_UTRs(t, *read_UTRs[t.id], warnings_sink)
 
                     for c in t.CDSs.values():
                         # Checked before phases are recalculated, so the input phases are assessed
@@ -1504,6 +1514,7 @@ class Annotation():
                         t.main = False
                         t.temp_CDSs = []
                         t.temp_UTRs = []
+                        t.read_UTRs_CDS = None
 
         if clean:
             self.remove_other_mRNA_transcripts_from_rRNA_genes()
@@ -1541,6 +1552,18 @@ class Annotation():
                 elif e.start == cur_end + 1:
                     record_to["abutting_exons"].add(t.id)
             cur_end = e.end if cur_end is None else max(cur_end, e.end)
+
+    def _check_read_UTRs(self, t:Transcript, kept:bool, read:set[tuple[int, int]], record_to:dict[str, set[str]]):
+        """
+        Flags transcripts whose UTRs read from the GFF were replaced by UTRs derived from the exons: with
+        consider_read_utrs because they do not fit the exons and CDS (read_utrs_inconsistent), and otherwise
+        when the derived UTRs have other coordinates (read_utrs_differ_from_derived).
+        """
+        if kept:
+            if t.read_UTRs_CDS is None:
+                record_to["read_utrs_inconsistent"].add(t.id)
+        elif read != {(u.start, u.end) for c in t.CDSs.values() for u in c.UTRs}:
+            record_to["read_utrs_differ_from_derived"].add(t.id)
 
     def _check_phase_mismatch_across_intron(self, c:CDS, record_to:dict[str, set[str]]):
         """

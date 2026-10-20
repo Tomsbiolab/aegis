@@ -94,7 +94,7 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
     consider_read_utrs: Annotated[bool, typer.Option(
-        "--consider-read-utrs", help="Consider UTRs as read from the GFF rather than inferred.",
+        "--consider-read-utrs", help="Keep the UTRs read from the GFF instead of deriving them from the exons and CDS, unless they overlap the CDS or an intron (those transcripts get derived UTRs and a warning). Read UTRs are dropped for CDSs reworked with --rework-all-cds or --infer-missing-cds.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     print_empty_attributes: Annotated[bool, typer.Option(
