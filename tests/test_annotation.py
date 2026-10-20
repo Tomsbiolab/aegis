@@ -1997,6 +1997,25 @@ class TestPseudogeneGFF3:
 
 # ---- 6. Overlapping, and adjacent exons (collapse) ----
 
+class TestCollapseSettingsPersist:
+    # A later update (as run by many methods) follows the collapse settings the annotation was loaded with
+    @staticmethod
+    def _exons(annot):
+        return [(e.start, e.end) for e in annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons]
+
+    def test_update_keeps_models_uncollapsed(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True, collapse_exons=False, collapse_CDSs=False)
+        annot.update(quiet=True)
+        assert self._exons(annot) == [(1000, 2500), (2000, 3500), (3500, 4000), (5000, 6000)]
+        cds = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].CDSs["CDS_ov1"]
+        assert len(cds.CDS_segments) == 3
+
+    def test_update_can_still_collapse_when_asked(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True, collapse_exons=False)
+        annot.update(collapse_exons=True, quiet=True)
+        assert self._exons(annot) == [(1000, 4000), (5000, 6000)]
+
+
 class TestExonsToCollapseGFF3:
     """Gene with overlapping and adjacent exons is collapsed into fewer exons"""
 
@@ -3441,7 +3460,7 @@ class TestAnnotationReworkCDSsRenaming:
         assert sorted((u.prime, u.id) for c in t.CDSs.values() for u in c.UTRs) == [("3'", "g1_u002"), ("5'", "g1_u001")]
 
     def test_constructor_renames_only_reworked_features(self, tmp_path):
-        # e.g. tidy --keep-original-subfeature-ids passes rename_features=(): only new CDSs and UTRs get ids
+        # e.g. tidy (without --rename-subfeature-ids) passes rename_features=(): only new CDSs and UTRs get ids
         annot = self._annotation(tmp_path, rework_all_CDSs=True, rename_features=())
         assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
 

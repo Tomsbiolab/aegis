@@ -7,6 +7,7 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome
 from .utils import (
+    warn_organelle_genetic_codes,
     split_callback,
     detect_file_type,
     TaxonomyOption,
@@ -89,8 +90,8 @@ def main(
         "--remove-aliases", help="Removes alias attributes from GFF output.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
-    keep_original_subfeature_ids: Annotated[bool, typer.Option(
-        "--keep-original-subfeature-ids", help="Keep original subfeature IDs for CDS, UTR and exon features instead of synchronizing with gene IDs. CDSs and UTRs changed by --rework-all-cds or --infer-missing-cds get new IDs (<transcript>_CDS001, <gene>_u001).",
+    rename_subfeature_ids: Annotated[bool, typer.Option(
+        "--rename-subfeature-ids", help="Rename CDS, exon and UTR IDs after their transcript or gene (<transcript>_CDS001, <gene>_e001, <gene>_u001), a quick clean-up for downstream tools. By default input IDs are kept; CDSs and UTRs that AEGIS derives or changes (e.g. with --rework-all-cds or --infer-missing-cds) are named that way either way.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     consider_read_utrs: Annotated[bool, typer.Option(
@@ -274,10 +275,7 @@ def main(
     collapse_CDSs = not(no_collapse_cds)
     remove_missing_transcript_parent_references = not(keep_missing_transcript_parent_references)
 
-    if keep_original_subfeature_ids:
-        rename_features = ()
-    else:
-        rename_features = ("CDS", "UTR", "exon")
+    rename_features = ("CDS", "UTR", "exon") if rename_subfeature_ids else ()
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -353,6 +351,9 @@ def main(
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
     )
+
+    if rework_all_cds or infer_missing_cds:
+        warn_organelle_genetic_codes(annotation)
 
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)

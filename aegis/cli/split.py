@@ -517,7 +517,7 @@ def main(
         )
 
     if annotation_file:
-        annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, coordinate_polishing="none", auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+        annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
     elif genome_obj:
         missing = [c for c in (*mitochondria_chroms, *chloroplast_chroms) if c not in genome_obj.scaffolds]
         if missing:

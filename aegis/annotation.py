@@ -139,6 +139,9 @@ class Annotation():
         self.min_codon_len = min_codon_len
         self.recalculate_phases = recalculate_phases
         self.reset_phases_zero = reset_phases_zero
+        # Followed by every later update unless it is given its own
+        self.collapse_exons = collapse_exons
+        self.collapse_CDSs = collapse_CDSs
         self._protein_qc_summary = None
 
         self.adjust_internal_shifts = adjust_internal_shifts
@@ -1330,10 +1333,14 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, coordinate_polishing:Literal["none", "contain", "trim"]|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, collapse_exons:bool|None=None, collapse_CDSs:bool|None=None, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, coordinate_polishing:Literal["none", "contain", "trim"]|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
         start_time = time.time()
 
         self._protein_qc_summary = None
+        if collapse_exons is None:
+            collapse_exons = getattr(self, "collapse_exons", True)
+        if collapse_CDSs is None:
+            collapse_CDSs = getattr(self, "collapse_CDSs", True)
         if recalculate_phases is None:
             recalculate_phases = getattr(self, "recalculate_phases", False)
         if reset_phases_zero is None:
@@ -3045,7 +3052,8 @@ class Annotation():
                     else:
                         base_id_missing = True
                     
-                if base_id_present and base_id_missing:
+                # Id formats only decide what is renamed when existing ids may be kept
+                if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                     warnings.warn(f"{self.id} annotation gene {g.original_id} has a mix of transcript id formats and renaming errors could occur!", category=UserWarning)
                 
                 if tmains > 1:
@@ -3090,7 +3098,7 @@ class Annotation():
                             else:
                                 base_id_missing = True
 
-                    if base_id_present and base_id_missing:
+                    if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of CDS id formats and renaming errors could occur!", category=UserWarning)
 
                     if cmains > 1:
@@ -3127,7 +3135,7 @@ class Annotation():
                         else:
                             base_id_missing = True
 
-                    if base_id_present and base_id_missing:
+                    if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
 
 
@@ -3142,7 +3150,7 @@ class Annotation():
                             else:
                                 base_id_missing = True
 
-                    if base_id_present and base_id_missing:
+                    if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of UTR id formats and renaming errors could occur!", category=UserWarning)
 
 

@@ -116,6 +116,33 @@ def apply_organelle_chroms(annotations: Sequence[Annotation], mitochondria_chrom
         a.set_genetic_codes(**codes)
 
 
+def warn_organelle_genetic_codes(annotation: Annotation, show_name: bool = False) -> None:
+    """
+    Warns (on stderr, also with --quiet) which genetic codes translate the annotation's organelle contigs
+    (see Annotation.chromosome_compartment): the default taxonomy, plant, mistranslates the mitochondria
+    of animals and fungi. show_name prefixes the annotation name, for commands loading several.
+    """
+    organelles: dict[str, list[str]] = {}
+    for chrom in annotation.chrs:
+        compartment = annotation.chromosome_compartment(chrom)
+        if compartment != "nuclear":
+            organelles.setdefault(compartment, []).append(chrom)
+    parts = []
+    for compartment, label, table in (("mitochondria", "mitochondrial", annotation.mito_table), ("chloroplast", "plastid", annotation.plastid_table)):
+        chroms = organelles.get(compartment)
+        if chroms:
+            shown = ", ".join(chroms[:3]) + (", ..." if len(chroms) > 3 else "")
+            name = NCBI_GENETIC_CODES[table]["name"] if table in NCBI_GENETIC_CODES else "custom"
+            parts.append(f"proteins on {label} contigs ({shown}) are translated with NCBI genetic code {table} ({name})")
+    if parts:
+        prefix = f"{annotation.name}: " if show_name else ""
+        typer.secho(
+            f"Warning: {prefix}{', and '.join(parts)} (taxonomy '{annotation.taxonomy}'). "
+            "If this does not fit your organism, set --taxonomy (plant, vertebrate, invertebrate, yeast) or --mito-code/--plastid-code.",
+            fg=typer.colors.YELLOW, err=True,
+        )
+
+
 def taxonomy_callback(value: str) -> str:
     if value.lower() not in TAXONOMY_ORGANELLE_CODES:
         raise typer.BadParameter(f"Unknown taxonomy '{value}'. Choose from: {', '.join(TAXONOMY_ORGANELLE_CODES)}.")

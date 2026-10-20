@@ -7,6 +7,7 @@ from typing_extensions import Annotated
 from ..genome import Genome
 from ..annotation import Annotation
 from .utils import (
+    warn_organelle_genetic_codes,
     split_callback,
     detect_file_type,
     TaxonomyOption,
@@ -333,6 +334,9 @@ def main(
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
     )
+
+    if "protein" in features or "CDS" in features or rework_all_cds or infer_missing_cds:
+        warn_organelle_genetic_codes(annotation)
 
     has_any_cds = any(bool(t.CDSs) for genes in annotation.chrs.values() for g in genes.values() for t in g.transcripts.values())
     if not has_any_cds and not infer_missing_cds and not rework_all_cds:

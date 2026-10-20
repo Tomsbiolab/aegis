@@ -19,6 +19,7 @@ from .utils import (
     PlastidCodeOption,
     InitiatorMethionineOption,
     apply_organelle_chroms,
+    warn_organelle_genetic_codes,
     IO_PANEL,
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
@@ -452,6 +453,8 @@ def main(
     # Organelle chromosomes are set before the stats translate proteins
     apply_organelle_chroms(annotations, mitochondria_chroms, chloroplast_chroms)
     for annot in annotations:
+        if annot.genome is not None:
+            warn_organelle_genetic_codes(annot, show_name=len(annotations) > 1)
         # Update stats and export basic/full stats CSV files
         annot.stats.update(output_dir=output_dir, export=True, quiet=True)
 

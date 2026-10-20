@@ -69,3 +69,20 @@ def test_extract_cli_infer_missing_cdss_smoke(tmp_path):
 
     res = runner.invoke(app, [str(gff), str(fa), "--infer-missing-cds", "-d", str(out_dir), "-q"])
     assert res.exit_code == 0
+
+
+def test_extract_warns_about_the_organelle_genetic_code_smoke(tmp_path):
+    """Smoke test: proteins of an organelle contig come with a warning naming the genetic code used."""
+    gff_file = tmp_path / "m.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chrM\tt\tgene\t1\t9\t.\t+\t.\tID=g2\n"
+        "chrM\tt\tmRNA\t1\t9\t.\t+\t.\tID=t2;Parent=g2\n"
+        "chrM\tt\tCDS\t1\t9\t.\t+\t0\tID=c2;Parent=t2\n"
+    )
+    fa_file = tmp_path / "m.fa"
+    fa_file.write_text(">chrM\nATGTGATAA\n")
+    output_dir = tmp_path / "extract_out"
+    result = runner.invoke(app, [str(gff_file), str(fa_file), "-f", "protein", "-d", str(output_dir), "-q", "-tax", "vertebrate"])
+    assert result.exit_code == 0, result.output
+    assert "NCBI genetic code 2 (Vertebrate Mitochondrial)" in result.output

@@ -136,7 +136,7 @@ def main(
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none")
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False)
 
     # 1. Biotype filtering (coding vs non-coding)
     if coding_only:

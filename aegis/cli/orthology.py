@@ -27,6 +27,7 @@ from .utils import (
     MitoCodeOption,
     PlastidCodeOption,
     apply_organelle_chroms,
+    warn_organelle_genetic_codes,
     IO_PANEL,
     EXEC_PANEL,
     GENETIC_CODES_PANEL,
@@ -741,6 +742,8 @@ def main(
             annotations[n].target = True
 
     apply_organelle_chroms(annotations, mitochondria_chroms, chloroplast_chroms)
+    for annotation in annotations:
+        warn_organelle_genetic_codes(annotation, show_name=len(annotations) > 1)
 
     output_dir_path = Path(output_dir).resolve()
 
