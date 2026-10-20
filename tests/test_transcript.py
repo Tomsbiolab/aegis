@@ -575,6 +575,20 @@ class TestCollapseExons:
         assert t.start == 1000
         assert t.end == 5000
 
+    @pytest.mark.parametrize("strand, expected_id", [("+", "e1"), ("-", "e2")])
+    def test_merged_exon_keeps_5prime_id_and_attributes(self, make_transcript, make_exon, strand, expected_id):
+        t = make_transcript(strand=strand)
+        e1 = make_exon(feature_id="e1", start=1000, end=2000, strand=strand, attributes={"Note": "first"})
+        e2 = make_exon(feature_id="e2", start=1500, end=2500, strand=strand, attributes={"Note": "second"})
+        e3 = make_exon(feature_id="e3", start=4000, end=5000, strand=strand)
+        t.exons = [e1, e2, e3]
+
+        t.collapse_exons()
+
+        assert [(e.id, e.start, e.end) for e in t.exons] == [(expected_id, 1000, 2500), ("e3", 4000, 5000)]
+        assert t.exons[0].misc_attributes == [f"Note={'first' if strand == '+' else 'second'}"]
+        assert t.exons[1] is e3
+
     def test_collapse_no_overlaps_unchanged(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
         e1 = make_exon(feature_id="e1", start=1000, end=2000)
@@ -697,7 +711,7 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[0].misc_attributes == ["transl_except=(pos:1000..1002%2Caa:Sec)", "Note=x"]
         assert cds.transl_except == ((1000, 1002, "U"),)
 
-    def test_collapse_cds_preserves_initial_phase_plus(self, make_transcript, make_CDS, make_CDS_segment):
+    def test_collapse_cds_keeps_annotated_phases_plus(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         # seg1 and seg2 contiguous: 1000..1099 (size 100, phase 1 -> 0 leftover) and 1100..1199 (phase 0)
         seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099, phase=1)
@@ -715,13 +729,13 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[0].start == 1000
         assert cds.CDS_segments[0].end == 1199
         assert cds.CDS_segments[0].phase == 1
-        # Leftover from merged: (200 - 1) % 3 = 199 % 3 = 1
-        # seg3 phase should be 3 - 1 = 2
+        # seg3 keeps its annotated phase 0, although the merged leftover (1) implies 2: collapsing does not
+        # recalculate phases (see recalculate_phases), the mismatch across the intron is kept as annotated
         assert cds.CDS_segments[1].start == 2000
         assert cds.CDS_segments[1].end == 2099
-        assert cds.CDS_segments[1].phase == 2
+        assert cds.CDS_segments[1].phase == 0
 
-    def test_collapse_cds_preserves_initial_phase_minus(self, make_transcript, make_CDS, make_CDS_segment):
+    def test_collapse_cds_keeps_annotated_phases_minus(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="-")
         # seg1: 1000..1099 (3' segment on minus strand)
         seg1 = make_CDS_segment("s1", strand="-", start=1000, end=1099, phase=2)
@@ -739,11 +753,75 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[1].start == 2000
         assert cds.CDS_segments[1].end == 2199
         assert cds.CDS_segments[1].phase == 2
-        # Leftover from merged 2000..2199 (size 200, phase 2): (200 - 2) % 3 = 198 % 3 = 0
-        # Downstream 3' segment seg[0] (1000..1099) gets phase 0
+        # The downstream 3' segment keeps its annotated phase 2 (the merged leftover implies 0)
         assert cds.CDS_segments[0].start == 1000
         assert cds.CDS_segments[0].end == 1099
-        assert cds.CDS_segments[0].phase == 0
+        assert cds.CDS_segments[0].phase == 2
+
+    def test_collapse_cds_keeps_phases_of_other_segments(self, make_transcript, make_CDS, make_CDS_segment):
+        # A|B: contiguous phase mismatch (leftover 1 + phase 0), kept apart; C|D: one coding stretch split in two rows
+        t = make_transcript(feature_id="t1", strand="+")
+        segments = [make_CDS_segment(f"s{i}", strand="+", start=a, end=b, phase=p) for i, (a, b, p) in enumerate([(1, 10, 0), (11, 20, 0), (31, 40, 2), (41, 50, 1)])]
+        cds = make_CDS(segments=segments, strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1, 10, 0), (11, 20, 0), (31, 50, 2)]
+
+    # NCBI programmed frameshifts: the phases continue the frame by reading the overlapping bases twice,
+    # so (upstream leftover + downstream phase) % 3 == 0 and merging would delete the shared bases
+    @pytest.mark.parametrize("strand, segments", [
+        ("+", [(1000, 1099, 0), (1099, 1199, 2)]),  # -1: leftover 1, phase 2
+        ("+", [(1000, 1098, 0), (1098, 1199, 0)]),  # -1: leftover 0, phase 0 (PEG10)
+        ("+", [(1000, 1099, 0), (1098, 1199, 2)]),  # -2: leftover 1, phase 2
+        ("-", [(1000, 1101, 2), (1101, 1200, 0)]),  # -1 on minus: 5' segment 1101..1200 leftover 1, phase 2
+        ("-", [(1000, 1101, 0), (1101, 1199, 0)]),  # -1 on minus: 5' segment 1101..1199 leftover 0, phase 0
+    ])
+    def test_collapse_cds_keeps_programmed_frameshift_overlaps(self, make_transcript, make_CDS, make_CDS_segment, strand, segments):
+        t = make_transcript(feature_id="t1", strand=strand)
+        segs = [make_CDS_segment(f"s{i}", strand=strand, start=a, end=b, phase=p) for i, (a, b, p) in enumerate(segments)]
+        cds = make_CDS(segments=segs, strand=strand, feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is False
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == segments
+
+    def test_collapse_cds_short_overlap_without_phases_kept(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        segs = [make_CDS_segment(f"s{i}", strand="+", start=a, end=b) for i, (a, b) in enumerate([(1000, 1099), (1099, 1199), (1200, 1300)])]
+        cds = make_CDS(segments=segs, strand="+", feature_id="t1_CDS1")
+        for s in cds.CDS_segments:
+            s.phase = None
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        # The 1 bp overlap may be a programmed frameshift; the adjacent row merges
+        assert [(s.start, s.end) for s in cds.CDS_segments] == [(1000, 1099), (1099, 1300)]
+
+    def test_collapse_cds_minus_merged_row_takes_phase_of_its_5prime_end(self, make_transcript, make_CDS, make_CDS_segment):
+        # Nested rows on the minus strand: the merged row starts (5') at the outer row's end
+        t = make_transcript(feature_id="t1", strand="-")
+        segs = [make_CDS_segment("outer", strand="-", start=1000, end=1299, phase=2), make_CDS_segment("nested", strand="-", start=1100, end=1200, phase=0)]
+        cds = make_CDS(segments=segs, strand="-", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1000, 1299, 2)]
+
+    def test_collapse_cds_merges_duplicated_and_nested_rows(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        segs = [make_CDS_segment(f"s{i}", strand="+", start=a, end=b, phase=0) for i, (a, b) in enumerate([(1000, 1299), (1000, 1299), (1100, 1200)])]
+        cds = make_CDS(segments=segs, strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1000, 1299, 0)]
 
     def test_collapse_cds_does_not_merge_across_internal_phase_shift(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")

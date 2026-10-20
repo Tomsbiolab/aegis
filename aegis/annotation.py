@@ -48,6 +48,7 @@ class Annotation():
         "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
         "missing_subfeature_parent_liftover", "overlapping_CDS_segments",
         "possible_polycistronic_transcript", "independent_CDS_segment_ids",
+        "overlapping_exons", "abutting_exons",
         "transcript_with_no_exons",
         "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
         "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
@@ -60,7 +61,7 @@ class Annotation():
     # Warnings that describe the state of the annotation object and can therefore be rechecked
     # after modifications; the rest are only detectable while parsing the input file
     RECHECKABLE_WARNING_KEYS = (
-        "phase_mismatch_across_intron",
+        "phase_mismatch_across_intron", "overlapping_exons", "abutting_exons",
         "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "utr_exceeds_exon",
         "exon_transcript_boundary_mismatch", "transcript_exceeds_gene", "gene_exceeds_transcripts",
         "gene_with_no_transcripts", "transcript_with_no_exons",
@@ -1347,6 +1348,9 @@ class Annotation():
                 if count >= batch_size:
                     progress_bar.update(count)
                     count = 0
+                for t in g.transcripts.values():
+                    # Checked before collapsing, so the input exons are assessed
+                    self._check_exon_overlaps(t, warnings_sink)
                 g.collapse_subfeatures(exons=collapse_exons, CDSs=collapse_CDSs)
                 for t in g.transcripts.values():
                     t.update(quiet=quiet, consider_read_utrs=consider_read_utrs)
@@ -1525,6 +1529,19 @@ class Annotation():
                     for t_id in mRNA_transcripts_to_remove:
                         del self.chrs[chrom][g.id].transcripts[t_id]   
 
+    def _check_exon_overlaps(self, t:Transcript, record_to:dict[str, set[str]]):
+        """
+        Flags transcripts with overlapping or directly adjacent (abutting) exons, which collapse_exons merges.
+        """
+        cur_end = None
+        for e in sorted(t.exons):
+            if cur_end is not None:
+                if e.start <= cur_end:
+                    record_to["overlapping_exons"].add(t.id)
+                elif e.start == cur_end + 1:
+                    record_to["abutting_exons"].add(t.id)
+            cur_end = e.end if cur_end is None else max(cur_end, e.end)
+
     def _check_phase_mismatch_across_intron(self, c:CDS, record_to:dict[str, set[str]]):
         """
         Flags CDSs whose segment phases are inconsistent across a non-contiguous junction (an intron).
@@ -1546,7 +1563,7 @@ class Annotation():
     def recheck_warnings(self, quiet:bool=True) -> dict[str, set[str]]:
         """
         Runs the checks that describe the annotation object (coordinate hierarchy, phases across
-        introns, genes with no transcripts and transcripts with no exons) on its current state and
+        introns, overlapping/abutting exons, genes with no transcripts and transcripts with no exons) on its current state and
         returns the findings, keyed as in self.warnings. Unlike self.warnings, which describes the
         input annotation, this reflects any modifications made since loading. self.warnings is not
         modified. Checks only possible while parsing the input (e.g. parent references) are not included.
@@ -1555,6 +1572,7 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
+                    self._check_exon_overlaps(t, rechecked)
                     for c in t.CDSs.values():
                         self._check_phase_mismatch_across_intron(c, rechecked)
         self.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=quiet, record_to=rechecked)

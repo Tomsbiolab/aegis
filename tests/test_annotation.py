@@ -3410,6 +3410,52 @@ class TestAnnotationSharedExonsUTRs:
         assert [(e.id, e.parents) for e in exons] == [("g1.1_exon1", ["g1.1", "g1.2"])] * 2
 
 
+class TestAnnotationCollapsing:
+    @staticmethod
+    def _annotation(tmp_path, body):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("##gff-version 3\nchr1\ttest\tgene\t1\t100\t.\t+\t.\tID=g1\n" + body)
+        return Annotation(str(gff_file), quiet=True)
+
+    def test_collapsing_exons_keeps_ids_and_records_warnings(self, tmp_path):
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t31\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\texon\t60\t100\t.\t+\t.\tID=e3;Parent=t1\n"
+            "chr1\ttest\tCDS\t10\t40\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t60\t80\t.\t+\t2\tID=c1;Parent=t1\n"
+        ))
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert [(e.id, e.start, e.end) for e in t.exons] == [("e1", 1, 40), ("e3", 60, 100)]
+        assert annot.warnings["abutting_exons"] == {"t1"}
+        assert annot.recheck_warnings()["abutting_exons"] == set()
+
+    def test_exons_renamed_when_merged_id_would_clash(self, tmp_path):
+        # e1 is shared by t1 and t2, but only t1 also has the overlapping e2
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1,t2\n"
+            "chr1\ttest\texon\t20\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\texon\t50\t60\t.\t+\t.\tID=e3;Parent=t1,t2\n"
+        ))
+        exons = {(e.start, e.end): e.id for t in annot.chrs["chr1"]["g1"].transcripts.values() for e in t.exons}
+        assert len(set(exons.values())) == len(exons) == 3
+
+    def test_collapsing_CDS_rows_keeps_UTR_ids(self, tmp_path):
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tfive_prime_UTR\t1\t9\t.\t+\t.\tID=my_utr;Parent=t1\n"
+            "chr1\ttest\tCDS\t10\t39\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t40\t69\t.\t+\t0\tID=c1;Parent=t1\n"
+        ))
+        c = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
+        assert [(s.start, s.end) for s in c.CDS_segments] == [(10, 69)]
+        assert c.UTRs[0].id == "my_utr"
+
+
 class TestAnnotationRenameUTRs:
     # Minus-strand mRNA CCC|ATGAAACCCTAA|GGG: CDS 4..15, UTRs 1..3 (3') and 16..18 (5')
     GFF = (

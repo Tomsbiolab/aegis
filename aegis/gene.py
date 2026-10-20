@@ -470,11 +470,20 @@ class Gene(Feature):
                     collapsed_CDS_segments = True
 
         if collapsed_exons or collapsed_CDS_segments:
-            if collapsed_exons:
+            # Merged exons keep the id of their 5'-most exon; the gene's exons are only renamed if that id is
+            # also used by a different exon (e.g. the unmerged copy of a shared exon in another transcript)
+            if collapsed_exons and self._exon_ids_clash():
                 self.rename_exons()
-            if collapsed_CDS_segments:
-                self.rename_utrs()
             self.update(quiet=quiet)
+
+    def _exon_ids_clash(self) -> bool:
+        """Whether exons of the gene with different coordinates share an id."""
+        coordinates = {}
+        for t in self.transcripts.values():
+            for e in t.exons:
+                if coordinates.setdefault(e.id, (e.start, e.end)) != (e.start, e.end):
+                    return True
+        return False
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 

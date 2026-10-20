@@ -178,36 +178,45 @@ class Transcript(Feature):
 
     def collapse_exons(self):
         """
-        Merges overlapping or directly adjacent exons into single exons.
+        Merges overlapping or directly adjacent exons into single exons. A merged exon keeps the id
+        and attributes of its 5'-most exon; exons that are not merged are kept as they are.
         """
-        
         if len(self.exons) > 1:
 
             self.exons.sort()
-            merged = []
-            cur_start = self.exons[0].start
+            groups = [[self.exons[0]]]
             cur_end = self.exons[0].end
-            parents = [self.id]
-            for x, e in enumerate(self.exons[1:]):
+            for e in self.exons[1:]:
                 if e.start <= cur_end + 1:
-                    if e.end > cur_end:
-                        
-                        cur_end = e.end
+                    groups[-1].append(e)
+                    cur_end = max(cur_end, e.end)
                 else:
-                    merged.append(Exon("combined", self.exons[x].ch, self.exons[x].source, "exon", self.exons[x].strand, cur_start, cur_end, self.exons[x].score, parents))
-                    cur_start = e.start
+                    groups.append([e])
                     cur_end = e.end
 
-            merged.append(Exon("combined", self.exons[-1].ch, self.exons[-1].source, "exon", self.exons[-1].strand, cur_start, cur_end, self.exons[-1].score, parents))
-
-            if len(merged) < len(self.exons):
+            if len(groups) < len(self.exons):
+                merged = []
+                for group in groups:
+                    if len(group) == 1:
+                        merged.append(group[0])
+                        continue
+                    rep = group[0] if self.strand != "-" else max(group, key=lambda e: e.end)
+                    exon = Exon(rep.id, rep.ch, rep.source, rep.feature, rep.strand, group[0].start, max(e.end for e in group), rep.score, [self.id])
+                    if rep.misc_attributes:
+                        exon.misc_attributes = rep.misc_attributes[:]
+                    merged.append(exon)
                 self.collapsed_exons = True
                 self.exons = merged
                 self.update()
 
     def collapse_CDS_segments(self):
         """
-        Merges overlapping or directly adjacent CDS segments into single segments
+        Merges CDS segments that are rows of one continuous coding stretch: duplicated or nested rows,
+        overlaps of 3 bp or more, and adjacent or 1-2 bp overlapping rows whose phases continue the
+        reading frame across the merge. Overlaps of 1-2 bp whose phases instead read the shared bases
+        twice (programmed -1/-2 frameshifts, e.g. PEG10), or that have no phases, are kept apart.
+        A merged segment takes the phase of its 5'-most row, where it starts. Phases describe each row
+        on its own (GFF3), so all other segments keep their annotated phases.
         """
         if self.temp_CDSs and not self.CDSs:
             self.generate_CDSs()
@@ -217,53 +226,48 @@ class Transcript(Feature):
 
             if len(cds.CDS_segments) > 1:
                 cds.CDS_segments.sort()
-                merged = []
-                cur_start = cds.CDS_segments[0].start
+                groups = [[cds.CDS_segments[0]]]
                 cur_end = cds.CDS_segments[0].end
-                group_segs = [cds.CDS_segments[0]]
                 for seg in cds.CDS_segments[1:]:
                     if seg.start <= cur_end + 1:
-                        # Overlapping segments (seg.start <= cur_end) always collapse
-                        # Directly adjacent segments (seg.start == cur_end + 1) only collapse if phase-compatible
-                        prev_seg = group_segs[-1]
+                        # Adjacent segments and 1-2 bp overlaps only collapse when merging keeps the reading frame:
+                        # the leftover bases of the upstream segment, minus the overlap, must complete a codon
+                        # with the downstream segment's phase. Longer overlaps always collapse
+                        prev_seg = groups[-1][-1]
+                        overlap = cur_end - seg.start + 1
                         phase_compatible = True
-                        is_adjacent = seg.start == cur_end + 1
-                        is_short_overlap = seg.start <= cur_end and (cur_end - seg.start + 1) in (1, 2)
-                        if (is_adjacent or is_short_overlap) and prev_seg.phase is not None and seg.phase is not None:
-                            overlap = (cur_end - seg.start + 1) if is_short_overlap else 0
-                            if cds.strand != "-":
-                                prev_lo = (prev_seg.size - prev_seg.phase) % 3
-                                phase_compatible = (prev_lo - overlap + seg.phase) % 3 == 0
+                        if overlap <= 2:
+                            if prev_seg.phase is not None and seg.phase is not None:
+                                if cds.strand != "-":
+                                    prev_lo = (prev_seg.size - prev_seg.phase) % 3
+                                    phase_compatible = (prev_lo - overlap + seg.phase) % 3 == 0
+                                else:
+                                    seg_lo = (seg.size - seg.phase) % 3
+                                    phase_compatible = (seg_lo - overlap + prev_seg.phase) % 3 == 0
                             else:
-                                seg_lo = (seg.size - seg.phase) % 3
-                                phase_compatible = (seg_lo - overlap + prev_seg.phase) % 3 == 0
+                                # Without phases a 1-2 bp overlap may be a programmed frameshift, so only adjacent rows merge
+                                phase_compatible = overlap == 0
 
                         if phase_compatible:
-                            if seg.end > cur_end:
-                                cur_end = seg.end
-                            group_segs.append(seg)
+                            cur_end = max(cur_end, seg.end)
+                            groups[-1].append(seg)
                             continue
 
-                    rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
-                    merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
-                    if rep.misc_attributes:
-                        merged[-1].misc_attributes = rep.misc_attributes[:]
-                    cur_start = seg.start
+                    groups.append([seg])
                     cur_end = seg.end
-                    group_segs = [seg]
 
-                rep = group_segs[0] if cds.strand != "-" else group_segs[-1]
-                merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, cur_start, cur_end, rep.score, parents, phase=rep.phase))
-                if rep.misc_attributes:
-                    merged[-1].misc_attributes = rep.misc_attributes[:]
-
-                if len(merged) < len(cds.CDS_segments):
+                if len(groups) < len(cds.CDS_segments):
+                    merged = []
+                    for group in groups:
+                        # A merged row starts where its 5'-most row starts, so it takes that row's phase
+                        rep = group[0] if cds.strand != "-" else max(group, key=lambda s: s.end)
+                        merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, group[0].start, max(s.end for s in group), rep.score, parents, phase=rep.phase))
+                        if rep.misc_attributes:
+                            merged[-1].misc_attributes = rep.misc_attributes[:]
                     cds.CDS_segments = merged
                     self.collapsed_CDS_segments = True
-                    cds.update_phase(override=True, full_override=False)
-                    cds.update_frame()
                     cds.update()
-                    
+
         if self.collapsed_CDS_segments:
             self.update()
 
