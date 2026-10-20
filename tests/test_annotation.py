@@ -2397,7 +2397,8 @@ class TestAnnotationClashOfIDs:
         assert "g1.t1" in annot.chrs["chr1"]["g1"].transcripts
         assert "g1.t1_1" in annot.chrs["chr2"]["g1_1"].transcripts
 
-        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].id == "exon_1"
+        # exon_1 is kept by g1 on chr1 (see TestAnnotationSubfeatureIdClashes)
+        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].id == "exon_1_2"
         assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].parents == ["g1.t1_1"]
         assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].start == 500
         assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].end == 2000
@@ -2430,6 +2431,83 @@ class TestAnnotationClashOfIDs:
 
         assert len(annot.all_gene_ids) == 4
 
+
+class TestAnnotationSubfeatureIdClashes:
+    @staticmethod
+    def _annotation(tmp_path, rows, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("##gff-version 3\n" + "".join("\t".join(row) + "\n" for row in rows))
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _row(feature, start, end, attributes):
+        return ("chr1", "test", feature, str(start), str(end), ".", "+", "0" if feature == "CDS" else ".", attributes)
+
+    @staticmethod
+    def _exon_ids(annot):
+        return {(g.id, e.start): e.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for e in t.exons}
+
+    def test_ids_repeated_across_genes_are_kept_by_the_first_gene(self, clash_of_ids_gff3_file):
+        annot = Annotation(clash_of_ids_gff3_file, quiet=True)
+        assert self._exon_ids(annot) == {
+            ("g1", 500): "exon_1", ("g1", 5000): "exon_2",
+            ("g1_1", 500): "exon_1_2", ("g1_1", 5000): "exon_2_2",
+            ("g2", 500): "exon_1_3", ("g2", 5000): "exon_2_3",
+            ("g3", 500): "exon_1_4", ("g3", 5000): "exon_2_4",
+        }
+        assert annot.warnings["repeated_subfeature_ids"] == {"exon_1", "exon_2"}
+
+    def test_repeated_ids_are_recorded_when_renamed(self, clash_of_ids_gff3_file):
+        annot = Annotation(clash_of_ids_gff3_file, quiet=True, rename_features=("exon",))
+        assert annot.warnings["repeated_subfeature_ids"] == {"exon_1", "exon_2"}
+        assert all(e_id.startswith(f"{g_id}_e") for (g_id, _), e_id in self._exon_ids(annot).items())
+
+    def test_ids_shared_within_a_gene_are_not_repeated(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            self._row("gene", 1, 30, "ID=g1"),
+            self._row("mRNA", 1, 18, "ID=t1;Parent=g1"),
+            self._row("exon", 1, 18, "ID=e1;Parent=t1,t2"),
+            self._row("mRNA", 1, 30, "ID=t2;Parent=g1"),
+            self._row("exon", 25, 30, "ID=e2;Parent=t2"),
+        ])
+        assert self._exon_ids(annot) == {("g1", 1): "e1", ("g1", 25): "e2"}
+        assert not annot.warnings["repeated_subfeature_ids"]
+
+    def test_repeated_CDS_ids_give_unique_protein_ids(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            self._row("gene", 1, 18, "ID=g1"),
+            self._row("mRNA", 1, 18, "ID=t1;Parent=g1"),
+            self._row("exon", 1, 18, "ID=e1;Parent=t1"),
+            self._row("CDS", 4, 15, "ID=cds1;Parent=t1"),
+            self._row("gene", 19, 36, "ID=g2"),
+            self._row("mRNA", 19, 36, "ID=t2;Parent=g2"),
+            self._row("exon", 19, 36, "ID=e2;Parent=t2"),
+            self._row("CDS", 22, 33, "ID=cds1;Parent=t2"),
+        ], genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" * 2}))
+        t2 = annot.chrs["chr1"]["g2"].transcripts["t2"]
+        assert list(t2.CDSs) == ["cds1_2"]
+        assert [cs.id for cs in t2.CDSs["cds1_2"].CDS_segments] == ["cds1_2"]
+        assert list(annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs) == ["cds1"]
+        annot.generate_proteins()
+        assert sorted(c.protein.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for c in t.CDSs.values()) == ["cds1.prot", "cds1_2.prot"]
+        # The UTRs derived for both CDSs (cds1_u1, cds1_u2) are made unique too, but are not input ids
+        utr_ids = [u.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for c in t.CDSs.values() for u in c.UTRs]
+        assert len(utr_ids) == len(set(utr_ids)) == 4
+        assert annot.warnings["repeated_subfeature_ids"] == {"cds1"}
+
+    def test_gene_and_transcript_ids_are_kept_and_new_ids_are_unused(self, tmp_path):
+        # Exon "g2" repeats the id of gene g2, and "g2_2" is already taken
+        annot = self._annotation(tmp_path, [
+            self._row("gene", 1, 18, "ID=g1"),
+            self._row("mRNA", 1, 18, "ID=t1;Parent=g1"),
+            self._row("exon", 1, 5, "ID=g2;Parent=t1"),
+            self._row("exon", 11, 18, "ID=g2_2;Parent=t1"),
+            self._row("gene", 19, 36, "ID=g2"),
+            self._row("mRNA", 19, 36, "ID=t2;Parent=g2"),
+            self._row("exon", 19, 36, "ID=t1;Parent=t2"),
+        ])
+        assert self._exon_ids(annot) == {("g1", 1): "g2_3", ("g1", 11): "g2_2", ("g2", 19): "t1_2"}
+        assert annot.warnings["repeated_subfeature_ids"] == {"g2", "t1"}
 
 
 # ============================================================
@@ -3261,7 +3339,7 @@ class TestAnnotationReworkCDSsRenaming:
         t = annot.chrs["chr1"]["g1"].transcripts["t1"]
         return [e.id for e in t.exons], list(t.CDSs), [u.id for c in t.CDSs.values() for u in c.UTRs]
 
-    def test_default_renames_CDSs_and_UTRs_only(self, tmp_path):
+    def test_new_CDS_and_UTRs_are_named(self, tmp_path):
         annot = self._annotation(tmp_path)
         annot.rework_CDSs(quiet=True)
         assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
@@ -3292,22 +3370,57 @@ class TestAnnotationReworkCDSsRenaming:
         assert self._ids(annot)[1] == ["t1_CDS001"]
         assert list(annot.chrs["chr1"]["g2"].transcripts["t2"].CDSs) == ["my_cds"]
 
-    def test_only_reworked_features_can_be_renamed(self, tmp_path):
-        with pytest.raises(ValueError, match="only renames the CDSs and UTRs it reworks"):
-            self._annotation(tmp_path).rework_CDSs(quiet=True, rename_features=("CDS", "exon"))
+    def test_unchanged_CDS_and_UTRs_keep_their_ids_and_attributes(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + (
+            "chr1\ttest\tfive_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=my_cds;Parent=t1;product=foo\n"
+            "chr1\ttest\tthree_prime_UTR\t16\t18\t.\t+\t.\tID=my_utr3;Parent=t1\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG"}), quiet=True)
+        annot.rework_CDSs(quiet=True)
+        assert self._ids(annot) == (["my_exon"], ["my_cds"], ["my_utr5", "my_utr3"])
+        cds = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["my_cds"]
+        assert cds.protein.id == "my_cds.prot"
+        assert all("product=foo" in cs.misc_attributes for cs in cds.CDS_segments)
 
-    def test_no_renaming(self, tmp_path):
-        annot = self._annotation(tmp_path)
-        annot.rework_CDSs(quiet=True, rename_features=())
-        assert self._ids(annot) == (["my_exon"], ["t1_CDS1"], ["t1_CDS1_u1", "t1_CDS1_u2"])
+    def test_changed_CDS_is_named_and_unchanged_UTRs_keep_their_ids(self, tmp_path):
+        # The read CDS (4..9) lacks the stop codon, the reworked one is 4..15: the 5' UTR is unchanged
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + (
+            "chr1\ttest\tfive_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1\n"
+            "chr1\ttest\tCDS\t4\t9\t.\t+\t0\tID=my_cds;Parent=t1\n"
+            "chr1\ttest\tthree_prime_UTR\t10\t18\t.\t+\t.\tID=my_utr3;Parent=t1\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG"}), quiet=True, consider_read_utrs=True)
+        annot.rework_CDSs(quiet=True)
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["my_utr5", "g1_u001"])
 
-    def test_rename_controls_are_passed_on(self, tmp_path):
-        annot = self._annotation(tmp_path)
-        annot.rework_CDSs(quiet=True, rename_features=("CDS",), keep_subfeature_numbers=True)
-        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["t1_CDS1_u1", "t1_CDS1_u2"])
+    def test_UTRs_of_transcripts_not_reworked_are_kept(self, tmp_path):
+        # Without override only non-coding t2 is reworked; its 5' UTR is shared with t1 and takes its id
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF.replace("\tgene\t1\t18\t", "\tgene\t1\t30\t") + (
+            "chr1\ttest\tfive_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=my_cds;Parent=t1\n"
+            "chr1\ttest\tthree_prime_UTR\t16\t18\t.\t+\t.\tID=my_utr3;Parent=t1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e2;Parent=t2\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" + "C" * 12}), quiet=True, consider_read_utrs=True)
+        annot.rework_CDSs(override=False, quiet=True)
+        ids = {t.id: (list(t.CDSs), [u.id for c in t.CDSs.values() for u in c.UTRs]) for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert ids == {"t1": (["my_cds"], ["my_utr5", "my_utr3"]), "t2": (["t2_CDS001"], ["my_utr5", "g1_u001"])}
+
+    def test_new_UTRs_are_numbered_in_transcript_order_on_minus_strand(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF.replace("\t+\t", "\t-\t"))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCTTAGGGTTTCATGGG"}), quiet=True)
+        annot.rework_CDSs(quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert sorted((u.prime, u.id) for c in t.CDSs.values() for u in c.UTRs) == [("3'", "g1_u002"), ("5'", "g1_u001")]
 
     def test_constructor_renames_only_reworked_features(self, tmp_path):
-        # e.g. tidy --keep-original-subfeature-ids passes rename_features=(): only reworked CDSs and UTRs are renamed
+        # e.g. tidy --keep-original-subfeature-ids passes rename_features=(): only new CDSs and UTRs get ids
         annot = self._annotation(tmp_path, rework_all_CDSs=True, rename_features=())
         assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
 
@@ -3695,6 +3808,49 @@ class TestProteinFlags:
         assert p.partial_3prime is False
 
 
+class TestOrganelleGeneIds:
+    @staticmethod
+    def _annotation(tmp_path, chroms, **kwargs):
+        # One gene per entry, genes on the same chromosome placed one after the other
+        lines = ["##gff-version 3"]
+        for i, chrom in enumerate(chroms):
+            start = 1 + 20 * i
+            lines.append(f"{chrom}\ttest\tgene\t{start}\t{start + 8}\t.\t+\t.\tID=g{i}")
+            lines.append(f"{chrom}\ttest\tmRNA\t{start}\t{start + 8}\t.\t+\t.\tID=t{i};Parent=g{i}")
+            lines.append(f"{chrom}\ttest\texon\t{start}\t{start + 8}\t.\t+\t.\tID=e{i};Parent=t{i}")
+        gff_file = tmp_path / "organelles.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _renamed(annot):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="TST", quiet=True)
+        return {g.original_id: g.id for genes in annot.chrs.values() for g in genes.values()}
+
+    def test_compartments_are_detected_from_gff_chromosome_names(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chr1", "chrM", "ChrC"], taxonomy="vertebrate")
+        assert [annot.chromosome_compartment(c) for c in ("chr1", "chrM", "ChrC")] == ["nuclear", "mitochondria", "chloroplast"]
+        assert annot.translation_table("chrM") == annot.mito_table == 2
+
+    def test_organelle_genes_are_labelled_chrMT_and_chrCP(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chr1", "chr1", "chrM", "ChrC"])
+        ids = self._renamed(annot)
+        assert ids == {"g0": "TSTchr1g00100", "g1": "TSTchr1g00200", "g2": "TSTchrMTg00100", "g3": "TSTchrCPg00100"}
+        assert list(annot.chrs["chrM"]["TSTchrMTg00100"].transcripts)[0].startswith("TSTchrMTg00100")
+
+    def test_chromosomes_of_one_organelle_continue_its_numbering(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chrM", "contig_9", "chr1"], mitochondria_chroms=["contig_9"])
+        ids = self._renamed(annot)
+        assert ids["g2"] == "TSTchr1g00100"
+        assert sorted([ids["g0"], ids["g1"]]) == ["TSTchrMTg00100", "TSTchrMTg00200"]
+
+    def test_without_auto_detection_only_listed_chromosomes_are_organelles(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chrM", "contig_9"], auto_organelle_detection=False, chloroplast_chroms=["contig_9"])
+        assert self._renamed(annot) == {"g0": "TSTchrMg00100", "g1": "TSTchrCPg00100"}
+
+
 class TestOrganelleTranslation:
     def test_autodetect_mitochondria(self, tmp_path):
         # TGA is Stop in Table 1 (Standard / Plant mitochondrial), but Trp (W) in Table 2 (Vertebrate Mitochondrial)
@@ -3726,7 +3882,7 @@ class TestOrganelleTranslation:
         assert cds_vert.protein is not None
         assert cds_vert.protein.seq == "MW*"
 
-    def test_disable_auto_organelle_codes(self, tmp_path):
+    def test_disable_auto_organelle_detection(self, tmp_path):
         gff_content = (
             "##gff-version 3\n"
             "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
@@ -3740,8 +3896,8 @@ class TestOrganelleTranslation:
         genome = MockGenome({"chrM": "ATGTGATAA"})
         genome.scaffolds["chrM"].mitochondria = True
 
-        # When auto_organelle_codes is False, Table 1 is used -> TGA is Stop (*), TAA is Stop (*) -> M**
-        annot = Annotation(str(gff_file), genome=genome, auto_organelle_codes=False, quiet=True)
+        # When auto_organelle_detection is False, Table 1 is used -> TGA is Stop (*), TAA is Stop (*) -> M**
+        annot = Annotation(str(gff_file), genome=genome, auto_organelle_detection=False, quiet=True)
         annot.generate_proteins(mode="end", quiet=True)
 
         cds = annot.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]

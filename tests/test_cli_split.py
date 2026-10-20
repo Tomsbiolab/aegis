@@ -142,3 +142,17 @@ def test_split_with_regex_smoke(populus_test_files, tmp_path):
     assert (out_dir / "populus_splitA.fasta").exists()
     assert (out_dir / "populus_splitD.fasta").exists()
 
+
+
+def test_split_by_chromosome_sends_listed_organelles_to_other_smoke(tmp_path):
+    gff_file = tmp_path / "o.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+        "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g2\n"
+        "chr9\ttest\tgene\t1\t9\t.\t+\t.\tID=g3\n"
+    )
+    out_dir = tmp_path / "split_out"
+    result = runner.invoke(app, [str(gff_file), "--by-chromosome", "--mitochondria-chroms", "chr9", "-d", str(out_dir), "-q"])
+    assert result.exit_code == 0, f"Error: {result.stdout}"
+    assert sorted(f.name for f in out_dir.iterdir()) == ["o_split_other.gff3", "o_splitchr1.gff3"]

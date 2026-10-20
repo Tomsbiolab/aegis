@@ -1,5 +1,7 @@
 import pytest
-from aegis.cli.utils import split_callback
+import typer
+from aegis.annotation import Annotation
+from aegis.cli.utils import split_callback, apply_organelle_chroms
 
 
 def test_split_callback_string_comma():
@@ -22,3 +24,25 @@ def test_split_callback_list_inputs():
     assert split_callback(["gene", "CDS"]) == ["gene", "CDS"]
     assert split_callback(["gene,CDS", "protein"]) == ["gene", "CDS", "protein"]
     assert split_callback([" gene , CDS ", " protein "]) == ["gene", "CDS", "protein"]
+
+
+def _annotation(tmp_path, name, chroms):
+    gff_file = tmp_path / f"{name}.gff3"
+    gff_file.write_text("##gff-version 3\n" + "".join(f"{c}\ttest\tgene\t1\t9\t.\t+\t.\tID={name}_{c}\n" for c in chroms))
+    return Annotation(str(gff_file), quiet=True)
+
+
+def test_apply_organelle_chroms_gives_each_annotation_its_listed_chromosomes(tmp_path):
+    a1 = _annotation(tmp_path, "a1", ["chr1", "mito_a"])
+    a2 = _annotation(tmp_path, "a2", ["chr1", "plastid_b"])
+    apply_organelle_chroms([a1, a2], ["mito_a"], ["plastid_b"])
+    assert (a1.mitochondria_chroms, a1.chloroplast_chroms) == (("mito_a",), ())
+    assert (a2.mitochondria_chroms, a2.chloroplast_chroms) == ((), ("plastid_b",))
+    assert a1.chromosome_compartment("mito_a") == "mitochondria"
+    assert a2.chromosome_compartment("plastid_b") == "chloroplast"
+
+
+def test_apply_organelle_chroms_rejects_unknown_chromosomes(tmp_path):
+    a1 = _annotation(tmp_path, "a1", ["chr1"])
+    with pytest.raises(typer.BadParameter, match="typo_chr"):
+        apply_organelle_chroms([a1], ["typo_chr"], [])

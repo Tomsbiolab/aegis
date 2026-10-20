@@ -27,6 +27,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 from .feature import Feature
+from .genome import classify_compartment
 from .gene import Gene
 from .transcript import Transcript
 from .subfeatures import Exon, UTR, CDS
@@ -55,7 +56,8 @@ class Annotation():
         "phase_mismatch_across_intron",
         "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron",
         "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
-        "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived"
+        "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived",
+        "repeated_subfeature_ids"
     )
 
     # Warnings that describe the state of the annotation object and can therefore be rechecked
@@ -99,7 +101,7 @@ class Annotation():
     tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
     feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_codes:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         
         start_time = time.time()
 
@@ -142,7 +144,7 @@ class Annotation():
         self.adjust_internal_shifts = adjust_internal_shifts
         self.initiator_methionine = initiator_methionine
         self.alt_start_methionine = alt_start_methionine
-        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_codes=auto_organelle_codes, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
 
         self.genome = genome
         
@@ -353,7 +355,7 @@ class Annotation():
         self._validate_organelle_chroms()
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            # Reworked CDSs and UTRs are renamed by rework_CDSs; rename_features then applies to all features
+            # rework_CDSs only gives new ids to the CDSs and UTRs it changes; rename_features then applies to all features
             self.rework_CDSs(
                 override=rework_all_CDSs,
                 coding_ratio_threshold=coding_ratio_threshold,
@@ -1399,6 +1401,10 @@ class Annotation():
         # Coordinates must be final and genes sorted before renaming, as ids are numbered by position
         self.sort_genes(processes=sort_processes)
 
+        self.homogenise_shared_exons_utrs()
+        # Resolved before renaming, so repeated input ids are recorded whether or not they are renamed
+        self.resolve_subfeature_id_clashes(record_to=warnings_sink)
+
         if rename_features:
             self.rename_ids(features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet)
 
@@ -1408,7 +1414,6 @@ class Annotation():
         if update_gene_and_transcript_list:
             self.update_gene_and_transcript_list(quiet=quiet)
 
-        self.homogenise_shared_exons_utrs()
         if define_synteny:
             self.define_synteny(sort_processes=sort_processes)
         if self.original_annotation is not None:
@@ -1853,7 +1858,7 @@ class Annotation():
         table: int | str | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
-        auto_organelle_codes: bool = True,
+        auto_organelle_detection: bool = True,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
     ):
@@ -1864,7 +1869,7 @@ class Annotation():
             mito_table=mito_table,
             plastid_table=plastid_table,
         )
-        self.auto_organelle_codes = auto_organelle_codes
+        self.auto_organelle_detection = auto_organelle_detection
         parsed = []
         for chroms in (mitochondria_chroms, chloroplast_chroms):
             if not chroms:
@@ -1881,7 +1886,7 @@ class Annotation():
         table: int | str | None = None,
         mito_table: int | str | None = None,
         plastid_table: int | str | None = None,
-        auto_organelle_codes: bool = True,
+        auto_organelle_detection: bool = True,
         mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
         chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
     ):
@@ -1891,7 +1896,7 @@ class Annotation():
         if the configuration changes, since they were translated with the old codes.
         """
         previous = self.genetic_codes
-        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_codes=auto_organelle_codes, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
         self._validate_organelle_chroms()
         if self.genetic_codes != previous:
             self.clear_proteins()
@@ -1904,7 +1909,7 @@ class Annotation():
             "table": self.table,
             "mito_table": self.mito_table,
             "plastid_table": self.plastid_table,
-            "auto_organelle_codes": self.auto_organelle_codes,
+            "auto_organelle_detection": self.auto_organelle_detection,
             "mitochondria_chroms": self.mitochondria_chroms,
             "chloroplast_chroms": self.chloroplast_chroms,
         }
@@ -1920,21 +1925,12 @@ class Annotation():
 
     def chromosome_compartment(self, chrom: str) -> Literal["nuclear", "mitochondria", "chloroplast"]:
         """
-        Genetic compartment a chromosome is translated as: user-listed organelle
-        chromosomes first, then (with auto_organelle_codes) the organelle classification
-        of the genome scaffold, otherwise nuclear.
+        Compartment of a chromosome, deciding its genetic code, its gene ids (see rename_ids) and how it is
+        reported: user-listed organelle chromosomes first, then (with auto_organelle_detection) the
+        classification of its genome scaffold or, without one, of its name (see classify_compartment).
         """
-        if chrom in self.mitochondria_chroms:
-            return "mitochondria"
-        if chrom in self.chloroplast_chroms:
-            return "chloroplast"
-        if self.auto_organelle_codes and self.genome is not None:
-            scaffold = self.genome.get_scaffold(chrom)
-            if scaffold is not None and scaffold.mitochondria:
-                return "mitochondria"
-            if scaffold is not None and scaffold.chloroplast:
-                return "chloroplast"
-        return "nuclear"
+        scaffold = self.genome.get_scaffold(chrom) if self.genome is not None else None
+        return classify_compartment(chrom, scaffold=scaffold, mitochondria_chroms=self.mitochondria_chroms, chloroplast_chroms=self.chloroplast_chroms, auto_detection=self.auto_organelle_detection)
 
     def translation_table(self, chrom: str, cds: CDS | None = None) -> int | str:
         """
@@ -1973,7 +1969,7 @@ class Annotation():
         ignore_ambiguous_strands: bool = False,
         quiet: bool = True,
     ):
-        if not quiet and self.auto_organelle_codes:
+        if not quiet and self.auto_organelle_detection:
             self._print_genetic_code_info()
 
         for chrom, genes in self.chrs.items():
@@ -2285,6 +2281,66 @@ class Annotation():
 
         self.shared_exons = True
         self.shared_UTRs = True
+
+    def resolve_subfeature_id_clashes(self, record_to:dict[str, set[str]]|None=None):
+        """
+        Exon, CDS and UTR ids are only reconciled within a gene (see homogenise_shared_exons_utrs), but
+        an id may only be used by one feature of the annotation. An id is kept by the first gene (in
+        chromosome order) and feature type using it; later uses, and uses of a gene or transcript id, get
+        <id>_<n>, shared by the features of that gene and type with that id. Repeated ids read from the
+        input are recorded as repeated_subfeature_ids.
+        """
+        all_ids = set()
+        for genes in self.chrs.values():
+            for g in genes.values():
+                all_ids.add(g.id)
+                for t in g.transcripts.values():
+                    all_ids.add(t.id)
+                    all_ids.update(e.id for e in t.exons)
+                    for c in t.CDSs.values():
+                        all_ids.add(c.id)
+                        all_ids.update(cs.id for cs in c.CDS_segments)
+                        all_ids.update(u.id for u in c.UTRs)
+        taken = {g.id for genes in self.chrs.values() for g in genes.values()}
+        taken.update(t.id for genes in self.chrs.values() for g in genes.values() for t in g.transcripts.values())
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                groups: dict[tuple[str, str], list[Feature]] = {}
+                for t in g.transcripts.values():
+                    for e in t.exons:
+                        groups.setdefault(("exon", e.id), []).append(e)
+                    for c in t.CDSs.values():
+                        groups.setdefault(("CDS", c.id), []).append(c)
+                        for cs in c.CDS_segments:
+                            groups.setdefault(("CDS", cs.id), []).append(cs)
+                        for u in c.UTRs:
+                            groups.setdefault(("UTR", u.id), []).append(u)
+
+                renamed_CDSs = False
+                for (kind, f_id), features in groups.items():
+                    if f_id not in taken:
+                        taken.add(f_id)
+                        continue
+                    if record_to is not None and any(f.original_id == f_id for f in features):
+                        record_to["repeated_subfeature_ids"].add(f_id)
+                    n = 2
+                    while f"{f_id}_{n}" in all_ids:
+                        n += 1
+                    new_id = f"{f_id}_{n}"
+                    all_ids.add(new_id)
+                    taken.add(new_id)
+                    for f in features:
+                        f.id = new_id
+                        f.update_numbering()
+                        if isinstance(f, CDS):
+                            renamed_CDSs = True
+                            if f.protein is not None:
+                                f.protein.id = f"{new_id}.prot"
+
+                if renamed_CDSs:
+                    for t in g.transcripts.values():
+                        t.CDSs = {c.id: c for c in t.CDSs.values()}
 
     def single_parent_for_exons_utrs(self):
         for genes in self.chrs.values():
@@ -2702,44 +2758,35 @@ class Annotation():
         mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
         allow_internal_stops: bool = True,
         allow_partial: bool = True,
-        rename_features: tuple[str, ...] = ("CDS", "UTR"),
-        keep_subfeature_numbers: bool = True,
-        keep_existing_ids_if_derived_from_base_id: bool = False,
     ):
         """
         Replaces the CDSs of transcripts (all of them with override, otherwise only those of
         non-coding transcripts) by the best ORF across their exons.
 
-        Reworked CDSs and their regenerated UTRs get provisional IDs and are renamed afterwards;
-        all other IDs are kept:
-        rename_features: "CDS" and/or "UTR"; pass () to keep the provisional IDs. CDSs of reworked
-            transcripts are named after their transcript (<transcript>_CDS001). UTRs are named per
-            gene (<gene>_u001) so that shared UTRs share their id, which renames all UTRs of genes
-            with a reworked transcript.
-        keep_subfeature_numbers: reuse the numbers of current IDs where unambiguous (see rename_ids).
-        keep_existing_ids_if_derived_from_base_id: keep IDs that already contain their gene ID.
+        Only what the rework changes gets a new id: a reworked CDS with the segments and phases of
+        the CDS it replaces is that CDS (keeping its id and attributes), and so are UTRs with the
+        coordinates of replaced ones (see Transcript.keep_unchanged_subfeatures). New CDSs are named
+        <transcript>_CDS001 and new UTRs <gene>_u<n> (see Gene.name_new_UTRs); other features keep
+        their ids.
         """
-        for f in rename_features:
-            if f not in ("CDS", "UTR"):
-                raise ValueError(f"rework_CDSs only renames the CDSs and UTRs it reworks, not '{f}'.")
-
         start_time = time.time()
 
-        if not quiet and self.auto_organelle_codes:
+        if not quiet and self.auto_organelle_detection:
             self._print_genetic_code_info()
 
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
 
-        reworked: list[tuple[Gene, Transcript]] = []
         for chrom, genes in self.chrs.items():
             chrom_table = self.translation_table(chrom)
 
             for g in genes.values():
                 progress_bar.update(1)
+                new_UTRs: list[UTR] = []
                 for t in g.transcripts.values():
                     if t.coding and not override:
                         continue
-                    reworked.append((g, t))
+                    old_CDSs = list(t.CDSs.values())
+                    old_UTRs = [u for c in old_CDSs for u in c.UTRs]
 
                     t.generate_best_protein(
                         mode=mode,
@@ -2808,23 +2855,14 @@ class Annotation():
                         )
                         t.update(quiet=quiet)
 
+                    new_UTRs += t.keep_unchanged_subfeatures(old_CDSs, old_UTRs, quiet=quiet)
+
+                # UTRs are named per gene, so new UTRs shared between transcripts share their id as exons do
+                g.name_new_UTRs(new_UTRs)
                 g.update(quiet=quiet)
 
         progress_bar.close()
         self.update(quiet=quiet)
-
-        if rename_features:
-            reworked_genes = {}
-            for g, t in reworked:
-                reworked_genes[g.id] = g
-                if "CDS" in rename_features:
-                    for c in t.CDSs.values():
-                        c.rename(base_id=t.id, base_gene_id=g.base_id, count=1, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
-            # UTRs are named per gene, so UTRs shared between transcripts share their id as exons do
-            if "UTR" in rename_features:
-                for g in reworked_genes.values():
-                    g.rename_utrs(keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
-            self.update_keys(gene_keys=False, transcript_keys=False)
         now = time.time()
         lapse = now - start_time
         if not quiet:
@@ -2920,6 +2958,9 @@ class Annotation():
         """
         Renames the chosen feature levels from their gene ids.
 
+        prefix: rename all genes as {prefix}{chromosome}g{number}{sep}{suffix}, numbered by position along
+            each chromosome. Genes on organelles (see chromosome_compartment) use chrMT or chrCP as
+            chromosome, numbered across all chromosomes of that organelle.
         keep_subfeature_numbers: reuse the trailing number of current transcript, CDS, exon and
             UTR ids. Exons, UTRs and CDSs only take a number written after their type
             ('AT4G00005:exon:1', 'g1_u002', 't1_CDS1'), so e.g. the accession version in
@@ -2979,14 +3020,20 @@ class Annotation():
 
         correspondences_d = {}
 
-        for genes in self.chrs.values():
-            g_count = 0
+        # Organelle genes are labelled chrMT/chrCP instead of their chromosome name; chromosomes sharing
+        # a label (e.g. several mitochondrial contigs) continue its gene numbering
+        organelle_labels = {"mitochondria": "chrMT", "chloroplast": "chrCP"}
+        g_counts: dict[str, int] = {}
+
+        for chrom, genes in self.chrs.items():
+            chrom_label = organelle_labels.get(self.chromosome_compartment(chrom), chrom)
             for g in genes.values():
                 progress_bar.update(1)
-                g_count += spacer
+                g_counts[chrom_label] = g_counts.get(chrom_label, 0) + spacer
+                g_count = g_counts[chrom_label]
 
                 if "gene" in features or prefix:
-                    g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix)
+                    g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix, chrom_label=chrom_label)
                     if g.renamed:
                         changed_features.add("gene")
 

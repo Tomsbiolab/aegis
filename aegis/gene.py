@@ -94,7 +94,11 @@ class Gene(Feature):
         if generated_exons:
             self.rename_exons()
 
-    def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
+    def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False, chrom_label:str=""):
+        """
+        With a prefix, the id becomes {prefix}{chrom_label}g{count}{sep}{suffix}; chrom_label defaults
+        to the chromosome name (Annotation.rename_ids passes chrMT/chrCP for organelles).
+        """
 
         if remove_point_suffix:
             if "." in self.id:
@@ -113,7 +117,7 @@ class Gene(Feature):
             if suffix:
                 suffix = f"{sep}{suffix}"
 
-            self.id = f"{prefix}{self.ch}g{count:0{digits}d}{suffix}"
+            self.id = f"{prefix}{chrom_label or self.ch}g{count:0{digits}d}{suffix}"
     
             if self.original_id != self.id:
                 self.renamed = True
@@ -359,6 +363,33 @@ class Gene(Feature):
                             e.update_numbering()
 
 
+
+    def name_new_UTRs(self, new_UTRs:list[UTR], sep:str="_", digits:int=3):
+        """
+        Names UTRs added to the gene (e.g. by reworking a CDS) without renaming the others: a new UTR with
+        the coordinates of an existing one takes its id, and the rest take the free <gene>_u<n> numbers in
+        transcript order, new UTRs shared between transcripts sharing their id.
+        """
+        new = {id(u) for u in new_UTRs}
+        names: dict[tuple[int, int, str, str], str] = {}
+        used = set()
+        for t in self.transcripts.values():
+            for c in t.CDSs.values():
+                for u in c.UTRs:
+                    if id(u) not in new:
+                        names.setdefault((u.start, u.end, u.ch, u.strand), u.id)
+                        used.add(u.id)
+        n = 0
+        for u in sorted(new_UTRs, key=lambda u: -u.end if u.strand == "-" else u.start):
+            key = (u.start, u.end, u.ch, u.strand)
+            if key not in names:
+                n += 1
+                while f"{self.base_id}{sep}u{n:0{digits}d}" in used:
+                    n += 1
+                names[key] = f"{self.base_id}{sep}u{n:0{digits}d}"
+                used.add(names[key])
+            u.id = names[key]
+            u.update_numbering()
 
     def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):
         """

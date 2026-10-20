@@ -10,7 +10,7 @@ runner = CliRunner()
     "feature_type, extra_args",
     [
         ("gene", []),
-        ("protein", ["-gc", "1", "--auto-organelle-codes"]),
+        ("protein", ["-gc", "1", "--auto-organelle-detection"]),
         ("CDS", ["--feature-id", "CDS"]),
     ],
 )

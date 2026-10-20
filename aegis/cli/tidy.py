@@ -11,7 +11,7 @@ from .utils import (
     detect_file_type,
     TaxonomyOption,
     GeneticCodeOption,
-    AutoOrganelleCodesOption,
+    AutoOrganelleDetectionOption,
     MitoCodeOption,
     PlastidCodeOption,
     MitochondriaChromsOption,
@@ -90,7 +90,7 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
     keep_original_subfeature_ids: Annotated[bool, typer.Option(
-        "--keep-original-subfeature-ids", help="Keep original subfeature IDs for CDS, UTR and exon features instead of synchronizing with gene IDs.",
+        "--keep-original-subfeature-ids", help="Keep original subfeature IDs for CDS, UTR and exon features instead of synchronizing with gene IDs. CDSs and UTRs changed by --rework-all-cds or --infer-missing-cds get new IDs (<transcript>_CDS001, <gene>_u001).",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     consider_read_utrs: Annotated[bool, typer.Option(
@@ -192,7 +192,7 @@ def main(
     # 6. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
     mitochondria_chroms: MitochondriaChromsOption = [],
@@ -338,7 +338,7 @@ def main(
         adjust_internal_shifts=adjust_internal_shifts,
         taxonomy=taxonomy,
         table=genetic_code,
-        auto_organelle_codes=auto_organelle_codes,
+        auto_organelle_detection=auto_organelle_detection,
         mito_table=mito_code,
         plastid_table=plastid_code,
         mitochondria_chroms=mitochondria_chroms,

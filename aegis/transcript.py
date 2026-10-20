@@ -448,6 +448,32 @@ class Transcript(Feature):
                     e.coding = False
                 self.update(quiet=quiet)
 
+    def keep_unchanged_subfeatures(self, old_CDSs:list[CDS], old_UTRs:list[UTR], quiet:bool=False) -> list[UTR]:
+        """
+        After generate_best_protein, keeps what the rework did not change: a replaced CDS with the strand,
+        segments and phases of the new one is kept instead of it (with its id and attributes, taking the new
+        protein), and
+        UTRs with the coordinates of replaced ones are kept (see generate_UTRs). Otherwise the CDS is named
+        <transcript>_CDS001. Returns the new UTRs, which still have provisional ids (see Gene.name_new_UTRs).
+        """
+        if not self.CDSs:
+            return []
+        c = next(iter(self.CDSs.values()))
+        model = (c.strand, [(cs.start, cs.end, cs.phase) for cs in c.CDS_segments])
+        unchanged = next((old for old in old_CDSs if (old.strand, [(cs.start, cs.end, cs.phase) for cs in old.CDS_segments]) == model), None)
+        if unchanged is not None:
+            unchanged.protein = c.protein
+            if unchanged.protein is not None:
+                unchanged.protein.id = f"{unchanged.id}.prot"
+            c = unchanged
+        else:
+            c.rename(base_id=self.id, base_gene_id="", count=1)
+        self.CDSs = {c.id: c}
+        c.UTRs = [u for u in old_UTRs if u.strand == c.strand]
+        self.update(quiet=quiet)
+        kept = {id(u) for u in old_UTRs}
+        return [u for u in c.UTRs if id(u) not in kept]
+
     def almost_equal(self, other:Transcript):
         almost_equal = True
         if len(self.exons) != len(other.exons):

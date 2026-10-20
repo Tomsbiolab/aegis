@@ -4,6 +4,7 @@ Tests for aegis.gene — the Gene class.
 
 import pytest
 from aegis.feature import Feature
+from aegis.subfeatures import UTR
 
 # ============================================================
 # __init__
@@ -47,6 +48,12 @@ class TestGeneRename:
         # Format: VIT + chr1 + g + 00005
         assert g.id == "VITchr1g00005"
         assert g.renamed is True
+
+    def test_rename_with_prefix_and_chrom_label(self, make_gene):
+        """The chromosome label replaces the chromosome name (e.g. chrMT for mitochondrial genes)."""
+        g = make_gene()
+        g.rename(count=5, prefix="VIT", chrom_label="chrMT")
+        assert g.id == "VITchrMTg00005"
 
     def test_rename_with_prefix_and_suffix(self, make_gene):
         """Gene.rename with prefix+suffix generates: {prefix}{ch}g{count:0{digits}d}{sep}{suffix}"""
@@ -162,6 +169,55 @@ class TestGeneLongerCDS:
         # No transcript has main=True, so it returns None
         result = g1.longer_CDS(g2)
         assert result is None
+
+
+# ============================================================
+# name_new_UTRs
+# ============================================================
+
+class TestGeneNameNewUTRs:
+    @staticmethod
+    def _gene(make_gene, make_transcript, make_CDS, utrs_per_transcript, strand="+"):
+        # utrs_per_transcript: {transcript id: [(UTR id, start, end)]}
+        g = make_gene(feature_id="g1", strand=strand)
+        for t_id, utrs in utrs_per_transcript.items():
+            t = make_transcript(t_id, strand=strand)
+            c = make_CDS(feature_id=f"{t_id}_cds", strand=strand)
+            c.UTRs = [UTR(u_id, "chr1", "aegis", "UTR", strand, start, end, ".", [t_id]) for u_id, start, end in utrs]
+            t.CDSs[c.id] = c
+            g.transcripts[t_id] = t
+        return g
+
+    @staticmethod
+    def _new(g, t_ids):
+        return [u for t_id in t_ids for c in g.transcripts[t_id].CDSs.values() for u in c.UTRs]
+
+    @staticmethod
+    def _ids(g):
+        return {t.id: [u.id for c in t.CDSs.values() for u in c.UTRs] for t in g.transcripts.values()}
+
+    def test_existing_ids_are_kept_and_shared_coordinates_reuse_them(self, make_gene, make_transcript, make_CDS):
+        g = self._gene(make_gene, make_transcript, make_CDS, {
+            "t1": [("my_utr", 100, 150)],
+            "t2": [("t2_cds_u1", 100, 150), ("t2_cds_u2", 2000, 2100)],
+            "t3": [("t3_cds_u1", 2000, 2100)],
+        })
+        g.name_new_UTRs(self._new(g, ["t2", "t3"]))
+        assert self._ids(g) == {"t1": ["my_utr"], "t2": ["my_utr", "g1_u001"], "t3": ["g1_u001"]}
+
+    def test_numbers_used_by_existing_ids_are_skipped(self, make_gene, make_transcript, make_CDS):
+        g = self._gene(make_gene, make_transcript, make_CDS, {
+            "t1": [("g1_u001", 100, 150)],
+            "t2": [("t2_cds_u1", 120, 150), ("t2_cds_u2", 2000, 2100)],
+        })
+        g.name_new_UTRs(self._new(g, ["t2"]))
+        assert self._ids(g)["t2"] == ["g1_u002", "g1_u003"]
+        assert [u.id_number for u in self._new(g, ["t2"])] == [2, 3]
+
+    def test_minus_strand_is_numbered_in_transcript_order(self, make_gene, make_transcript, make_CDS):
+        g = self._gene(make_gene, make_transcript, make_CDS, {"t1": [("t1_cds_u1", 100, 150), ("t1_cds_u2", 2000, 2100)]}, strand="-")
+        g.name_new_UTRs(self._new(g, ["t1"]))
+        assert self._ids(g)["t1"] == ["g1_u002", "g1_u001"]
 
 
 # ============================================================
