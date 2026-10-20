@@ -186,8 +186,11 @@ class AnnotationExport(AnnotationComponent):
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
+                    cs_transcript = {}
 
                     for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            cs_transcript[id(c)] = t
                         if only_main:
                             if t.main:
                                 for c in t.CDSs.values():
@@ -230,7 +233,7 @@ class AnnotationExport(AnnotationComponent):
                         elif used_id == "CDS":
                             f_out.write(f">{c.id}")
                         elif used_id == "transcript":
-                            f_out.write(f">{t.id}")
+                            f_out.write(f">{cs_transcript[id(c)].id}")
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 
@@ -511,7 +514,10 @@ class AnnotationExport(AnnotationComponent):
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
+                    cs_transcript = {}
                     for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            cs_transcript[id(c)] = t
                         candidate_cds_list = []
                         if only_main:
                             if t.main:
@@ -561,7 +567,7 @@ class AnnotationExport(AnnotationComponent):
                         if used_id == "CDS":
                             f_out.write(f">{c.id}")
                         elif used_id == "transcript":
-                            f_out.write(f">{t.id}")
+                            f_out.write(f">{cs_transcript[id(c)].id}")
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 

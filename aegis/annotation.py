@@ -2991,16 +2991,16 @@ class Annotation():
             raise ValueError(f"Rename ids was called but no feature levels were chosen. Select from: {acceptable_features}.")
         
         if prefix:
-            if keep_existing_ids_if_derived_from_base_id or features != acceptable_features or remove_point_suffix:
-                ignored_options = []
-                if keep_existing_ids_if_derived_from_base_id:
-                    ignored_options.append("keep_existing_ids_if_derived_from_base_id")
-                if set(features) != set(acceptable_features):
-                    ignored_options.append("features")
-                if remove_point_suffix:
-                    ignored_options.append("remove_point_suffix")
-                if strip_gene_tag:
-                    ignored_options.append("strip_gene_tag")
+            ignored_options = []
+            if keep_existing_ids_if_derived_from_base_id:
+                ignored_options.append("keep_existing_ids_if_derived_from_base_id")
+            if set(features) != set(acceptable_features):
+                ignored_options.append("features")
+            if remove_point_suffix:
+                ignored_options.append("remove_point_suffix")
+            if strip_gene_tag:
+                ignored_options.append("strip_gene_tag")
+            if ignored_options:
                 warnings.warn(f"Providing a prefix '{prefix}' means all features will be renamed based on the prefix, the following provided options are to be ignored: {ignored_options}.", category=UserWarning)
 
         elif suffix:

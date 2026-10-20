@@ -238,3 +238,28 @@ def test_export_cds_strip_stop_organelle(test_data_dir, tmp_path):
     assert any(len(ns) == len(s) + 3 for ns, s in zip(seqs_nostrip, seqs_strip))
 
 
+
+
+@pytest.mark.parametrize("export", ["CDSs", "proteins"])
+def test_simple_headers_use_each_cds_own_transcript_id(tmp_path, export):
+    """Without detailed headers only the chosen id is written, and transcript ids come from each CDS's own transcript."""
+    seq = "ATGAAATTTGGGCCCTAA" + "A" * 40 + "ATGCCCTAA" + "A" * 20
+    (tmp_path / "g.fasta").write_text(f">chr1\n{seq}\n")
+    (tmp_path / "g.gff3").write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t67\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t18\t.\t+\t.\tParent=t1\n"
+        "chr1\tt\tCDS\t1\t18\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1\tt\tmRNA\t59\t67\t.\t+\t.\tID=t2;Parent=g1\n"
+        "chr1\tt\texon\t59\t67\t.\t+\t.\tParent=t2\n"
+        "chr1\tt\tCDS\t59\t67\t.\t+\t0\tID=c2;Parent=t2\n"
+    )
+    genome = Genome(name="g", genome_file_path=str(tmp_path / "g.fasta"), quiet=True)
+    annot = Annotation(name="g", annot_file_path=str(tmp_path / "g.gff3"), genome=genome, quiet=True)
+
+    expected = {"CDS": [">c1", ">c2"], "transcript": [">t1", ">t2"], "gene": [">g1"]}
+    for used_id, headers in expected.items():
+        out = tmp_path / f"{used_id}.fasta"
+        getattr(annot.export, export)(only_main=used_id == "gene", verbose=False, used_id=used_id, filepath=str(out))
+        assert [line for line in out.read_text().splitlines() if line.startswith(">")] == headers

@@ -12,6 +12,7 @@ VALID_FEATURES: list[str] = ["gene", "transcript", "CDS", "exon", "UTR"]
 
 @app.command()
 def main(
+    ctx: typer.Context,
     annotation_file: Annotated[Optional[str], typer.Argument(
         help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
     )] = None,
@@ -132,6 +133,10 @@ def main(
     for feature in rename_features:
         if feature not in VALID_FEATURES:
             raise typer.BadParameter(f"Invalid feature level: {feature}. Choose from: {VALID_FEATURES}")
+
+    # A prefix renames every feature level, so the -f default should not count as a user choice to be warned about.
+    if prefix and getattr(ctx.get_parameter_source("rename_features"), "name", None) == "DEFAULT":
+        rename_features = list(VALID_FEATURES)
 
     subfolder = False
         
