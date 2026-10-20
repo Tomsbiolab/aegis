@@ -412,6 +412,33 @@ class TestCDS:
 
 
 
+class TestCDSMissingPhases:
+    # Segments of 10, 11 and 30 bp in transcript order
+    @staticmethod
+    def _phases(make_CDS, make_CDS_segment, phases, strand="+"):
+        coords = [(1, 10), (101, 111), (201, 230)] if strand == "+" else [(221, 230), (111, 121), (1, 30)]
+        segments = [make_CDS_segment(f"s{i}", start=start, end=end, strand=strand, phase=phase) for i, ((start, end), phase) in enumerate(zip(coords, phases))]
+        cds = make_CDS(segments=sorted(segments, key=lambda s: s.start), strand=strand)
+        ordered = cds.CDS_segments if strand == "+" else list(reversed(cds.CDS_segments))
+        return [cs.phase for cs in ordered], cds.phase
+
+    @pytest.mark.parametrize("strand", ["+", "-"])
+    @pytest.mark.parametrize("annotated, expected", [
+        ([None, None, None], ([0, 2, 0], 0)),  # nothing annotated: from phase 0
+        ([0, 2, 0], ([0, 2, 0], 0)),           # all annotated: kept
+        ([0, None, 1], ([0, 2, 1], 0)),        # read on from the upstream segment; the annotated 1 is kept
+        ([None, 1, 1], ([2, 1, 1], 2)),        # derived back: the first segment starts mid-codon
+        ([None, 1, None], ([2, 1, 2], 2)),     # both ways from the one annotated phase
+    ])
+    def test_only_missing_phases_are_derived(self, make_CDS, make_CDS_segment, strand, annotated, expected):
+        assert self._phases(make_CDS, make_CDS_segment, annotated, strand) == expected
+
+    def test_kept_phases_report_their_inconsistency(self, make_CDS, make_CDS_segment):
+        # The annotated phase 1 of the third segment disagrees with reading on from the second (phase 2 expected)
+        segments = [make_CDS_segment("s1", start=1, end=10, phase=0), make_CDS_segment("s2", start=101, end=111, phase=None), make_CDS_segment("s3", start=201, end=230, phase=1)]
+        assert make_CDS(segments=segments).inconsistent_junctions() == [(2, False)]
+
+
 class TestCDSInconsistentJunctions:
     # The first segment in transcript order is 10 bp with phase 0, leaving 1 base over: the next phase must be 2
     @staticmethod

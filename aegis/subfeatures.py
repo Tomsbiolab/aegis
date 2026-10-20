@@ -86,6 +86,13 @@ class CDS(Feature):
         return size
 
     def update_phase(self, override: bool = False, full_override: bool = False):
+        """
+        Gives every segment a phase. Annotated phases are kept and only missing ones are derived, reading
+        on from the segment upstream ((3 - leftover) % 3) or, before the first annotated phase, back from
+        the segment downstream, so a derived phase never disagrees with its annotated neighbour. Without
+        any annotated phase, the first segment starts at phase 0. override recalculates every phase from
+        the first segment's (0 if missing); full_override also resets that one to 0.
+        """
         if not self.CDS_segments:
             return
 
@@ -99,8 +106,16 @@ class CDS(Feature):
             initial_seg = self.CDS_segments[0]
             working_segs = self.CDS_segments
 
-        # If not overriding and all segments already have valid phases, preserve them
-        if not override and not full_override and all(cs.phase in (0, 1, 2) for cs in self.CDS_segments):
+        known = [i for i, cs in enumerate(working_segs) if cs.phase in (0, 1, 2)]
+        if not override and not full_override and known:
+            for i in range(known[0] + 1, len(working_segs)):
+                if working_segs[i].phase not in (0, 1, 2):
+                    prev = working_segs[i - 1]
+                    working_segs[i].phase = (3 - (prev.size - prev.phase) % 3) % 3
+            # Upstream of the first annotated phase, each segment leaves the bases its downstream phase completes
+            for i in range(known[0] - 1, -1, -1):
+                cs = working_segs[i]
+                cs.phase = (cs.size - (3 - working_segs[i + 1].phase) % 3) % 3
             self.phase = initial_seg.phase
             return
 
