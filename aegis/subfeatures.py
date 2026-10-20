@@ -31,6 +31,7 @@ class CDS(Feature):
         self.update_span()
         self.full_UTR_exons = 0
         self.protein = None
+        self.UTRs = []
         self.read_translation_attributes()
         self.update()
 

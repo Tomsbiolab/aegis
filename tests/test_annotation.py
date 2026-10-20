@@ -3335,6 +3335,81 @@ class TestAnnotationRenameKeepNumbers:
         assert self._ids(annot) == [("g1_t001", ["g1_e001"]), ("g1_t002", ["g1_e002"])]
 
 
+class TestAnnotationUTRIdentity:
+    # Two exons (1..10, 20..40) and a CDS 25..34: UTRs 1..10 and 20..24 (5') and 35..40 (3')
+    GFF = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t40\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t40\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t10\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t20\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+        "chr1\ttest\tCDS\t25\t34\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+
+    def _utrs(self, tmp_path, utr_lines=""):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + utr_lines)
+        annot = Annotation(str(gff_file), quiet=True)
+        return annot, annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs
+
+    def test_read_UTRs_keep_their_ids_and_attributes(self, tmp_path):
+        _, utrs = self._utrs(tmp_path, "chr1\ttest\tfive_prime_UTR\t1\t10\t.\t+\t.\tID=utr_a;Parent=t1;Note=x\n")
+        assert [(u.start, u.id) for u in utrs] == [(1, "utr_a"), (20, "c1_u1"), (35, "c1_u2")]
+        assert utrs[0].misc_attributes == ["Note=x"]
+
+    def test_new_UTRs_do_not_reuse_kept_ids(self, tmp_path):
+        _, utrs = self._utrs(tmp_path, "chr1\ttest\tthree_prime_UTR\t35\t40\t.\t+\t.\tID=c1_u1;Parent=t1\n")
+        assert [(u.start, u.id) for u in utrs] == [(1, "c1_u2"), (20, "c1_u3"), (35, "c1_u1")]
+
+    def test_ids_survive_updates(self, tmp_path):
+        annot, utrs = self._utrs(tmp_path)
+        annot.rename_ids(features=("UTR",), quiet=True)
+        renamed = [u.id for u in utrs]
+        annot.update(quiet=True)
+        assert [u.id for u in annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs] == renamed == ["g1_u001", "g1_u002", "g1_u003"]
+
+
+class TestAnnotationSharedExonsUTRs:
+    # Two transcripts share exon start and CDS, so their 5' UTR (1..3) is one shared feature; their exons
+    # (per-transcript ids) are shared when identical
+    @staticmethod
+    def _annotation(tmp_path, second_exon_end):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t18\t.\t+\t.\tID=g1.1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t18\t.\t+\t.\tID=g1.1_exon1;Parent=g1.1\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=g1.1_cds;Parent=g1.1\n"
+            f"chr1\ttest\tmRNA\t1\t{second_exon_end}\t.\t+\t.\tID=g1.2;Parent=g1\n"
+            f"chr1\ttest\texon\t1\t{second_exon_end}\t.\t+\t.\tID=g1.2_exon1;Parent=g1.2\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=g1.2_cds;Parent=g1.2\n"
+        )
+        return Annotation(str(gff_file), quiet=True)
+
+    @staticmethod
+    def _utr_ids(annot):
+        return [[(u.start, u.id, u.parents) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"]["g1"].transcripts.values()]
+
+    def test_shared_UTR_shares_its_id_without_renaming(self, tmp_path):
+        annot = self._annotation(tmp_path, 30)
+        assert self._utr_ids(annot) == [
+            [(1, "g1.1_cds_u1", ["g1.1", "g1.2"]), (16, "g1.1_cds_u2", ["g1.1"])],
+            [(1, "g1.1_cds_u1", ["g1.1", "g1.2"]), (16, "g1.2_cds_u2", ["g1.2"])],
+        ]
+
+    def test_shared_UTR_shares_its_id_when_existing_ids_are_kept(self, tmp_path):
+        annot = self._annotation(tmp_path, 30)
+        annot.rename_ids(features=("UTR",), keep_existing_ids_if_derived_from_base_id=True, quiet=True)
+        ids = [[u_id for _, u_id, _ in t] for t in self._utr_ids(annot)]
+        assert ids == [["g1.1_cds_u1", "g1.1_cds_u2"], ["g1.1_cds_u1", "g1.2_cds_u2"]]
+
+    def test_shared_exon_shares_its_id(self, tmp_path):
+        annot = self._annotation(tmp_path, 18)
+        exons = [e for t in annot.chrs["chr1"]["g1"].transcripts.values() for e in t.exons]
+        assert [(e.id, e.parents) for e in exons] == [("g1.1_exon1", ["g1.1", "g1.2"])] * 2
+
+
 class TestAnnotationRenameUTRs:
     # Minus-strand mRNA CCC|ATGAAACCCTAA|GGG: CDS 4..15, UTRs 1..3 (3') and 16..18 (5')
     GFF = (

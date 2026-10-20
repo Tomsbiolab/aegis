@@ -348,9 +348,9 @@ class Annotation():
         self._validate_organelle_chroms()
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            reworked = self.rework_CDSs(
+            # Reworked CDSs and UTRs are renamed by rework_CDSs; rename_features then applies to all features
+            self.rework_CDSs(
                 override=rework_all_CDSs,
-                rename_features=(),
                 coding_ratio_threshold=coding_ratio_threshold,
                 fallback_to_trim=fallback_to_trim,
                 min_codon_len=min_codon_len,
@@ -361,8 +361,6 @@ class Annotation():
                 orf_choice_mode=orf_choice_mode,
             )
             self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
-            # Reworked CDSs and UTRs are renamed last, as updating regenerates UTRs with provisional ids
-            self._rename_reworked(reworked)
 
         if rename_source:
             self.rename_source(rename_source)
@@ -1396,7 +1394,7 @@ class Annotation():
         if update_gene_and_transcript_list:
             self.update_gene_and_transcript_list(quiet=quiet)
 
-        self.homogenise_parents_for_shared_exons_utrs()
+        self.homogenise_shared_exons_utrs()
         if define_synteny:
             self.define_synteny(sort_processes=sort_processes)
         if self.original_annotation is not None:
@@ -2158,7 +2156,11 @@ class Annotation():
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes took {round(lapse, 1)} seconds\n")
 
-    def homogenise_parents_for_shared_exons_utrs(self):
+    def homogenise_shared_exons_utrs(self):
+        """
+        Exons (and UTRs) of a gene with the same coordinates are one shared feature: they get the
+        parents of all their transcripts and the id of the first one, whether ids were renamed or kept.
+        """
         for genes in self.chrs.values():
             for g in genes.values():
                 exon_groups: dict[tuple[int, int, str, str], list[Exon]] = {}
@@ -2179,6 +2181,7 @@ class Annotation():
                         merged_parents = sorted(all_parents)
                         for e in group:
                             e.parents = merged_parents[:]
+                            e.id, e.id_number = group[0].id, group[0].id_number
                     else:
                         if group[0].parents:
                             group[0].parents.sort()
@@ -2202,6 +2205,7 @@ class Annotation():
                         merged_parents = sorted(all_parents)
                         for u in group:
                             u.parents = merged_parents[:]
+                            u.id, u.id_number = group[0].id, group[0].id_number
                     else:
                         if group[0].parents:
                             group[0].parents.sort()
@@ -2628,7 +2632,7 @@ class Annotation():
         rename_features: tuple[str, ...] = ("CDS", "UTR"),
         keep_subfeature_numbers: bool = True,
         keep_existing_ids_if_derived_from_base_id: bool = False,
-    ) -> list[tuple[Gene, Transcript]]:
+    ):
         """
         Replaces the CDSs of transcripts (all of them with override, otherwise only those of
         non-coding transcripts) by the best ORF across their exons.
@@ -2641,9 +2645,6 @@ class Annotation():
             with a reworked transcript.
         keep_subfeature_numbers: reuse the numbers of current IDs where unambiguous (see rename_ids).
         keep_existing_ids_if_derived_from_base_id: keep IDs that already contain their gene ID.
-
-        Returns the reworked (gene, transcript) pairs. Updating the annotation regenerates UTRs
-        with provisional ids, so after a later update they can be renamed with _rename_reworked.
         """
         for f in rename_features:
             if f not in ("CDS", "UTR"):
@@ -2739,30 +2740,22 @@ class Annotation():
         progress_bar.close()
         self.update(quiet=quiet)
 
-        self._rename_reworked(reworked, rename_features=rename_features, keep_subfeature_numbers=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+        if rename_features:
+            reworked_genes = {}
+            for g, t in reworked:
+                reworked_genes[g.id] = g
+                if "CDS" in rename_features:
+                    for c in t.CDSs.values():
+                        c.rename(base_id=t.id, base_gene_id=g.base_id, count=1, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+            # UTRs are named per gene, so UTRs shared between transcripts share their id as exons do
+            if "UTR" in rename_features:
+                for g in reworked_genes.values():
+                    g.rename_utrs(keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+            self.update_keys(gene_keys=False, transcript_keys=False)
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
-
-        return reworked
-
-    def _rename_reworked(self, reworked:list[tuple[Gene, Transcript]], rename_features:tuple[str, ...]=("CDS", "UTR"), keep_subfeature_numbers:bool=True, keep_existing_ids_if_derived_from_base_id:bool=False):
-        """
-        Renames the CDSs of reworked transcripts after their transcript (<transcript>_CDS001) and the
-        UTRs of their genes per gene (<gene>_u001), so UTRs shared between transcripts share their id
-        as exons do. See rework_CDSs.
-        """
-        reworked_genes = {}
-        for g, t in reworked:
-            reworked_genes[g.id] = g
-            if "CDS" in rename_features:
-                for c in t.CDSs.values():
-                    c.rename(base_id=t.id, base_gene_id=g.base_id, count=1, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
-        if "UTR" in rename_features:
-            for g in reworked_genes.values():
-                g.rename_utrs(keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
-        self.update_keys(gene_keys=False, transcript_keys=False)
 
     def update_gene_and_transcript_list(self, quiet:bool=True):
 
@@ -3055,7 +3048,7 @@ class Annotation():
 
         progress_bar.close()
 
-        self.homogenise_parents_for_shared_exons_utrs()
+        self.homogenise_shared_exons_utrs()
         self.update_keys()
         self.update_gene_and_transcript_list(quiet=quiet)
 

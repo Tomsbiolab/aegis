@@ -544,9 +544,15 @@ class Transcript(Feature):
             self.update_UTRs()
 
     def generate_UTRs(self):
-        if self.temp_UTRs:
-            self.temp_UTRs = None
+        """
+        Derives the UTRs of each CDS from the exons. A derived UTR with the coordinates of a current
+        UTR, or of one read from the GFF, is that UTR (keeping its id and attributes); only new UTRs
+        get provisional ids (<CDS id>_u<n>).
+        """
+        previous = {(u.start, u.end): u for u in (self.temp_UTRs or [])}
+        self.temp_UTRs = None
         for c in self.CDSs.values():
+            previous.update({(u.start, u.end): u for u in c.UTRs})
             c.UTRs = []
             parents = [self.id]
             c.update_span()
@@ -571,17 +577,17 @@ class Transcript(Feature):
                     c.UTRs.append(UTR("", exon.ch, exon.source, "UTR",
                                       exon.strand, c.end+1, exon.end,
                                       exon.score, parents))
-            c.UTRs.sort()
-            if c.strand == "+" or c.strand == ".":
-                for n, u in enumerate(c.UTRs):
-                    u.id = f"{c.id}_u{n+1}"
-                    u.parents = parents
-            elif c.strand == "-":
-                counter = len(c.UTRs)
-                for n, u in enumerate(c.UTRs):
-                    u.id = f"{c.id}_u{counter}"      
-                    u.parents = parents 
-                    counter -= 1
+            c.UTRs = sorted(previous.pop((u.start, u.end), u) for u in c.UTRs)
+            # New UTRs are numbered in transcript order, skipping the ids of kept ones
+            used_ids = {u.id for u in c.UTRs if u.id}
+            n = 0
+            for u in (c.UTRs if c.strand != "-" else reversed(c.UTRs)):
+                u.parents = parents[:]
+                if not u.id:
+                    n += 1
+                    while f"{c.id}_u{n}" in used_ids:
+                        n += 1
+                    u.id = f"{c.id}_u{n}"
         self.update_UTRs()
 
     def update_UTRs(self):
