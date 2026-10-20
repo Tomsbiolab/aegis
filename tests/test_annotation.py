@@ -1244,6 +1244,31 @@ class TestGeneLengths:
         assert header.split("\t") == ["gene_id", column]
         assert row.split("\t") == ["g1", value]
 
+    @pytest.mark.parametrize("length_type, span_fallback, values", [
+        ("exonic", True, {"g1": "350", "g2": "100"}),
+        ("exonic", False, {"g1": "350", "g2": "0"}),
+        ("main_transcript", True, {"g1": "200", "g2": "100"}),
+        ("coding_exonic", True, {"g1": "200", "g2": "100", "g3": "201"}),
+        ("coding_exonic", False, {"g1": "200", "g2": "0", "g3": "0"}),
+    ])
+    def test_gene_list_span_fallback(self, tmp_path, capsys, length_type, span_fallback, values):
+        # g2 has no transcripts and g3 is non-coding, so their lengths can be 0
+        gff_file = tmp_path / "lengths.gff3"
+        gff_file.write_text(
+            GENE_LENGTHS_GFF
+            + "chr1\ttest\tgene\t1001\t1100\t.\t+\t.\tID=g2\n"
+            + "chr1\ttest\tgene\t2000\t2200\t.\t+\t.\tID=g3\n"
+            + "chr1\ttest\tlnc_RNA\t2000\t2200\t.\t+\t.\tID=t3;Parent=g3\n"
+            + "chr1\ttest\texon\t2000\t2200\t.\t+\t.\tID=e5;Parent=t3\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        capsys.readouterr()
+        annot.export.gene_list(output_dir=str(tmp_path), filename="genes.tsv", lengths=True, length_type=length_type, span_fallback=span_fallback, quiet=True)
+        rows = dict(line.split("\t") for line in (tmp_path / "genes.tsv").read_text().splitlines()[1:])
+        assert {g: rows[g] for g in values} == values
+        out = capsys.readouterr().out
+        assert "span_fallback=False" in out if span_fallback else "span_fallback=True" in out
+
     def test_gene_list_rejects_unknown_length_type(self, tmp_path):
         with pytest.raises(ValueError, match="length_type"):
             self._annotation(tmp_path).export.gene_list(output_dir=str(tmp_path), lengths=True, length_type="cds", quiet=True)

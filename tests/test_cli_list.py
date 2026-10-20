@@ -74,3 +74,9 @@ def test_list_genes_length_type_smoke(tmp_path):
         assert out_file.read_text().replace("gene_id\t", "").strip() == expected
     result = runner.invoke(app, ["genes", str(gff_file), "-l", "--length-type", "cds", "-d", str(tmp_path), "-q"])
     assert result.exit_code != 0
+    # The non-coding gene has no coding exons, so it falls back to its span unless disabled
+    for flag, expected in (("--span-fallback", "coding_exonic_length\ng1\t500"), ("--no-span-fallback", "coding_exonic_length\ng1\t0")):
+        out_file = tmp_path / f"fallback{flag}.tsv"
+        result = runner.invoke(app, ["genes", str(gff_file), "-l", "--length-type", "coding-exonic", flag, "-o", out_file.name, "-d", str(tmp_path), "-q"])
+        assert result.exit_code == 0, result.output
+        assert out_file.read_text().replace("gene_id\t", "").strip() == expected

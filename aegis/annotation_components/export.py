@@ -1108,7 +1108,7 @@ class AnnotationExport(AnnotationComponent):
 
             progress_bar.close()
 
-    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, length_type: Literal["exonic", "coding_exonic", "main_transcript", "span"] = "exonic", quiet:bool=False,
+    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, length_type: Literal["exonic", "coding_exonic", "main_transcript", "span"] = "exonic", span_fallback: bool = True, quiet:bool=False,
         #deprecated arguments
         custom_path: str = "", output_file: str = ""):
 
@@ -1126,6 +1126,8 @@ class AnnotationExport(AnnotationComponent):
         length_type: the gene length written with lengths, to match how reads were counted: "exonic" (exons of
         all transcripts, each base once; featureCounts on exons by gene_id), "coding_exonic" (exons of coding
         transcripts), "main_transcript" (mature main transcript) or "span" (genomic span, introns included).
+        span_fallback: genes whose chosen length is 0 (no exons, transcripts or coding transcripts) are written
+        with their genomic span instead, so that length normalisations (e.g. TPM) do not divide by zero.
         """
         length_columns = {"exonic": "exonic_length", "coding_exonic": "coding_exonic_length", "main_transcript": "main_transcript_length", "span": "genomic_span"}
         if length_type not in length_columns:
@@ -1145,6 +1147,7 @@ class AnnotationExport(AnnotationComponent):
         if not quiet:
             print(f"Exporting {self._annot.id} gene list to {final_output_path}.")
 
+        zero_length_genes = []
         with open(final_output_path, "w", encoding="utf-8") as f_out:
 
             header = ["gene_id"]
@@ -1181,18 +1184,30 @@ class AnnotationExport(AnnotationComponent):
                         out.append(str(g.end))
                     if lengths:
                         if length_type == "exonic":
-                            out.append(str(g.exonic_size))
+                            length = g.exonic_size
                         elif length_type == "coding_exonic":
-                            out.append(str(g.coding_exonic_size))
+                            length = g.coding_exonic_size
                         elif length_type == "main_transcript":
-                            out.append(str(g.main_transcript_size))
+                            length = g.main_transcript_size
                         else:
-                            out.append(str(g.genomic_span))
+                            length = g.genomic_span
+                        if length == 0:
+                            zero_length_genes.append(g.id)
+                            if span_fallback:
+                                length = g.genomic_span
+                        out.append(str(length))
                     if coding_info:
                         out.append(str(g.coding))
                     if gene_symbols and g.symbols:
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
+
+        if zero_length_genes:
+            examples = ", ".join(zero_length_genes[:5]) + (", ..." if len(zero_length_genes) > 5 else "")
+            if span_fallback:
+                print(f"Warning: {len(zero_length_genes)} {self._annot.id} genes have no {length_columns[length_type]} and were written with their genomic span instead ({examples}). Use span_fallback=False (--no-span-fallback) to write 0, or remove them first (e.g. genes with no transcripts).")
+            else:
+                print(f"Warning: {len(zero_length_genes)} {self._annot.id} genes were written with a 0 {length_columns[length_type]} ({examples}), which breaks length normalisations such as TPM. Use span_fallback=True (--span-fallback) to write their genomic span instead.")
 
     def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False, gene_id: bool = False,
         #deprecated arguments
