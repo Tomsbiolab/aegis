@@ -6,15 +6,20 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from ..genome import Genome, Scaffold
+from ..genome import Genome
 from ..utils.genefunctions import NCBI_GENETIC_CODES
 from .summary_genome import pair_genome_features, PairedFeature, normalize_chr_name
 from .utils import (
     TaxonomyOption,
     GeneticCodeOption,
-    AutoOrganelleCodesOption,
+    AutoOrganelleDetectionOption,
+    MitochondriaChromsOption,
+    ChloroplastChromsOption,
     MitoCodeOption,
     PlastidCodeOption,
+    InitiatorMethionineOption,
+    apply_organelle_chroms,
+    warn_organelle_genetic_codes,
     IO_PANEL,
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
@@ -196,9 +201,12 @@ def main(
     # 2. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
+    mitochondria_chroms: MitochondriaChromsOption = [],
+    chloroplast_chroms: ChloroplastChromsOption = [],
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
+    initiator_methionine: InitiatorMethionineOption = True,
 
     # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
@@ -419,12 +427,13 @@ def main(
                 annot_file_path=afile,
                 genome=assigned_genome,
                 quiet=True,
-                skip_coordinate_polishing=True,
+                coordinate_polishing="none",
                 taxonomy=taxonomy,
                 table=genetic_code,
                 mito_table=mito_code,
                 plastid_table=plastid_code,
-                auto_organelle_codes=auto_organelle_codes,
+                auto_organelle_detection=auto_organelle_detection,
+                initiator_methionine=initiator_methionine, #type: ignore
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)
@@ -439,9 +448,15 @@ def main(
             emit_mismatch_hint()
             raise typer.Exit(code=1)
 
+        annotations.append(annot)
+
+    # Organelle chromosomes are set before the stats translate proteins
+    apply_organelle_chroms(annotations, mitochondria_chroms, chloroplast_chroms)
+    for annot in annotations:
+        if annot.genome is not None:
+            warn_organelle_genetic_codes(annot, show_name=len(annotations) > 1)
         # Update stats and export basic/full stats CSV files
         annot.stats.update(output_dir=output_dir, export=True, quiet=True)
-        annotations.append(annot)
 
     num_annots = len(annotations)
     is_multi = num_annots > 1
@@ -562,9 +577,12 @@ def main(
                     "   Tip: Pass '--summary-only' to suppress the disjoint contig breakdown and view overall comparative metrics."
                 )
 
+    def is_organelle(name: str) -> bool:
+        return any(a.chromosome_compartment(name) != "nuclear" for a in annotations)
+
     def contig_sort_key(name: str):
         nl = name.lower()
-        if Scaffold.organelle_type(name) is not None:
+        if is_organelle(name):
             cat = 3
         elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
             cat = 1
@@ -582,12 +600,11 @@ def main(
                 if genome_obj:
                     scf = genome_obj.get_scaffold(cname)
                     if scf:
-                        if scf.chromosome and not scf.organelle and not scf.unknown_chromosome:
+                        if scf.chromosome and not is_organelle(cname) and not scf.unknown_chromosome:
                             filtered_contigs.append(cname)
                         continue
                 nl = cname.lower()
-                is_organelle = Scaffold.organelle_type(cname) is not None
-                if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle:
+                if (nl.startswith("chr") or nl.startswith("chromosome") or cname.isdigit()) and not is_organelle(cname):
                     filtered_contigs.append(cname)
             all_contig_names = filtered_contigs
     else:
@@ -800,6 +817,7 @@ def main(
             ("Partial Proteins", "partial_proteins", False),
             ("Truncated Proteins", "truncated_proteins", False),
             ("Proteins with Ambiguous Residues", "ambiguous_proteins", False),
+            ("Frameshifted Proteins", "frameshifted_proteins", False),
             ("Phase-shifted / Frameshifted CDSs", "frameshifted_cds", False),
             ("Out-of-bounds Features", "out_of_bounds", False),
             ("Contigs Missing in Genome", "missing_chroms", False),
@@ -808,7 +826,7 @@ def main(
 
     def get_annot_metric_val(annot: Annotation, metric_key: str):
         stats_data = annot.stats.data
-        if metric_key in ("total_proteins", "complete_proteins", "alt_start_proteins", "partial_proteins", "truncated_proteins", "ambiguous_proteins", "frameshifted_cds", "phase_mismatches"):
+        if metric_key in ("total_proteins", "complete_proteins", "alt_start_proteins", "partial_proteins", "truncated_proteins", "ambiguous_proteins", "frameshifted_proteins", "frameshifted_cds", "phase_mismatches"):
             qc = annot.get_protein_qc_summary()
             return qc.get(metric_key, 0)
         if metric_key == "total_genes":

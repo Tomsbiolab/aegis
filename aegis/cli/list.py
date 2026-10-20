@@ -19,10 +19,10 @@ def genes(
         "-l", "--lengths", help="Include feature lengths in the output.",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
-    transcript_length: Annotated[bool, typer.Option(
-        "--transcript-length", help="Include main transcript lengths instead of gene lengths in the output. Useful for example when 'gene length' is required for count normalisation purposes, where actually the length of the main transcript is what matters.",
+    length_type: Annotated[str, typer.Option(
+        "--length-type", help="Gene length written with --lengths, to match how reads were counted for normalisation (e.g. TPM): 'exonic' (exons of all transcripts, each base once, as featureCounts counting exons by gene_id), 'coding-exonic' (exons of coding transcripts), 'main-transcript' (mature main transcript) or 'span' (genomic span, introns included).",
         rich_help_panel=COLUMNS_PANEL,
-    )] = False,
+    )] = "exonic",
     coordinates: Annotated[bool, typer.Option(
         "-c", "--coordinates", help="Include feature coordinates in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -106,15 +106,18 @@ def genes(
         raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
     annotation_file = annot_in
 
+    if length_type not in ("exonic", "coding-exonic", "main-transcript", "span"):
+        raise typer.BadParameter(f"Invalid --length-type '{length_type}'. Choose from: exonic, coding-exonic, main-transcript, span.")
+
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-    
+
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none")
 
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
@@ -136,7 +139,7 @@ def genes(
         skip_pseudogenes=skip_pseudogenes,
         skip_transposables=skip_transposables,
         gene_symbols=gene_symbols,
-        main_transcript_length_instead_of_gene_length=transcript_length,
+        length_type=length_type.replace("-", "_"),
         quiet=quiet,
     )
 
@@ -250,7 +253,7 @@ def transcripts(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none")
 
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)

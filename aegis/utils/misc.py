@@ -31,6 +31,36 @@ def pickle_save(file, item):
     pickle.dump(item, f)
     f.close()
 
+def covered_length(intervals) -> int:
+    """
+    Number of bases covered by 1-based inclusive (start, end) intervals, each base counted once however
+    many intervals overlap it.
+    """
+    total = 0
+    cur_start = cur_end = None
+    for start, end in sorted(intervals):
+        if cur_end is None or start > cur_end:
+            if cur_end is not None:
+                total += cur_end - cur_start + 1
+            cur_start, cur_end = start, end
+        else:
+            cur_end = max(cur_end, end)
+    if cur_end is not None:
+        total += cur_end - cur_start + 1
+    return total
+
+def unambiguous_numbers(numbered) -> bool:
+    """
+    Whether (key, number) pairs can keep their numbers when renaming: every key has a number
+    and no number is shared by different keys (features with the same key, e.g. an exon shared
+    by transcripts, may share it).
+    """
+    owners = {}
+    for key, number in numbered:
+        if number is None or owners.setdefault(number, key) != key:
+            return False
+    return True
+
 def count_occurrences(string, char):
     return Counter(string)[char]
 
@@ -82,14 +112,17 @@ def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:
     return open(file_path, mode, encoding=encoding) # type: ignore
 
 
-def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):
+def read_file_with_fallback(file_path, encodings=('utf-8', 'cp1252', 'latin-1'), chunk_size=1 << 20):
     """
-    Tries several encodings to find the suitable one.
+    Returns the first encoding that decodes the whole file (read in chunks), as a single byte that is not
+    valid in an encoding can be anywhere (e.g. a cp1252 en dash, 0x96, deep into an otherwise utf-8 GFF).
+    cp1252 (Windows text) is tried before latin-1, which decodes any byte.
     """
     for enc in encodings:
         try:
             with open_file(file_path, 'r', encoding=enc) as f:
-                f.read(sample_size)
+                while f.read(chunk_size):
+                    pass
                 return enc
         except UnicodeDecodeError:
             continue

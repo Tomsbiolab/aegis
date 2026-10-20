@@ -44,10 +44,10 @@ def main(
         "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
         rich_help_panel=COORDS_PANEL,
     )] = False,
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
+    coordinate_polishing: Annotated[str, typer.Option(
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). Inconsistencies in the input annotation are reported as warnings whichever mode is chosen. [default: 'contain']",
         rich_help_panel=COORDS_PANEL,
-    )] = True,
+    )] = "contain",
 
     # 3. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
@@ -140,7 +140,8 @@ def main(
     if (annotation_name == "{annotation-file}") and (annotation_file != ""):
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    skip_coordinate_polishing = not polish_coordinates
+    if coordinate_polishing not in ("none", "contain", "trim"):
+        raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
     subfolder = False
         
     g = Genome(
@@ -157,7 +158,7 @@ def main(
             annot_file_path=annotation_file,
             name=annotation_name,
             genome=g,
-            skip_coordinate_polishing=skip_coordinate_polishing,
+            coordinate_polishing=coordinate_polishing,
             recalculate_phases=recalculate_phases,
             reset_phases_zero=reset_phases_zero,
         )

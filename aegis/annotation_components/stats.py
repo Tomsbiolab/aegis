@@ -13,7 +13,6 @@ from statistics import mean
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron
 from .base import AnnotationComponent
-from ..genome import Scaffold
 
 KEY_DESCRIPTIONS = {
     # Mean metrics
@@ -34,6 +33,7 @@ KEY_DESCRIPTIONS = {
     "complete_proteins":          "Number of complete proteins",
     "partial_proteins":           "Number of partial proteins",
     "truncated_proteins":         "Number of truncated proteins",
+    "frameshifted_proteins":      "Number of proteins translated across a frameshift",
     "frameshifted_cds":           "Number of phase-shifted / frameshifted CDSs",
     "phase_mismatches":           "Number of phase mismatches across introns",
     "CDSs_without_stop":          "Number of CDS without stop codon",
@@ -202,7 +202,7 @@ class AnnotationStats(AnnotationComponent):
         def sort_key(item):
             name = item["contig"]
             nl = name.lower()
-            if Scaffold.organelle_type(name) is not None:
+            if self._annot.chromosome_compartment(name) != "nuclear":
                 cat = 3
             elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
                 cat = 1
@@ -346,8 +346,8 @@ class AnnotationStats(AnnotationComponent):
                                         self.data["mean_three_prime_UTR_size"].append(u3_size)
                                     # UTR introns: introns not inside the CDS
                                     if t.introns:
-                                        cds_start = c.CDS_segments[0].start
-                                        cds_end   = c.CDS_segments[-1].end
+                                        cds_start = c.start
+                                        cds_end   = c.end
                                         for i in t.introns:
                                             if not i.intra_coding:
                                                 if t.strand == "+":
@@ -405,6 +405,7 @@ class AnnotationStats(AnnotationComponent):
         self.data["complete_proteins"]    = qc["complete_proteins"]
         self.data["partial_proteins"]     = qc["partial_proteins"]
         self.data["truncated_proteins"]   = qc["truncated_proteins"]
+        self.data["frameshifted_proteins"] = qc["frameshifted_proteins"]
         self.data["frameshifted_cds"]     = qc["frameshifted_cds"]
         self.data["phase_mismatches"]     = qc["phase_mismatches"]
 

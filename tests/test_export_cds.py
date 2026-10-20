@@ -57,6 +57,63 @@ def test_export_unique_proteins_per_gene(test_data_dir, tmp_path):
     assert len(uniq_headers) < len(all_headers)
 
 
+def test_export_proteins_detailed_headers(tmp_path):
+    # Minus-strand CDS over two exons: mRNA ATGAAA|CCCTAA -> MKP*
+    fasta_path = tmp_path / "genome.fasta"
+    fasta_path.write_text(">chrX\nGGTTAGGGCCCCTTTCATGG\n")
+    gff3_path = tmp_path / "annot.gff3"
+    gff3_path.write_text(
+        "##gff-version 3\n"
+        "chrX\ttest\tgene\t3\t18\t.\t-\t.\tID=g1\n"
+        "chrX\ttest\tmRNA\t3\t18\t.\t-\t.\tID=t1;Parent=g1\n"
+        "chrX\ttest\texon\t3\t8\t.\t-\t.\tID=e1;Parent=t1\n"
+        "chrX\ttest\texon\t13\t18\t.\t-\t.\tID=e2;Parent=t1\n"
+        "chrX\ttest\tCDS\t3\t8\t.\t-\t0\tID=c1;Parent=t1;exception=ribosomal slippage\n"
+        "chrX\ttest\tCDS\t13\t18\t.\t-\t0\tID=c1;Parent=t1;exception=ribosomal slippage\n"
+    )
+    genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
+    annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+
+    annot.export.proteins(output_dir=str(tmp_path), verbose=True, quiet=True)
+    header, seq = (tmp_path / f"{annot.id}_proteins_p_id_main_coordinates.fasta").read_text().splitlines()
+    assert header == ">c1.prot|exception=ribosomal slippage|readthrough=end|table=1|-|chrX|location=complement(join(3..8,13..18))"
+    assert seq == "MKP"
+
+    annot.export.proteins(output_dir=str(tmp_path), verbose=False, quiet=True)
+    assert (tmp_path / f"{annot.id}_proteins_p_id_main.fasta").read_text().splitlines()[0] == ">c1.prot"
+
+
+def test_cds_transl_table_overrides_chromosome_table(tmp_path):
+    # ATG TGA TGG AGA: TGA is W and AGA a stop in the vertebrate mitochondrial code (2), on a nuclear chromosome
+    fasta_path = tmp_path / "genome.fasta"
+    fasta_path.write_text(">chrX\nATGTGATGGAGAATGTGATGGAGA\n")
+    gff3_path = tmp_path / "annot.gff3"
+    gff3_path.write_text(
+        "##gff-version 3\n"
+        "chrX\ttest\tgene\t1\t24\t.\t+\t.\tID=g1\n"
+        "chrX\ttest\tmRNA\t1\t12\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chrX\ttest\texon\t1\t12\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chrX\ttest\tCDS\t1\t12\t.\t+\t0\tID=c1;Parent=t1;transl_table=2\n"
+        "chrX\ttest\tmRNA\t13\t24\t.\t+\t.\tID=t2;Parent=g1\n"
+        "chrX\ttest\texon\t13\t24\t.\t+\t.\tID=e2;Parent=t2\n"
+        "chrX\ttest\tCDS\t13\t24\t.\t+\t0\tID=c2;Parent=t2\n"
+    )
+    genome = Genome(name="test_genome", genome_file_path=str(fasta_path), quiet=True)
+    annot = Annotation(name="test_annot", annot_file_path=str(gff3_path), genome=genome, quiet=True)
+    c1 = annot.chrs["chrX"]["g1"].transcripts["t1"].CDSs["c1"]
+    c2 = annot.chrs["chrX"]["g1"].transcripts["t2"].CDSs["c2"]
+    assert (annot.translation_table("chrX", c1), annot.translation_table("chrX", c2)) == (2, 1)
+
+    annot.generate_proteins(quiet=True)
+    assert (c1.protein.seq, c1.protein.tags["table"]) == ("MWW*", "2")
+    assert (c2.protein.seq, c2.protein.tags["table"]) == ("M*WR", "1")
+
+    # Raw CDS export strips the stop codon of each CDS's own table
+    annot.export.CDSs(output_dir=str(tmp_path), only_main=False, verbose=False, protein_oriented=False, strip_stop=True, quiet=True)
+    out = (tmp_path / f"{annot.id}_CDSs_raw_c_id_all.fasta").read_text().splitlines()
+    assert dict(zip(out[::2], out[1::2])) == {">c1": "ATGTGATGG", ">c2": "ATGTGATGGAGA"}
+
+
 def test_set_genetic_codes_clears_proteins_and_exports_follow(tmp_path):
     # ATG TGA TGG TAA: TGA is a stop in table 1 but W in the vertebrate mitochondrial code (2)
     fasta_path = tmp_path / "genome.fasta"

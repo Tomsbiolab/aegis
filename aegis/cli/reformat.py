@@ -33,16 +33,24 @@ def main(
     )] = False,
 
     # 2. Coordinate & Phase Options
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ [default: disabled; preserves original coordinates].",
+    coordinate_polishing: Annotated[str, typer.Option(
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). Inconsistencies in the input annotation are reported as warnings whichever mode is chosen. [default: 'none']",
         rich_help_panel=COORDS_PANEL,
-    )] = False,
+    )] = "none",
     recalculate_phases: Annotated[bool, typer.Option(
         "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
         rich_help_panel=COORDS_PANEL,
     )] = False,
     reset_phases_zero: Annotated[bool, typer.Option(
         "--reset-phases-zero", help="Reset initial CDS phase to 0 and recalculate all downstream segment phases.",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    collapse_exons: Annotated[bool, typer.Option(
+        "--collapse-exons/--no-collapse-exons", help="Merge overlapping or adjacent exons [default: disabled; preserves original exons].",
+        rich_help_panel=COORDS_PANEL,
+    )] = False,
+    collapse_cds: Annotated[bool, typer.Option(
+        "--collapse-cds/--no-collapse-cds", help="Merge overlapping or adjacent CDS segments [default: disabled; preserves original CDS segments].",
         rich_help_panel=COORDS_PANEL,
     )] = False,
 
@@ -85,8 +93,11 @@ def main(
         raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
     annotation_file = annot_in
 
-    skip_coordinate_polishing = not polish_coordinates
+    if coordinate_polishing not in ("none", "contain", "trim"):
+        raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
     export_utrs = not strip_utrs
+    collapse_exons_opt = collapse_exons
+    collapse_CDSs_opt = collapse_cds
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -100,9 +111,11 @@ def main(
         name=annotation_name,
         annot_file_path=annotation_file,
         quiet=quiet,
-        skip_coordinate_polishing=skip_coordinate_polishing,
+        coordinate_polishing=coordinate_polishing,
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
+        collapse_exons=collapse_exons_opt,
+        collapse_CDSs=collapse_CDSs_opt,
     )
 
     norm_in_format = input_format.lower().strip()

@@ -3,6 +3,7 @@ Tests for aegis.annotation — parsing helpers and Annotation class.
 """
 
 import os
+import gzip
 import warnings
 import pytest
 from pathlib import Path
@@ -24,33 +25,53 @@ TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 # ============================================================
 
 class TestReadFileWithFallback:
+    GFF_LINE = "chr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n"
+
     def test_utf8_file(self, tmp_path):
         f = tmp_path / "test.gff3"
-        f.write_text("##gff-version 3\nchr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n", encoding="utf-8")
-        enc = read_file_with_fallback(str(f))
-        assert enc in ("utf-8", "latin-1")
+        f.write_text("##gff-version 3\n" + self.GFF_LINE.replace("g1", "gé1"), encoding="utf-8")
+        assert read_file_with_fallback(str(f)) == "utf-8"
 
-    def test_latin1_file(self, tmp_path):
+    def test_ascii_file_is_utf8(self, tmp_path):
+        f = tmp_path / "ascii.gff3"
+        f.write_text(self.GFF_LINE, encoding="ascii")
+        assert read_file_with_fallback(str(f)) == "utf-8"
+
+    def test_cp1252_file(self, tmp_path):
+        f = tmp_path / "test_cp1252.gff3"
+        f.write_bytes(("##gff-version 3\n" + self.GFF_LINE.replace("ID=g1", "ID=g1;Note=5\u20133")).encode("cp1252"))
+        assert read_file_with_fallback(str(f)) == "cp1252"
+
+    def test_latin1_is_the_last_resort(self, tmp_path):
+        # 0x81 is undefined in cp1252
         f = tmp_path / "test_latin.gff3"
-        f.write_bytes("##gff-version 3\nchr1\taegis\tgene\t1\t100\t.\t+\t.\tID=gé1\n".encode("latin-1"))
-        enc = read_file_with_fallback(str(f))
-        assert enc in ("utf-8", "latin-1")
+        f.write_bytes(self.GFF_LINE.encode("latin-1") + b"#\x81\n")
+        assert read_file_with_fallback(str(f)) == "latin-1"
+
+    @pytest.mark.parametrize("gz", [False, True])
+    def test_byte_deep_into_the_file_is_found(self, tmp_path, gz):
+        # As in Araport11: utf-8 for megabytes, then a cp1252 en dash
+        content = ("##gff-version 3\n" + self.GFF_LINE * 40000).encode("utf-8") + "#Note=5\u20133\n".encode("cp1252")
+        f = tmp_path / ("deep.gff3.gz" if gz else "deep.gff3")
+        f.write_bytes(gzip.compress(content) if gz else content)
+        assert len(content) > 1 << 20
+        assert read_file_with_fallback(str(f)) == "cp1252"
 
     def test_nonexistent_file_raises(self, tmp_path):
-        with pytest.raises(Exception):
+        with pytest.raises(FileNotFoundError):
             read_file_with_fallback(str(tmp_path / "nonexistent.gff3"))
-
-    def test_ascii_file(self, tmp_path):
-        f = tmp_path / "ascii.gff3"
-        f.write_text("chr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n", encoding="ascii")
-        enc = read_file_with_fallback(str(f))
-        assert enc in ("utf-8", "latin-1", "ascii")
 
     def test_empty_file(self, tmp_path):
         f = tmp_path / "empty.gff3"
         f.write_text("")
-        enc = read_file_with_fallback(str(f))
-        assert enc is not None
+        assert read_file_with_fallback(str(f)) == "utf-8"
+
+    def test_annotation_loads_a_file_with_a_late_non_utf8_byte(self, tmp_path):
+        rows = "".join(f"chr1\taegis\tgene\t{i * 10 + 1}\t{i * 10 + 5}\t.\t+\t.\tID=g{i}\n" for i in range(5000))
+        f = tmp_path / "late.gff3"
+        f.write_bytes(("##gff-version 3\n" + rows).encode("utf-8") + "chr1\taegis\tgene\t60001\t60005\t.\t+\t.\tID=last;Note=5\u20133\n".encode("cp1252"))
+        annot = Annotation(str(f), quiet=True)
+        assert len(annot.all_gene_ids) == 5001
 
 
 # ============================================================
@@ -580,11 +601,106 @@ class TestAnnotationUpdate:
 # ============================================================
 
 class TestAnnotationSortGenes:
-    def test_sort_sets_sorted_flag(self, multi_gene_gff3_file):
-        annot = Annotation(multi_gene_gff3_file, quiet=True)
-        annot.sorted = False
-        annot.sort_genes(processes=1, quiet=True)
-        assert annot.sorted is True
+    @staticmethod
+    def _write_gff(tmp_path, name, lines):
+        gff = tmp_path / name
+        gff.write_text("##gff-version 3\n" + "".join("\t".join(l) + "\n" for l in lines))
+        return str(gff)
+
+    @staticmethod
+    def _gene(g_id, start, end, transcripts):
+        """transcripts: list of (t_id, t_start, t_end, [(e_start, e_end), ...])"""
+        lines = [("chr1", "aegis", "gene", str(start), str(end), ".", "+", ".", f"ID={g_id}")]
+        for t_id, t_start, t_end, exons in transcripts:
+            lines.append(("chr1", "aegis", "mRNA", str(t_start), str(t_end), ".", "+", ".", f"ID={t_id};Parent={g_id}"))
+            for n, (e_start, e_end) in enumerate(exons):
+                lines.append(("chr1", "aegis", "exon", str(e_start), str(e_end), ".", "+", ".", f"ID={t_id}.e{n+1};Parent={t_id}"))
+        return lines
+
+    def _unsorted_with_alt_gff(self, tmp_path):
+        lines = (
+            self._gene("late", 8000, 9000, [("late.t1", 8000, 9000, [(8000, 9000)])])
+            + self._gene("early", 1000, 2000, [("early.t1", 1000, 2000, [(1000, 2000)])])
+            + self._gene("alt", 4000, 6500, [
+                ("alt.t1", 4000, 5000, [(4000, 5000)]),
+                ("alt.t2", 4000, 6500, [(4000, 4500), (6000, 6500)]),
+            ])
+        )
+        return self._write_gff(tmp_path, "unsorted.gff3", lines)
+
+    def test_genes_sorted_after_load(self, tmp_path):
+        annot = Annotation(self._unsorted_with_alt_gff(tmp_path), quiet=True)
+        assert list(annot.chrs["chr1"].keys()) == ["early", "alt", "late"]
+
+    def test_update_sorts_genes_added_after_sorting(self, tmp_path):
+        annot = Annotation(self._unsorted_with_alt_gff(tmp_path), quiet=True)
+        annot.make_alternative_transcripts_into_genes(quiet=True)
+        starts = [g.start for g in annot.chrs["chr1"].values()]
+        assert len(starts) == 4
+        assert starts == sorted(starts)
+
+    @pytest.mark.parametrize("mode", ["none", "contain"])
+    def test_alternative_transcripts_into_genes_trims_genes(self, tmp_path, mode):
+        # The main transcript (longest exonic size) spans less than the alternative one
+        lines = self._gene("g1", 4000, 7100, [
+            ("g1.t1", 4000, 5000, [(4000, 5000)]),
+            ("g1.t2", 4000, 7100, [(4000, 4100), (7000, 7100)]),
+        ])
+        annot = Annotation(self._write_gff(tmp_path, "alt.gff3", lines), quiet=True, coordinate_polishing=mode)
+        assert annot.chrs["chr1"]["g1"].transcripts["g1.t1"].main
+
+        annot.make_alternative_transcripts_into_genes(quiet=True)
+
+        spans = sorted((g.start, g.end) for g in annot.chrs["chr1"].values())
+        assert spans == [(4000, 5000), (4000, 7100)]
+        for g in annot.chrs["chr1"].values():
+            t = list(g.transcripts.values())[0]
+            assert len(g.transcripts) == 1
+            assert (g.start, g.end) == (t.start, t.end)
+            assert g.id not in annot.warnings["gene_exceeds_transcripts"]
+
+    def test_rename_ids_numbers_genes_by_position(self, tmp_path):
+        annot = Annotation(self._unsorted_with_alt_gff(tmp_path), quiet=True)
+        # Scramble gene order without going through update()
+        annot.chrs["chr1"] = dict(reversed(list(annot.chrs["chr1"].items())))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="TST", quiet=True)
+        genes = list(annot.chrs["chr1"].values())
+        assert [g.original_id for g in genes] == ["early", "alt", "late"]
+        assert [g.id for g in genes] == ["TSTchr1g00100", "TSTchr1g00200", "TSTchr1g00300"]
+
+    def test_overlap_detection_sorts_genes(self, tmp_path):
+        lines = (
+            self._gene("gA", 1000, 2000, [("gA.t1", 1000, 2000, [(1000, 2000)])])
+            + self._gene("gB", 1500, 3000, [("gB.t1", 1500, 3000, [(1500, 3000)])])
+            + self._gene("gC", 9000, 9500, [("gC.t1", 9000, 9500, [(9000, 9500)])])
+            + self._gene("gD", 1800, 2500, [("gD.t1", 1800, 2500, [(1800, 2500)])])
+        )
+        annot = Annotation(self._write_gff(tmp_path, "overlap.gff3", lines), quiet=True)
+        # Unsorted order where the sweep would stop at gC before reaching gD
+        genes = annot.chrs["chr1"]
+        annot.chrs["chr1"] = {g_id: genes[g_id] for g_id in ["gA", "gB", "gC", "gD"]}
+        annot.overlaps.detect(quiet=True)
+        assert sorted(o.id for o in annot.chrs["chr1"]["gA"].overlaps["self"]) == ["gB", "gD"]
+        assert annot.chrs["chr1"]["gC"].overlaps["self"] == []
+
+    def test_transcripts_sorted_by_polished_coordinates(self, tmp_path):
+        # tB's mRNA line starts before tA's, but its exons start after them
+        lines = self._gene("g1", 1000, 6000, [
+            ("tB", 1000, 6000, [(3000, 3500), (5000, 6000)]),
+            ("tA", 2000, 4000, [(2000, 4000)]),
+        ])
+        gff = self._write_gff(tmp_path, "transcripts.gff3", lines)
+
+        annot = Annotation(gff, quiet=True, coordinate_polishing="contain")
+        g = annot.chrs["chr1"]["g1"]
+        assert list(g.transcripts.keys()) == ["tA", "tB"]
+        assert (g.transcripts["tB"].start, g.transcripts["tB"].end) == (3000, 6000)
+
+        annot = Annotation(gff, quiet=True, coordinate_polishing="none")
+        g = annot.chrs["chr1"]["g1"]
+        assert list(g.transcripts.keys()) == ["tB", "tA"]
 
     def test_sort_genes_order(self, rich_gff3_file):
         annot = Annotation(rich_gff3_file, quiet=True)
@@ -701,11 +817,12 @@ class TestAnnotationRemoveTranscriptsWithNoExons:
         original_t_count = len(gene.transcripts)
         assert original_t_count >= 2
 
-        annot.detect_transcripts_with_no_exons(remove_transcripts=True, remove_genes_accordingly=True, quiet=True)
+        found = annot._new_warnings_dict()
+        annot.detect_transcripts_with_no_exons(remove_transcripts=True, remove_genes_accordingly=True, quiet=True, record_to=found)
         gene = annot.chrs["chr1"]["gene1"]
         assert "emptyT" not in gene.transcripts
-        assert "transcript_with_no_exons" in annot.warnings
-        assert "emptyT" in annot.warnings["transcript_with_no_exons"]
+        assert "emptyT" in found["transcript_with_no_exons"]
+        assert "emptyT" not in annot.warnings["transcript_with_no_exons"]
 
 
 # ============================================================
@@ -780,6 +897,130 @@ class TestAnnotationFilterByRnaClass:
 # Annotation — correct_gene_transcript_and_subfeature_coordinates
 # ============================================================
 
+class TestInputWarnings:
+    """Warnings describe the input annotation; recheck_warnings() describes the current object."""
+
+    FLAWED = (
+        "##gff-version 3\n"
+        "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=g1\n"
+        "chr1\taegis\tmRNA\t900\t5000\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=e2;Parent=t1\n"
+        "chr1\taegis\tCDS\t1100\t2000\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1\taegis\tCDS\t3000\t5200\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+    EXPECTED = {
+        "phase_mismatch_across_intron": {"c1"},
+        "cds_exceeds_exon": {"c1"},
+        "exon_transcript_boundary_mismatch": {"t1"},
+        "transcript_exceeds_gene": {"t1"},
+    }
+
+    @staticmethod
+    def _non_empty(w):
+        return {k: v for k, v in w.items() if v}
+
+    def _flawed(self, tmp_path):
+        gff = tmp_path / "flawed.gff3"
+        gff.write_text(self.FLAWED)
+        return str(gff)
+
+    @pytest.mark.parametrize("mode", ["none", "contain", "trim"])
+    def test_warnings_independent_of_polishing_mode(self, tmp_path, mode):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing=mode)
+        assert self._non_empty(annot.warnings) == self.EXPECTED
+
+    def test_later_operations_do_not_change_warnings(self, tmp_path):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing="none")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="NEW", quiet=True)
+        annot.update(quiet=True, coordinate_polishing="trim", recalculate_phases=True)
+        annot.update(quiet=True)
+        # No duplicates under new ids, no entries for states produced after loading
+        assert self._non_empty(annot.warnings) == self.EXPECTED
+
+    def test_recheck_reflects_object_state(self, tmp_path):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing="none")
+        rechecked = annot.recheck_warnings()
+        assert set(rechecked) == set(Annotation.RECHECKABLE_WARNING_KEYS)
+        assert self._non_empty(rechecked) == self.EXPECTED
+
+        annot.update(quiet=True, coordinate_polishing="contain", recalculate_phases=True)
+        assert self._non_empty(annot.recheck_warnings()) == {}
+        assert self._non_empty(annot.warnings) == self.EXPECTED
+
+    def test_recheck_does_not_modify_object(self, tmp_path):
+        annot = Annotation(self._flawed(tmp_path), quiet=True, coordinate_polishing="none")
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        before = (annot.chrs["chr1"]["g1"].start, t.start, t.end, [(e.start, e.end) for e in t.exons])
+        warnings_before = {k: set(v) for k, v in annot.warnings.items()}
+        annot.recheck_warnings()
+        assert (annot.chrs["chr1"]["g1"].start, t.start, t.end, [(e.start, e.end) for e in t.exons]) == before
+        assert annot.warnings == warnings_before
+
+    @staticmethod
+    def _genome(tmp_path, scaffolds:dict[str, int]):
+        fasta = tmp_path / "genome.fa"
+        fasta.write_text("".join(f">{name}\n{'ACGT' * (size // 4)}\n" for name, size in scaffolds.items()))
+        return Genome("gen", str(fasta), quiet=True)
+
+    def test_genome_validation_recorded_at_load(self, tmp_path):
+        gff = tmp_path / "beyond.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t3500\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t3500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t3500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr9\taegis\tgene\t100\t200\t.\t+\t.\tID=g9\n"
+            "chr9\taegis\tmRNA\t100\t200\t.\t+\t.\tID=t9;Parent=g9\n"
+            "chr9\taegis\texon\t100\t200\t.\t+\t.\tID=e9;Parent=t9\n"
+        )
+        annot = Annotation(str(gff), genome=self._genome(tmp_path, {"chr1": 3000}), quiet=True)
+        # Recorded without accessing genome_validation
+        assert annot.warnings["feature_exceeds_scaffold_length"] == {"g1", "t1", "e1"}
+        assert annot.warnings["chromosome_not_in_genome"] == {"chr9"}
+        assert annot.genome_validation["out_of_bounds_features"] == ["g1"]
+
+        validation = annot.genome_validation
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="NEW", quiet=True)
+        annot.update(quiet=True)
+        # Input ids are kept and the validation is not recomputed
+        assert annot.warnings["feature_exceeds_scaffold_length"] == {"g1", "t1", "e1"}
+        assert annot.genome_validation is validation
+
+    @pytest.mark.parametrize("mode", ["none", "contain", "trim"])
+    def test_genome_validation_checks_subfeatures_on_input(self, tmp_path, mode):
+        # Gene and mRNA lie within the scaffold, but an exon and the CDS run beyond it
+        gff = tmp_path / "sub_beyond.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t2900\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t2900\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t1500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\texon\t2500\t3200\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\taegis\tCDS\t1200\t1500\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\taegis\tCDS\t2500\t3100\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        annot = Annotation(str(gff), genome=self._genome(tmp_path, {"chr1": 3000}), quiet=True, coordinate_polishing=mode)
+        # Same findings whatever the polishing does to the gene afterwards
+        assert annot.warnings["feature_exceeds_scaffold_length"] == {"e2", "c1"}
+        assert annot.genome_validation["out_of_bounds_features"] == ["g1"]
+
+    def test_genome_validation_without_genome(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        assert annot.genome_validation["has_warning"] is False
+        assert annot.warnings["feature_exceeds_scaffold_length"] == set()
+
+    def test_remove_transcripts_does_not_record(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        annot.remove_transcripts({"mRNA1"}, remove_genes_accordingly=True, quiet=True)
+        assert "gene1" not in annot.chrs["chr1"]
+        assert "gene1" not in annot.warnings["gene_with_no_transcripts"]
+
+
 class TestAnnotationCorrectCoordinates:
     def test_fix_transcript_extending_beyond_gene(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -794,22 +1035,219 @@ class TestAnnotationCorrectCoordinates:
         assert gene.start <= t.start
         assert gene.end >= t.end
 
-    def test_fix_gene_too_long(self, sample_gff3_file):
+    def test_trim_gene_too_long(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         gene = annot.chrs["chr1"]["gene1"]
         # Make gene coordinates wider than all transcripts
         gene.start = 1
         gene.end = 50000
-        annot.correct_gene_transcript_and_subfeature_coordinates(quiet=True)
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="trim", quiet=True)
         # Gene should have been trimmed to match transcript extent
         t = list(gene.transcripts.values())[0]
         assert gene.start == t.start
         assert gene.end == t.end
+        assert "gene1" not in annot.recheck_warnings()["gene_exceeds_transcripts"]
+
+    def test_contain_keeps_gene_too_long(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1
+        gene.end = 50000
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
+        # Excess gene region is kept, and shows up when rechecking the object
+        assert gene.start == 1
+        assert gene.end == 50000
+        assert "gene1" in annot.recheck_warnings()["gene_exceeds_transcripts"]
+        # The input annotation had no such issue
+        assert "gene1" not in annot.warnings["gene_exceeds_transcripts"]
+
+    def test_contain_extends_gene_on_one_side_keeps_other(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        t = list(gene.transcripts.values())[0]
+        # Gene too short on the 5' side, too long on the 3' side
+        gene.start = 1500
+        gene.end = 8000
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
+        assert gene.start == t.start
+        assert gene.end == 8000
+
+    def test_none_leaves_coordinates_and_warns(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        t = list(gene.transcripts.values())[0]
+        gene.start = 1500
+        gene.end = 8000
+        found = annot._new_warnings_dict()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=True, record_to=found)
+        assert gene.start == 1500
+        assert gene.end == 8000
+        assert t.id in found["transcript_exceeds_gene"]
+        assert "gene1" in found["gene_exceeds_transcripts"]
+        # Post-load checks never touch the input warnings
+        assert t.id not in annot.warnings["transcript_exceeds_gene"]
+
+    def test_correcting_modes_do_not_record(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1500
+        gene.end = 8000
+        found = annot._new_warnings_dict()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="trim", quiet=True, record_to=found)
+        assert all(not v for v in found.values())
+
+    def test_contain_extends_exons_to_cover_utrs(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        t = list(gene.transcripts.values())[0]
+        c = list(t.CDSs.values())[0]
+        # Simulate read-in UTRs extending past the exons
+        c.UTRs[0].start = 900
+        c.UTRs[-1].end = 5200
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="contain", quiet=True)
+        assert t.exons[0].start == 900
+        assert t.exons[-1].end == 5200
+        assert (t.start, t.end) == (900, 5200)
+        assert (gene.start, gene.end) == (900, 5200)
+
+    def test_none_reports_utrs_exceeding_exons(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        t = list(annot.chrs["chr1"]["gene1"].transcripts.values())[0]
+        u = list(t.CDSs.values())[0].UTRs[0]
+        u.start = 900
+        assert u.id in annot.recheck_warnings()["utr_exceeds_exon"]
+        assert t.exons[0].start == 1000
+
+    def test_invalid_mode(self, sample_gff3_file):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        with pytest.raises(ValueError):
+            annot.correct_gene_transcript_and_subfeature_coordinates(mode="bogus", quiet=True)
+        with pytest.raises(ValueError):
+            Annotation(sample_gff3_file, quiet=True, coordinate_polishing="bogus")
+
+    def test_loading_respects_polishing_mode(self, tmp_path):
+        gff = tmp_path / "long_gene.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t500\t6000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=exon2;Parent=mRNA1\n"
+        )
+        for mode, expected in [("none", (500, 6000)), ("contain", (500, 6000)), ("trim", (1000, 5000))]:
+            annot = Annotation(str(gff), quiet=True, coordinate_polishing=mode)
+            g = annot.chrs["chr1"]["gene1"]
+            assert (g.start, g.end) == expected, mode
+
+    def test_transcript_coordinates_follow_polishing_mode(self, tmp_path):
+        gff = tmp_path / "long_transcript.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t900\t5000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t900\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t2000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\texon\t3000\t5000\t.\t+\t.\tID=exon2;Parent=mRNA1\n"
+        )
+        annot = Annotation(str(gff), quiet=True, coordinate_polishing="none")
+        t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
+        assert (t.start, t.end) == (900, 5000)
+        assert "mRNA1" in annot.warnings["exon_transcript_boundary_mismatch"]
+
+        annot = Annotation(str(gff), quiet=True, coordinate_polishing="contain")
+        t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
+        assert (t.start, t.end) == (1000, 5000)
+
+    @pytest.mark.parametrize("mode", ["none", "contain", "trim"])
+    def test_nested_CDS_segments_consistent_span(self, tmp_path, mode):
+        gff = tmp_path / "nested_cds.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t5000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\tCDS\t1200\t4000\t.\t+\t0\tID=CDS1;Parent=mRNA1\n"
+            "chr1\taegis\tCDS\t1500\t1800\t.\t+\t0\tID=CDS1;Parent=mRNA1\n"
+        )
+        annot = Annotation(str(gff), quiet=True, collapse_CDSs=False, coordinate_polishing=mode)
+        t = annot.chrs["chr1"]["gene1"].transcripts["mRNA1"]
+        c = list(t.CDSs.values())[0]
+        assert len(c.CDS_segments) == 2
+        assert (c.start, c.end) == (1200, 4000)
+        assert c.id not in annot.warnings["cds_segment_coordinate_mismatch"]
+        assert [(u.start, u.end) for u in c.UTRs] == [(1000, 1199), (4001, 5000)]
+        # Polisher and CDS.update agree, so the span is stable
+        c.update()
+        assert (c.start, c.end) == (1200, 4000)
+
+    def test_nested_exons_use_latest_end(self, tmp_path):
+        gff = tmp_path / "nested_exons.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t5000\t.\t+\t.\tID=gene1\n"
+            "chr1\taegis\tmRNA\t1000\t5000\t.\t+\t.\tID=mRNA1;Parent=gene1\n"
+            "chr1\taegis\texon\t1000\t5000\t.\t+\t.\tID=exon1;Parent=mRNA1\n"
+            "chr1\taegis\texon\t2000\t3000\t.\t+\t.\tID=exon2;Parent=mRNA1\n"
+        )
+        annot = Annotation(str(gff), quiet=True, collapse_exons=False, coordinate_polishing="trim")
+        g = annot.chrs["chr1"]["gene1"]
+        t = g.transcripts["mRNA1"]
+        # Sorted by start, the nested exon comes last but does not hold the latest end
+        assert t.exons[-1].end == 3000
+        assert (t.start, t.end) == (1000, 5000)
+        assert (g.start, g.end) == (1000, 5000)
+        assert "mRNA1" not in annot.warnings["exon_transcript_boundary_mismatch"]
 
 
 # ============================================================
 # Annotation — gene_list
 # ============================================================
+
+GENE_LENGTHS_GFF = (
+    "##gff-version 3\n"
+    "chr1\ttest\tgene\t1\t500\t.\t+\t.\tID=g1\n"
+    "chr1\ttest\tmRNA\t1\t300\t.\t+\t.\tID=t1;Parent=g1\n"
+    "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+    "chr1\ttest\texon\t201\t300\t.\t+\t.\tID=e2;Parent=t1\n"
+    "chr1\ttest\tCDS\t50\t100\t.\t+\t0\tID=c1;Parent=t1\n"
+    "chr1\ttest\tCDS\t201\t251\t.\t+\t0\tID=c1;Parent=t1\n"
+    "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t2;Parent=g1\n"
+    "chr1\ttest\texon\t1\t150\t.\t+\t.\tID=e3;Parent=t2\n"
+    "chr1\ttest\texon\t401\t500\t.\t+\t.\tID=e4;Parent=t2\n"
+)
+
+
+class TestGeneLengths:
+    # Coding t1 (exons 1-100, 201-300) and non-coding t2 (exons 1-150, 401-500): the first exons overlap
+    @staticmethod
+    def _annotation(tmp_path):
+        gff_file = tmp_path / "lengths.gff3"
+        gff_file.write_text(GENE_LENGTHS_GFF)
+        return Annotation(str(gff_file), quiet=True)
+
+    def test_gene_lengths(self, tmp_path):
+        g = self._annotation(tmp_path).chrs["chr1"]["g1"]
+        assert g.genomic_span == g.size == 500
+        assert g.exonic_size == 150 + 100 + 100
+        assert g.coding_exonic_size == 200
+        assert g.main_transcript_size == 200
+
+    @pytest.mark.parametrize("length_type, column, value", [
+        ("exonic", "exonic_length", "350"),
+        ("coding_exonic", "coding_exonic_length", "200"),
+        ("main_transcript", "main_transcript_length", "200"),
+        ("span", "genomic_span", "500"),
+    ])
+    def test_gene_list_length_types(self, tmp_path, length_type, column, value):
+        annot = self._annotation(tmp_path)
+        annot.export.gene_list(output_dir=str(tmp_path), filename="genes.tsv", lengths=True, length_type=length_type, quiet=True)
+        header, row = (tmp_path / "genes.tsv").read_text().splitlines()
+        assert header.split("\t") == ["gene_id", column]
+        assert row.split("\t") == ["g1", value]
+
+    def test_gene_list_rejects_unknown_length_type(self, tmp_path):
+        with pytest.raises(ValueError, match="length_type"):
+            self._annotation(tmp_path).export.gene_list(output_dir=str(tmp_path), lengths=True, length_type="cds", quiet=True)
+
 
 class TestAnnotationGeneList:
     def test_gene_list_basic(self, multi_gene_gff3_file, tmp_path):
@@ -836,7 +1274,7 @@ class TestAnnotationGeneList:
         annot.export.gene_list(output_dir=str(tmp_path), lengths=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
-        assert "gene_length" in content
+        assert "exonic_length" in content
 
     def test_gene_list_custom_output_file(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
@@ -933,6 +1371,7 @@ class TestAnnotationExportGtf:
         content = gtf_files[0].read_text()
         assert "#gtf-version 2.2" in content
         assert "gene1" in content
+        assert "###" not in content
 
     def test_export_gtf_just_genes(self, sample_gff3_file, tmp_path):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -952,7 +1391,8 @@ class TestAnnotationExportGtf:
         out_dir = tmp_path / "out_gtfs"
         gtf_files = list(out_dir.glob("*.gtf"))
         content = gtf_files[0].read_text()
-        lines = [l for l in content.strip().split("\n") if not l.startswith("#") and l != "###"]
+        assert "###" not in content
+        lines = [l for l in content.strip().split("\n") if not l.startswith("#")]
         features = [l.split("\t")[2] for l in lines if len(l.split("\t")) >= 3]
         # Strict GTF 2.2 should not have gene or transcript lines
         assert "gene" not in features
@@ -997,9 +1437,33 @@ class TestPhaseWarnings:
         gff_file.write_text(gff_content)
 
         annot = Annotation(str(gff_file), quiet=True, recalculate_phases=True)
-        assert len(annot.warnings["phase_mismatch_across_intron"]) == 0
         cds = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
         assert cds.CDS_segments[1].phase == 2
+        # The input mismatch is still recorded, while the resulting object is consistent
+        assert annot.warnings["phase_mismatch_across_intron"] == {"c1"}
+        assert annot.recheck_warnings()["phase_mismatch_across_intron"] == set()
+
+    def test_phase_mismatch_not_cleared_by_later_updates(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1000\t2099\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1000\t2099\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1000\t1099\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t2000\t2099\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\tCDS\t1000\t1099\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t2000\t2099\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        gff_file = tmp_path / "mismatch.gff3"
+        gff_file.write_text(gff_content)
+
+        annot = Annotation(str(gff_file), quiet=True)
+        annot.update(quiet=True, recalculate_phases=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="NEW", quiet=True)
+        annot.update(quiet=True)
+        assert annot.warnings["phase_mismatch_across_intron"] == {"c1"}
+        assert annot.recheck_warnings()["phase_mismatch_across_intron"] == set()
 
     def test_get_protein_qc_summary(self, tmp_path):
         gff_content = (
@@ -1019,6 +1483,29 @@ class TestPhaseWarnings:
         assert qc["total_cds"] == 1
         assert qc["phase_mismatches"] == 1
         assert qc["frameshifted_cds"] == 1
+
+    def test_protein_qc_summary_counts_tags(self, tmp_path):
+        # t1: complete with a corrected +1 frameshift; t2: 3' partial with an internal stop
+        seq = "ATGAAACTTTGACTAA" + "ATGTAAAAA"
+        lines = [
+            "##gff-version 3",
+            f"chr1\ttest\tgene\t1\t{len(seq)}\t.\t+\t.\tID=g1",
+            "chr1\ttest\tmRNA\t1\t16\t.\t+\t.\tID=t1;Parent=g1",
+            "chr1\ttest\texon\t1\t16\t.\t+\t.\tID=e1;Parent=t1",
+            "chr1\ttest\tCDS\t1\t10\t.\t+\t0\tID=c1;Parent=t1",
+            "chr1\ttest\tCDS\t11\t16\t.\t+\t0\tID=c1;Parent=t1",
+            f"chr1\ttest\tmRNA\t17\t{len(seq)}\t.\t+\t.\tID=t2;Parent=g1",
+            f"chr1\ttest\texon\t17\t{len(seq)}\t.\t+\t.\tID=e2;Parent=t2",
+            f"chr1\ttest\tCDS\t17\t{len(seq)}\t.\t+\t0\tID=c2;Parent=t2",
+        ]
+        gff_file = tmp_path / "qc.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": seq}), quiet=True)
+        qc = annot.get_protein_qc_summary()
+        assert qc["total_proteins"] == 2
+        assert (qc["complete_proteins"], qc["frameshifted_proteins"]) == (1, 1)
+        assert (qc["partial_proteins"], qc["partial_5prime"], qc["partial_3prime"]) == (1, 0, 1)
+        assert qc["truncated_proteins"] == 1
 
 
 # ============================================================
@@ -1229,10 +1716,11 @@ class TestAnnotationRemoveGenesWithNoTranscripts:
         annot.chrs["chr1"]["emptyG"] = empty_gene
         annot.all_gene_ids["emptyG"] = "chr1"
 
+        assert "emptyG" in annot.recheck_warnings()["gene_with_no_transcripts"]
         annot.detect_genes_with_no_transcripts(remove=True, quiet=True)
         assert "emptyG" not in annot.chrs["chr1"]
-        assert "gene_with_no_transcripts" in annot.warnings
-        assert "emptyG" in annot.warnings["gene_with_no_transcripts"]
+        assert "emptyG" not in annot.warnings["gene_with_no_transcripts"]
+        assert annot.recheck_warnings()["gene_with_no_transcripts"] == set()
 
     def test_keeps_gene_with_transcripts(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
@@ -1409,12 +1897,27 @@ class TestCDSOnlyGFF3:
         annot.generate_introns()
         assert len(t.introns) == 2 # type: ignore
 
-    def test_gene_coordinates_corrected(self, cds_only_gff3_file):
-        """Gene coordinates are corrected to match the actual subfeature span"""
-        annot = Annotation(cds_only_gff3_file, quiet=True)
+    def test_gene_coordinates_trimmed(self, cds_only_gff3_file):
+        """In trim mode, gene coordinates are trimmed to match the actual subfeature span"""
+        annot = Annotation(cds_only_gff3_file, quiet=True, coordinate_polishing="trim")
         g = annot.chrs["chr1"]["gene_co1"]
         assert g.start == 1200
         assert g.end == 4800
+
+    def test_gene_coordinates_contained(self, cds_only_gff3_file):
+        """In contain mode, the gene keeps its excess region beyond the transcript"""
+        annot = Annotation(cds_only_gff3_file, quiet=True, coordinate_polishing="contain")
+        g = annot.chrs["chr1"]["gene_co1"]
+        t = annot.chrs["chr1"]["gene_co1"].transcripts["mRNA_co1"]
+        assert (t.start, t.end) == (1200, 4800)
+        assert (g.start, g.end) == (1000, 5000)
+        # In the input, the mRNA spans beyond its (CDS-derived) exons; the gene matches the mRNA
+        assert "mRNA_co1" in annot.warnings["exon_transcript_boundary_mismatch"]
+        assert "gene_co1" not in annot.warnings["gene_exceeds_transcripts"]
+        # Once the transcript is polished, the kept gene excess shows up in the object's state
+        rechecked = annot.recheck_warnings()
+        assert "gene_co1" in rechecked["gene_exceeds_transcripts"]
+        assert rechecked["exon_transcript_boundary_mismatch"] == set()
 
 
 # ---- 3. No subfeatures (single-exon fallback) ----
@@ -1541,6 +2044,25 @@ class TestPseudogeneGFF3:
 
 # ---- 6. Overlapping, and adjacent exons (collapse) ----
 
+class TestCollapseSettingsPersist:
+    # A later update (as run by many methods) follows the collapse settings the annotation was loaded with
+    @staticmethod
+    def _exons(annot):
+        return [(e.start, e.end) for e in annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons]
+
+    def test_update_keeps_models_uncollapsed(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True, collapse_exons=False, collapse_CDSs=False)
+        annot.update(quiet=True)
+        assert self._exons(annot) == [(1000, 2500), (2000, 3500), (3500, 4000), (5000, 6000)]
+        cds = annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].CDSs["CDS_ov1"]
+        assert len(cds.CDS_segments) == 3
+
+    def test_update_can_still_collapse_when_asked(self, exons_to_collapse_gff3_file):
+        annot = Annotation(exons_to_collapse_gff3_file, quiet=True, collapse_exons=False)
+        annot.update(collapse_exons=True, quiet=True)
+        assert self._exons(annot) == [(1000, 4000), (5000, 6000)]
+
+
 class TestExonsToCollapseGFF3:
     """Gene with overlapping and adjacent exons is collapsed into fewer exons"""
 
@@ -1607,6 +2129,81 @@ class TestMultiCDSIdsGFF3:
         annot = Annotation(multi_cds_ids_gff3_file, quiet=True)
         t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
         assert len(t.exons) == 2
+
+    def test_polycistronic_warning_registered(self, multi_cds_ids_gff3_file):
+        annot = Annotation(multi_cds_ids_gff3_file, quiet=True)
+        assert "mRNA_mc1" in annot.warnings["independent_CDS_segment_ids"]
+        t = annot.chrs["chr1"]["gene_mc1"].transcripts["mRNA_mc1"]
+        assert not hasattr(t, "polycistronic")
+        # Ensure repeated updates on already initialized annotation do not wipe warnings
+        annot.update(quiet=True)
+        assert "mRNA_mc1" in annot.warnings["independent_CDS_segment_ids"]
+
+    def test_overlapping_cds_warning_registered(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t3000\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t3000\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t3000\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1000\t2000\t.\t+\t0\tID=cds1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1999\t3000\t.\t+\t0\tID=cds1;Parent=t1\n"
+        )
+        p = tmp_path / "overlap.gff3"
+        p.write_text(gff_content)
+        annot = Annotation(str(p), quiet=True)
+        assert "t1" in annot.warnings["overlapping_CDS_segments"]
+        assert "t1" not in annot.warnings["possible_polycistronic_transcript"]
+        assert "t1" not in annot.warnings["independent_CDS_segment_ids"]
+
+    def test_polycistronic_grouped_ids_warning_registered(self, tmp_path):
+        gff_content = (
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1000\t4000\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1000\t4000\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1000\t4000\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1000\t1500\t.\t+\t0\tID=cds_a;Parent=t1\n"
+            "chr1\taegis\tCDS\t1600\t2000\t.\t+\t0\tID=cds_a;Parent=t1\n"
+            "chr1\taegis\tCDS\t2200\t2600\t.\t+\t0\tID=cds_b;Parent=t1\n"
+            "chr1\taegis\tCDS\t2700\t3200\t.\t+\t0\tID=cds_b;Parent=t1\n"
+        )
+        p = tmp_path / "polycistronic.gff3"
+        p.write_text(gff_content)
+        annot = Annotation(str(p), quiet=True)
+        assert "t1" in annot.warnings["possible_polycistronic_transcript"]
+        assert "t1" not in annot.warnings["independent_CDS_segment_ids"]
+        assert "t1" not in annot.warnings["overlapping_CDS_segments"]
+
+    def test_canonical_gene_example_polycistronic_warning(self, canonical_gene_example_gff3_file):
+        """
+        Canonical GFF3 specification example (canonical_gene_example.gff3, EDEN gene).
+        Exemplifies how multiple logical CDSs (cds00003 for edenprotein.3 and cds00004
+        for edenprotein.4) can theoretically be annotated under the same transcript (mRNA00003).
+        AEGIS warns about both possible_polycistronic_transcript and overlapping_CDS_segments,
+        while strictly preserving its 1 logical CDS per transcript invariant.
+        """
+        annot = Annotation(canonical_gene_example_gff3_file, quiet=True)
+        # mRNA00003 encodes 2 distinct logical CDSs with overlapping coordinates
+        assert "mRNA00003" in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00003" in annot.warnings["overlapping_CDS_segments"]
+        assert "mRNA00003" not in annot.warnings["independent_CDS_segment_ids"]
+
+        # mRNA00001 and mRNA00002 are monocistronic controls
+        assert "mRNA00001" not in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00001" not in annot.warnings["overlapping_CDS_segments"]
+        assert "mRNA00002" not in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00002" not in annot.warnings["overlapping_CDS_segments"]
+
+        # Confirm single-CDS invariant holds (1 logical CDS per transcript)
+        t3 = annot.chrs["ctg123"]["gene00001"].transcripts["mRNA00003"]
+        assert len(t3.CDSs) == 1
+        cds = next(iter(t3.CDSs.values()))
+        assert cds.main is True
+        assert t3.coding is True
+
+        # Warnings persist across updates
+        annot.update(quiet=True)
+        assert "mRNA00003" in annot.warnings["possible_polycistronic_transcript"]
+        assert "mRNA00003" in annot.warnings["overlapping_CDS_segments"]
 
 
 # ---- 8. Transcript without Parent (gene inferred) ----
@@ -1833,24 +2430,29 @@ class TestAnnotationSharedExonParents:
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].end == 1300
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].id == "ov1_e001"
+        # Exon ids are numbered per transcript in the input (exon_3 is a different exon in each transcript):
+        # shared exons share the first id and different exons left with the same id get <id>_<n>
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov2"].exons[0].id == "exon_1"
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].id == "ov1_e002"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].id == "exon_2"
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["mRNA_ov1"].exons[0].parents == ["mRNA_ov1", "mRNA_ov2"]
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].id == "ov1_e008"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].id == "exon_3"
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[0].parents == ["ncRNA1", "ncRNA2", "ncRNA3"]
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].id == "ov1_e004"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].id == "exon_1_3"
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA1"].exons[-1].parents == ["ncRNA1", "ncRNA2"]
 
-        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].id == "ov1_e005"
+        assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].id == "exon_1_2"
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].start == 4500
 
         assert annot.chrs["chr1"]["gene_ov1"].transcripts["ncRNA3"].exons[-1].end == 6000
+
+        exon_ids = {(e.start, e.end, e.strand): e.id for t in annot.chrs["chr1"]["gene_ov1"].transcripts.values() for e in t.exons}
+        assert len(set(exon_ids.values())) == len(exon_ids)
 
     def test_shared_parents_reformatting(self, shared_parents_gff3_file):
         annot = Annotation(shared_parents_gff3_file, quiet=True)
@@ -1882,7 +2484,8 @@ class TestAnnotationClashOfIDs:
         assert "g1.t1" in annot.chrs["chr1"]["g1"].transcripts
         assert "g1.t1_1" in annot.chrs["chr2"]["g1_1"].transcripts
 
-        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].id == "exon_1"
+        # exon_1 is kept by g1 on chr1 (see TestAnnotationSubfeatureIdClashes)
+        assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].id == "exon_1_2"
         assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].parents == ["g1.t1_1"]
         assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].start == 500
         assert annot.chrs["chr2"]["g1_1"].transcripts["g1.t1_1"].exons[0].end == 2000
@@ -1915,6 +2518,83 @@ class TestAnnotationClashOfIDs:
 
         assert len(annot.all_gene_ids) == 4
 
+
+class TestAnnotationSubfeatureIdClashes:
+    @staticmethod
+    def _annotation(tmp_path, rows, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("##gff-version 3\n" + "".join("\t".join(row) + "\n" for row in rows))
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _row(feature, start, end, attributes):
+        return ("chr1", "test", feature, str(start), str(end), ".", "+", "0" if feature == "CDS" else ".", attributes)
+
+    @staticmethod
+    def _exon_ids(annot):
+        return {(g.id, e.start): e.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for e in t.exons}
+
+    def test_ids_repeated_across_genes_are_kept_by_the_first_gene(self, clash_of_ids_gff3_file):
+        annot = Annotation(clash_of_ids_gff3_file, quiet=True)
+        assert self._exon_ids(annot) == {
+            ("g1", 500): "exon_1", ("g1", 5000): "exon_2",
+            ("g1_1", 500): "exon_1_2", ("g1_1", 5000): "exon_2_2",
+            ("g2", 500): "exon_1_3", ("g2", 5000): "exon_2_3",
+            ("g3", 500): "exon_1_4", ("g3", 5000): "exon_2_4",
+        }
+        assert annot.warnings["repeated_subfeature_ids"] == {"exon_1", "exon_2"}
+
+    def test_repeated_ids_are_recorded_when_renamed(self, clash_of_ids_gff3_file):
+        annot = Annotation(clash_of_ids_gff3_file, quiet=True, rename_features=("exon",))
+        assert annot.warnings["repeated_subfeature_ids"] == {"exon_1", "exon_2"}
+        assert all(e_id.startswith(f"{g_id}_e") for (g_id, _), e_id in self._exon_ids(annot).items())
+
+    def test_ids_shared_within_a_gene_are_not_repeated(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            self._row("gene", 1, 30, "ID=g1"),
+            self._row("mRNA", 1, 18, "ID=t1;Parent=g1"),
+            self._row("exon", 1, 18, "ID=e1;Parent=t1,t2"),
+            self._row("mRNA", 1, 30, "ID=t2;Parent=g1"),
+            self._row("exon", 25, 30, "ID=e2;Parent=t2"),
+        ])
+        assert self._exon_ids(annot) == {("g1", 1): "e1", ("g1", 25): "e2"}
+        assert not annot.warnings["repeated_subfeature_ids"]
+
+    def test_repeated_CDS_ids_give_unique_protein_ids(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            self._row("gene", 1, 18, "ID=g1"),
+            self._row("mRNA", 1, 18, "ID=t1;Parent=g1"),
+            self._row("exon", 1, 18, "ID=e1;Parent=t1"),
+            self._row("CDS", 4, 15, "ID=cds1;Parent=t1"),
+            self._row("gene", 19, 36, "ID=g2"),
+            self._row("mRNA", 19, 36, "ID=t2;Parent=g2"),
+            self._row("exon", 19, 36, "ID=e2;Parent=t2"),
+            self._row("CDS", 22, 33, "ID=cds1;Parent=t2"),
+        ], genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" * 2}))
+        t2 = annot.chrs["chr1"]["g2"].transcripts["t2"]
+        assert list(t2.CDSs) == ["cds1_2"]
+        assert [cs.id for cs in t2.CDSs["cds1_2"].CDS_segments] == ["cds1_2"]
+        assert list(annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs) == ["cds1"]
+        annot.generate_proteins()
+        assert sorted(c.protein.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for c in t.CDSs.values()) == ["cds1.prot", "cds1_2.prot"]
+        # Derived UTRs are named after their genes, so they do not repeat with the CDS id
+        utr_ids = [u.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for c in t.CDSs.values() for u in c.UTRs]
+        assert sorted(utr_ids) == ["g1_u001", "g1_u002", "g2_u001", "g2_u002"]
+        assert annot.warnings["repeated_subfeature_ids"] == {"cds1"}
+
+    def test_gene_and_transcript_ids_are_kept_and_new_ids_are_unused(self, tmp_path):
+        # Exon "g2" repeats the id of gene g2, and "g2_2" is already taken
+        annot = self._annotation(tmp_path, [
+            self._row("gene", 1, 18, "ID=g1"),
+            self._row("mRNA", 1, 18, "ID=t1;Parent=g1"),
+            self._row("exon", 1, 5, "ID=g2;Parent=t1"),
+            self._row("exon", 11, 18, "ID=g2_2;Parent=t1"),
+            self._row("gene", 19, 36, "ID=g2"),
+            self._row("mRNA", 19, 36, "ID=t2;Parent=g2"),
+            self._row("exon", 19, 36, "ID=t1;Parent=t2"),
+        ])
+        assert self._exon_ids(annot) == {("g1", 1): "g2_3", ("g1", 11): "g2_2", ("g2", 19): "t1_2"}
+        assert annot.warnings["repeated_subfeature_ids"] == {"g2", "t1"}
 
 
 # ============================================================
@@ -2655,7 +3335,8 @@ class TestReworkCDS:
         output_dir = tmp_path
 
         genome = Genome("TAIR10", arabidopsis_tair10_fasta_file)
-        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4)
+        # Renaming as aegis tidy does by default
+        annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4, rename_features=("CDS", "exon", "UTR"))
 
         annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True)
 
@@ -2724,6 +3405,456 @@ class TestAnnotationReworkCDSsFallback:
         cds = list(t.CDSs.values())[0]
         assert cds.protein is not None
         assert len(cds.protein) == 10
+
+
+class TestAnnotationReworkCDSsRenaming:
+    # The ORF (4..15) leaves a 5' and a 3' UTR
+    GFF = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t18\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t18\t.\t+\t.\tID=my_exon;Parent=t1\n"
+    )
+
+    def _annotation(self, tmp_path, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF)
+        return Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG"}), quiet=True, **kwargs)
+
+    @staticmethod
+    def _ids(annot):
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        return [e.id for e in t.exons], list(t.CDSs), [u.id for c in t.CDSs.values() for u in c.UTRs]
+
+    def test_new_CDS_and_UTRs_are_named(self, tmp_path):
+        annot = self._annotation(tmp_path)
+        annot.rework_CDSs(quiet=True)
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
+
+    def test_reworked_UTRs_shared_between_transcripts_share_their_id(self, tmp_path):
+        # t1 and t2 share the 5' UTR (1..3) but not the 3' UTR
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF.replace("\tgene\t1\t18\t", "\tgene\t1\t30\t") + (
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e2;Parent=t2\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" + "C" * 12}), quiet=True)
+        annot.rework_CDSs(quiet=True)
+        utrs = {t.id: [(u.start, u.id) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert utrs == {"t1": [(1, "g1_u001"), (16, "g1_u002")], "t2": [(1, "g1_u001"), (16, "g1_u003")]}
+
+    def test_only_reworked_transcripts_are_renamed(self, tmp_path):
+        # Without override only non-coding t1 is reworked; coding t2 keeps its CDS ID
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + (
+            "chr1\ttest\tgene\t19\t36\t.\t+\t.\tID=g2\n"
+            "chr1\ttest\tmRNA\t19\t36\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\ttest\texon\t19\t36\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\ttest\tCDS\t22\t33\t.\t+\t0\tID=my_cds;Parent=t2\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" * 2}), quiet=True)
+        annot.rework_CDSs(override=False, quiet=True)
+        assert self._ids(annot)[1] == ["t1_CDS001"]
+        assert list(annot.chrs["chr1"]["g2"].transcripts["t2"].CDSs) == ["my_cds"]
+
+    def test_unchanged_CDS_and_UTRs_keep_their_ids_and_attributes(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + (
+            "chr1\ttest\tfive_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=my_cds;Parent=t1;product=foo\n"
+            "chr1\ttest\tthree_prime_UTR\t16\t18\t.\t+\t.\tID=my_utr3;Parent=t1\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG"}), quiet=True)
+        annot.rework_CDSs(quiet=True)
+        assert self._ids(annot) == (["my_exon"], ["my_cds"], ["my_utr5", "my_utr3"])
+        cds = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["my_cds"]
+        assert cds.protein.id == "my_cds.prot"
+        assert all("product=foo" in cs.misc_attributes for cs in cds.CDS_segments)
+
+    def test_changed_CDS_is_named_and_unchanged_UTRs_keep_their_ids(self, tmp_path):
+        # The read CDS (4..9) lacks the stop codon, the reworked one is 4..15: the 5' UTR is unchanged
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + (
+            "chr1\ttest\tfive_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1\n"
+            "chr1\ttest\tCDS\t4\t9\t.\t+\t0\tID=my_cds;Parent=t1\n"
+            "chr1\ttest\tthree_prime_UTR\t10\t18\t.\t+\t.\tID=my_utr3;Parent=t1\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG"}), quiet=True, consider_read_utrs=True)
+        annot.rework_CDSs(quiet=True)
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["my_utr5", "g1_u001"])
+
+    def test_UTRs_of_transcripts_not_reworked_are_kept(self, tmp_path):
+        # Without override only non-coding t2 is reworked; its 5' UTR is shared with t1 and takes its id
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF.replace("\tgene\t1\t18\t", "\tgene\t1\t30\t") + (
+            "chr1\ttest\tfive_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=my_cds;Parent=t1\n"
+            "chr1\ttest\tthree_prime_UTR\t16\t18\t.\t+\t.\tID=my_utr3;Parent=t1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e2;Parent=t2\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" + "C" * 12}), quiet=True, consider_read_utrs=True)
+        annot.rework_CDSs(override=False, quiet=True)
+        ids = {t.id: (list(t.CDSs), [u.id for c in t.CDSs.values() for u in c.UTRs]) for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert ids == {"t1": (["my_cds"], ["my_utr5", "my_utr3"]), "t2": (["t2_CDS001"], ["my_utr5", "g1_u001"])}
+
+    def test_new_UTRs_are_numbered_in_transcript_order_on_minus_strand(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF.replace("\t+\t", "\t-\t"))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCTTAGGGTTTCATGGG"}), quiet=True)
+        annot.rework_CDSs(quiet=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert sorted((u.prime, u.id) for c in t.CDSs.values() for u in c.UTRs) == [("3'", "g1_u002"), ("5'", "g1_u001")]
+
+    def test_constructor_renames_only_reworked_features(self, tmp_path):
+        # e.g. tidy (without --rename-subfeature-ids) passes rename_features=(): only new CDSs and UTRs get ids
+        annot = self._annotation(tmp_path, rework_all_CDSs=True, rename_features=())
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
+
+
+class TestAnnotationRenameKeepNumbers:
+    @staticmethod
+    def _annotation(tmp_path, transcripts):
+        # transcripts: (transcript id, exon id, exon start, exon end)
+        lines = ["##gff-version 3", "chr1\ttest\tgene\t1\t100\t.\t+\t.\tID=g1"]
+        for t_id, e_id, start, end in transcripts:
+            lines.append(f"chr1\ttest\tmRNA\t{start}\t{end}\t.\t+\t.\tID={t_id};Parent=g1")
+            lines.append(f"chr1\ttest\texon\t{start}\t{end}\t.\t+\t.\tID={e_id};Parent={t_id}")
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        return Annotation(str(gff_file), quiet=True)
+
+    @staticmethod
+    def _ids(annot):
+        return sorted((t.id, [e.id for e in t.exons]) for t in annot.chrs["chr1"]["g1"].transcripts.values())
+
+    def test_unambiguous_numbers_are_kept(self, tmp_path):
+        annot = self._annotation(tmp_path, [("g1.2", "g1:exon:4", 1, 50), ("g1.3", "g1:exon:7", 60, 100)])
+        annot.rename_ids(features=("transcript", "exon"), keep_subfeature_numbers=True, quiet=True)
+        assert self._ids(annot) == [("g1_t002", ["g1_e004"]), ("g1_t003", ["g1_e007"])]
+
+    def test_ambiguous_numbers_are_renumbered(self, tmp_path):
+        # NCBI-like: transcript versions and per-transcript exon numbers repeat across the gene
+        annot = self._annotation(tmp_path, [("rna-NM_1.2", "exon-NM_1.2-1", 1, 50), ("rna-NM_2.2", "exon-NM_2.2-1", 60, 100)])
+        annot.rename_ids(features=("transcript", "exon"), keep_subfeature_numbers=True, quiet=True)
+        assert self._ids(annot) == [("g1_t001", ["g1_e001"]), ("g1_t002", ["g1_e002"])]
+
+
+class TestAnnotationUTRIdentity:
+    # Two exons (1..10, 20..40) and a CDS 25..34: UTRs 1..10 and 20..24 (5') and 35..40 (3')
+    GFF = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t40\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t40\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t10\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t20\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+        "chr1\ttest\tCDS\t25\t34\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+
+    def _utrs(self, tmp_path, utr_lines=""):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + utr_lines)
+        annot = Annotation(str(gff_file), quiet=True)
+        return annot, annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs
+
+    def test_read_UTRs_keep_their_ids_and_attributes(self, tmp_path):
+        _, utrs = self._utrs(tmp_path, "chr1\ttest\tfive_prime_UTR\t1\t10\t.\t+\t.\tID=utr_a;Parent=t1;Note=x\n")
+        assert [(u.start, u.id) for u in utrs] == [(1, "utr_a"), (20, "g1_u001"), (35, "g1_u002")]
+        assert utrs[0].misc_attributes == ["Note=x"]
+
+    def test_new_UTRs_do_not_reuse_kept_ids(self, tmp_path):
+        _, utrs = self._utrs(tmp_path, "chr1\ttest\tthree_prime_UTR\t35\t40\t.\t+\t.\tID=g1_u001;Parent=t1\n")
+        assert [(u.start, u.id) for u in utrs] == [(1, "g1_u002"), (20, "g1_u003"), (35, "g1_u001")]
+
+    def test_ids_survive_updates(self, tmp_path):
+        annot, utrs = self._utrs(tmp_path)
+        annot.rename_ids(features=("UTR",), quiet=True)
+        renamed = [u.id for u in utrs]
+        annot.update(quiet=True)
+        assert [u.id for u in annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs] == renamed == ["g1_u001", "g1_u002", "g1_u003"]
+
+
+class TestAnnotationDerivedUTRIds:
+    # Derived UTRs are named after their gene (<gene>_u<n>), whether or not UTRs are renamed
+    @staticmethod
+    def _annotation(tmp_path, rows, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("##gff-version 3\n" + "".join(f"chr1\ttest\t{row}\n" for row in rows))
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _utrs(annot, g_id="g1"):
+        return {t.id: [(u.start, u.id) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"][g_id].transcripts.values()}
+
+    def test_derived_UTRs_are_named_after_their_gene(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t18\t.\t+\t.\tID=g1",
+            "mRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t+\t.\tID=e1;Parent=t1",
+            "CDS\t4\t15\t.\t+\t0\tID=cds-XP_1;Parent=t1",
+        ])
+        assert self._utrs(annot) == {"t1": [(1, "g1_u001"), (16, "g1_u002")]}
+        assert not any(u.provisional for c in annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs.values() for u in c.UTRs)
+
+    def test_minus_strand_is_numbered_in_transcript_order(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t18\t.\t-\t.\tID=g1",
+            "mRNA\t1\t18\t.\t-\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t-\t.\tID=e1;Parent=t1",
+            "CDS\t4\t15\t.\t-\t0\tID=c1;Parent=t1",
+        ])
+        assert self._utrs(annot) == {"t1": [(1, "g1_u002"), (16, "g1_u001")]}
+
+    def test_derived_UTR_takes_the_id_of_a_read_one_with_its_coordinates(self, tmp_path):
+        # t2's 5' UTR is derived with the coordinates of t1's read one, listed first
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t30\t.\t+\t.\tID=g1",
+            "mRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g1",
+            "exon\t1\t30\t.\t+\t.\tID=e2;Parent=t2",
+            "CDS\t4\t15\t.\t+\t0\tID=c2;Parent=t2",
+            "mRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t+\t.\tID=e1;Parent=t1",
+            "five_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1",
+            "CDS\t4\t15\t.\t+\t0\tID=c1;Parent=t1",
+        ])
+        assert self._utrs(annot) == {"t1": [(1, "my_utr5"), (16, "g1_u001")], "t2": [(1, "my_utr5"), (16, "g1_u002")]}
+
+    def test_UTRs_derived_after_loading_are_named_on_update(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t18\t.\t+\t.\tID=g1",
+            "mRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t+\t.\tID=e1;Parent=t1",
+            "CDS\t4\t15\t.\t+\t0\tID=c1;Parent=t1",
+        ])
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        t.exons[0].end = 24
+        t.update()
+        assert [(u.end, u.id, u.provisional) for c in t.CDSs.values() for u in c.UTRs] == [(3, "g1_u001", False), (24, "c1_u1", True)]
+        annot.update(quiet=True)
+        assert self._utrs(annot) == {"t1": [(1, "g1_u001"), (16, "g1_u002")]}
+
+
+class TestAnnotationSharedExonsUTRs:
+    # Two transcripts share exon start and CDS, so their 5' UTR (1..3) is one shared feature; their exons
+    # (per-transcript ids) are shared when identical
+    @staticmethod
+    def _annotation(tmp_path, second_exon_end):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t18\t.\t+\t.\tID=g1.1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t18\t.\t+\t.\tID=g1.1_exon1;Parent=g1.1\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=g1.1_cds;Parent=g1.1\n"
+            f"chr1\ttest\tmRNA\t1\t{second_exon_end}\t.\t+\t.\tID=g1.2;Parent=g1\n"
+            f"chr1\ttest\texon\t1\t{second_exon_end}\t.\t+\t.\tID=g1.2_exon1;Parent=g1.2\n"
+            "chr1\ttest\tCDS\t4\t15\t.\t+\t0\tID=g1.2_cds;Parent=g1.2\n"
+        )
+        return Annotation(str(gff_file), quiet=True)
+
+    @staticmethod
+    def _utr_ids(annot):
+        return [[(u.start, u.id, u.parents) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"]["g1"].transcripts.values()]
+
+    def test_shared_UTR_shares_its_id_without_renaming(self, tmp_path):
+        # Derived UTRs are named after their gene (see TestAnnotationDerivedUTRIds)
+        annot = self._annotation(tmp_path, 30)
+        assert self._utr_ids(annot) == [
+            [(1, "g1_u001", ["g1.1", "g1.2"]), (16, "g1_u002", ["g1.1"])],
+            [(1, "g1_u001", ["g1.1", "g1.2"]), (16, "g1_u003", ["g1.2"])],
+        ]
+
+    def test_shared_UTR_shares_its_id_when_existing_ids_are_kept(self, tmp_path):
+        annot = self._annotation(tmp_path, 30)
+        annot.rename_ids(features=("UTR",), keep_existing_ids_if_derived_from_base_id=True, quiet=True)
+        ids = [[u_id for _, u_id, _ in t] for t in self._utr_ids(annot)]
+        assert ids == [["g1_u001", "g1_u002"], ["g1_u001", "g1_u003"]]
+
+    def test_shared_exon_shares_its_id(self, tmp_path):
+        annot = self._annotation(tmp_path, 18)
+        exons = [e for t in annot.chrs["chr1"]["g1"].transcripts.values() for e in t.exons]
+        assert [(e.id, e.parents) for e in exons] == [("g1.1_exon1", ["g1.1", "g1.2"])] * 2
+
+
+class TestCDSSegmentsInIntrons:
+    # Exons 1..100, 200..300, 400..500 (intron 101..199 and 301..399)
+    EXONS = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t500\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t200\t300\t.\t+\t.\tID=e2;Parent={e2_parents}\n"
+        "chr1\ttest\texon\t400\t500\t.\t+\t.\tID=e3;Parent=t1\n"
+    )
+
+    def _annotation(self, tmp_path, cds_rows, mode, extra="", e2_parents="t1"):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.EXONS.replace("{e2_parents}", e2_parents) + extra + "".join(f"chr1\ttest\tCDS\t{a}\t{b}\t.\t+\t0\tID=c1;Parent=t1\n" for a, b in cds_rows))
+        return Annotation(str(gff_file), quiet=True, coordinate_polishing=mode)
+
+    @staticmethod
+    def _exons(annot, t_id="t1"):
+        return [(e.start, e.end) for e in annot.chrs["chr1"]["g1"].transcripts[t_id].exons]
+
+    def test_row_reaching_into_intron_is_reported(self, tmp_path):
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode="none")
+        assert annot.warnings["cds_segment_in_intron"] == {"c1"}
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == {"c1"}
+        assert self._exons(annot) == [(1, 100), (200, 300), (400, 500)]
+
+    @pytest.mark.parametrize("mode", ["contain", "trim"])
+    def test_polishing_extends_the_overlapped_exon(self, tmp_path, mode):
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode=mode)
+        assert annot.warnings["cds_segment_in_intron"] == {"c1"}
+        assert self._exons(annot) == [(1, 100), (200, 320), (400, 500)]
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == set()
+
+    @pytest.mark.parametrize("cds_rows", [
+        [(50, 100), (150, 180), (200, 300)],  # a row within an intron
+        [(50, 100), (250, 420), (430, 450)],  # a row spanning an intron
+    ])
+    def test_rows_within_or_across_introns_are_only_reported(self, tmp_path, cds_rows):
+        annot = self._annotation(tmp_path, cds_rows, mode="contain")
+        assert self._exons(annot) == [(1, 100), (200, 300), (400, 500)]
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == {"c1"}
+
+    def test_row_reaching_the_next_exon_is_only_reported(self, tmp_path):
+        # Extending exon 2 to 399 would make it touch exon 3 and remove the splice junction
+        annot = self._annotation(tmp_path, [(50, 100), (200, 399), (400, 450)], mode="contain")
+        assert self._exons(annot) == [(1, 100), (200, 300), (400, 500)]
+        assert annot.recheck_warnings()["cds_segment_in_intron"] == {"c1"}
+
+    def test_extended_shared_exon_keeps_only_its_own_transcript_as_parent(self, tmp_path):
+        # e2 is one GFF row shared by t1 and t2; only t1's copy is extended
+        t2 = (
+            "chr1\ttest\tmRNA\t200\t300\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\tCDS\t210\t290\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode="contain", extra=t2, e2_parents="t1,t2")
+        annot_exons = {t.id: [(e.start, e.end, e.parents) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert (200, 320, ["t1"]) in annot_exons["t1"]
+        assert annot_exons["t2"] == [(200, 300, ["t2"])]
+
+    def test_extended_exon_renamed_when_its_id_would_clash(self, tmp_path):
+        # e2 is shared with t2, whose CDS stays within it; extending t1's copy would leave two e2 exons
+        t2 = (
+            "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t200\t300\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\ttest\tCDS\t210\t290\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        annot = self._annotation(tmp_path, [(50, 100), (200, 320), (400, 450)], mode="contain", extra=t2)
+        exons = {t.id: [(e.id, e.start, e.end) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        # Only t1's extended copy of e2 gets a new id
+        assert exons == {"t1": [("e1", 1, 100), ("e2_2", 200, 320), ("e3", 400, 500)], "t2": [("e2", 200, 300)]}
+
+
+class TestAnnotationCollapsing:
+    @staticmethod
+    def _annotation(tmp_path, body):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("##gff-version 3\nchr1\ttest\tgene\t1\t100\t.\t+\t.\tID=g1\n" + body)
+        return Annotation(str(gff_file), quiet=True)
+
+    def test_collapsing_exons_keeps_ids_and_records_warnings(self, tmp_path):
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\texon\t31\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\texon\t60\t100\t.\t+\t.\tID=e3;Parent=t1\n"
+            "chr1\ttest\tCDS\t10\t40\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t60\t80\t.\t+\t2\tID=c1;Parent=t1\n"
+        ))
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert [(e.id, e.start, e.end) for e in t.exons] == [("e1", 1, 40), ("e3", 60, 100)]
+        assert annot.warnings["abutting_exons"] == {"t1"}
+        assert annot.recheck_warnings()["abutting_exons"] == set()
+
+    def test_merging_a_shared_exon_updates_parents(self, tmp_path):
+        # e1 is shared by t1 and t2, but only t1 merges it with the abutting e2
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1,t2\n"
+            "chr1\ttest\texon\t31\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\texon\t50\t60\t.\t+\t.\tID=e3;Parent=t1,t2\n"
+        ))
+        exons = {t.id: [(e.start, e.end, e.parents) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert exons == {"t1": [(1, 40, ["t1"]), (50, 60, ["t1", "t2"])], "t2": [(1, 30, ["t2"]), (50, 60, ["t1", "t2"])]}
+
+    def test_parents_outside_the_gene_are_kept(self, tmp_path):
+        # References to transcripts that do not exist are kept unless remove_missing_transcript_parent_references
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t60\t.\t+\t.\tID=e1;Parent=t1,missing\n"
+        ))
+        assert annot.chrs["chr1"]["g1"].transcripts["t1"].exons[0].parents == ["missing", "t1"]
+
+    def test_merged_exon_renamed_when_its_id_would_clash(self, tmp_path):
+        # e1 is shared by t1 and t2, but only t1 also has the overlapping e2
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\tmRNA\t1\t60\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1,t2\n"
+            "chr1\ttest\texon\t20\t40\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\ttest\texon\t50\t60\t.\t+\t.\tID=e3;Parent=t1,t2\n"
+        ))
+        exons = {t.id: [(e.id, e.start, e.end) for e in t.exons] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        # Only t1's merged exon gets a new id; t2's unmerged e1 and the untouched e3 keep theirs
+        assert exons == {"t1": [("e1_2", 1, 40), ("e3", 50, 60)], "t2": [("e1", 1, 30), ("e3", 50, 60)]}
+
+    def test_collapsing_CDS_rows_keeps_UTR_ids(self, tmp_path):
+        annot = self._annotation(tmp_path, (
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tfive_prime_UTR\t1\t9\t.\t+\t.\tID=my_utr;Parent=t1\n"
+            "chr1\ttest\tCDS\t10\t39\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\ttest\tCDS\t40\t69\t.\t+\t0\tID=c1;Parent=t1\n"
+        ))
+        c = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
+        assert [(s.start, s.end) for s in c.CDS_segments] == [(10, 69)]
+        assert c.UTRs[0].id == "my_utr"
+
+
+class TestAnnotationUniqueSubfeatureIds:
+    def test_per_transcript_exon_ids_become_unique(self, tmp_path):
+        # e1 means a different exon in each transcript; nothing is merged or renamed
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t100\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\ttest\tmRNA\t1\t100\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t50\t100\t.\t+\t.\tID=e1;Parent=t2\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        assert [e.id for t in annot.chrs["chr1"]["g1"].transcripts.values() for e in t.exons] == ["e1", "e1_2"]
+
+
+class TestAnnotationRenameUTRs:
+    # Minus-strand mRNA CCC|ATGAAACCCTAA|GGG: CDS 4..15, UTRs 1..3 (3') and 16..18 (5')
+    GFF = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t18\t.\t-\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t18\t.\t-\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t18\t.\t-\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\tCDS\t4\t15\t.\t-\t0\tID=c1;Parent=t1\n"
+    )
+
+    def test_rename_ids_renames_UTRs(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF)
+        annot = Annotation(str(gff_file), quiet=True)
+        utrs = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs
+
+        annot.rename_ids(features=("UTR",), quiet=True)
+        renamed = sorted((u.start, u.id) for u in utrs)
+        assert renamed == [(1, "g1_u002"), (16, "g1_u001")]
+        assert "UTR" in annot.renamed_features
+
+        # Keeping the numbers of already renamed minus-strand UTRs leaves them unchanged
+        annot.rename_ids(features=("UTR",), keep_subfeature_numbers=True, quiet=True)
+        assert sorted((u.start, u.id) for u in utrs) == renamed
 
 
 class TestAnnotationGenerateProteinsCorrectCDS:
@@ -2797,18 +3928,17 @@ class TestProteinFlags:
         # ATG AAA CTT | T (skipped) | GAC TAA: +1 shift encoded by a 3n+1 first segment
         p = self._protein(tmp_path, "ATGAAACTTTGACTAA", [(1, 10, 0), (11, 16, 0)])
         assert p.seq == "MKLD*"
-        assert p.frameshifts == 1
+        assert p.frameshifts == (1,)
+        assert p.tags["frameshifts"] == "+1"
         assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
         assert p.partial is False
-        assert p.nucleotide_surplus is False
-        assert "frameshift" in p.summary_tag
+        assert "frameshifts" in p.tags
 
     def test_bases_after_stop_are_not_partial(self, tmp_path):
         # ATG AAA TAA + 2 extra bases
         p = self._protein(tmp_path, "ATGAAATAAGC", [(1, 11, 0)])
         assert p.trimmed_3p == 2
         assert p.partial_3prime is False
-        assert p.nucleotide_surplus is True
 
     def test_missing_stop_is_3prime_partial(self, tmp_path):
         # ATG AAA AAA + 2 bases, no stop
@@ -2824,6 +3954,49 @@ class TestProteinFlags:
         assert p.start_status == "none"
         assert p.partial_5prime is True
         assert p.partial_3prime is False
+
+
+class TestOrganelleGeneIds:
+    @staticmethod
+    def _annotation(tmp_path, chroms, **kwargs):
+        # One gene per entry, genes on the same chromosome placed one after the other
+        lines = ["##gff-version 3"]
+        for i, chrom in enumerate(chroms):
+            start = 1 + 20 * i
+            lines.append(f"{chrom}\ttest\tgene\t{start}\t{start + 8}\t.\t+\t.\tID=g{i}")
+            lines.append(f"{chrom}\ttest\tmRNA\t{start}\t{start + 8}\t.\t+\t.\tID=t{i};Parent=g{i}")
+            lines.append(f"{chrom}\ttest\texon\t{start}\t{start + 8}\t.\t+\t.\tID=e{i};Parent=t{i}")
+        gff_file = tmp_path / "organelles.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _renamed(annot):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="TST", quiet=True)
+        return {g.original_id: g.id for genes in annot.chrs.values() for g in genes.values()}
+
+    def test_compartments_are_detected_from_gff_chromosome_names(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chr1", "chrM", "ChrC"], taxonomy="vertebrate")
+        assert [annot.chromosome_compartment(c) for c in ("chr1", "chrM", "ChrC")] == ["nuclear", "mitochondria", "chloroplast"]
+        assert annot.translation_table("chrM") == annot.mito_table == 2
+
+    def test_organelle_genes_are_labelled_chrMT_and_chrCP(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chr1", "chr1", "chrM", "ChrC"])
+        ids = self._renamed(annot)
+        assert ids == {"g0": "TSTchr1g00100", "g1": "TSTchr1g00200", "g2": "TSTchrMTg00100", "g3": "TSTchrCPg00100"}
+        assert list(annot.chrs["chrM"]["TSTchrMTg00100"].transcripts)[0].startswith("TSTchrMTg00100")
+
+    def test_chromosomes_of_one_organelle_continue_its_numbering(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chrM", "contig_9", "chr1"], mitochondria_chroms=["contig_9"])
+        ids = self._renamed(annot)
+        assert ids["g2"] == "TSTchr1g00100"
+        assert sorted([ids["g0"], ids["g1"]]) == ["TSTchrMTg00100", "TSTchrMTg00200"]
+
+    def test_without_auto_detection_only_listed_chromosomes_are_organelles(self, tmp_path):
+        annot = self._annotation(tmp_path, ["chrM", "contig_9"], auto_organelle_detection=False, chloroplast_chroms=["contig_9"])
+        assert self._renamed(annot) == {"g0": "TSTchrMg00100", "g1": "TSTchrCPg00100"}
 
 
 class TestOrganelleTranslation:
@@ -2857,7 +4030,7 @@ class TestOrganelleTranslation:
         assert cds_vert.protein is not None
         assert cds_vert.protein.seq == "MW*"
 
-    def test_disable_auto_organelle_codes(self, tmp_path):
+    def test_disable_auto_organelle_detection(self, tmp_path):
         gff_content = (
             "##gff-version 3\n"
             "chrM\ttest\tgene\t1\t9\t.\t+\t.\tID=g_mito\n"
@@ -2871,8 +4044,8 @@ class TestOrganelleTranslation:
         genome = MockGenome({"chrM": "ATGTGATAA"})
         genome.scaffolds["chrM"].mitochondria = True
 
-        # When auto_organelle_codes is False, Table 1 is used -> TGA is Stop (*), TAA is Stop (*) -> M**
-        annot = Annotation(str(gff_file), genome=genome, auto_organelle_codes=False, quiet=True)
+        # When auto_organelle_detection is False, Table 1 is used -> TGA is Stop (*), TAA is Stop (*) -> M**
+        annot = Annotation(str(gff_file), genome=genome, auto_organelle_detection=False, quiet=True)
         annot.generate_proteins(mode="end", quiet=True)
 
         cds = annot.chrs["chrM"]["g_mito"].transcripts["t_mito"].CDSs["cds_mito"]
@@ -2962,7 +4135,7 @@ class TestOrganelleTranslation:
         assert cds_pt_plant.protein.start_status == "canonical"
 
         # Literal translation of the initiator when requested
-        annot_literal = Annotation(str(gff_file), genome=genome, initiator_methionine="none", quiet=True)
+        annot_literal = Annotation(str(gff_file), genome=genome, initiator_methionine=False, quiet=True)
         annot_literal.generate_proteins(mode="end", quiet=True)
         assert annot_literal.chrs["chrPt"]["g_pt"].transcripts["t_pt"].CDSs["cds_pt"].protein.seq == "VK*"
 
@@ -2973,3 +4146,88 @@ class TestOrganelleTranslation:
         cds_mt_vert = annot_vert.chrs["chrMT"]["g_mt"].transcripts["t_mt"].CDSs["cds_mt"]
         assert cds_mt_vert.protein is not None
         assert cds_mt_vert.protein.seq == "MW*"
+
+class TestReadUTRs:
+    # Exon 1..200 with CDS 11..103; derived UTRs are 1..10 and 104..200, the read 3' UTR stops at 150
+    HEADER = (
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t200\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t200\t.\t+\t.\tID=t1;Parent=g1\n"
+    )
+    EXON = "chr1\ttest\texon\t1\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+    CDS = "chr1\ttest\tCDS\t11\t103\t.\t+\t0\tID=c1;Parent=t1\n"
+    UTRS = (
+        "chr1\ttest\tfive_prime_UTR\t1\t10\t.\t+\t.\tID=u5;Parent=t1\n"
+        "chr1\ttest\tthree_prime_UTR\t104\t150\t.\t+\t.\tID=u3;Parent=t1\n"
+    )
+    # ATG at 11, 29 GCT codons and TAA ending at 103
+    SEQ = "C" * 10 + "ATG" + "GCT" * 29 + "TAA" + "C" * 97
+
+    def _annotation(self, tmp_path, body, genome=False, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.HEADER + body)
+        if genome:
+            fasta_file = tmp_path / "genome.fasta"
+            fasta_file.write_text(f">chr1\n{self.SEQ}\n")
+            kwargs["genome"] = Genome("genome", str(fasta_file), quiet=True)
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _utrs(annot):
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        return [(u.id, u.start, u.end) for c in t.CDSs.values() for u in c.UTRs]
+
+    @pytest.mark.parametrize("collapse_CDSs", [True, False])
+    def test_kept_on_load_and_after_updates(self, tmp_path, collapse_CDSs):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS, consider_read_utrs=True, collapse_CDSs=collapse_CDSs)
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 150)]
+        annot.update(quiet=True)
+        annot.rename_ids(features=("UTR",), quiet=True)
+        annot.update(quiet=True)
+        assert self._utrs(annot) == [("g1_u001", 1, 10), ("g1_u002", 104, 150)]
+        assert not annot.warnings["read_utrs_inconsistent"]
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    def test_derived_by_default_with_a_warning(self, tmp_path):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS)
+        assert self._utrs(annot) == [("u5", 1, 10), ("g1_u001", 104, 200)]
+        assert annot.warnings["read_utrs_differ_from_derived"] == {"t1"}
+
+    def test_no_warning_when_read_UTRs_are_the_derived_ones(self, tmp_path):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t150\t", "\t200\t"))
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 200)]
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    def test_inconsistent_ones_are_derived_with_a_warning(self, tmp_path):
+        # The 3' UTR overlaps the CDS
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t104\t150\t", "\t90\t150\t"), consider_read_utrs=True)
+        assert self._utrs(annot) == [("u5", 1, 10), ("g1_u001", 104, 200)]
+        assert annot.warnings["read_utrs_inconsistent"] == {"t1"}
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    @pytest.mark.parametrize("mode, exon_end", [("contain", 250), ("none", 200)])
+    def test_UTR_beyond_the_last_exon_is_kept(self, tmp_path, mode, exon_end):
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t150\t", "\t250\t"), consider_read_utrs=True, coordinate_polishing=mode)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 250)]
+        assert [(e.start, e.end) for e in t.exons] == [(1, exon_end)]
+        assert annot.warnings["utr_exceeds_exon"] == {"u3"}
+
+    @pytest.mark.parametrize("consider_read_utrs", [False, True])
+    @pytest.mark.parametrize("collapse_CDSs", [True, False])
+    def test_build_the_exons_of_a_transcript_without_exons(self, tmp_path, consider_read_utrs, collapse_CDSs):
+        annot = self._annotation(tmp_path, self.CDS + self.UTRS, consider_read_utrs=consider_read_utrs, collapse_CDSs=collapse_CDSs)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert [(e.start, e.end) for e in t.exons] == [(1, 150)]
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 150)]
+        annot.update(quiet=True)
+        assert self._utrs(annot) == [("u5", 1, 10), ("u3", 104, 150)]
+        assert not annot.warnings["read_utrs_differ_from_derived"]
+
+    def test_reworked_CDS_derives_its_UTRs(self, tmp_path):
+        # The reworked CDS is the read one, but UTRs are only read for read CDSs
+        annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS, genome=True, consider_read_utrs=True, rework_all_CDSs=True)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        c = next(iter(t.CDSs.values()))
+        assert (c.start, c.end) == (11, 103)
+        assert [(u.start, u.end) for u in c.UTRs] == [(1, 10), (104, 200)]

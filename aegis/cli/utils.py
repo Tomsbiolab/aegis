@@ -1,12 +1,16 @@
 """
 Utility functions and callbacks for the AEGIS CLI suite.
 """
-from typing import List, Sequence, Union, Optional
+from __future__ import annotations
+from typing import TYPE_CHECKING, List, Sequence, Union, Optional
 
 import typer
 from typing_extensions import Annotated
 
 from ..utils.genefunctions import NCBI_GENETIC_CODES, TAXONOMY_ORGANELLE_CODES
+
+if TYPE_CHECKING:
+    from ..annotation import Annotation
 
 
 def split_callback(value: Union[str, Sequence[str], None]) -> List[str]:
@@ -60,6 +64,7 @@ FASTA_HEADER_PANEL = "Reference FASTA Options"
 OUTPUT_HEADER_PANEL = "Output Sequence Header Options"
 OUTPUT_FILTER_PANEL = "Result Filtering & Table Formatting"
 GENETIC_CODES_PANEL = "Genetic Codes"
+ORGANELLE_PANEL = "Organelle Detection"
 IO_PANEL = "Input / Output Options"
 COLUMNS_PANEL = "Output Columns"
 EXEC_PANEL = "Execution & Debugging"
@@ -94,6 +99,50 @@ def detect_file_type(filepath: str) -> str:
     return "unknown"
 
 
+def apply_organelle_chroms(annotations: Sequence[Annotation], mitochondria_chroms: Sequence[str], chloroplast_chroms: Sequence[str]) -> None:
+    """
+    Gives each loaded annotation the listed organelle chromosomes it has, for commands comparing
+    annotations with different contigs. Every listed name must be in at least one annotation or genome.
+    """
+    known_per_annotation = [set(a.chrs) | (set(a.genome.scaffolds) if a.genome is not None else set()) for a in annotations]
+    known = set().union(*known_per_annotation)
+    missing = [c for c in (*mitochondria_chroms, *chloroplast_chroms) if c not in known]
+    if missing:
+        raise typer.BadParameter(f"Organelle chromosome(s) not found in any annotation or genome: {', '.join(missing)}.")
+    for a, a_known in zip(annotations, known_per_annotation):
+        codes = a.genetic_codes
+        codes["mitochondria_chroms"] = tuple(c for c in mitochondria_chroms if c in a_known)
+        codes["chloroplast_chroms"] = tuple(c for c in chloroplast_chroms if c in a_known)
+        a.set_genetic_codes(**codes)
+
+
+def warn_organelle_genetic_codes(annotation: Annotation, show_name: bool = False) -> None:
+    """
+    Warns (on stderr, also with --quiet) which genetic codes translate the annotation's organelle contigs
+    (see Annotation.chromosome_compartment): the default taxonomy, plant, mistranslates the mitochondria
+    of animals and fungi. show_name prefixes the annotation name, for commands loading several.
+    """
+    organelles: dict[str, list[str]] = {}
+    for chrom in annotation.chrs:
+        compartment = annotation.chromosome_compartment(chrom)
+        if compartment != "nuclear":
+            organelles.setdefault(compartment, []).append(chrom)
+    parts = []
+    for compartment, label, table in (("mitochondria", "mitochondrial", annotation.mito_table), ("chloroplast", "plastid", annotation.plastid_table)):
+        chroms = organelles.get(compartment)
+        if chroms:
+            shown = ", ".join(chroms[:3]) + (", ..." if len(chroms) > 3 else "")
+            name = NCBI_GENETIC_CODES[table]["name"] if table in NCBI_GENETIC_CODES else "custom"
+            parts.append(f"proteins on {label} contigs ({shown}) are translated with NCBI genetic code {table} ({name})")
+    if parts:
+        prefix = f"{annotation.name}: " if show_name else ""
+        typer.secho(
+            f"Warning: {prefix}{', and '.join(parts)} (taxonomy '{annotation.taxonomy}'). "
+            "If this does not fit your organism, set --taxonomy (plant, vertebrate, invertebrate, yeast) or --mito-code/--plastid-code.",
+            fg=typer.colors.YELLOW, err=True,
+        )
+
+
 def taxonomy_callback(value: str) -> str:
     if value.lower() not in TAXONOMY_ORGANELLE_CODES:
         raise typer.BadParameter(f"Unknown taxonomy '{value}'. Choose from: {', '.join(TAXONOMY_ORGANELLE_CODES)}.")
@@ -122,27 +171,19 @@ PlastidCodeOption = Annotated[Optional[int], typer.Option(
     "-pc", "--plastid-code", callback=genetic_code_callback, rich_help_panel=GENETIC_CODES_PANEL,
     help="NCBI genetic code table number for plastid/chloroplast contigs (overrides --taxonomy default)."
 )]
-AutoOrganelleCodesOption = Annotated[bool, typer.Option(
-    "--auto-organelle-codes/--no-auto-organelle-codes", rich_help_panel=GENETIC_CODES_PANEL,
-    help="Automatically use mitochondrial and plastid genetic codes for contigs detected as organelles from their name or FASTA description (default: True)."
+AutoOrganelleDetectionOption = Annotated[bool, typer.Option(
+    "--auto-organelle-detection/--no-auto-organelle-detection", rich_help_panel=ORGANELLE_PANEL,
+    help="Detect mitochondrial and plastid contigs from their name (e.g. 'chrM', 'Pt', 'ChrC') or, with a genome, their FASTA description. Organelle contigs are translated with --mito-code/--plastid-code, their genes are renamed as chrMT/chrCP with 'rename --prefix', and they are reported apart from nuclear chromosomes. --mitochondria-chroms/--chloroplast-chroms always apply (default: True)."
 )]
 MitochondriaChromsOption = Annotated[List[str], typer.Option(
-    "--mitochondria-chroms", callback=split_callback, rich_help_panel=GENETIC_CODES_PANEL,
-    help="Explicit list or comma-separated names of mitochondrial chromosomes/scaffolds to translate with --mito-code."
+    "--mitochondria-chroms", callback=split_callback, rich_help_panel=ORGANELLE_PANEL,
+    help="Explicit list or comma-separated names of mitochondrial chromosomes/scaffolds, recognised as such in addition to (or without) automatic detection."
 )]
 ChloroplastChromsOption = Annotated[List[str], typer.Option(
-    "--chloroplast-chroms", callback=split_callback, rich_help_panel=GENETIC_CODES_PANEL,
-    help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds to translate with --plastid-code."
+    "--chloroplast-chroms", callback=split_callback, rich_help_panel=ORGANELLE_PANEL,
+    help="Explicit list or comma-separated names of chloroplast/plastid chromosomes/scaffolds, recognised as such in addition to (or without) automatic detection."
 )]
-
-
-def initiator_methionine_callback(value: str) -> str:
-    if value not in ("canonical", "all", "none"):
-        raise typer.BadParameter(f"Invalid value '{value}'. Choose from: canonical, all, none.")
-    return value
-
-
-InitiatorMethionineOption = Annotated[str, typer.Option(
-    "--initiator-methionine", callback=initiator_methionine_callback, rich_help_panel=GENETIC_CODES_PANEL,
-    help="Which start codons are translated as M when they initiate a 5'-complete protein: 'canonical' (default: the curated start codons of the table, e.g. GTG/TTG in plastids), 'all' (also NCBI's alternative initiators, e.g. CTG/TTG in table 1), or 'none' (literal translation of the first codon)."
+InitiatorMethionineOption = Annotated[bool, typer.Option(
+    "--initiator-methionine/--no-initiator-methionine", rich_help_panel=GENETIC_CODES_PANEL,
+    help="Translate valid start codons at position 1 to Methionine (M) [default: enabled; matches NCBI RefSeq/UniProt standard]. Use --no-initiator-methionine for literal codon translation."
 )]

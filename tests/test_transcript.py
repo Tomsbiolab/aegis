@@ -58,6 +58,13 @@ class TestTranscriptUpdateSize:
         # Size = sum of exon sizes: 1001 + 2001 = 3002
         assert t.size == 3002
 
+    def test_overlapping_exons_count_once(self, make_transcript, make_exon):
+        t = make_transcript()
+        t.exons.append(make_exon("e1", 1000, 2000))
+        t.exons.append(make_exon("e2", 1501, 2500))
+        assert t.size == 1501
+        assert t.genomic_span == t.end - t.start + 1
+
 
 # ============================================================
 # rename
@@ -393,8 +400,9 @@ class TestTranscriptExonSorting:
         t.update()
 
         assert [e.start for e in t.exons] == [1000, 3000]
+        # Transcript coordinates are left to Annotation coordinate polishing
         assert t.start == 1000
-        assert t.end == 4000
+        assert t.end == 5000
 
     def test_rename_exons_orders_before_naming_plus_strand(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
@@ -435,6 +443,79 @@ class TestTranscriptExonSorting:
         assert t.introns[0].start == 2001
         assert t.introns[0].end == 2999
 
+    @pytest.mark.parametrize("strand", ["+", "-"])
+    def test_generate_introns_nested_exon(self, make_transcript, make_exon, strand):
+        t = make_transcript(strand=strand)
+        t.exons = [
+            make_exon("e1", start=1000, end=5000, strand=strand),
+            make_exon("e2", start=2000, end=3000, strand=strand),  # nested in e1
+            make_exon("e3", start=6000, end=7000, strand=strand),
+        ]
+
+        t.generate_introns()
+
+        # Only the gap after the furthest exon end (5000) is an intron
+        assert [(i.start, i.end) for i in t.introns] == [(5001, 5999)]
+
+    def test_generate_introns_overlapping_and_adjacent_exons(self, make_transcript, make_exon):
+        t = make_transcript(strand="+")
+        t.exons = [
+            make_exon("e1", start=1000, end=2000),
+            make_exon("e2", start=1500, end=2500),  # overlaps e1
+            make_exon("e3", start=2501, end=3000),  # adjacent to e2
+            make_exon("e4", start=4000, end=5000),
+        ]
+
+        t.generate_introns()
+
+        assert [(i.start, i.end) for i in t.introns] == [(3001, 3999)]
+        assert all(i.start <= i.end for i in t.introns)
+
+    def test_generate_introns_ids_are_consecutive(self, make_transcript, make_exon):
+        t = make_transcript(feature_id="T1", strand="+")
+        t.exons = [
+            make_exon("e1", start=1000, end=2000),
+            make_exon("e2", start=1500, end=1800),  # nested, produces no intron
+            make_exon("e3", start=3000, end=4000),
+            make_exon("e4", start=5000, end=6000),
+        ]
+
+        t.generate_introns()
+
+        assert [i.id for i in t.introns] == ["T1_intron_1", "T1_intron_2"]
+        assert [(i.start, i.end) for i in t.introns] == [(2001, 2999), (4001, 4999)]
+
+    def test_generate_introns_minus_strand_numbered_5_to_3(self, make_transcript, make_exon):
+        t = make_transcript(feature_id="T1", strand="-")
+        t.exons = [
+            make_exon("e1", start=1000, end=2000, strand="-"),
+            make_exon("e2", start=3000, end=4000, strand="-"),
+            make_exon("e3", start=5000, end=6000, strand="-"),
+        ]
+
+        t.generate_introns()
+
+        # Kept in coordinate order, numbered from the 5' end (rightmost on the minus strand)
+        assert [(i.start, i.end) for i in t.introns] == [(2001, 2999), (4001, 4999)]
+        assert [i.id for i in t.introns] == ["T1_intron_2", "T1_intron_1"]
+        assert all(i.original_id == i.id for i in t.introns)
+
+    def test_generate_introns_numbering_matches_exons(self, make_transcript, make_exon):
+        for strand in ("+", "-"):
+            t = make_transcript(feature_id="T1", strand=strand)
+            t.exons = [
+                make_exon("e1", start=1000, end=2000, strand=strand),
+                make_exon("e2", start=3000, end=4000, strand=strand),
+                make_exon("e3", start=5000, end=6000, strand=strand),
+            ]
+            t.rename_exons("T1")
+            t.generate_introns()
+            exon_number = {e.start: int(e.id.split("_e")[-1]) for e in t.exons}
+            for i in t.introns:
+                upstream_exon_start = max(s for s in exon_number if s < i.start) if strand == "+" else min(s for s in exon_number if s > i.end)
+                # Intron n lies between exon n and exon n+1 in transcription order
+                assert int(i.id.split("_intron_")[-1]) == exon_number[upstream_exon_start], strand
+
 
 # ============================================================
 # collapse_exons
@@ -453,8 +534,9 @@ class TestCollapseExons:
         assert len(t.exons) == 1
         assert t.exons[0].start == 1000
         assert t.exons[0].end == 3000
+        # Transcript coordinates are left to Annotation coordinate polishing
         assert t.start == 1000
-        assert t.end == 3000
+        assert t.end == 5000
 
     def test_collapse_overlapping_exons(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
@@ -496,8 +578,23 @@ class TestCollapseExons:
         assert t.collapsed_exons is True
         assert len(t.exons) == 3
         assert [(e.start, e.end) for e in t.exons] == [(1000, 2500), (4000, 5000), (7000, 8000)]
+        # Transcript coordinates are left to Annotation coordinate polishing
         assert t.start == 1000
-        assert t.end == 8000
+        assert t.end == 5000
+
+    @pytest.mark.parametrize("strand, expected_id", [("+", "e1"), ("-", "e2")])
+    def test_merged_exon_keeps_5prime_id_and_attributes(self, make_transcript, make_exon, strand, expected_id):
+        t = make_transcript(strand=strand)
+        e1 = make_exon(feature_id="e1", start=1000, end=2000, strand=strand, attributes={"Note": "first"})
+        e2 = make_exon(feature_id="e2", start=1500, end=2500, strand=strand, attributes={"Note": "second"})
+        e3 = make_exon(feature_id="e3", start=4000, end=5000, strand=strand)
+        t.exons = [e1, e2, e3]
+
+        t.collapse_exons()
+
+        assert [(e.id, e.start, e.end) for e in t.exons] == [(expected_id, 1000, 2500), ("e3", 4000, 5000)]
+        assert t.exons[0].misc_attributes == [f"Note={'first' if strand == '+' else 'second'}"]
+        assert t.exons[1] is e3
 
     def test_collapse_no_overlaps_unchanged(self, make_transcript, make_exon):
         t = make_transcript(strand="+")
@@ -607,7 +704,21 @@ class TestCollapseCDSSegments:
         assert cds.start == 1000
         assert cds.end == 1300
 
-    def test_collapse_cds_preserves_initial_phase_plus(self, make_transcript, make_CDS, make_CDS_segment):
+    def test_collapse_cds_keeps_segment_attributes(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        attributes = {"transl_except": "(pos:1000..1002%2Caa:Sec)", "Note": "x"}
+        seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1098, phase=0, attributes=attributes)
+        seg2 = make_CDS_segment("s2", strand="+", start=1099, end=1200, phase=0, attributes=attributes)
+        cds = make_CDS(segments=[seg1, seg2], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert len(cds.CDS_segments) == 1
+        assert cds.CDS_segments[0].misc_attributes == ["transl_except=(pos:1000..1002%2Caa:Sec)", "Note=x"]
+        assert cds.transl_except == ((1000, 1002, "U"),)
+
+    def test_collapse_cds_keeps_annotated_phases_plus(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
         # seg1 and seg2 contiguous: 1000..1099 (size 100, phase 1 -> 0 leftover) and 1100..1199 (phase 0)
         seg1 = make_CDS_segment("s1", strand="+", start=1000, end=1099, phase=1)
@@ -625,13 +736,13 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[0].start == 1000
         assert cds.CDS_segments[0].end == 1199
         assert cds.CDS_segments[0].phase == 1
-        # Leftover from merged: (200 - 1) % 3 = 199 % 3 = 1
-        # seg3 phase should be 3 - 1 = 2
+        # seg3 keeps its annotated phase 0, although the merged leftover (1) implies 2: collapsing does not
+        # recalculate phases (see recalculate_phases), the mismatch across the intron is kept as annotated
         assert cds.CDS_segments[1].start == 2000
         assert cds.CDS_segments[1].end == 2099
-        assert cds.CDS_segments[1].phase == 2
+        assert cds.CDS_segments[1].phase == 0
 
-    def test_collapse_cds_preserves_initial_phase_minus(self, make_transcript, make_CDS, make_CDS_segment):
+    def test_collapse_cds_keeps_annotated_phases_minus(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="-")
         # seg1: 1000..1099 (3' segment on minus strand)
         seg1 = make_CDS_segment("s1", strand="-", start=1000, end=1099, phase=2)
@@ -649,11 +760,75 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[1].start == 2000
         assert cds.CDS_segments[1].end == 2199
         assert cds.CDS_segments[1].phase == 2
-        # Leftover from merged 2000..2199 (size 200, phase 2): (200 - 2) % 3 = 198 % 3 = 0
-        # Downstream 3' segment seg[0] (1000..1099) gets phase 0
+        # The downstream 3' segment keeps its annotated phase 2 (the merged leftover implies 0)
         assert cds.CDS_segments[0].start == 1000
         assert cds.CDS_segments[0].end == 1099
-        assert cds.CDS_segments[0].phase == 0
+        assert cds.CDS_segments[0].phase == 2
+
+    def test_collapse_cds_keeps_phases_of_other_segments(self, make_transcript, make_CDS, make_CDS_segment):
+        # A|B: contiguous phase mismatch (leftover 1 + phase 0), kept apart; C|D: one coding stretch split in two rows
+        t = make_transcript(feature_id="t1", strand="+")
+        segments = [make_CDS_segment(f"s{i}", strand="+", start=a, end=b, phase=p) for i, (a, b, p) in enumerate([(1, 10, 0), (11, 20, 0), (31, 40, 2), (41, 50, 1)])]
+        cds = make_CDS(segments=segments, strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1, 10, 0), (11, 20, 0), (31, 50, 2)]
+
+    # NCBI programmed frameshifts: the phases continue the frame by reading the overlapping bases twice,
+    # so (upstream leftover + downstream phase) % 3 == 0 and merging would delete the shared bases
+    @pytest.mark.parametrize("strand, segments", [
+        ("+", [(1000, 1099, 0), (1099, 1199, 2)]),  # -1: leftover 1, phase 2
+        ("+", [(1000, 1098, 0), (1098, 1199, 0)]),  # -1: leftover 0, phase 0 (PEG10)
+        ("+", [(1000, 1099, 0), (1098, 1199, 2)]),  # -2: leftover 1, phase 2
+        ("-", [(1000, 1101, 2), (1101, 1200, 0)]),  # -1 on minus: 5' segment 1101..1200 leftover 1, phase 2
+        ("-", [(1000, 1101, 0), (1101, 1199, 0)]),  # -1 on minus: 5' segment 1101..1199 leftover 0, phase 0
+    ])
+    def test_collapse_cds_keeps_programmed_frameshift_overlaps(self, make_transcript, make_CDS, make_CDS_segment, strand, segments):
+        t = make_transcript(feature_id="t1", strand=strand)
+        segs = [make_CDS_segment(f"s{i}", strand=strand, start=a, end=b, phase=p) for i, (a, b, p) in enumerate(segments)]
+        cds = make_CDS(segments=segs, strand=strand, feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is False
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == segments
+
+    def test_collapse_cds_short_overlap_without_phases_kept(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        segs = [make_CDS_segment(f"s{i}", strand="+", start=a, end=b) for i, (a, b) in enumerate([(1000, 1099), (1099, 1199), (1200, 1300)])]
+        cds = make_CDS(segments=segs, strand="+", feature_id="t1_CDS1")
+        for s in cds.CDS_segments:
+            s.phase = None
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        # The 1 bp overlap may be a programmed frameshift; the adjacent row merges
+        assert [(s.start, s.end) for s in cds.CDS_segments] == [(1000, 1099), (1099, 1300)]
+
+    def test_collapse_cds_minus_merged_row_takes_phase_of_its_5prime_end(self, make_transcript, make_CDS, make_CDS_segment):
+        # Nested rows on the minus strand: the merged row starts (5') at the outer row's end
+        t = make_transcript(feature_id="t1", strand="-")
+        segs = [make_CDS_segment("outer", strand="-", start=1000, end=1299, phase=2), make_CDS_segment("nested", strand="-", start=1100, end=1200, phase=0)]
+        cds = make_CDS(segments=segs, strand="-", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1000, 1299, 2)]
+
+    def test_collapse_cds_merges_duplicated_and_nested_rows(self, make_transcript, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        segs = [make_CDS_segment(f"s{i}", strand="+", start=a, end=b, phase=0) for i, (a, b) in enumerate([(1000, 1299), (1000, 1299), (1100, 1200)])]
+        cds = make_CDS(segments=segs, strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1000, 1299, 0)]
 
     def test_collapse_cds_does_not_merge_across_internal_phase_shift(self, make_transcript, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
@@ -714,6 +889,79 @@ class TestCollapseCDSSegments:
 # Boundary & overlap edge cases
 # ============================================================
 
+class TestDetectPolycistronic:
+    def test_single_segment_is_none(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg = make_CDS_segment("cds1", strand="+", start=1000, end=1500)
+        t.temp_CDSs = [seg]
+        assert t._detect_polycistronic() == []
+        t.temp_CDSs = []
+        assert t._detect_polycistronic() == []
+
+    def test_auto_generated_ids_without_overlap_is_none(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg1 = make_CDS_segment("t1_CDS_1000_1200", strand="+", start=1000, end=1200)
+        seg2 = make_CDS_segment("t1_CDS_1300_1500", strand="+", start=1300, end=1500)
+        t.temp_CDSs = [seg1, seg2]
+        assert t._detect_polycistronic() == []
+
+    def test_shared_identical_id_without_overlap_is_none(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        seg1 = make_CDS_segment("cds1", strand="+", start=1000, end=1200)
+        seg2 = make_CDS_segment("cds1", strand="+", start=1300, end=1500)
+        t.temp_CDSs = [seg1, seg2]
+        assert t._detect_polycistronic() == []
+
+    def test_multi_segment_grouped_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1200)
+        s2 = make_CDS_segment("cds_a", strand="+", start=1300, end=1500)
+        s3 = make_CDS_segment("cds_b", strand="+", start=1600, end=1800)
+        s4 = make_CDS_segment("cds_b", strand="+", start=1900, end=2100)
+        t.temp_CDSs = [s1, s2, s3, s4]
+        assert t._detect_polycistronic() == ["possible_polycistronic_transcript"]
+
+    def test_overlapping_distinct_ids_is_multiple_cdss(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
+        s2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
+        t.temp_CDSs = [s1, s2]
+        assert set(t._detect_polycistronic()) == {"overlapping_CDS_segments", "possible_polycistronic_transcript"}
+
+    def test_overlapping_same_id_is_possible_polycistronic(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_a", strand="+", start=1000, end=1500)
+        s2 = make_CDS_segment("cds_a", strand="+", start=1500, end=2000)
+        t.temp_CDSs = [s1, s2]
+        assert t._detect_polycistronic() == ["overlapping_CDS_segments"]
+
+    def test_distinct_custom_ids_non_overlapping_is_possible_polycistronic(self, make_transcript, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        s1 = make_CDS_segment("cds_seg1", strand="+", start=1000, end=1200)
+        s2 = make_CDS_segment("cds_seg2", strand="+", start=1300, end=1500)
+        t.temp_CDSs = [s1, s2]
+        assert t._detect_polycistronic() == ["independent_CDS_segment_ids"]
+
+    def test_canonical_gff3_polycistronic_eden_example(self, make_transcript, make_CDS_segment):
+        """
+        Canonical GFF3 specification example (mRNA00003 from canonical_gene_example.gff3):
+        Two logical CDSs (cds00003: 3301-3902, 5000-5500, 7000-7600 and
+        cds00004: 3391-3902, 5000-5500, 7000-7600) encoded under the same mRNA.
+        """
+        t = make_transcript(feature_id="mRNA00003", strand="+")
+        s1 = make_CDS_segment("cds00003", strand="+", start=3301, end=3902)
+        s2 = make_CDS_segment("cds00003", strand="+", start=5000, end=5500)
+        s3 = make_CDS_segment("cds00003", strand="+", start=7000, end=7600)
+        s4 = make_CDS_segment("cds00004", strand="+", start=3391, end=3902)
+        s5 = make_CDS_segment("cds00004", strand="+", start=5000, end=5500)
+        s6 = make_CDS_segment("cds00004", strand="+", start=7000, end=7600)
+        t.temp_CDSs = [s1, s2, s3, s4, s5, s6]
+        assert set(t._detect_polycistronic()) == {
+            "overlapping_CDS_segments",
+            "possible_polycistronic_transcript",
+        }
+
+
 class TestCoordinateEdgeCases:
     def test_generate_CDSs_detects_1bp_boundary_overlap(self, make_transcript, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
@@ -722,10 +970,10 @@ class TestCoordinateEdgeCases:
         seg2 = make_CDS_segment("cds_b", strand="+", start=1500, end=2000)
         t.temp_CDSs = [seg1, seg2]
 
-        t.generate_CDSs(quiet=True, consider_polycistronic=True)
+        assert set(t._detect_polycistronic()) == {"overlapping_CDS_segments", "possible_polycistronic_transcript"}
+        t.generate_CDSs(quiet=True)
 
-        # Because they overlap at 1500, it should recognize multiple overlapping CDSs
-        assert len(t.CDSs) == 2 or t.polycistronic in ("yes", "maybe")
+        assert len(t.CDSs) == 1
 
     def test_generate_UTRs_skips_internal_exons(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
         t = make_transcript(feature_id="t1", strand="+")
@@ -748,6 +996,37 @@ class TestCoordinateEdgeCases:
         assert len(utr_coords) == 2
         assert utr_coords[0] == (1000, 1099, "5'")
         assert utr_coords[1] == (1601, 1800, "3'")
+
+    @pytest.mark.parametrize("strand,primes", [("+", ("5'", "3'")), ("-", ("3'", "5'"))])
+    def test_generate_UTRs_nested_CDS_segments(self, make_transcript, make_exon, make_CDS, make_CDS_segment, strand, primes):
+        t = make_transcript(feature_id="t1", strand=strand)
+        t.exons = [make_exon("e1", start=1000, end=5000, strand=strand)]
+        # Nested segment sorts last but the CDS really ends at 4000
+        cs1 = make_CDS_segment("cs1", strand=strand, start=1200, end=4000)
+        cs2 = make_CDS_segment("cs2", strand=strand, start=1500, end=1800)
+        cds = make_CDS(segments=[cs1, cs2], strand=strand, feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.generate_UTRs()
+
+        assert [(u.start, u.end, u.prime) for u in cds.UTRs] == [(1000, 1199, primes[0]), (4001, 5000, primes[1])]
+        for u in cds.UTRs:
+            for cs in cds.CDS_segments:
+                assert u.end < cs.start or u.start > cs.end
+
+    def test_generate_UTRs_uses_current_segments(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", strand="+")
+        t.exons = [make_exon("e1", start=1000, end=5000, strand="+")]
+        cs1 = make_CDS_segment("cs1", strand="+", start=1200, end=2000)
+        cds = make_CDS(segments=[cs1], strand="+", feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+        # Segment edited after construction without calling CDS.update()
+        cs1.end = 4500
+
+        t.generate_UTRs()
+
+        assert [(u.start, u.end) for u in cds.UTRs] == [(1000, 1199), (4501, 5000)]
+        assert cds.end == 4500
 
     def test_assign_UTRs_plus_and_minus_strand(self, make_transcript, make_CDS, make_CDS_segment):
         # 1. Plus strand
@@ -788,3 +1067,137 @@ class TestCoordinateEdgeCases:
 
 
 
+# ============================================================
+# UTRs read from the GFF
+# ============================================================
+
+class TestReadUTRs:
+    """
+    Transcript as loaded from a GFF (rows staged in temp_CDSs/temp_UTRs): CDS 101..166 within exon 1..400
+    on +, CDS 235..300 on -, so the derived UTRs reach the exon ends while the read ones stop short of them.
+    """
+
+    @staticmethod
+    def _transcript(make_transcript, make_exon, make_CDS_segment, strand="+", exons=((1, 400),), cds=None, utrs=None, keep=False):
+        t = make_transcript(feature_id="t1", strand=strand, start=1, end=400)
+        t.exons = [make_exon(f"e{n}", start, end, strand=strand, parents=["t1"]) for n, (start, end) in enumerate(exons, 1)]
+        if cds is None:
+            cds = [(101, 166)] if strand == "+" else [(235, 300)]
+        if utrs is None:
+            utrs = [(50, 100), (167, 300)] if strand == "+" else [(101, 234), (301, 350)]
+        t.temp_CDSs = [make_CDS_segment("c1", strand=strand, start=start, end=end, parents=["t1"], phase=0) for start, end in cds]
+        t.temp_UTRs = [UTR(f"u{n}", "chr1", "aegis", "UTR", strand, start, end, ".", ["t1"]) for n, (start, end) in enumerate(utrs, 1)]
+        if keep:
+            t.keep_read_UTRs()
+        return t
+
+    @staticmethod
+    def _utrs(t):
+        return [(u.id, u.feature, u.start, u.end) for c in t.CDSs.values() for u in c.UTRs]
+
+    def test_derived_by_default(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment)
+        t.update()
+        assert self._utrs(t) == [("c1_u1", "five_prime_UTR", 1, 100), ("c1_u2", "three_prime_UTR", 167, 400)]
+        assert t.read_UTRs_CDS is None
+
+    def test_derived_UTR_keeps_the_id_of_a_read_one_with_its_coordinates(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, utrs=[(1, 100), (167, 300)])
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 1, 100), ("c1_u1", "three_prime_UTR", 167, 400)]
+
+    @pytest.mark.parametrize("strand, expected", [
+        ("+", [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]),
+        ("-", [("u1", "three_prime_UTR", 101, 234), ("u2", "five_prime_UTR", 301, 350)]),
+    ])
+    def test_kept_and_survive_updates(self, make_transcript, make_exon, make_CDS_segment, strand, expected):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, strand=strand, keep=True)
+        t.update()
+        assert self._utrs(t) == expected
+        t.update()
+        t.generate_CDSs()
+        assert self._utrs(t) == expected
+        assert t.temp_UTRs is None
+
+    def test_kept_when_CDS_segments_are_collapsed_first(self, make_transcript, make_exon, make_CDS_segment):
+        # Gene.collapse_subfeatures builds the CDS before Transcript.update
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, cds=[(101, 130), (131, 166)], keep=True)
+        t.collapse_CDS_segments()
+        assert t.collapsed_CDS_segments
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]
+
+    def test_renamed_UTRs_keep_their_new_ids(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.update()
+        t.rename_utrs(base_id="g1")
+        t.update()
+        assert [u_id for u_id, *_ in self._utrs(t)] == ["g1_u001", "g1_u002"]
+
+    def test_each_CDS_gets_its_own_list(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        read = t.temp_UTRs
+        t.update()
+        assert next(iter(t.CDSs.values())).UTRs is not read
+
+    def test_kept_beyond_the_outer_exons(self, make_transcript, make_exon, make_CDS_segment):
+        # Coordinate polishing extends the outer exons to them, as for CDS rows
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, exons=[(60, 300)], utrs=[(50, 100), (167, 350)], keep=True)
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 350)]
+        assert t.read_UTRs_CDS == (101, 166)
+
+    @pytest.mark.parametrize("exons, utrs, derived", [
+        # Overlapping the CDS
+        ([(1, 400)], [(50, 110), (167, 300)], [("c1_u1", 1, 100), ("c1_u2", 167, 400)]),
+        # Spanning an intron; the derived 5' UTR has the coordinates of the read one, so it keeps its id
+        ([(1, 200), (250, 400)], [(1, 100), (167, 260)], [("u1", 1, 100), ("c1_u1", 167, 200), ("c1_u2", 250, 400)]),
+        # Within an intron
+        ([(1, 200), (250, 400)], [(50, 100), (210, 240)], [("c1_u1", 1, 100), ("c1_u2", 167, 200), ("c1_u3", 250, 400)]),
+    ])
+    def test_inconsistent_ones_are_derived(self, make_transcript, make_exon, make_CDS_segment, exons, utrs, derived):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, exons=exons, utrs=utrs, keep=True)
+        t.update()
+        assert t.read_UTRs_CDS is None
+        assert [(u_id, start, end) for u_id, _, start, end in self._utrs(t)] == derived
+
+    def test_UTR_on_the_other_strand_is_inconsistent(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.temp_UTRs[1].strand = "-"
+        t.update()
+        assert t.read_UTRs_CDS is None
+
+    def test_derived_once_the_CDS_changes(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.update()
+        c = next(iter(t.CDSs.values()))
+        c.CDS_segments[0].end = 157
+        c.update_span()
+        t.update()
+        assert t.read_UTRs_CDS is None
+        assert [(u.start, u.end) for u in c.UTRs] == [(1, 100), (158, 400)]
+
+    def test_cleared_UTRs_are_derived(self, make_transcript, make_exon, make_CDS_segment):
+        # As when a CDS is reworked (generate_best_protein)
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, keep=True)
+        t.update()
+        t.clear_UTRs()
+        t.update()
+        assert t.read_UTRs_CDS is None
+        assert [(u.start, u.end) for c in t.CDSs.values() for u in c.UTRs] == [(1, 100), (167, 400)]
+
+    def test_not_kept_without_CDS_rows(self, make_transcript, make_exon, make_CDS_segment):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, cds=[], keep=True)
+        assert t.read_UTRs_CDS is None
+
+    @pytest.mark.parametrize("keep", [False, True])
+    @pytest.mark.parametrize("collapse_first", [False, True])
+    def test_build_the_exons_of_a_transcript_without_exons(self, make_transcript, make_exon, make_CDS_segment, keep, collapse_first):
+        t = self._transcript(make_transcript, make_exon, make_CDS_segment, exons=(), cds=[(101, 130), (131, 166)], keep=keep)
+        if collapse_first:
+            t.collapse_CDS_segments()
+        t.update()
+        assert [(e.start, e.end) for e in t.exons] == [(50, 300)]
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]
+        t.update()
+        assert self._utrs(t) == [("u1", "five_prime_UTR", 50, 100), ("u2", "three_prime_UTR", 167, 300)]

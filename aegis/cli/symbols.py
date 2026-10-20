@@ -86,7 +86,7 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
     subfolder = False
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False)
 
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)

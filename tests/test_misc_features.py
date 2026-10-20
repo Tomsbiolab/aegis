@@ -55,6 +55,51 @@ from aegis.feature import Feature
 # Promoter
 # ============================================================
 
+class TestProteinSize:
+    @pytest.mark.parametrize("seq, size", [
+        ("MK*", 2),     # the terminal stop is not a residue
+        ("MK", 2),      # no stop (3' partial)
+        ("MK**", 3),    # an internal stop right before the terminal one is a residue
+    ])
+    def test_size_excludes_only_the_terminal_stop(self, seq, size):
+        assert Protein("p1", seq, "chr1", 1, 3 * len(seq), "end", nuc_seq="ATG" * len(seq)).size == size
+
+
+class TestProteinTags:
+    @staticmethod
+    def _protein(seq, nuc_seq, **kwargs):
+        return Protein("p1", seq, "chr1", 1, len(nuc_seq), "end", nuc_seq=nuc_seq, **kwargs)
+
+    def test_complete_protein_only_has_mode_and_table(self):
+        assert self._protein("MK*", "ATGAAATAA").tags == {"readthrough": "end", "table": "1"}
+
+    @pytest.mark.parametrize("seq, nuc_seq, trimmed_5p, expected", [
+        ("MK", "ATGAAA", 0, "3'"),
+        ("MK*", "ATGAAATAA", 1, "5'"),  # 5' bases skipped by phase
+        ("GK", "GGGAAA", 0, "5',3'"),
+    ])
+    def test_partial(self, seq, nuc_seq, trimmed_5p, expected):
+        assert self._protein(seq, nuc_seq, trimmed_5p=trimmed_5p).tags["partial"] == expected
+
+    def test_alt_start_shows_codon(self):
+        # CTG is an NCBI initiator of table 1 but not a curated start codon
+        assert self._protein("LK*", "CTGAAATAA").tags["alt_start"] == "CTG"
+
+    def test_internal_stops_and_ambiguous_residues(self):
+        tags = self._protein("MK*KX*", "ATGAAATAAAAANNNTAA").tags
+        assert (tags["internal_stops"], tags["ambiguous_residues"]) == ("1", "1")
+
+    def test_frameshifts_are_signed(self):
+        assert self._protein("MK*", "ATGAAATAA", frameshifts=(-1, 2)).tags["frameshifts"] == "-1,+2"
+
+    def test_custom_table(self):
+        assert self._protein("MK*", "ATGAAATAA", table={"ATG": "M"}).tags["table"] == "custom"
+
+    def test_key_order(self):
+        p = self._protein("GK*KX", "GGGAAATAAAAANNN", frameshifts=(-1,), exception="ribosomal slippage")
+        assert list(p.tags) == ["partial", "internal_stops", "ambiguous_residues", "frameshifts", "exception", "readthrough", "table"]
+
+
 class TestPromoter:
     def test_init(self):
         pr = Promoter(

@@ -21,9 +21,13 @@ from .utils import (
     split_callback,
     TaxonomyOption,
     GeneticCodeOption,
-    AutoOrganelleCodesOption,
+    AutoOrganelleDetectionOption,
+    MitochondriaChromsOption,
+    ChloroplastChromsOption,
     MitoCodeOption,
     PlastidCodeOption,
+    apply_organelle_chroms,
+    warn_organelle_genetic_codes,
     IO_PANEL,
     EXEC_PANEL,
     GENETIC_CODES_PANEL,
@@ -407,7 +411,9 @@ def main(
     # 4. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
+    mitochondria_chroms: MitochondriaChromsOption = [],
+    chloroplast_chroms: ChloroplastChromsOption = [],
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
 
@@ -727,13 +733,17 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, skip_coordinate_polishing=True, taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_codes=auto_organelle_codes))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, coordinate_polishing="none", taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_detection=auto_organelle_detection))
 
         if strip_gene_tags:
             annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
+
+    apply_organelle_chroms(annotations, mitochondria_chroms, chloroplast_chroms)
+    for annotation in annotations:
+        warn_organelle_genetic_codes(annotation, show_name=len(annotations) > 1)
 
     output_dir_path = Path(output_dir).resolve()
 

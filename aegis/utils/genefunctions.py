@@ -18,9 +18,11 @@ import time
 import warnings
 import itertools
 import hashlib
+import re
 
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import unquote
 
 # nucleotides
 _STR_FROM = "ACGTRYSWKMBDHVNXUacgtryswkmbdhvnxu-"
@@ -365,6 +367,47 @@ def translate(seq: str, table: int | str | dict[str, str] = 1) -> str:
     it = iter(normalized_seq.encode('ascii'))
     return "".join(map(b_dict.__getitem__, zip(it, it, it)))
 
+# One-letter residues for the amino acids named in INSDC/NCBI transl_except qualifiers
+TRANSL_EXCEPT_RESIDUES = {
+    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G", "His": "H", "Ile": "I",
+    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
+    "Sec": "U", "Pyl": "O", "Asx": "B", "Glx": "Z", "Xle": "J", "Other": "X", "TERM": "*",
+}
+TRANSL_EXCEPT_NAMES = {residue: name for name, residue in TRANSL_EXCEPT_RESIDUES.items()}
+_TRANSL_EXCEPT_RE = re.compile(r"pos:(?:complement\()?(\d+)(?:\.\.(\d+))?\)?\s*,\s*aa:([A-Za-z]+)")
+
+def parse_transl_except(value: str) -> tuple[tuple[int, int, str], ...]:
+    """
+    Parses a GFF transl_except value, e.g. "(pos:1105403..1105405%2Caa:Sec)" or
+    "(pos:complement(26856211..26856213)%2Caa:Other),(pos:5511%2Caa:TERM)", into
+    (start, end, residue) entries in genomic coordinates. The strand is implied by the CDS, so
+    complement() is dropped. Residues are one-letter codes (Sec: U, Pyl: O, Other: X, TERM: *);
+    unknown amino acid names are read as X.
+    """
+    entries = []
+    for start, end, aa in _TRANSL_EXCEPT_RE.findall(unquote(value)):
+        entries.append((int(start), int(end) if end else int(start), TRANSL_EXCEPT_RESIDUES.get(aa, "X")))
+    return tuple(entries)
+
+def trim_3p_bases(segments, bases:int, strand:str) -> list[tuple[int, int]]:
+    """
+    Removes bases from the 3' end, in transcript order, of genomic (start, end) segments (e.g. the stop codon
+    of a CDS), dropping the segments left empty.
+    """
+    ordered = [list(seg) for seg in (segments if strand != "-" else reversed(segments))]
+    while bases > 0 and ordered:
+        start, end = ordered[-1]
+        removed = min(bases, end - start + 1)
+        if strand != "-":
+            ordered[-1][1] = end - removed
+        else:
+            ordered[-1][0] = start + removed
+        bases -= removed
+        if removed == end - start + 1:
+            ordered.pop()
+    trimmed = [tuple(seg) for seg in ordered]
+    return trimmed if strand != "-" else trimmed[::-1]
+
 def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
 
     working_segments = segments if strand != "-" else reversed(segments)
@@ -529,12 +572,16 @@ def trim_surplus(
     max_nucleotide_trim: Maximum allowed nucleotides to trim when using ORF modes.
     phase: Number of bases to skip at the 5' end (reading frame phase: 0, 1, or 2).
     table: NCBI genetic code table ID (default: 1 for Standard) or custom dictionary.
+
+    Returns (out_seq, orf_found, coding_start, coding_end): orf_found is True when an ORF mode
+    chose an ORF (which then defines its own start and end) and False for plain trimming or
+    fallbacks; coding_start/coding_end are 0-based inclusive positions of out_seq within in_seq.
     """
 
     phase_offset = phase if phase in (1, 2) else 0
     available_len = max(0, len(in_seq) - phase_offset)
     surplus = available_len % 3
-    nucleotide_surplus = (surplus != 0 or phase_offset != 0)
+    orf_found = False
     coding_start = phase_offset
     coding_end = len(in_seq) - 1
 
@@ -565,7 +612,7 @@ def trim_surplus(
             out_seq = orf
             coding_start = orf_start + phase_offset
             coding_end = orf_end + phase_offset
-            nucleotide_surplus = False
+            orf_found = True
         else:
             if mode == "orf_or_end":
                 if surplus:
@@ -578,14 +625,13 @@ def trim_surplus(
 
             else: # mode == "orf"
                 out_seq = ""
-                nucleotide_surplus = False
                 coding_start = 0
                 coding_end = -1
 
     else:
         raise ValueError(f"Invalid mode: {mode}")
 
-    return out_seq, nucleotide_surplus, coding_start, coding_end
+    return out_seq, orf_found, coding_start, coding_end
 
 def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:
     genes = sorted(genes_dict.values())

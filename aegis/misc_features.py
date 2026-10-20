@@ -7,13 +7,11 @@ if TYPE_CHECKING:
 import copy
 
 from .feature import Feature
-from .utils.genefunctions import get_start_codons, get_alt_start_codons
-
-INITIATOR_METHIONINE_MODES = ("canonical", "all", "none")
+from .utils.genefunctions import get_start_codons, get_alt_start_codons, TRANSL_EXCEPT_NAMES
 
 class Protein():
 
-    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "start_status")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "exception", "transl_except", "start_status", "polyA_bases")
 
     _blast_hits: list[BlastHit] | None
     _segments: tuple[tuple[int, int], ...] | None
@@ -26,27 +24,37 @@ class Protein():
     table: int | str | dict[str, str]
     trimmed_5p: int
     trimmed_3p: int
-    frameshifts: int
+    frameshifts: tuple[int, ...]
+    exception: str|None
+    transl_except: tuple[tuple[int, int, str], ...]
     start_status: str
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:int=0, initiator_methionine:str="canonical"):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:tuple[int, ...]=(), exception:str|None=None, transl_except:tuple[tuple[int, int, str], ...]=(), polyA_bases:int=0, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         """
         trimmed_5p: CDS bases skipped before the first translated codon (nonzero
             initial phase or 5' trimming); the first codon is then not a start codon.
         trimmed_3p: CDS bases left untranslated after the last complete codon.
-        frameshifts: segment junctions where bases were dropped to follow annotated
-            phases (internal frameshifts corrected during translation).
-        initiator_methionine: which start codons are translated as M when they
-            initiate the protein (NCBI convention): "canonical" (curated starts of
-            the table), "all" (also alternative NCBI initiators) or "none".
+        frameshifts: net shift (in bases) of each translated segment junction in transcript
+            order: negative when bases are read twice (annotated overlap), positive when bases
+            are skipped (annotated gap, or dropped to follow annotated phases).
+        exception: GFF exception of the CDS (e.g. "ribosomal slippage"), if any.
+        transl_except: residues recoded from the CDS transl_except, as (start, end, residue)
+            1-based positions within nuc_seq; they take precedence over the initiator methionine.
+        polyA_bases: A's the polyA tail adds to complete the stop codon (transl_except aa:TERM): they end
+            nuc_seq but have no genomic position, so nuc_seq is the segments' genomic bases plus these A's.
+        initiator_methionine: whether valid start codons at position 1 are translated
+            as Methionine (M) [default: True, matching NCBI RefSeq/UniProt convention].
+        alt_start_methionine: whether alternative start codons (e.g. CTG in table 1/11)
+            are also translated as M when initiator_methionine is True [default: True].
         """
-        if initiator_methionine not in INITIATOR_METHIONINE_MODES:
-            raise ValueError(f"initiator_methionine must be one of {INITIATOR_METHIONINE_MODES}, got '{initiator_methionine}'.")
         self.id = prot_id
         self.table = table
         self.trimmed_5p = trimmed_5p
         self.trimmed_3p = trimmed_3p
         self.frameshifts = frameshifts
+        self.exception = exception
+        self.transl_except = transl_except
+        self.polyA_bases = polyA_bases
         self.ch = chrom
         self.start = start
         self.end = end
@@ -58,8 +66,9 @@ class Protein():
         self.nuc_seq = nuc_seq
 
         self.start_status = self._grade_start()
-        if self.start_status == "canonical" and initiator_methionine != "none" or self.start_status == "alternative" and initiator_methionine == "all":
-            self.seq = "M" + self.seq[1:]
+        if initiator_methionine and not any(start == 1 for start, _, _ in transl_except):
+            if self.start_status == "canonical" or (self.start_status == "alternative" and alt_start_methionine):
+                self.seq = "M" + self.seq[1:]
 
     def copy(self):
         return copy.deepcopy(self)
@@ -103,18 +112,13 @@ class Protein():
     def gaps(self) -> bool:
         return "X" in self.seq
 
-    @property
-    def nucleotide_surplus(self) -> bool:
-        """Whether CDS bases were left untranslated at either end (see trimmed_5p / trimmed_3p)."""
-        return bool(self.trimmed_5p or self.trimmed_3p)
-    
     def __len__(self) -> int:
         return len(self.seq)
 
     @property
     def size(self) -> int:
-        """Protein size in amino acids (excluding terminal stop codon)."""
-        return len(self.seq.rstrip("*"))
+        """Protein size in amino acids, excluding the terminal stop (internal stops are residues, see internal_stops)."""
+        return len(self.seq) - 1 if self.end_stop else len(self.seq)
 
     @property
     def genomic_span(self) -> int:
@@ -182,19 +186,37 @@ class Protein():
         return self.early_stop
 
     @property
-    def summary_tag(self) -> str:
-        summary_tag = []
+    def internal_stops(self) -> int:
+        """Number of stop codons before the last residue."""
+        return self.seq[:-1].count("*")
+
+    @property
+    def tags(self) -> dict[str, str]:
+        """
+        Protein tags in output order, the single source for detailed FASTA headers and summaries.
+        Quality tags only appear when they apply; readthrough and table are always present.
+        """
+        tags = {}
         if self.partial:
-            summary_tag.append("partial")
-        if self.truncated:
-            summary_tag.append("truncated")
+            tags["partial"] = ",".join(end for end, is_partial in (("5'", self.partial_5prime), ("3'", self.partial_3prime)) if is_partial)
         if self.start_status == "alternative":
-            summary_tag.append("alt_start")
-        if self.gaps:
-            summary_tag.append("ambiguous")
+            tags["alt_start"] = self.nuc_seq[:3].upper()
+        if self.internal_stops:
+            tags["internal_stops"] = str(self.internal_stops)
+        if self.ambiguous_residues:
+            tags["ambiguous_residues"] = str(self.ambiguous_residues)
         if self.frameshifts:
-            summary_tag.append("frameshift")
-        return "_".join(summary_tag)
+            tags["frameshifts"] = ",".join(f"{shift:+d}" for shift in self.frameshifts)
+        if self.exception:
+            tags["exception"] = self.exception
+        if self.transl_except:
+            tags["transl_except"] = ",".join(f"(pos:{start}..{end},aa:{TRANSL_EXCEPT_NAMES[residue]})" for start, end, residue in self.transl_except)
+        if self.polyA_bases:
+            tags["polyA_bases"] = str(self.polyA_bases)
+        tags["readthrough"] = self.readthrough
+        tags["table"] = "custom" if isinstance(self.table, dict) else str(self.table)
+        return tags
+
 
 
 class Promoter(Feature):

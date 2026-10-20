@@ -67,3 +67,13 @@ def test_filter_chromosomes(rich_gff3_file, tmp_path):
     result = runner.invoke(filter_app, args)
     assert result.exit_code == 0, f"Filter by chromosome failed: {result.stdout}"
     assert (output_dir / output_file).exists()
+
+
+def test_filter_keeps_models_as_read_smoke(exons_to_collapse_gff3_file, tmp_path):
+    """Smoke test: filter passes models through without collapsing overlapping exons or CDS rows."""
+    output_dir = tmp_path / "filter_out"
+    result = runner.invoke(filter_app, [exons_to_collapse_gff3_file, "-d", str(output_dir), "-o", "out.gff3", "--coding-only", "-q"])
+    assert result.exit_code == 0, f"Filter CLI failed: {result.stdout}"
+    rows = [line.split("\t") for line in (output_dir / "out.gff3").read_text().splitlines() if line and not line.startswith("#")]
+    exons = [(int(r[3]), int(r[4])) for r in rows if r[2] == "exon" and "Parent=mRNA_ov1" in r[8]]
+    assert exons == [(1000, 2500), (2000, 3500), (3500, 4000), (5000, 6000)]

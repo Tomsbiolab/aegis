@@ -7,11 +7,12 @@ from typing_extensions import Annotated
 from ..genome import Genome
 from ..annotation import Annotation
 from .utils import (
+    warn_organelle_genetic_codes,
     split_callback,
     detect_file_type,
     TaxonomyOption,
     GeneticCodeOption,
-    AutoOrganelleCodesOption,
+    AutoOrganelleDetectionOption,
     MitoCodeOption,
     PlastidCodeOption,
     MitochondriaChromsOption,
@@ -145,10 +146,10 @@ def main(
         "--adjust-internal-shifts", help="Frameshift / phase handling mode for multi-segment CDS translation: 'intra_exon' (default: adjust shifts only across contiguous/overlapping exon segments, preserving continuous splicing across introns), 'all' (adjust across all junctions), or 'none' (translate continuous spliced sequence).",
         rich_help_panel=CDS_PANEL,
     )] = "intra_exon",
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ [default: disabled; preserves original coordinates].",
+    coordinate_polishing: Annotated[str, typer.Option(
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). Inconsistencies in the input annotation are reported as warnings whichever mode is chosen. [default: 'none']",
         rich_help_panel=CDS_PANEL,
-    )] = False,
+    )] = "none",
     recalculate_phases: Annotated[bool, typer.Option(
         "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
         rich_help_panel=CDS_PANEL,
@@ -161,12 +162,12 @@ def main(
     # 3. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
     mitochondria_chroms: MitochondriaChromsOption = [],
     chloroplast_chroms: ChloroplastChromsOption = [],
-    initiator_methionine: InitiatorMethionineOption = "canonical",
+    initiator_methionine: InitiatorMethionineOption = True,
 
     # 4. Output Sequence Header Options
     feature_id: Annotated[str, typer.Option(
@@ -261,7 +262,8 @@ def main(
 
     collapse_exons = not no_collapse_exons
     collapse_CDSs = not no_collapse_cds
-    skip_coordinate_polishing = not polish_coordinates
+    if coordinate_polishing not in ("none", "contain", "trim"):
+        raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
 
     for f_type in features:
         if f_type not in FEATURES:
@@ -316,13 +318,13 @@ def main(
         adjust_internal_shifts=adjust_internal_shifts,
         taxonomy=taxonomy,
         table=genetic_code,
-        auto_organelle_codes=auto_organelle_codes,
+        auto_organelle_detection=auto_organelle_detection,
         mito_table=mito_code,
         plastid_table=plastid_code,
         mitochondria_chroms=mitochondria_chroms,
         chloroplast_chroms=chloroplast_chroms,
         initiator_methionine=initiator_methionine,
-        skip_coordinate_polishing=skip_coordinate_polishing,
+        coordinate_polishing=coordinate_polishing,
         coding_ratio_threshold=coding_ratio_threshold,
         allow_internal_stops=allow_internal_stops,
         allow_partial=allow_partial,
@@ -332,6 +334,9 @@ def main(
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
     )
+
+    if "protein" in features or "CDS" in features or rework_all_cds or infer_missing_cds:
+        warn_organelle_genetic_codes(annotation)
 
     has_any_cds = any(bool(t.CDSs) for genes in annotation.chrs.values() for g in genes.values() for t in g.transcripts.values())
     if not has_any_cds and not infer_missing_cds and not rework_all_cds:

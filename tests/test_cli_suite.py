@@ -193,4 +193,4 @@ def test_tidy_coords_panel():
     assert res.exit_code == 0
     p_coords = res.stdout.find("Coordinate & Phase Options")
     assert p_coords != -1
-    assert "--polish-coordinates" in res.stdout
+    assert "--coordinate-polishing" in res.stdout

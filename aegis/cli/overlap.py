@@ -125,10 +125,10 @@ def main(
 
     for n, annotation_file in enumerate(annot_files):
         if original_annotation_files[n].lower() != "na":
-            original_annotation = Annotation(name=f"{annotation_names[n]}_original", annot_file_path=original_annotation_files[n], quiet=quiet, skip_coordinate_polishing=True)
-            annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, original_annotation=original_annotation, quiet=quiet, skip_coordinate_polishing=True))
+            original_annotation = Annotation(name=f"{annotation_names[n]}_original", annot_file_path=original_annotation_files[n], quiet=quiet, coordinate_polishing="none")
+            annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, original_annotation=original_annotation, quiet=quiet, coordinate_polishing="none"))
         else:
-            annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, quiet=quiet, skip_coordinate_polishing=True))
+            annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none"))
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True

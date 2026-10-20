@@ -7,11 +7,12 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome
 from .utils import (
+    warn_organelle_genetic_codes,
     split_callback,
     detect_file_type,
     TaxonomyOption,
     GeneticCodeOption,
-    AutoOrganelleCodesOption,
+    AutoOrganelleDetectionOption,
     MitoCodeOption,
     PlastidCodeOption,
     MitochondriaChromsOption,
@@ -89,12 +90,12 @@ def main(
         "--remove-aliases", help="Removes alias attributes from GFF output.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
-    keep_original_subfeature_ids: Annotated[bool, typer.Option(
-        "--keep-original-subfeature-ids", help="Keep original subfeature IDs for CDS, UTR and exon features instead of synchronizing with gene IDs.",
+    rename_subfeature_ids: Annotated[bool, typer.Option(
+        "--rename-subfeature-ids", help="Rename CDS, exon and UTR IDs after their transcript or gene (<transcript>_CDS001, <gene>_e001, <gene>_u001), a quick clean-up for downstream tools. By default input IDs are kept; CDSs and UTRs that AEGIS derives or changes (e.g. with --rework-all-cds or --infer-missing-cds) are named that way either way.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     consider_read_utrs: Annotated[bool, typer.Option(
-        "--consider-read-utrs", help="Consider UTRs as read from the GFF rather than inferred.",
+        "--consider-read-utrs", help="Keep the UTRs read from the GFF instead of deriving them from the exons and CDS, unless they overlap the CDS or an intron (those transcripts get derived UTRs and a warning). Read UTRs are dropped for CDSs reworked with --rework-all-cds or --infer-missing-cds.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     print_empty_attributes: Annotated[bool, typer.Option(
@@ -176,10 +177,10 @@ def main(
     )] = "intra_exon",
 
     # 5. Coordinate & Phase Options
-    polish_coordinates: Annotated[bool, typer.Option(
-        "--polish-coordinates/--skip-coordinate-polishing", help="Mutate feature coordinates when boundaries differ; log discrepancies as warnings instead [default: enabled; coordinate polishing is active by default].",
+    coordinate_polishing: Annotated[str, typer.Option(
+        "--coordinate-polishing", help="How feature coordinates are polished so that each feature fits within its parent: 'none' (keep original coordinates), 'contain' (exons are extended to cover their CDSs/UTRs, transcripts are set to span their exons and genes are extended to cover all their transcripts; genes extending beyond their transcripts are kept as they are, since the extra region may hold features not modelled as transcripts, e.g. polyA signals or TF binding sites), or 'trim' (as 'contain', but genes are also trimmed to span exactly from their earliest transcript start to their latest transcript end). Inconsistencies in the input annotation are reported as warnings whichever mode is chosen. [default: 'contain']",
         rich_help_panel=COORDS_PANEL,
-    )] = True,
+    )] = "contain",
     recalculate_phases: Annotated[bool, typer.Option(
         "--recalculate-phases", help="Recalculate CDS segment phases based on segment lengths and splicing leftover, preserving 5' initial phase for partial CDSs.",
         rich_help_panel=COORDS_PANEL,
@@ -192,7 +193,7 @@ def main(
     # 6. Genetic Codes
     taxonomy: TaxonomyOption = "plant",
     genetic_code: GeneticCodeOption = 1,
-    auto_organelle_codes: AutoOrganelleCodesOption = True,
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
     mito_code: MitoCodeOption = None,
     plastid_code: PlastidCodeOption = None,
     mitochondria_chroms: MitochondriaChromsOption = [],
@@ -274,15 +275,13 @@ def main(
     collapse_CDSs = not(no_collapse_cds)
     remove_missing_transcript_parent_references = not(keep_missing_transcript_parent_references)
 
-    if keep_original_subfeature_ids:
-        rename_features = ()
-    else:
-        rename_features = ("CDS", "UTR", "exon")
+    rename_features = ("CDS", "UTR", "exon") if rename_subfeature_ids else ()
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
 
-    skip_coordinate_polishing = not polish_coordinates
+    if coordinate_polishing not in ("none", "contain", "trim"):
+        raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
     subfolder = False
 
     for biotype in biotypes:
@@ -337,12 +336,12 @@ def main(
         adjust_internal_shifts=adjust_internal_shifts,
         taxonomy=taxonomy,
         table=genetic_code,
-        auto_organelle_codes=auto_organelle_codes,
+        auto_organelle_detection=auto_organelle_detection,
         mito_table=mito_code,
         plastid_table=plastid_code,
         mitochondria_chroms=mitochondria_chroms,
         chloroplast_chroms=chloroplast_chroms,
-        skip_coordinate_polishing=skip_coordinate_polishing,
+        coordinate_polishing=coordinate_polishing,
         coding_ratio_threshold=coding_ratio_threshold,
         allow_internal_stops=allow_internal_stops,
         allow_partial=allow_partial,
@@ -352,6 +351,9 @@ def main(
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
     )
+
+    if rework_all_cds or infer_missing_cds:
+        warn_organelle_genetic_codes(annotation)
 
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)

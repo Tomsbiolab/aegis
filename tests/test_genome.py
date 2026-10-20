@@ -4,7 +4,7 @@ Tests for aegis.genome — Scaffold and Genome classes.
 
 import pytest
 
-from aegis.genome import Scaffold, Genome
+from aegis.genome import Scaffold, Genome, classify_compartment
 
 
 # ============================================================
@@ -106,6 +106,32 @@ class TestScaffold:
 # ============================================================
 # Genome
 # ============================================================
+
+
+class TestClassifyCompartment:
+    def test_user_lists_come_first(self):
+        assert classify_compartment("chrM", scaffold=Scaffold("chrM", "A"), chloroplast_chroms=("chrM",)) == "chloroplast"
+        assert classify_compartment("contig_9", mitochondria_chroms=("contig_9",)) == "mitochondria"
+
+    def test_user_lists_apply_without_auto_detection(self):
+        assert classify_compartment("contig_9", chloroplast_chroms=("contig_9",), auto_detection=False) == "chloroplast"
+        assert classify_compartment("chrM", scaffold=Scaffold("chrM", "A"), auto_detection=False) == "nuclear"
+        assert classify_compartment("chrM", auto_detection=False) == "nuclear"
+
+    def test_scaffold_classification_is_used_when_given(self):
+        renamed = Scaffold("chrM", "A")
+        renamed.update(new_name="chr0001")
+        assert classify_compartment("chr0001", scaffold=renamed) == "mitochondria"
+        described = Scaffold("NC_000932.1", "A", description="NC_000932.1 Arabidopsis thaliana chloroplast, complete genome")
+        assert classify_compartment("NC_000932.1", scaffold=described) == "chloroplast"
+        assert classify_compartment("chr1", scaffold=Scaffold("chr1", "A")) == "nuclear"
+
+    @pytest.mark.parametrize("name, expected", [
+        ("chrM", "mitochondria"), ("Mt", "mitochondria"), ("ChrC", "chloroplast"), ("Pt", "chloroplast"),
+        ("chr1", "nuclear"), ("scaffold_9", "nuclear"),
+    ])
+    def test_name_is_classified_without_scaffold(self, name, expected):
+        assert classify_compartment(name) == expected
 
 class TestGenome:
     def test_load_from_fasta(self, sample_fasta_file):

@@ -7,6 +7,8 @@ import random
 import warnings
 import hashlib
 
+from typing import Literal
+
 from os import system
 from Bio import SeqIO
 from pathlib import Path
@@ -148,6 +150,32 @@ class Scaffold():
 
     def copy(self):
         return copy.deepcopy(self)
+
+def classify_compartment(chrom: str, scaffold: Scaffold | None = None, mitochondria_chroms: tuple[str, ...] = (), chloroplast_chroms: tuple[str, ...] = (), auto_detection: bool = True) -> Literal["nuclear", "mitochondria", "chloroplast"]:
+    """
+    The one rule deciding whether a chromosome is "mitochondria", "chloroplast" or "nuclear": user-listed
+    organelle chromosomes first; then, with auto_detection, the classification of its genome scaffold
+    (name or FASTA description) or, without one, of its name (e.g. GFF column 1), both by
+    Scaffold.organelle_type.
+    """
+    if chrom in mitochondria_chroms:
+        return "mitochondria"
+    if chrom in chloroplast_chroms:
+        return "chloroplast"
+    if not auto_detection:
+        return "nuclear"
+    if scaffold is not None:
+        if scaffold.mitochondria:
+            return "mitochondria"
+        if scaffold.chloroplast:
+            return "chloroplast"
+        return "nuclear"
+    organelle = Scaffold.organelle_type(chrom)
+    if organelle == "mitochondria":
+        return "mitochondria"
+    if organelle == "chloroplast":
+        return "chloroplast"
+    return "nuclear"
 
 class Genome():
     def __init__(self, name:str, genome_file_path:str, chromosome_dict:dict={}, rename_chromosomes:bool=False, quiet:bool=False,

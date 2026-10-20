@@ -8,9 +8,9 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from ..genome import Genome, Scaffold
+from ..genome import Genome, classify_compartment
 from ..utils.misc import open_file
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SPLIT_PANEL
+from .utils import AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SPLIT_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -309,6 +309,11 @@ def main(
         rich_help_panel=SPLIT_PANEL,
     )] = False,
 
+    # Organelle Detection (organelles go to 'other' with --by-chromosome)
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
+    mitochondria_chroms: MitochondriaChromsOption = [],
+    chloroplast_chroms: ChloroplastChromsOption = [],
+
     # 2. Reference FASTA Options
     header_id_tag: Annotated[str, typer.Option(
         "--header-id-tag", help="Extract chromosome/scaffold ID from FASTA header description by tag name (e.g., 'OriSeqID').",
@@ -512,10 +517,16 @@ def main(
         )
 
     if annotation_file:
-        if genome_obj:
-            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, skip_coordinate_polishing=True)
-        else:
-            annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, quiet=quiet, skip_coordinate_polishing=True)
+        annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+    elif genome_obj:
+        missing = [c for c in (*mitochondria_chroms, *chloroplast_chroms) if c not in genome_obj.scaffolds]
+        if missing:
+            raise typer.BadParameter(f"Organelle chromosome(s) not found in the genome: {', '.join(missing)}.")
+
+    def compartment(ft_id: str) -> str:
+        if annot_obj is not None:
+            return annot_obj.chromosome_compartment(ft_id)
+        return classify_compartment(ft_id, scaffold=genome_obj.scaffolds.get(ft_id) if genome_obj else None, mitochondria_chroms=tuple(mitochondria_chroms), chloroplast_chroms=tuple(chloroplast_chroms), auto_detection=auto_organelle_detection)
 
     # 5. Classify features (scaffolds/chromosomes)
     # Collect all feature identifiers and their descriptions
@@ -540,13 +551,13 @@ def main(
     if by_chromosome:
         for ft_id in feature_info:
             is_chrom = False
+            is_organelle = compartment(ft_id) != "nuclear"
             if genome_obj:
                 scf = genome_obj.scaffolds.get(ft_id)
                 if scf:
-                    is_chrom = bool(scf.chromosome and not scf.organelle and not scf.unknown_chromosome)
+                    is_chrom = bool(scf.chromosome and not is_organelle and not scf.unknown_chromosome)
             else:
                 nl = ft_id.lower()
-                is_organelle = Scaffold.organelle_type(ft_id) is not None
                 is_chrom = bool((nl.startswith("chr") or nl.startswith("chromosome") or ft_id.isdigit()) and not is_organelle)
 
             if is_chrom:

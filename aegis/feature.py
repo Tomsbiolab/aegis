@@ -27,6 +27,8 @@ class Feature():
     _ACTIVE_GENOME: Genome | None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
 
+    # Trailing number of an id (used to keep numbering when renaming); subfeature classes only
+    # accept it after their type name, so e.g. the version in 'cds-NP_065184.2' is not read as one
     _ID_NUMBER_RE = re.compile(r'(\d+)$')
 
     id: str
@@ -48,8 +50,13 @@ class Feature():
     _attributes: FeatureAttributes | None
     ch:str
 
-    # These attributes cannot be mistaken by misc attributes or any other
-    attributes_to_ignore_when_reading_gff:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
+    # Structural keys and AEGIS's own processing state (written by AEGIS and recomputed rather than read back)
+    aegis_state_attributes:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
+    # Model status written by other tools (NCBI, Liftoff) that AEGIS derives from its own translation; kept, it would go stale once a model changes
+    derived_state_attributes:set = {"partial", "start_range", "end_range", "missing_start_codon", "missing_stop_codon", "inframe_stop_codon", "valid_orf", "valid_orfs"}
+    attributes_to_ignore_when_reading_gff:set = aegis_state_attributes | derived_state_attributes
+    # CDS attributes that change or explain translation; kept on CDS rows even in clean GFF output
+    translation_attributes:set = {"transl_table", "transl_except", "exception"}
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}, phase:int|None=None):
         
         self.id = feature_id
@@ -126,7 +133,7 @@ class Feature():
 
     def update_numbering(self, original:bool=False):
 
-        match = Feature._ID_NUMBER_RE.search(self.id)
+        match = self._ID_NUMBER_RE.search(self.id)
         if match:
             if original:
                 self.original_id_number = int(match.group(1))
@@ -233,8 +240,11 @@ class Feature():
             if alias_string or print_empty_attributes:
                 temp_attributes.append(f"Alias={alias_string}")
 
-        if not clean and self.misc_attributes is not None:
-            temp_attributes.extend(self.misc_attributes)
+        if self.misc_attributes is not None:
+            if not clean:
+                temp_attributes.extend(self.misc_attributes)
+            elif self.feature in default_features["CDS"]:
+                temp_attributes.extend(a for a in self.misc_attributes if a.partition("=")[0] in Feature.translation_attributes)
 
         attribute_string = ";".join(temp_attributes)
         phase = self.phase if (self.feature in default_features["CDS"] and self.phase is not None) else "."

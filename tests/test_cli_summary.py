@@ -94,3 +94,14 @@ def test_cli_summary_all_flag(test_data_dir, tmp_path):
     a1 = test_data_dir / "input/annotation/minimal.gff3"
     result = runner.invoke(app, [str(a1), "-A", "-d", str(tmp_path), "-q"])
     assert result.exit_code == 0, f"Summary with -A failed: {result.stdout}"
+
+
+def test_cli_summary_initiator_methionine(test_data_dir, tmp_path):
+    """Ensure --initiator-methionine and --no-initiator-methionine work at the CLI level."""
+    a1 = test_data_dir / "input/annotation/minimal.gff3"
+    g1 = test_data_dir / "input/fasta/minimal.fasta"
+
+    for flag in ("--initiator-methionine", "--no-initiator-methionine"):
+        res = runner.invoke(app, [str(a1), "-g", str(g1), flag, "-d", str(tmp_path), "-q"])
+        assert res.exit_code == 0, f"Summary with {flag} failed: {res.stdout}"
+

@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
+from .utils import split_callback, AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -23,7 +23,7 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = ["transcript", "CDS", "exon", "UTR"],
     prefix: Annotated[str, typer.Option(
-        "-p", "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. switch from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
+        "-p", "--prefix", help="Choose a new gene id prefix to rename the whole annotation. e.g. switch from 'VIT...' to 'Vitvi...'. Together with other options such as --suffix, --spacer, --separator, and --gene-id-digits the general feature id structure can be designed: i.e. '{prefix}{chromosome/scaffold}g{gene_count:0{gene_num_digits}d}{separator}{suffix}'. Genes on mitochondrial or plastid contigs (see --auto-organelle-detection) use 'chrMT' or 'chrCP' as chromosome, numbered across all contigs of that organelle. Gene subfeatures will be renamed on the basis of the configured parental gene-id.",
         rich_help_panel=RENAME_PANEL,
     )] = "",
     suffix: Annotated[str, typer.Option(
@@ -81,7 +81,12 @@ def main(
         rich_help_panel=SUBFEATURE_PANEL,
     )] = False,
 
-    # 3. Input / Output Options
+    # 3. Organelle Detection
+    auto_organelle_detection: AutoOrganelleDetectionOption = True,
+    mitochondria_chroms: MitochondriaChromsOption = [],
+    chloroplast_chroms: ChloroplastChromsOption = [],
+
+    # 4. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
         "-a", "--annotation", "--annotations", "--annotation-file", "--annot", help="Path to input annotation GFF/GTF file. Overrides positional argument if provided.",
         rich_help_panel=IO_PANEL,
@@ -99,7 +104,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "{annotation-name}_renamed.gff3",
 
-    # 4. Execution & Debugging
+    # 5. Execution & Debugging
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -148,7 +153,10 @@ def main(
         quiet=quiet,
         collapse_exons=collapse_exons,
         collapse_CDSs=collapse_CDSs,
-        skip_coordinate_polishing=True,
+        coordinate_polishing="none",
+        auto_organelle_detection=auto_organelle_detection,
+        mitochondria_chroms=mitochondria_chroms,
+        chloroplast_chroms=chloroplast_chroms,
     )
 
     if "{annotation-name}" in output_file:
