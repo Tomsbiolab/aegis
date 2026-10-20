@@ -94,14 +94,17 @@ def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:
     return open(file_path, mode, encoding=encoding) # type: ignore
 
 
-def read_file_with_fallback(file_path, encodings=['utf-8', 'ascii', 'latin-1'], sample_size=100000):
+def read_file_with_fallback(file_path, encodings=('utf-8', 'cp1252', 'latin-1'), chunk_size=1 << 20):
     """
-    Tries several encodings to find the suitable one.
+    Returns the first encoding that decodes the whole file (read in chunks), as a single byte that is not
+    valid in an encoding can be anywhere (e.g. a cp1252 en dash, 0x96, deep into an otherwise utf-8 GFF).
+    cp1252 (Windows text) is tried before latin-1, which decodes any byte.
     """
     for enc in encodings:
         try:
             with open_file(file_path, 'r', encoding=enc) as f:
-                f.read(sample_size)
+                while f.read(chunk_size):
+                    pass
                 return enc
         except UnicodeDecodeError:
             continue

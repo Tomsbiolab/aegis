@@ -1401,6 +1401,12 @@ class Annotation():
         # Coordinates must be final and genes sorted before renaming, as ids are numbered by position
         self.sort_genes(processes=sort_processes)
 
+        # Named before shared UTRs are homogenised, so a derived UTR takes the id of a read one with its coordinates
+        for genes in self.chrs.values():
+            for g in genes.values():
+                provisional = [u for t in g.transcripts.values() for c in t.CDSs.values() for u in c.UTRs if u.provisional]
+                if provisional:
+                    g.name_new_UTRs(provisional)
         self.homogenise_shared_exons_utrs()
         # Resolved before renaming, so repeated input ids are recorded whether or not they are renamed
         self.resolve_subfeature_id_clashes(record_to=warnings_sink)
@@ -1572,21 +1578,10 @@ class Annotation():
 
     def _check_phase_mismatch_across_intron(self, c:CDS, record_to:dict[str, set[str]]):
         """
-        Flags CDSs whose segment phases are inconsistent across a non-contiguous junction (an intron).
+        Flags CDSs whose segment phases are inconsistent across an intron (see CDS.inconsistent_junctions).
         """
-        if len(c.CDS_segments) <= 1:
-            return
-        working_segs = c.CDS_segments if c.strand != "-" else list(reversed(c.CDS_segments))
-        prev_cs = working_segs[0]
-        prev_lo = (prev_cs.size - (prev_cs.phase or 0)) % 3 if prev_cs.phase is not None else None
-        for next_cs in working_segs[1:]:
-            if prev_lo is not None and next_cs.phase is not None and (prev_lo + next_cs.phase) % 3 != 0:
-                is_contiguous = (next_cs.start <= prev_cs.end + 2) if c.strand != "-" else (prev_cs.start <= next_cs.end + 2)
-                if not is_contiguous:
-                    record_to["phase_mismatch_across_intron"].add(c.id)
-            if next_cs.phase is not None:
-                prev_lo = (next_cs.size - next_cs.phase) % 3
-            prev_cs = next_cs
+        if any(not within_exon for _, within_exon in c.inconsistent_junctions()):
+            record_to["phase_mismatch_across_intron"].add(c.id)
 
     def recheck_warnings(self, quiet:bool=True) -> dict[str, set[str]]:
         """
@@ -2766,8 +2761,8 @@ class Annotation():
         Only what the rework changes gets a new id: a reworked CDS with the segments and phases of
         the CDS it replaces is that CDS (keeping its id and attributes), and so are UTRs with the
         coordinates of replaced ones (see Transcript.keep_unchanged_subfeatures). New CDSs are named
-        <transcript>_CDS001 and new UTRs <gene>_u<n> (see Gene.name_new_UTRs); other features keep
-        their ids.
+        <transcript>_CDS001 and new UTRs <gene>_u<n> (by update, see Gene.name_new_UTRs); other
+        features keep their ids.
         """
         start_time = time.time()
 
@@ -2781,7 +2776,6 @@ class Annotation():
 
             for g in genes.values():
                 progress_bar.update(1)
-                new_UTRs: list[UTR] = []
                 for t in g.transcripts.values():
                     if t.coding and not override:
                         continue
@@ -2855,13 +2849,12 @@ class Annotation():
                         )
                         t.update(quiet=quiet)
 
-                    new_UTRs += t.keep_unchanged_subfeatures(old_CDSs, old_UTRs, quiet=quiet)
+                    t.keep_unchanged_subfeatures(old_CDSs, old_UTRs, quiet=quiet)
 
-                # UTRs are named per gene, so new UTRs shared between transcripts share their id as exons do
-                g.name_new_UTRs(new_UTRs)
                 g.update(quiet=quiet)
 
         progress_bar.close()
+        # Names the new UTRs (see Gene.name_new_UTRs)
         self.update(quiet=quiet)
         now = time.time()
         lapse = now - start_time

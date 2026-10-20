@@ -3,6 +3,7 @@ Tests for aegis.annotation — parsing helpers and Annotation class.
 """
 
 import os
+import gzip
 import warnings
 import pytest
 from pathlib import Path
@@ -24,33 +25,53 @@ TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 # ============================================================
 
 class TestReadFileWithFallback:
+    GFF_LINE = "chr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n"
+
     def test_utf8_file(self, tmp_path):
         f = tmp_path / "test.gff3"
-        f.write_text("##gff-version 3\nchr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n", encoding="utf-8")
-        enc = read_file_with_fallback(str(f))
-        assert enc in ("utf-8", "latin-1")
+        f.write_text("##gff-version 3\n" + self.GFF_LINE.replace("g1", "gé1"), encoding="utf-8")
+        assert read_file_with_fallback(str(f)) == "utf-8"
 
-    def test_latin1_file(self, tmp_path):
+    def test_ascii_file_is_utf8(self, tmp_path):
+        f = tmp_path / "ascii.gff3"
+        f.write_text(self.GFF_LINE, encoding="ascii")
+        assert read_file_with_fallback(str(f)) == "utf-8"
+
+    def test_cp1252_file(self, tmp_path):
+        f = tmp_path / "test_cp1252.gff3"
+        f.write_bytes(("##gff-version 3\n" + self.GFF_LINE.replace("ID=g1", "ID=g1;Note=5\u20133")).encode("cp1252"))
+        assert read_file_with_fallback(str(f)) == "cp1252"
+
+    def test_latin1_is_the_last_resort(self, tmp_path):
+        # 0x81 is undefined in cp1252
         f = tmp_path / "test_latin.gff3"
-        f.write_bytes("##gff-version 3\nchr1\taegis\tgene\t1\t100\t.\t+\t.\tID=gé1\n".encode("latin-1"))
-        enc = read_file_with_fallback(str(f))
-        assert enc in ("utf-8", "latin-1")
+        f.write_bytes(self.GFF_LINE.encode("latin-1") + b"#\x81\n")
+        assert read_file_with_fallback(str(f)) == "latin-1"
+
+    @pytest.mark.parametrize("gz", [False, True])
+    def test_byte_deep_into_the_file_is_found(self, tmp_path, gz):
+        # As in Araport11: utf-8 for megabytes, then a cp1252 en dash
+        content = ("##gff-version 3\n" + self.GFF_LINE * 40000).encode("utf-8") + "#Note=5\u20133\n".encode("cp1252")
+        f = tmp_path / ("deep.gff3.gz" if gz else "deep.gff3")
+        f.write_bytes(gzip.compress(content) if gz else content)
+        assert len(content) > 1 << 20
+        assert read_file_with_fallback(str(f)) == "cp1252"
 
     def test_nonexistent_file_raises(self, tmp_path):
-        with pytest.raises(Exception):
+        with pytest.raises(FileNotFoundError):
             read_file_with_fallback(str(tmp_path / "nonexistent.gff3"))
-
-    def test_ascii_file(self, tmp_path):
-        f = tmp_path / "ascii.gff3"
-        f.write_text("chr1\taegis\tgene\t1\t100\t.\t+\t.\tID=g1\n", encoding="ascii")
-        enc = read_file_with_fallback(str(f))
-        assert enc in ("utf-8", "latin-1", "ascii")
 
     def test_empty_file(self, tmp_path):
         f = tmp_path / "empty.gff3"
         f.write_text("")
-        enc = read_file_with_fallback(str(f))
-        assert enc is not None
+        assert read_file_with_fallback(str(f)) == "utf-8"
+
+    def test_annotation_loads_a_file_with_a_late_non_utf8_byte(self, tmp_path):
+        rows = "".join(f"chr1\taegis\tgene\t{i * 10 + 1}\t{i * 10 + 5}\t.\t+\t.\tID=g{i}\n" for i in range(5000))
+        f = tmp_path / "late.gff3"
+        f.write_bytes(("##gff-version 3\n" + rows).encode("utf-8") + "chr1\taegis\tgene\t60001\t60005\t.\t+\t.\tID=last;Note=5\u20133\n".encode("cp1252"))
+        annot = Annotation(str(f), quiet=True)
+        assert len(annot.all_gene_ids) == 5001
 
 
 # ============================================================
@@ -2490,9 +2511,9 @@ class TestAnnotationSubfeatureIdClashes:
         assert list(annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs) == ["cds1"]
         annot.generate_proteins()
         assert sorted(c.protein.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for c in t.CDSs.values()) == ["cds1.prot", "cds1_2.prot"]
-        # The UTRs derived for both CDSs (cds1_u1, cds1_u2) are made unique too, but are not input ids
+        # Derived UTRs are named after their genes, so they do not repeat with the CDS id
         utr_ids = [u.id for genes in annot.chrs.values() for g in genes.values() for t in g.transcripts.values() for c in t.CDSs.values() for u in c.UTRs]
-        assert len(utr_ids) == len(set(utr_ids)) == 4
+        assert sorted(utr_ids) == ["g1_u001", "g1_u002", "g2_u001", "g2_u002"]
         assert annot.warnings["repeated_subfeature_ids"] == {"cds1"}
 
     def test_gene_and_transcript_ids_are_kept_and_new_ids_are_unused(self, tmp_path):
@@ -3472,12 +3493,12 @@ class TestAnnotationUTRIdentity:
 
     def test_read_UTRs_keep_their_ids_and_attributes(self, tmp_path):
         _, utrs = self._utrs(tmp_path, "chr1\ttest\tfive_prime_UTR\t1\t10\t.\t+\t.\tID=utr_a;Parent=t1;Note=x\n")
-        assert [(u.start, u.id) for u in utrs] == [(1, "utr_a"), (20, "c1_u1"), (35, "c1_u2")]
+        assert [(u.start, u.id) for u in utrs] == [(1, "utr_a"), (20, "g1_u001"), (35, "g1_u002")]
         assert utrs[0].misc_attributes == ["Note=x"]
 
     def test_new_UTRs_do_not_reuse_kept_ids(self, tmp_path):
-        _, utrs = self._utrs(tmp_path, "chr1\ttest\tthree_prime_UTR\t35\t40\t.\t+\t.\tID=c1_u1;Parent=t1\n")
-        assert [(u.start, u.id) for u in utrs] == [(1, "c1_u2"), (20, "c1_u3"), (35, "c1_u1")]
+        _, utrs = self._utrs(tmp_path, "chr1\ttest\tthree_prime_UTR\t35\t40\t.\t+\t.\tID=g1_u001;Parent=t1\n")
+        assert [(u.start, u.id) for u in utrs] == [(1, "g1_u002"), (20, "g1_u003"), (35, "g1_u001")]
 
     def test_ids_survive_updates(self, tmp_path):
         annot, utrs = self._utrs(tmp_path)
@@ -3485,6 +3506,66 @@ class TestAnnotationUTRIdentity:
         renamed = [u.id for u in utrs]
         annot.update(quiet=True)
         assert [u.id for u in annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].UTRs] == renamed == ["g1_u001", "g1_u002", "g1_u003"]
+
+
+class TestAnnotationDerivedUTRIds:
+    # Derived UTRs are named after their gene (<gene>_u<n>), whether or not UTRs are renamed
+    @staticmethod
+    def _annotation(tmp_path, rows, **kwargs):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("##gff-version 3\n" + "".join(f"chr1\ttest\t{row}\n" for row in rows))
+        return Annotation(str(gff_file), quiet=True, **kwargs)
+
+    @staticmethod
+    def _utrs(annot, g_id="g1"):
+        return {t.id: [(u.start, u.id) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"][g_id].transcripts.values()}
+
+    def test_derived_UTRs_are_named_after_their_gene(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t18\t.\t+\t.\tID=g1",
+            "mRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t+\t.\tID=e1;Parent=t1",
+            "CDS\t4\t15\t.\t+\t0\tID=cds-XP_1;Parent=t1",
+        ])
+        assert self._utrs(annot) == {"t1": [(1, "g1_u001"), (16, "g1_u002")]}
+        assert not any(u.provisional for c in annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs.values() for u in c.UTRs)
+
+    def test_minus_strand_is_numbered_in_transcript_order(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t18\t.\t-\t.\tID=g1",
+            "mRNA\t1\t18\t.\t-\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t-\t.\tID=e1;Parent=t1",
+            "CDS\t4\t15\t.\t-\t0\tID=c1;Parent=t1",
+        ])
+        assert self._utrs(annot) == {"t1": [(1, "g1_u002"), (16, "g1_u001")]}
+
+    def test_derived_UTR_takes_the_id_of_a_read_one_with_its_coordinates(self, tmp_path):
+        # t2's 5' UTR is derived with the coordinates of t1's read one, listed first
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t30\t.\t+\t.\tID=g1",
+            "mRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g1",
+            "exon\t1\t30\t.\t+\t.\tID=e2;Parent=t2",
+            "CDS\t4\t15\t.\t+\t0\tID=c2;Parent=t2",
+            "mRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t+\t.\tID=e1;Parent=t1",
+            "five_prime_UTR\t1\t3\t.\t+\t.\tID=my_utr5;Parent=t1",
+            "CDS\t4\t15\t.\t+\t0\tID=c1;Parent=t1",
+        ])
+        assert self._utrs(annot) == {"t1": [(1, "my_utr5"), (16, "g1_u001")], "t2": [(1, "my_utr5"), (16, "g1_u002")]}
+
+    def test_UTRs_derived_after_loading_are_named_on_update(self, tmp_path):
+        annot = self._annotation(tmp_path, [
+            "gene\t1\t18\t.\t+\t.\tID=g1",
+            "mRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1",
+            "exon\t1\t18\t.\t+\t.\tID=e1;Parent=t1",
+            "CDS\t4\t15\t.\t+\t0\tID=c1;Parent=t1",
+        ])
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        t.exons[0].end = 24
+        t.update()
+        assert [(u.end, u.id, u.provisional) for c in t.CDSs.values() for u in c.UTRs] == [(3, "g1_u001", False), (24, "c1_u1", True)]
+        annot.update(quiet=True)
+        assert self._utrs(annot) == {"t1": [(1, "g1_u001"), (16, "g1_u002")]}
 
 
 class TestAnnotationSharedExonsUTRs:
@@ -3510,17 +3591,18 @@ class TestAnnotationSharedExonsUTRs:
         return [[(u.start, u.id, u.parents) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"]["g1"].transcripts.values()]
 
     def test_shared_UTR_shares_its_id_without_renaming(self, tmp_path):
+        # Derived UTRs are named after their gene (see TestAnnotationDerivedUTRIds)
         annot = self._annotation(tmp_path, 30)
         assert self._utr_ids(annot) == [
-            [(1, "g1.1_cds_u1", ["g1.1", "g1.2"]), (16, "g1.1_cds_u2", ["g1.1"])],
-            [(1, "g1.1_cds_u1", ["g1.1", "g1.2"]), (16, "g1.2_cds_u2", ["g1.2"])],
+            [(1, "g1_u001", ["g1.1", "g1.2"]), (16, "g1_u002", ["g1.1"])],
+            [(1, "g1_u001", ["g1.1", "g1.2"]), (16, "g1_u003", ["g1.2"])],
         ]
 
     def test_shared_UTR_shares_its_id_when_existing_ids_are_kept(self, tmp_path):
         annot = self._annotation(tmp_path, 30)
         annot.rename_ids(features=("UTR",), keep_existing_ids_if_derived_from_base_id=True, quiet=True)
         ids = [[u_id for _, u_id, _ in t] for t in self._utr_ids(annot)]
-        assert ids == [["g1.1_cds_u1", "g1.1_cds_u2"], ["g1.1_cds_u1", "g1.2_cds_u2"]]
+        assert ids == [["g1_u001", "g1_u002"], ["g1_u001", "g1_u003"]]
 
     def test_shared_exon_shares_its_id(self, tmp_path):
         annot = self._annotation(tmp_path, 18)
@@ -4042,7 +4124,7 @@ class TestReadUTRs:
 
     def test_derived_by_default_with_a_warning(self, tmp_path):
         annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS)
-        assert self._utrs(annot) == [("u5", 1, 10), ("c1_u1", 104, 200)]
+        assert self._utrs(annot) == [("u5", 1, 10), ("g1_u001", 104, 200)]
         assert annot.warnings["read_utrs_differ_from_derived"] == {"t1"}
 
     def test_no_warning_when_read_UTRs_are_the_derived_ones(self, tmp_path):
@@ -4053,7 +4135,7 @@ class TestReadUTRs:
     def test_inconsistent_ones_are_derived_with_a_warning(self, tmp_path):
         # The 3' UTR overlaps the CDS
         annot = self._annotation(tmp_path, self.EXON + self.CDS + self.UTRS.replace("\t104\t150\t", "\t90\t150\t"), consider_read_utrs=True)
-        assert self._utrs(annot) == [("u5", 1, 10), ("c1_u1", 104, 200)]
+        assert self._utrs(annot) == [("u5", 1, 10), ("g1_u001", 104, 200)]
         assert annot.warnings["read_utrs_inconsistent"] == {"t1"}
         assert not annot.warnings["read_utrs_differ_from_derived"]
 

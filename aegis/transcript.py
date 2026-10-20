@@ -163,6 +163,7 @@ class Transcript(Feature):
                             u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
                         else:
                             u.id = f"{base_id}{sep}u{x+1:0{digits}d}"
+                        u.provisional = False
 
                         if u.original_id != u.id:
                             self.renamed_utrs = True
@@ -175,6 +176,7 @@ class Transcript(Feature):
                             u.id = f"{base_id}{sep}u{u.id_number:0{digits}d}"
                         else:
                             u.id = f"{base_id}{sep}u{x+1:0{digits}d}"
+                        u.provisional = False
 
                         if u.original_id != u.id:
                             self.renamed_utrs = True
@@ -448,13 +450,13 @@ class Transcript(Feature):
                     e.coding = False
                 self.update(quiet=quiet)
 
-    def keep_unchanged_subfeatures(self, old_CDSs:list[CDS], old_UTRs:list[UTR], quiet:bool=False) -> list[UTR]:
+    def keep_unchanged_subfeatures(self, old_CDSs:list[CDS], old_UTRs:list[UTR], quiet:bool=False):
         """
         After generate_best_protein, keeps what the rework did not change: a replaced CDS with the strand,
         segments and phases of the new one is kept instead of it (with its id and attributes, taking the new
         protein), and
         UTRs with the coordinates of replaced ones are kept (see generate_UTRs). Otherwise the CDS is named
-        <transcript>_CDS001. Returns the new UTRs, which still have provisional ids (see Gene.name_new_UTRs).
+        <transcript>_CDS001. New UTRs keep provisional ids until Annotation.update names them.
         """
         if not self.CDSs:
             return []
@@ -471,8 +473,6 @@ class Transcript(Feature):
         self.CDSs = {c.id: c}
         c.UTRs = [u for u in old_UTRs if u.strand == c.strand]
         self.update(quiet=quiet)
-        kept = {id(u) for u in old_UTRs}
-        return [u for u in c.UTRs if id(u) not in kept]
 
     def almost_equal(self, other:Transcript):
         almost_equal = True
@@ -625,7 +625,7 @@ class Transcript(Feature):
         """
         Derives the UTRs of each CDS from the exons. A derived UTR with the coordinates of a current
         UTR, or of one read from the GFF, is that UTR (keeping its id and attributes); only new UTRs
-        get provisional ids (<CDS id>_u<n>).
+        get provisional ids (<CDS id>_u<n>, see UTR.provisional).
         """
         previous = {(u.start, u.end): u for u in (self.temp_UTRs or [])}
         self.temp_UTRs = None
@@ -666,6 +666,7 @@ class Transcript(Feature):
                     while f"{c.id}_u{n}" in used_ids:
                         n += 1
                     u.id = f"{c.id}_u{n}"
+                    u.provisional = True
         self.update_UTRs()
 
     def update_UTRs(self):

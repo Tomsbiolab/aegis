@@ -15,6 +15,10 @@ class CDS(Feature):
 
     _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])cds[:_.\-]?(\d+)$', re.IGNORECASE)
 
+    # Largest gap (bp) between consecutive CDS rows still read as one exon: a phase can only skip 1 or 2
+    # bases, so a frameshift written into the phases splits rows that abut, overlap or skip one base
+    MAX_INTRA_EXON_GAP = 1
+
     protein: Protein|None
     CDS_segments: list[Feature]
     UTRs: list[UTR]
@@ -352,18 +356,11 @@ class CDS(Feature):
         # Indices (in working_segs) of the segments whose upstream junction gets its bases adjusted to the annotated phases
         adjusted_junctions = set()
         has_unadjusted_shift = False
-        if len(working_segs) > 1 and all(cs.phase in (0, 1, 2) for cs in working_segs):
-            prev_lo = (working_segs[0].size - (working_segs[0].phase or 0)) % 3
-            prev_seg = working_segs[0]
-            for i, cs in enumerate(working_segs[1:], start=1):
-                if (prev_lo + (cs.phase or 0)) % 3 != 0:
-                    is_contig = (cs.start <= prev_seg.end + 2) if self.strand != "-" else (prev_seg.start <= cs.end + 2)
-                    if adj_mode == "all" or (adj_mode == "intra_exon" and is_contig):
-                        adjusted_junctions.add(i)
-                    else:
-                        has_unadjusted_shift = True
-                prev_lo = (cs.size - (cs.phase or 0)) % 3
-                prev_seg = cs
+        for i, within_exon in self.inconsistent_junctions():
+            if adj_mode == "all" or (adj_mode == "intra_exon" and within_exon):
+                adjusted_junctions.add(i)
+            else:
+                has_unadjusted_shift = True
         shifts_to_adjust = bool(adjusted_junctions)
 
         if not quiet:
@@ -652,19 +649,30 @@ class CDS(Feature):
         """ Returns python index of last protein nucleotide within the CDS sequence string, or the last CDS nucleotide index if no protein was generated yet."""
         return self._calculate_relative_coding_coords()[1]
 
+    def inconsistent_junctions(self) -> list[tuple[int, bool]]:
+        """
+        Junctions whose annotated phases disagree with reading the segments continuously: the bases left
+        over after a segment, (size - phase) % 3, are not completed by the next segment's phase. Segments are
+        walked in transcript order (reversed on the - strand); each junction is given as the index of its
+        downstream segment in that order, and whether it is within an exon (the segments overlap or are at
+        most MAX_INTRA_EXON_GAP bp apart) rather than across an intron. A junction is only judged when both
+        segments have a phase (CDS.update derives missing ones).
+        """
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
+        junctions = []
+        for i in range(1, len(working_segs)):
+            prev, cs = working_segs[i - 1], working_segs[i]
+            if prev.phase is None or cs.phase is None:
+                continue
+            if ((prev.size - prev.phase) % 3 + cs.phase) % 3 != 0:
+                gap = cs.start - prev.end - 1 if self.strand != "-" else prev.start - cs.end - 1
+                junctions.append((i, gap <= self.MAX_INTRA_EXON_GAP))
+        return junctions
+
     @property
     def has_internal_shift(self) -> bool:
-        """Returns True if the CDS segments have an internal phase shift at segment boundaries."""
-        if not self.CDS_segments or len(self.CDS_segments) <= 1:
-            return False
-        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
-        if all(cs.phase in (0, 1, 2) for cs in working_segs):
-            prev_lo = (working_segs[0].size - (working_segs[0].phase or 0)) % 3
-            for cs in working_segs[1:]:
-                if (prev_lo + (cs.phase or 0)) % 3 != 0:
-                    return True
-                prev_lo = (cs.size - (cs.phase or 0)) % 3
-        return False
+        """Returns True if the annotated phases disagree with the segments at any junction (see inconsistent_junctions)."""
+        return bool(self.inconsistent_junctions())
 
 class Exon(Feature):
     __slots__ = ()
@@ -676,11 +684,14 @@ class Exon(Feature):
 
 class UTR(Feature):
 
-    __slots__ = ('prime',)
+    # provisional: derived by AEGIS and still named after its CDS (<CDS id>_u<n>) until named after its
+    # gene by Annotation.update (see Gene.name_new_UTRs)
+    __slots__ = ('prime', 'provisional')
 
     _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])(?:five_prime_utr|three_prime_utr|utr|u)[:_.\-]?(\d+)$', re.IGNORECASE)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
+        self.provisional = False
         feat_lower = str(feature).lower()
         if "5" in feat_lower or "five" in feat_lower:
             self.prime = "5'"

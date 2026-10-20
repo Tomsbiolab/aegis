@@ -366,9 +366,9 @@ class Gene(Feature):
 
     def name_new_UTRs(self, new_UTRs:list[UTR], sep:str="_", digits:int=3):
         """
-        Names UTRs added to the gene (e.g. by reworking a CDS) without renaming the others: a new UTR with
-        the coordinates of an existing one takes its id, and the rest take the free <gene>_u<n> numbers in
-        transcript order, new UTRs shared between transcripts sharing their id.
+        Names UTRs added to the gene (derived with provisional ids, see UTR.provisional) without renaming
+        the others: a new UTR with the coordinates of an existing one takes its id, and the rest take the
+        free <gene>_u<n> numbers in transcript order, new UTRs shared between transcripts sharing their id.
         """
         new = {id(u) for u in new_UTRs}
         names: dict[tuple[int, int, str, str], str] = {}
@@ -389,6 +389,7 @@ class Gene(Feature):
                 names[key] = f"{self.base_id}{sep}u{n:0{digits}d}"
                 used.add(names[key])
             u.id = names[key]
+            u.provisional = False
             u.update_numbering()
 
     def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):
@@ -480,6 +481,7 @@ class Gene(Feature):
                         for u in c.UTRs:
                             key = (u.start, u.end, u.ch, u.strand)
                             u.id = utr_names[key]
+                            u.provisional = False
 
                             if u.original_id != u.id:
                                 self.renamed_utrs = True

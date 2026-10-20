@@ -412,6 +412,64 @@ class TestCDS:
 
 
 
+class TestCDSInconsistentJunctions:
+    # The first segment in transcript order is 10 bp with phase 0, leaving 1 base over: the next phase must be 2
+    @staticmethod
+    def _cds(make_CDS, make_CDS_segment, strand, second, second_phase):
+        # second: (start, end) of the downstream segment in transcript order
+        first = (1, 10) if strand == "+" else (101, 110)
+        segments = [make_CDS_segment("s1", start=first[0], end=first[1], strand=strand, phase=0), make_CDS_segment("s2", start=second[0], end=second[1], strand=strand, phase=second_phase)]
+        return make_CDS(segments=sorted(segments, key=lambda s: s.start), strand=strand)
+
+    @pytest.mark.parametrize("strand, second", [("+", (11, 30)), ("-", (81, 100))])
+    def test_consistent_phases_give_no_junction(self, make_CDS, make_CDS_segment, strand, second):
+        cds = self._cds(make_CDS, make_CDS_segment, strand, second, 2)
+        assert cds.inconsistent_junctions() == []
+        assert cds.has_internal_shift is False
+
+    @pytest.mark.parametrize("strand, second, within_exon", [
+        ("+", (11, 30), True),    # abutting
+        ("+", (12, 30), True),    # 1 bp gap
+        ("+", (13, 30), False),   # 2 bp gap
+        ("+", (9, 30), True),     # overlap
+        ("+", (500, 530), False), # intron
+        ("-", (81, 100), True),
+        ("-", (81, 99), True),
+        ("-", (81, 98), False),
+        ("-", (81, 102), True),
+        ("-", (1, 30), False),
+    ])
+    def test_inconsistent_junction_within_exon_or_across_intron(self, make_CDS, make_CDS_segment, strand, second, within_exon):
+        cds = self._cds(make_CDS, make_CDS_segment, strand, second, 0)
+        assert cds.inconsistent_junctions() == [(1, within_exon)]
+        assert cds.has_internal_shift is True
+
+    def test_junctions_are_indexed_in_transcript_order(self, make_CDS, make_CDS_segment):
+        # On the - strand the downstream segment of the inconsistent junction is the lowest one
+        segments = [
+            make_CDS_segment("s3", start=1, end=20, strand="-", phase=0),
+            make_CDS_segment("s2", start=41, end=60, strand="-", phase=2),
+            make_CDS_segment("s1", start=101, end=110, strand="-", phase=0),
+        ]
+        cds = make_CDS(segments=segments, strand="-")
+        # s1 leaves 1 base, completed by s2 (phase 2); s2 leaves (20 - 2) % 3 = 0, but s3 has phase 0: consistent
+        assert cds.inconsistent_junctions() == []
+        cds.CDS_segments[0].phase = 1
+        assert cds.inconsistent_junctions() == [(2, False)]
+
+    def test_junctions_next_to_a_segment_without_phase_are_not_judged(self, make_CDS, make_CDS_segment):
+        segments = [
+            make_CDS_segment("s1", start=1, end=10, phase=0),
+            make_CDS_segment("s2", start=20, end=40, phase=2),
+            make_CDS_segment("s3", start=50, end=70, phase=0),
+        ]
+        cds = make_CDS(segments=segments)
+        assert cds.inconsistent_junctions() == [(2, False)]
+        # Unknown phases are derived when the CDS is built; set afterwards, the junctions next to it are skipped
+        cds.CDS_segments[1].phase = None
+        assert cds.inconsistent_junctions() == []
+
+
 # ============================================================
 # Exon
 # ============================================================
