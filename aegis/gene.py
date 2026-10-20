@@ -9,6 +9,7 @@ from .feature import Feature
 from .subfeatures import Exon
 from .other_components import GeneSynteny
 from .transcript import Transcript
+from .utils.misc import unambiguous_numbers
 
 class Gene(Feature):
 
@@ -292,7 +293,8 @@ class Gene(Feature):
                         self.renamed_exons = True
 
             else:
-                
+                keep_numbering = keep_numbering and unambiguous_numbers(((e.start, e.end, e.ch, e.strand), e.id_number) for t in self.transcripts.values() for e in t.exons)
+
                 exon_names: dict[tuple[int, int, str, str], str] = {}
 
                 exon_d:dict[str, list[Exon]] = {"+":[], "-":[], ".": []}
@@ -386,7 +388,8 @@ class Gene(Feature):
                         self.renamed_utrs = True
 
             else:
-                
+                keep_numbering = keep_numbering and unambiguous_numbers(((u.start, u.end, u.ch, u.strand), u.id_number) for t in self.transcripts.values() for c in t.CDSs.values() for u in c.UTRs)
+
                 utr_names: dict[tuple[int, int, str, str], str] = {}
 
                 utr_d:dict[str, list[UTR]] = {"+":[], "-":[], ".": []}

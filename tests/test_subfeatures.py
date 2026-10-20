@@ -232,6 +232,27 @@ class TestCDS:
         reconstructed = "".join(cds.seq[s:e+1] for s, e in intervals)
         assert len(reconstructed) == len(cds.protein.nuc_seq)
 
+    @pytest.mark.parametrize("cds_id, expected", [
+        ("AT1G17000:CDS:1", 1),
+        ("t1_CDS001", 1),
+        ("cds-NP_065184.2", None),  # accession version, not a CDS number
+    ])
+    def test_id_number_follows_type_name(self, make_CDS, cds_id, expected):
+        assert make_CDS(feature_id=cds_id).id_number == expected
+
+    def test_segments_share_the_CDS_id_when_renamed(self, make_CDS, make_CDS_segment):
+        segments = [make_CDS_segment("AT1G17000:CDS:1", start=100, end=300), make_CDS_segment("AT1G17000:CDS:2", start=400, end=600)]
+        cds = make_CDS(segments=segments, feature_id="AT1G17000:CDS:1")
+        cds.rename(base_id="t1", base_gene_id="AT1G17000", count=1, keep_numbering=True)
+        assert [cds.id] + [cs.id for cs in cds.CDS_segments] == ["t1_CDS001"] * 3
+
+    def test_unique_segment_ids_are_padded(self, make_CDS, make_CDS_segment):
+        segments = [make_CDS_segment("c1", start=100, end=300), make_CDS_segment("c1", start=400, end=600)]
+        cds = make_CDS(segments=segments, feature_id="c1")
+        cds.main = True
+        cds.rename(base_id="t1", base_gene_id="g1", count=1, cds_segment_ids=True)
+        assert [cs.id for cs in cds.CDS_segments] == ["t1_CDS001_1", "t1_CDS001_2"]
+
     def test_translation_attributes_read_from_segments(self, make_CDS, make_CDS_segment):
         attributes = {"transl_table": "2", "exception": "ribosomal slippage", "Note": "x"}
         segments = [
@@ -394,6 +415,20 @@ class TestCDS:
 # ============================================================
 # Exon
 # ============================================================
+
+class TestSubfeatureIdNumbers:
+    @pytest.mark.parametrize("cls, feature_id, expected", [
+        (Exon, "AT4G00005:exon:1", 1),
+        (Exon, "g1_e003", 3),
+        (Exon, "my_exon", None),
+        (Exon, "exon-NM_000384.3-26", None),  # NCBI exon ids are numbered per transcript after the accession
+        (UTR, "AT1G16460:five_prime_UTR:7", 7),
+        (UTR, "t1_CDS1_u2", 2),
+        (UTR, "g1_u001", 1),
+    ])
+    def test_id_number_follows_type_name(self, cls, feature_id, expected):
+        assert cls(feature_id, "chr1", "test", "exon", "+", 1, 10, ".", ["t1"]).id_number == expected
+
 
 class TestExon:
     def test_inherits_from_feature(self):

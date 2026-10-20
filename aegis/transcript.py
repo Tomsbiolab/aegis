@@ -6,6 +6,7 @@ from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
 from .utils.genefunctions import reverse_complement
+from .utils.misc import unambiguous_numbers
 
 class Transcript(Feature):
 
@@ -112,6 +113,7 @@ class Transcript(Feature):
         if rename:
             if len(self.exons) > 1:
                 self.exons.sort()
+            keep_numbering = keep_numbering and unambiguous_numbers(((e.start, e.end), e.id_number) for e in self.exons)
 
             if self.strand == "+" or self.strand == ".":
                 for x, e in enumerate(self.exons):
@@ -148,6 +150,7 @@ class Transcript(Feature):
             rename = True
 
         if rename:
+            keep_numbering = keep_numbering and unambiguous_numbers(((u.start, u.end), u.id_number) for c in self.CDSs.values() for u in c.UTRs)
 
             if self.strand == "+" or self.strand == ".":
                 for c in self.CDSs.values():

@@ -32,7 +32,7 @@ from .transcript import Transcript
 from .subfeatures import Exon, UTR, CDS
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
-from .utils.misc import read_file_with_fallback, open_file, start_progress_bar
+from .utils.misc import read_file_with_fallback, open_file, start_progress_bar, unambiguous_numbers
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
@@ -348,8 +348,7 @@ class Annotation():
         self._validate_organelle_chroms()
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            # Features are renamed as chosen (rename_features) by the update that follows
-            self.rework_CDSs(
+            reworked = self.rework_CDSs(
                 override=rework_all_CDSs,
                 rename_features=(),
                 coding_ratio_threshold=coding_ratio_threshold,
@@ -362,6 +361,8 @@ class Annotation():
                 orf_choice_mode=orf_choice_mode,
             )
             self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+            # Reworked CDSs and UTRs are renamed last, as updating regenerates UTRs with provisional ids
+            self._rename_reworked(reworked)
 
         if rename_source:
             self.rename_source(rename_source)
@@ -2625,22 +2626,29 @@ class Annotation():
         allow_internal_stops: bool = True,
         allow_partial: bool = True,
         rename_features: tuple[str, ...] = ("CDS", "UTR"),
-        keep_subfeature_numbers: bool = False,
+        keep_subfeature_numbers: bool = True,
         keep_existing_ids_if_derived_from_base_id: bool = False,
-    ):
+    ) -> list[tuple[Gene, Transcript]]:
         """
         Replaces the CDSs of transcripts (all of them with override, otherwise only those of
         non-coding transcripts) by the best ORF across their exons.
 
-        Renaming afterwards (see rename_ids), which applies to the whole annotation:
-        rename_features: feature levels renamed. Reworked CDSs and their regenerated UTRs get
-            provisional IDs, so by default only CDSs and UTRs are renamed; exons are not changed
-            by reworking. Pass () to keep all IDs as they are.
-        keep_subfeature_numbers: reuse the trailing number of current IDs. Reworked CDSs and
-            regenerated UTRs carry no meaningful number, and for NCBI-style IDs it is the
-            accession version (cds-NP_065184.2 -> CDS002), hence off by default.
+        Reworked CDSs and their regenerated UTRs get provisional IDs and are renamed afterwards;
+        all other IDs are kept:
+        rename_features: "CDS" and/or "UTR"; pass () to keep the provisional IDs. CDSs of reworked
+            transcripts are named after their transcript (<transcript>_CDS001). UTRs are named per
+            gene (<gene>_u001) so that shared UTRs share their id, which renames all UTRs of genes
+            with a reworked transcript.
+        keep_subfeature_numbers: reuse the numbers of current IDs where unambiguous (see rename_ids).
         keep_existing_ids_if_derived_from_base_id: keep IDs that already contain their gene ID.
+
+        Returns the reworked (gene, transcript) pairs. Updating the annotation regenerates UTRs
+        with provisional ids, so after a later update they can be renamed with _rename_reworked.
         """
+        for f in rename_features:
+            if f not in ("CDS", "UTR"):
+                raise ValueError(f"rework_CDSs only renames the CDSs and UTRs it reworks, not '{f}'.")
+
         start_time = time.time()
 
         if not quiet and self.auto_organelle_codes:
@@ -2648,6 +2656,7 @@ class Annotation():
 
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
 
+        reworked: list[tuple[Gene, Transcript]] = []
         for chrom, genes in self.chrs.items():
             chrom_table = self.translation_table(chrom)
 
@@ -2656,6 +2665,7 @@ class Annotation():
                 for t in g.transcripts.values():
                     if t.coding and not override:
                         continue
+                    reworked.append((g, t))
 
                     t.generate_best_protein(
                         mode=mode,
@@ -2728,12 +2738,31 @@ class Annotation():
 
         progress_bar.close()
         self.update(quiet=quiet)
-        if rename_features:
-            self.rename_ids(features=rename_features, keep_subfeature_numbers=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet)
+
+        self._rename_reworked(reworked, rename_features=rename_features, keep_subfeature_numbers=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
+
+        return reworked
+
+    def _rename_reworked(self, reworked:list[tuple[Gene, Transcript]], rename_features:tuple[str, ...]=("CDS", "UTR"), keep_subfeature_numbers:bool=True, keep_existing_ids_if_derived_from_base_id:bool=False):
+        """
+        Renames the CDSs of reworked transcripts after their transcript (<transcript>_CDS001) and the
+        UTRs of their genes per gene (<gene>_u001), so UTRs shared between transcripts share their id
+        as exons do. See rework_CDSs.
+        """
+        reworked_genes = {}
+        for g, t in reworked:
+            reworked_genes[g.id] = g
+            if "CDS" in rename_features:
+                for c in t.CDSs.values():
+                    c.rename(base_id=t.id, base_gene_id=g.base_id, count=1, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+        if "UTR" in rename_features:
+            for g in reworked_genes.values():
+                g.rename_utrs(keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+        self.update_keys(gene_keys=False, transcript_keys=False)
 
     def update_gene_and_transcript_list(self, quiet:bool=True):
 
@@ -2822,6 +2851,17 @@ class Annotation():
     def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, quiet:bool=False,
     #deprecated arguments
     custom_path:str=""):
+        """
+        Renames the chosen feature levels from their gene ids.
+
+        keep_subfeature_numbers: reuse the trailing number of current transcript, CDS, exon and
+            UTR ids. Exons, UTRs and CDSs only take a number written after their type
+            ('AT4G00005:exon:1', 'g1_u002', 't1_CDS1'), so e.g. the accession version in
+            'cds-NP_065184.2' is not read as one. Numbers are only kept when every feature of the
+            group (transcripts or exons/UTRs of a gene) has one and no number is shared by
+            different features; otherwise the group is numbered sequentially.
+        cds_segment_ids: give each CDS row its own id (<CDS id>_<n>) instead of the CDS id.
+        """
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'correspondences_output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -2907,6 +2947,7 @@ class Annotation():
 
 
                 t_count = 1
+                keep_transcript_numbers = keep_subfeature_numbers and unambiguous_numbers((t.id, t.id_number) for t in g.transcripts.values())
 
                 for t in g.transcripts.values():
 
@@ -2918,9 +2959,9 @@ class Annotation():
                     if "transcript" in features or prefix:
 
                         if prefix or base_id_missing:
-                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False)
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_transcript_numbers, keep_existing_ids_if_derived_from_base_id=False)
                         else:
-                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_transcript_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
 
                         if t.renamed:
                             changed_features.add("transcript")

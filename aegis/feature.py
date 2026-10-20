@@ -27,6 +27,8 @@ class Feature():
     _ACTIVE_GENOME: Genome | None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
 
+    # Trailing number of an id (used to keep numbering when renaming); subfeature classes only
+    # accept it after their type name, so e.g. the version in 'cds-NP_065184.2' is not read as one
     _ID_NUMBER_RE = re.compile(r'(\d+)$')
 
     id: str
@@ -131,7 +133,7 @@ class Feature():
 
     def update_numbering(self, original:bool=False):
 
-        match = Feature._ID_NUMBER_RE.search(self.id)
+        match = self._ID_NUMBER_RE.search(self.id)
         if match:
             if original:
                 self.original_id_number = int(match.group(1))

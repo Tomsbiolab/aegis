@@ -31,6 +31,18 @@ def pickle_save(file, item):
     pickle.dump(item, f)
     f.close()
 
+def unambiguous_numbers(numbered) -> bool:
+    """
+    Whether (key, number) pairs can keep their numbers when renaming: every key has a number
+    and no number is shared by different keys (features with the same key, e.g. an exon shared
+    by transcripts, may share it).
+    """
+    owners = {}
+    for key, number in numbered:
+        if number is None or owners.setdefault(number, key) != key:
+            return False
+    return True
+
 def count_occurrences(string, char):
     return Counter(string)[char]
 

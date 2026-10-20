@@ -3261,6 +3261,36 @@ class TestAnnotationReworkCDSsRenaming:
         annot.rework_CDSs(quiet=True)
         assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
 
+    def test_reworked_UTRs_shared_between_transcripts_share_their_id(self, tmp_path):
+        # t1 and t2 share the 5' UTR (1..3) but not the 3' UTR
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF.replace("\tgene\t1\t18\t", "\tgene\t1\t30\t") + (
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e2;Parent=t2\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" + "C" * 12}), quiet=True)
+        annot.rework_CDSs(quiet=True)
+        utrs = {t.id: [(u.start, u.id) for c in t.CDSs.values() for u in c.UTRs] for t in annot.chrs["chr1"]["g1"].transcripts.values()}
+        assert utrs == {"t1": [(1, "g1_u001"), (16, "g1_u002")], "t2": [(1, "g1_u001"), (16, "g1_u003")]}
+
+    def test_only_reworked_transcripts_are_renamed(self, tmp_path):
+        # Without override only non-coding t1 is reworked; coding t2 keeps its CDS ID
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(self.GFF + (
+            "chr1\ttest\tgene\t19\t36\t.\t+\t.\tID=g2\n"
+            "chr1\ttest\tmRNA\t19\t36\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\ttest\texon\t19\t36\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\ttest\tCDS\t22\t33\t.\t+\t0\tID=my_cds;Parent=t2\n"
+        ))
+        annot = Annotation(str(gff_file), genome=MockGenome({"chr1": "CCCATGAAACCCTAAGGG" * 2}), quiet=True)
+        annot.rework_CDSs(override=False, quiet=True)
+        assert self._ids(annot)[1] == ["t1_CDS001"]
+        assert list(annot.chrs["chr1"]["g2"].transcripts["t2"].CDSs) == ["my_cds"]
+
+    def test_only_reworked_features_can_be_renamed(self, tmp_path):
+        with pytest.raises(ValueError, match="only renames the CDSs and UTRs it reworks"):
+            self._annotation(tmp_path).rework_CDSs(quiet=True, rename_features=("CDS", "exon"))
+
     def test_no_renaming(self, tmp_path):
         annot = self._annotation(tmp_path)
         annot.rework_CDSs(quiet=True, rename_features=())
@@ -3271,10 +3301,38 @@ class TestAnnotationReworkCDSsRenaming:
         annot.rework_CDSs(quiet=True, rename_features=("CDS",), keep_subfeature_numbers=True)
         assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["t1_CDS1_u1", "t1_CDS1_u2"])
 
-    def test_constructor_follows_rename_features(self, tmp_path):
-        # e.g. tidy --keep-original-subfeature-ids passes rename_features=()
+    def test_constructor_renames_only_reworked_features(self, tmp_path):
+        # e.g. tidy --keep-original-subfeature-ids passes rename_features=(): only reworked CDSs and UTRs are renamed
         annot = self._annotation(tmp_path, rework_all_CDSs=True, rename_features=())
-        assert self._ids(annot)[0] == ["my_exon"]
+        assert self._ids(annot) == (["my_exon"], ["t1_CDS001"], ["g1_u001", "g1_u002"])
+
+
+class TestAnnotationRenameKeepNumbers:
+    @staticmethod
+    def _annotation(tmp_path, transcripts):
+        # transcripts: (transcript id, exon id, exon start, exon end)
+        lines = ["##gff-version 3", "chr1\ttest\tgene\t1\t100\t.\t+\t.\tID=g1"]
+        for t_id, e_id, start, end in transcripts:
+            lines.append(f"chr1\ttest\tmRNA\t{start}\t{end}\t.\t+\t.\tID={t_id};Parent=g1")
+            lines.append(f"chr1\ttest\texon\t{start}\t{end}\t.\t+\t.\tID={e_id};Parent={t_id}")
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text("\n".join(lines) + "\n")
+        return Annotation(str(gff_file), quiet=True)
+
+    @staticmethod
+    def _ids(annot):
+        return sorted((t.id, [e.id for e in t.exons]) for t in annot.chrs["chr1"]["g1"].transcripts.values())
+
+    def test_unambiguous_numbers_are_kept(self, tmp_path):
+        annot = self._annotation(tmp_path, [("g1.2", "g1:exon:4", 1, 50), ("g1.3", "g1:exon:7", 60, 100)])
+        annot.rename_ids(features=("transcript", "exon"), keep_subfeature_numbers=True, quiet=True)
+        assert self._ids(annot) == [("g1_t002", ["g1_e004"]), ("g1_t003", ["g1_e007"])]
+
+    def test_ambiguous_numbers_are_renumbered(self, tmp_path):
+        # NCBI-like: transcript versions and per-transcript exon numbers repeat across the gene
+        annot = self._annotation(tmp_path, [("rna-NM_1.2", "exon-NM_1.2-1", 1, 50), ("rna-NM_2.2", "exon-NM_2.2-1", 60, 100)])
+        annot.rename_ids(features=("transcript", "exon"), keep_subfeature_numbers=True, quiet=True)
+        assert self._ids(annot) == [("g1_t001", ["g1_e001"]), ("g1_t002", ["g1_e002"])]
 
 
 class TestAnnotationRenameUTRs:

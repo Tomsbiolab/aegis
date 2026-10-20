@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import warnings
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import unquote
@@ -11,6 +12,8 @@ from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translat
 class CDS(Feature):
 
     __slots__ = ('main', 'CDS_segments', 'full_UTR_exons', 'protein', 'UTRs', 'transl_table', 'transl_except', 'exception')
+
+    _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])cds[:_.\-]?(\d+)$', re.IGNORECASE)
 
     protein: Protein|None
     CDS_segments: list[Feature]
@@ -170,16 +173,15 @@ class CDS(Feature):
                 if self.protein is not None:
                     self.protein.id = f"{self.id}.prot"
 
+        # Segments share the CDS id, unless unique ids per CDS row are requested
         cs_count = 0
         for cs in self.CDS_segments:
             cs_count += 1
 
             if rename_cs:
 
-                if keep_numbering and cs.id_number != None:
-                    cs.id = f"{base_id}{sep}CDS{cs.id_number}"
-                elif cds_segment_ids:
-                    cs.id = f"{base_id}{sep}CDS{self.id_number}{sep}{cs_count}"
+                if cds_segment_ids:
+                    cs.id = f"{self.id}{sep}{cs_count}"
                 else:
                     cs.id = self.id
 
@@ -666,12 +668,16 @@ class CDS(Feature):
 class Exon(Feature):
     __slots__ = ()
 
+    _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])(?:exon|e)[:_.\-]?(\d+)$', re.IGNORECASE)
+
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
 
 class UTR(Feature):
 
     __slots__ = ('prime',)
+
+    _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])(?:five_prime_utr|three_prime_utr|utr|u)[:_.\-]?(\d+)$', re.IGNORECASE)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
         feat_lower = str(feature).lower()

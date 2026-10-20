@@ -18,7 +18,7 @@ from aegis.utils.genefunctions import (
 
 from aegis.feature import Feature
 from aegis.utils.gtf_gff import parse_gff_parts, parse_gff_attributes
-from aegis.utils.misc import count_occurrences, find_all_occurrences
+from aegis.utils.misc import count_occurrences, find_all_occurrences, unambiguous_numbers
 
 
 # ============================================================
@@ -120,6 +120,21 @@ class TestParseGffLine:
 # ============================================================
 # count_occurrences
 # ============================================================
+
+class TestUnambiguousNumbers:
+    def test_unique_numbers(self):
+        assert unambiguous_numbers([("a", 1), ("b", 2)]) is True
+
+    def test_same_key_may_share_a_number(self):
+        # e.g. an exon shared by two transcripts
+        assert unambiguous_numbers([("a", 1), ("a", 1), ("b", 2)]) is True
+
+    def test_number_shared_by_different_keys(self):
+        assert unambiguous_numbers([("a", 1), ("b", 1)]) is False
+
+    def test_missing_number(self):
+        assert unambiguous_numbers([("a", 1), ("b", None)]) is False
+
 
 class TestCountOccurrences:
     def test_basic_count(self):
