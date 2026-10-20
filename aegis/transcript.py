@@ -6,7 +6,7 @@ from .feature import Feature
 from .subfeatures import Exon, Intron, CDS, UTR
 from .misc_features import Promoter
 from .utils.genefunctions import reverse_complement
-from .utils.misc import unambiguous_numbers
+from .utils.misc import unambiguous_numbers, covered_length
 
 class Transcript(Feature):
 
@@ -826,11 +826,9 @@ class Transcript(Feature):
             return [fw_seq, reverse_complement(fw_seq)]
     
     @property
-    def size(self):
-        size = 0
-        for exon in self.exons:
-            size += exon.size
-        return size
+    def size(self) -> int:
+        """Mature transcript length: bases covered by its exons, each counted once (genomic_span includes introns)."""
+        return covered_length((e.start, e.end) for e in self.exons)
 
     @property
     def CDS_size(self):

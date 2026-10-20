@@ -9,7 +9,7 @@ from .feature import Feature
 from .subfeatures import Exon
 from .other_components import GeneSynteny
 from .transcript import Transcript
-from .utils.misc import unambiguous_numbers
+from .utils.misc import unambiguous_numbers, covered_length
 
 class Gene(Feature):
 
@@ -259,6 +259,24 @@ class Gene(Feature):
         best_other_protein = min(other_proteins, key=lambda p: p.get_blast_hits_key(source_priority))
 
         return best_self_protein.compare_blast_hits(best_other_protein, source_priority)
+
+    @property
+    def exonic_size(self) -> int:
+        """
+        Bases covered by the exons of all its transcripts, each counted once: the gene length when its reads
+        are counted on all its exons (as featureCounts counts exons grouped by gene_id). size is its genomic span.
+        """
+        return covered_length((e.start, e.end) for t in self.transcripts.values() for e in t.exons)
+
+    @property
+    def coding_exonic_size(self) -> int:
+        """Bases covered by the exons of its coding transcripts, each counted once (0 without coding transcripts)."""
+        return covered_length((e.start, e.end) for t in self.transcripts.values() if t.coding for e in t.exons)
+
+    @property
+    def main_transcript_size(self) -> int:
+        """Mature length of its main transcript (0 without transcripts)."""
+        return next((t.size for t in self.transcripts.values() if t.main), 0)
 
     def get_main_CDS_range(self):
         for t in self.transcripts.values():

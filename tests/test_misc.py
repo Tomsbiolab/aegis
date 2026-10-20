@@ -13,12 +13,13 @@ from aegis.utils.genefunctions import (
     choose_orf,
     translate,
     trim_surplus,
-    parse_transl_except
+    parse_transl_except,
+    trim_3p_bases,
 )
 
 from aegis.feature import Feature
 from aegis.utils.gtf_gff import parse_gff_parts, parse_gff_attributes
-from aegis.utils.misc import count_occurrences, find_all_occurrences, unambiguous_numbers
+from aegis.utils.misc import count_occurrences, find_all_occurrences, unambiguous_numbers, covered_length
 
 
 # ============================================================
@@ -1038,3 +1039,30 @@ class TestOverlap:
         assert is_overlapping is True
         assert bp == 101
 
+
+
+
+@pytest.mark.parametrize("intervals, expected", [
+    ([], 0),
+    ([(1, 10)], 10),
+    ([(1, 10), (21, 30)], 20),          # separate
+    ([(1, 10), (11, 20)], 20),          # abutting
+    ([(1, 10), (10, 20)], 20),          # 1 bp overlap
+    ([(1, 30), (5, 10)], 30),           # nested
+    ([(21, 30), (1, 10), (1, 10)], 20), # unsorted, duplicated
+])
+def test_covered_length(intervals, expected):
+    assert covered_length(intervals) == expected
+
+
+
+@pytest.mark.parametrize("segments, bases, strand, expected", [
+    ([(1, 30), (41, 60)], 3, "+", [(1, 30), (41, 57)]),
+    ([(1, 30), (41, 42)], 3, "+", [(1, 29)]),             # a stop split across an intron
+    ([(1, 30), (41, 60)], 3, "-", [(4, 30), (41, 60)]),   # the 3' end of a - strand CDS is its lowest base
+    ([(1, 2), (41, 60)], 3, "-", [(42, 60)]),
+    ([(1, 30), (30, 60)], 2, "+", [(1, 30), (30, 58)]),   # overlapping rows (slippage): only the last one is trimmed
+    ([(1, 30)], 0, "+", [(1, 30)]),
+])
+def test_trim_3p_bases(segments, bases, strand, expected):
+    assert trim_3p_bases(segments, bases, strand) == expected

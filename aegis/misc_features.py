@@ -11,7 +11,7 @@ from .utils.genefunctions import get_start_codons, get_alt_start_codons, TRANSL_
 
 class Protein():
 
-    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "exception", "transl_except", "start_status")
+    __slots__ = ("id", "ch", "readthrough", "_blast_hits", "seq", "nuc_seq", "start", "end", "_segments", "table", "trimmed_5p", "trimmed_3p", "frameshifts", "exception", "transl_except", "start_status", "polyA_bases")
 
     _blast_hits: list[BlastHit] | None
     _segments: tuple[tuple[int, int], ...] | None
@@ -29,7 +29,7 @@ class Protein():
     transl_except: tuple[tuple[int, int, str], ...]
     start_status: str
 
-    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:tuple[int, ...]=(), exception:str|None=None, transl_except:tuple[tuple[int, int, str], ...]=(), initiator_methionine:bool=True, alt_start_methionine:bool=True):
+    def __init__(self, prot_id:str, sequence:str, chrom:str, start:int, end:int, readthrough:str, nuc_seq:str="", segments:tuple[tuple[int, int], ...]|None=None, table:int|str|dict[str, str]=1, trimmed_5p:int=0, trimmed_3p:int=0, frameshifts:tuple[int, ...]=(), exception:str|None=None, transl_except:tuple[tuple[int, int, str], ...]=(), polyA_bases:int=0, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         """
         trimmed_5p: CDS bases skipped before the first translated codon (nonzero
             initial phase or 5' trimming); the first codon is then not a start codon.
@@ -40,6 +40,8 @@ class Protein():
         exception: GFF exception of the CDS (e.g. "ribosomal slippage"), if any.
         transl_except: residues recoded from the CDS transl_except, as (start, end, residue)
             1-based positions within nuc_seq; they take precedence over the initiator methionine.
+        polyA_bases: A's the polyA tail adds to complete the stop codon (transl_except aa:TERM): they end
+            nuc_seq but have no genomic position, so nuc_seq is the segments' genomic bases plus these A's.
         initiator_methionine: whether valid start codons at position 1 are translated
             as Methionine (M) [default: True, matching NCBI RefSeq/UniProt convention].
         alt_start_methionine: whether alternative start codons (e.g. CTG in table 1/11)
@@ -52,6 +54,7 @@ class Protein():
         self.frameshifts = frameshifts
         self.exception = exception
         self.transl_except = transl_except
+        self.polyA_bases = polyA_bases
         self.ch = chrom
         self.start = start
         self.end = end
@@ -114,8 +117,8 @@ class Protein():
 
     @property
     def size(self) -> int:
-        """Protein size in amino acids (excluding terminal stop codon)."""
-        return len(self.seq.rstrip("*"))
+        """Protein size in amino acids, excluding the terminal stop (internal stops are residues, see internal_stops)."""
+        return len(self.seq) - 1 if self.end_stop else len(self.seq)
 
     @property
     def genomic_span(self) -> int:
@@ -208,6 +211,8 @@ class Protein():
             tags["exception"] = self.exception
         if self.transl_except:
             tags["transl_except"] = ",".join(f"(pos:{start}..{end},aa:{TRANSL_EXCEPT_NAMES[residue]})" for start, end, residue in self.transl_except)
+        if self.polyA_bases:
+            tags["polyA_bases"] = str(self.polyA_bases)
         tags["readthrough"] = self.readthrough
         tags["table"] = "custom" if isinstance(self.table, dict) else str(self.table)
         return tags

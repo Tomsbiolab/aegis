@@ -58,6 +58,13 @@ class TestTranscriptUpdateSize:
         # Size = sum of exon sizes: 1001 + 2001 = 3002
         assert t.size == 3002
 
+    def test_overlapping_exons_count_once(self, make_transcript, make_exon):
+        t = make_transcript()
+        t.exons.append(make_exon("e1", 1000, 2000))
+        t.exons.append(make_exon("e2", 1501, 2500))
+        assert t.size == 1501
+        assert t.genomic_span == t.end - t.start + 1
+
 
 # ============================================================
 # rename

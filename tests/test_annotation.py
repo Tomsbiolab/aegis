@@ -1202,6 +1202,53 @@ class TestAnnotationCorrectCoordinates:
 # Annotation — gene_list
 # ============================================================
 
+GENE_LENGTHS_GFF = (
+    "##gff-version 3\n"
+    "chr1\ttest\tgene\t1\t500\t.\t+\t.\tID=g1\n"
+    "chr1\ttest\tmRNA\t1\t300\t.\t+\t.\tID=t1;Parent=g1\n"
+    "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+    "chr1\ttest\texon\t201\t300\t.\t+\t.\tID=e2;Parent=t1\n"
+    "chr1\ttest\tCDS\t50\t100\t.\t+\t0\tID=c1;Parent=t1\n"
+    "chr1\ttest\tCDS\t201\t251\t.\t+\t0\tID=c1;Parent=t1\n"
+    "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t2;Parent=g1\n"
+    "chr1\ttest\texon\t1\t150\t.\t+\t.\tID=e3;Parent=t2\n"
+    "chr1\ttest\texon\t401\t500\t.\t+\t.\tID=e4;Parent=t2\n"
+)
+
+
+class TestGeneLengths:
+    # Coding t1 (exons 1-100, 201-300) and non-coding t2 (exons 1-150, 401-500): the first exons overlap
+    @staticmethod
+    def _annotation(tmp_path):
+        gff_file = tmp_path / "lengths.gff3"
+        gff_file.write_text(GENE_LENGTHS_GFF)
+        return Annotation(str(gff_file), quiet=True)
+
+    def test_gene_lengths(self, tmp_path):
+        g = self._annotation(tmp_path).chrs["chr1"]["g1"]
+        assert g.genomic_span == g.size == 500
+        assert g.exonic_size == 150 + 100 + 100
+        assert g.coding_exonic_size == 200
+        assert g.main_transcript_size == 200
+
+    @pytest.mark.parametrize("length_type, column, value", [
+        ("exonic", "exonic_length", "350"),
+        ("coding_exonic", "coding_exonic_length", "200"),
+        ("main_transcript", "main_transcript_length", "200"),
+        ("span", "genomic_span", "500"),
+    ])
+    def test_gene_list_length_types(self, tmp_path, length_type, column, value):
+        annot = self._annotation(tmp_path)
+        annot.export.gene_list(output_dir=str(tmp_path), filename="genes.tsv", lengths=True, length_type=length_type, quiet=True)
+        header, row = (tmp_path / "genes.tsv").read_text().splitlines()
+        assert header.split("\t") == ["gene_id", column]
+        assert row.split("\t") == ["g1", value]
+
+    def test_gene_list_rejects_unknown_length_type(self, tmp_path):
+        with pytest.raises(ValueError, match="length_type"):
+            self._annotation(tmp_path).export.gene_list(output_dir=str(tmp_path), lengths=True, length_type="cds", quiet=True)
+
+
 class TestAnnotationGeneList:
     def test_gene_list_basic(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)
@@ -1227,7 +1274,7 @@ class TestAnnotationGeneList:
         annot.export.gene_list(output_dir=str(tmp_path), lengths=True)
         output_file = tmp_path / "multi_gene_genes.txt"
         content = output_file.read_text()
-        assert "gene_length" in content
+        assert "exonic_length" in content
 
     def test_gene_list_custom_output_file(self, multi_gene_gff3_file, tmp_path):
         annot = Annotation(multi_gene_gff3_file, quiet=True)

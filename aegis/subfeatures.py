@@ -7,6 +7,7 @@ from urllib.parse import unquote
 
 from .feature import Feature
 from .misc_features import Protein
+from .utils.misc import covered_length
 from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement, parse_transl_except, NCBI_GENETIC_CODES
 
 class CDS(Feature):
@@ -79,11 +80,12 @@ class CDS(Feature):
         self.update_frame()
 
     @property
-    def size(self):
-        size = 0
-        for segment in self.CDS_segments:
-            size += segment.size
-        return size
+    def size(self) -> int:
+        """
+        Genomic bases covered by the CDS rows, each counted once (a base read twice at a -1 ribosomal
+        slippage counts once). The translated nucleotides, rereads included, are protein.nuc_seq.
+        """
+        return covered_length((cs.start, cs.end) for cs in self.CDS_segments)
 
     def update_phase(self, override: bool = False, full_override: bool = False):
         """
@@ -480,9 +482,13 @@ class CDS(Feature):
 
             protein_seq = translate(coding_seq, table=table)
             applied_transl_except = ()
+            polyA_bases = 0
             if self.transl_except and corrected_segments:
                 protein_seq, corrected_segments, applied_transl_except, completed_stop_bases = self._apply_transl_except(protein_seq, corrected_segments, len(untranslated_3p))
-                coding_seq += untranslated_3p[:completed_stop_bases]
+                if completed_stop_bases:
+                    # nuc_seq holds the codons the protein was translated from, so the A's of the polyA tail complete the stop
+                    polyA_bases = 3 - completed_stop_bases
+                    coding_seq += untranslated_3p[:completed_stop_bases] + "A" * polyA_bases
                 trimmed_3p -= completed_stop_bases
 
             if corrected_segments:
@@ -512,7 +518,7 @@ class CDS(Feature):
                     self.end = protein_end
                     self.update()
 
-                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, exception=self.exception, transl_except=applied_transl_except, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, exception=self.exception, transl_except=applied_transl_except, polyA_bases=polyA_bases, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
             else:
                 self.protein = None
                 if not quiet:
@@ -609,14 +615,17 @@ class CDS(Feature):
         """
         Returns exact 0-based slice intervals (start, end) within self.seq for each coding segment.
         Guarantees that "".join(self.seq[s:e+1] for s, e in self.relative_coding_intervals) == self.protein.nuc_seq
-        even across internal phase shifts / ribosomal frameshifts.
+        even across internal phase shifts / ribosomal frameshifts, except for the A's a polyA tail adds to complete
+        a stop codon (transl_except aa:TERM), which are only in nuc_seq.
         """
+        # self.seq concatenates the rows, so a base read twice is in it twice
+        seq_len = sum(cs.size for cs in self.CDS_segments)
         if not self.protein or not self.CDS_segments:
-            return ((0, max(0, self.size - 1)),)
+            return ((0, max(0, seq_len - 1)),)
 
         prot_segs = self.protein.segments
         if not prot_segs:
-            return ((0, max(0, self.size - 1)),)
+            return ((0, max(0, seq_len - 1)),)
 
         if len(self.CDS_segments) > 1:
             self.CDS_segments.sort()
@@ -640,19 +649,13 @@ class CDS(Feature):
             offset += cs.size
 
         if not intervals:
-            return ((0, max(0, self.size - 1)),)
+            return ((0, max(0, seq_len - 1)),)
         return tuple(intervals)
 
     def _calculate_relative_coding_coords(self) -> tuple[int, int]:
         """Calculates 0-based slice indices (start, end) within self.seq corresponding to the protein."""
-        if not self.protein or not self.CDS_segments:
-            return 0, max(0, self.size - 1)
-
         intervals = self.relative_coding_intervals
-        if intervals:
-            return intervals[0][0], intervals[-1][1]
-
-        return 0, max(0, self.size - 1)
+        return intervals[0][0], intervals[-1][1]
 
     @property
     def relative_coding_start(self) -> int:

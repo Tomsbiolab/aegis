@@ -11,8 +11,18 @@ import warnings
 from typing import Literal
 
 from ..utils.misc import start_progress_bar
-from ..utils.genefunctions import get_genetic_code_tables
+from ..utils.genefunctions import get_genetic_code_tables, trim_3p_bases
 from .base import AnnotationComponent
+
+def _location(segments, strand:str) -> str:
+    """Genomic location of a sequence built from (start, end) segments, as in NCBI FASTA headers: join(...), complement(...)."""
+    location = ",".join(f"{start}..{end}" for start, end in segments)
+    if len(segments) > 1:
+        location = f"join({location})"
+    if strand == "-":
+        location = f"complement({location})"
+    return location
+
 
 class AnnotationExport(AnnotationComponent):
     """
@@ -225,13 +235,9 @@ class AnnotationExport(AnnotationComponent):
                             f_out.write(f">{g.id}")
 
                         if verbose:
+                            # As in NCBI translated_cds, the location is the CDS's, stop codon included
                             tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
-                            location = ",".join(f"{start}..{end}" for start, end in c.protein.segments)
-                            if len(c.protein.segments) > 1:
-                                location = f"join({location})"
-                            if c.strand == "-":
-                                location = f"complement({location})"
-                            f_out.write(f"{tags}|{c.strand}|{c.protein.ch}|location={location}")
+                            f_out.write(f"{tags}|{c.strand}|{c.protein.ch}|location={_location(c.protein.segments, c.strand)}")
 
                         prot_seq = c.protein.seq
                         if strip_stop and prot_seq.endswith("*"):
@@ -559,26 +565,27 @@ class AnnotationExport(AnnotationComponent):
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 
-                        if verbose:
-                            if protein_oriented and c.protein is not None:
-                                f_out.write(f"|{c.strand}|{c.ch}|{c.protein.start}:{c.protein.end}")
-                            else:
-                                f_out.write(f"|{c.strand}|{c.ch}|{c.start}:{c.end}")
-
+                        # The header location covers exactly the written bases (plus a protein's polyA_bases)
                         if protein_oriented and c.protein is not None:
                             cds_seq = c.protein.nuc_seq
+                            segments = list(c.protein.segments)
+                            tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
+                            if strip_stop and c.protein.seq.endswith("*"):
+                                cds_seq = cds_seq[:-3]
+                                segments = trim_3p_bases(segments, 3 - c.protein.polyA_bases, c.strand)
                         else:
                             cds_seq = c.seq
-
-                        if strip_stop and len(cds_seq) >= 3:
-                            if protein_oriented and c.protein is not None:
-                                if c.protein.seq.endswith("*"):
-                                    cds_seq = cds_seq[:-3]
-                            else:
+                            segments = [(cs.start, cs.end) for cs in c.CDS_segments]
+                            tags = ""
+                            if strip_stop and len(cds_seq) >= 3:
                                 table_to_use = self._annot.translation_table(c.ch, c)
                                 _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
                                 if cds_seq[-3:].upper() in def_stops:
                                     cds_seq = cds_seq[:-3]
+                                    segments = trim_3p_bases(segments, 3, c.strand)
+
+                        if verbose:
+                            f_out.write(f"{tags}|{c.strand}|{c.ch}|location={_location(segments, c.strand)}")
 
                         f_out.write(f"\n{cds_seq}\n")
 
@@ -1095,7 +1102,7 @@ class AnnotationExport(AnnotationComponent):
 
             progress_bar.close()
 
-    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False, quiet:bool=False,
+    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, length_type: Literal["exonic", "coding_exonic", "main_transcript", "span"] = "exonic", quiet:bool=False,
         #deprecated arguments
         custom_path: str = "", output_file: str = ""):
 
@@ -1108,6 +1115,15 @@ class AnnotationExport(AnnotationComponent):
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
             if output_dir is None:
                 output_dir = custom_path
+
+        """
+        length_type: the gene length written with lengths, to match how reads were counted: "exonic" (exons of
+        all transcripts, each base once; featureCounts on exons by gene_id), "coding_exonic" (exons of coding
+        transcripts), "main_transcript" (mature main transcript) or "span" (genomic span, introns included).
+        """
+        length_columns = {"exonic": "exonic_length", "coding_exonic": "coding_exonic_length", "main_transcript": "main_transcript_length", "span": "genomic_span"}
+        if length_type not in length_columns:
+            raise ValueError(f"Invalid length_type '{length_type}'. Choose from: {list(length_columns)}.")
 
         if subfolder_name != "lists":
             subfolder = True
@@ -1132,7 +1148,7 @@ class AnnotationExport(AnnotationComponent):
                 header.append("gene_start")
                 header.append("gene_end")
             if lengths:
-                header.append("gene_length")
+                header.append(length_columns[length_type])
             if coding_info:
                 header.append("coding")
             if gene_symbols:
@@ -1158,18 +1174,14 @@ class AnnotationExport(AnnotationComponent):
                         out.append(str(g.start))
                         out.append(str(g.end))
                     if lengths:
-                        if main_transcript_length_instead_of_gene_length:
-                            t_size = 0
-                            for t in g.transcripts.values():
-                                if t.main:
-                                    t_size = t.size
-                                    break
-                            if t_size == 0 and main_gene_length_when_transcript_missing:
-                                out.append(str(g.size))
-                            else:
-                                out.append(str(t_size))
+                        if length_type == "exonic":
+                            out.append(str(g.exonic_size))
+                        elif length_type == "coding_exonic":
+                            out.append(str(g.coding_exonic_size))
+                        elif length_type == "main_transcript":
+                            out.append(str(g.main_transcript_size))
                         else:
-                            out.append(str(g.size))
+                            out.append(str(g.genomic_span))
                     if coding_info:
                         out.append(str(g.coding))
                     if gene_symbols and g.symbols:

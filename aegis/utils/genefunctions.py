@@ -389,6 +389,25 @@ def parse_transl_except(value: str) -> tuple[tuple[int, int, str], ...]:
         entries.append((int(start), int(end) if end else int(start), TRANSL_EXCEPT_RESIDUES.get(aa, "X")))
     return tuple(entries)
 
+def trim_3p_bases(segments, bases:int, strand:str) -> list[tuple[int, int]]:
+    """
+    Removes bases from the 3' end, in transcript order, of genomic (start, end) segments (e.g. the stop codon
+    of a CDS), dropping the segments left empty.
+    """
+    ordered = [list(seg) for seg in (segments if strand != "-" else reversed(segments))]
+    while bases > 0 and ordered:
+        start, end = ordered[-1]
+        removed = min(bases, end - start + 1)
+        if strand != "-":
+            ordered[-1][1] = end - removed
+        else:
+            ordered[-1][0] = start + removed
+        bases -= removed
+        if removed == end - start + 1:
+            ordered.pop()
+    trimmed = [tuple(seg) for seg in ordered]
+    return trimmed if strand != "-" else trimmed[::-1]
+
 def map_relative_to_genomic(segments:list[Feature], rel_start:int, rel_end:int, strand:str):
 
     working_segments = segments if strand != "-" else reversed(segments)

@@ -55,6 +55,16 @@ from aegis.feature import Feature
 # Promoter
 # ============================================================
 
+class TestProteinSize:
+    @pytest.mark.parametrize("seq, size", [
+        ("MK*", 2),     # the terminal stop is not a residue
+        ("MK", 2),      # no stop (3' partial)
+        ("MK**", 3),    # an internal stop right before the terminal one is a residue
+    ])
+    def test_size_excludes_only_the_terminal_stop(self, seq, size):
+        assert Protein("p1", seq, "chr1", 1, 3 * len(seq), "end", nuc_seq="ATG" * len(seq)).size == size
+
+
 class TestProteinTags:
     @staticmethod
     def _protein(seq, nuc_seq, **kwargs):

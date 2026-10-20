@@ -73,6 +73,12 @@ class TestCDS:
         expected = (2000 - 1200 + 1) + (4500 - 3000 + 1)
         assert cds.size == expected
 
+    def test_size_counts_overlapping_rows_once(self, make_CDS, make_CDS_segment):
+        # A -1 ribosomal slippage: the shared base is read twice but covered once
+        cds = make_CDS(segments=[make_CDS_segment("s1", start=1, end=30, phase=0), make_CDS_segment("s2", start=30, end=60, phase=0)])
+        assert cds.size == 60
+        assert cds.genomic_span == 60
+
     def test_update_phase(self, make_CDS, make_CDS_segment):
         segments = [
             make_CDS_segment("s1", 100, 400),
@@ -328,7 +334,8 @@ class TestCDS:
         # ND1-like: the genome ends in TA, the stop codon is finished by polyadenylation
         p = self._transl_except_protein(make_CDS, make_CDS_segment, monkeypatch, seq, strand, transl_except)
         assert p.seq == "MK*"
-        assert p.nuc_seq == "ATGAAATA"
+        # The polyA tail's A completes the stop codon in nuc_seq; the genomic segments end at the genome's TA
+        assert p.nuc_seq == "ATGAAATAA"
         assert p.segments == ((1, 8),)
         assert (p.trimmed_3p, p.partial_3prime) == (0, False)
         assert p.tags["transl_except"] == "(pos:7..8,aa:TERM)"

@@ -55,3 +55,22 @@ def test_list_dynamic_template_expansion(test_data_dir, tmp_path):
     expected_file = tmp_path / "custom_myannot_list.tsv"
     assert expected_file.exists()
     assert not (tmp_path / "custom_{annotation-name}_list.tsv").exists()
+
+
+def test_list_genes_length_type_smoke(tmp_path):
+    """Smoke test: --length-type chooses the gene length written with --lengths."""
+    gff_file = tmp_path / "g.gff3"
+    gff_file.write_text(
+        "##gff-version 3\n"
+        "chr1\ttest\tgene\t1\t500\t.\t+\t.\tID=g1\n"
+        "chr1\ttest\tmRNA\t1\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\ttest\texon\t401\t500\t.\t+\t.\tID=e2;Parent=t1\n"
+    )
+    for length_type, expected in (("exonic", "exonic_length\ng1\t200"), ("span", "genomic_span\ng1\t500")):
+        out_file = tmp_path / f"{length_type}.tsv"
+        result = runner.invoke(app, ["genes", str(gff_file), "-l", "--length-type", length_type, "-o", out_file.name, "-d", str(tmp_path), "-q"])
+        assert result.exit_code == 0, result.output
+        assert out_file.read_text().replace("gene_id\t", "").strip() == expected
+    result = runner.invoke(app, ["genes", str(gff_file), "-l", "--length-type", "cds", "-d", str(tmp_path), "-q"])
+    assert result.exit_code != 0

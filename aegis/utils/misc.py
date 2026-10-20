@@ -31,6 +31,24 @@ def pickle_save(file, item):
     pickle.dump(item, f)
     f.close()
 
+def covered_length(intervals) -> int:
+    """
+    Number of bases covered by 1-based inclusive (start, end) intervals, each base counted once however
+    many intervals overlap it.
+    """
+    total = 0
+    cur_start = cur_end = None
+    for start, end in sorted(intervals):
+        if cur_end is None or start > cur_end:
+            if cur_end is not None:
+                total += cur_end - cur_start + 1
+            cur_start, cur_end = start, end
+        else:
+            cur_end = max(cur_end, end)
+    if cur_end is not None:
+        total += cur_end - cur_start + 1
+    return total
+
 def unambiguous_numbers(numbered) -> bool:
     """
     Whether (key, number) pairs can keep their numbers when renaming: every key has a number
