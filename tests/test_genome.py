@@ -310,3 +310,120 @@ class TestGenome:
 
 
 
+
+
+# ============================================================
+# DAP renaming
+# ============================================================
+
+class TestDapRenaming:
+    @staticmethod
+    def _write_fasta(path, names):
+        path.write_text("".join(f">{name}\n{'ACGT' * (10 - i)}\n" for i, name in enumerate(names)))
+        return str(path)
+
+    @staticmethod
+    def _headers(path):
+        return [line[1:].strip() for line in path.read_text().splitlines() if line.startswith(">")]
+
+    def test_scaffolds_stay_scaffolds_after_renaming(self, tmp_path):
+        """DAP scaffold names (chr00000001) start with "chr" but are not chromosomes."""
+        fasta = self._write_fasta(tmp_path / "toy.fa", ["chr01", "chr02", "NW_0001.1", "scf2", "chrM"])
+        g = Genome("toy", fasta, quiet=True)
+        g.rename_features_dap()
+        assert g.scaffold_names == {"chr00000001", "chr00000002"}
+        assert g.chromosome_names == {"chr01", "chr02"}
+        assert g.accessory_chromosome_names == {"chr0001"}
+        assert g.suffix == "_dapmod"
+
+    def test_scffree_export_drops_scaffolds(self, tmp_path):
+        fasta = self._write_fasta(tmp_path / "toy.fa", ["chr01", "chr02", "NW_0001.1", "scf2", "chrM"])
+        g = Genome("toy", fasta, quiet=True)
+        g.rename_features_dap(export=True, output_dir=str(tmp_path))
+        g.remove_organelles(export=True, output_dir=str(tmp_path))
+        g.remove_scaffolds(export=True, output_dir=str(tmp_path))
+        assert self._headers(tmp_path / "toy_dapmod_organellefree.fasta") == ["chr01", "chr02", "chr00000001", "chr00000002"]
+        assert self._headers(tmp_path / "toy_dapmod_scffree_organellefree.fasta") == ["chr01", "chr02"]
+
+    def test_dapmod_survives_removing_renamed_organelles(self, tmp_path):
+        """When only the organelles were renamed, removing them must not turn the genome into "_dapfit"."""
+        fasta = self._write_fasta(tmp_path / "toy.fa", ["chr01", "chr02", "chrM", "chrC"])
+        g = Genome("toy", fasta, quiet=True)
+        g.rename_features_dap()
+        g.remove_organelles()
+        assert g.suffix == "_dapmod_scffree_organellefree"
+
+    def test_reloaded_dap_genome_keeps_classification(self, tmp_path):
+        fasta = self._write_fasta(tmp_path / "toy.fa", ["chr01", "chr02", "NW_0001.1", "chrM"])
+        g = Genome("toy", fasta, quiet=True)
+        g.rename_features_dap(export=True, output_dir=str(tmp_path))
+        reloaded = Genome("toy", str(tmp_path / "toy_dapmod.fasta"), quiet=True)
+        assert reloaded.suffix == "_dapmod"
+        assert reloaded.chromosome_names == {"chr01", "chr02"}
+        assert reloaded.scaffold_names == {"chr00000001"}
+        assert reloaded.accessory_chromosome_names == {"chr0001"}
+        assert reloaded.scaffolds["chr0001"].organelle is True
+
+        reloaded.remove_organelles()
+        reloaded.remove_scaffolds()
+        assert list(reloaded.scaffolds) == ["chr01", "chr02"]
+        assert reloaded.suffix == "_dapmod_scffree_organellefree"
+
+    def test_dap_name_patterns_need_dapmod(self):
+        """Outside DAP genomes, chr00000001 and chr0001 keep the generic classification."""
+        assert Scaffold("chr00000001", "ACGT").chromosome is True
+        assert Scaffold("chr0001", "ACGT").organelle is False
+        assert Scaffold("chr00000001", "ACGT", dapmod=True).chromosome is False
+        assert Scaffold("chr0001", "ACGT", dapmod=True).organelle is True
+
+
+# ============================================================
+# Chromosomes named by accession, warnings
+# ============================================================
+
+class TestDescriptionChromosomes:
+    @pytest.mark.parametrize("description, expected", [
+        ("NC_000001.11 Homo sapiens chromosome 1, GRCh38.p14 Primary Assembly", "1"),
+        ("NC_000023.11 Homo sapiens chromosome X, GRCh38.p14 Primary Assembly", "X"),
+        ("NT_187361.1 Homo sapiens chromosome 1 unlocalized genomic scaffold", None),
+        ("NT_167214.1 Homo sapiens chromosome Un unplaced genomic scaffold", None),
+        ("NW_025791756.1 Homo sapiens chromosome 1 genomic patch of type FIX", None),
+        ("NC_012920.1 Homo sapiens mitochondrion, complete genome", None),
+        ("chromosome_Sym", None),
+    ])
+    def test_description_chromosome(self, description, expected):
+        assert Scaffold.description_chromosome(description) == expected
+
+    def test_accession_named_chromosomes_are_dap_renamed_as_chromosomes(self, tmp_path):
+        fasta = tmp_path / "grch.fa"
+        fasta.write_text(
+            ">NC_000001.11 Homo sapiens chromosome 1, GRCh38.p14 Primary Assembly\nAAAAAAAA\n"
+            ">NT_187361.1 Homo sapiens chromosome 1 unlocalized genomic scaffold\nCCCC\n"
+            ">NC_000002.12 Homo sapiens chromosome 2, GRCh38.p14 Primary Assembly\nGGGGGG\n"
+            ">NC_012920.1 Homo sapiens mitochondrion, complete genome\nATATAT\n"
+        )
+        g = Genome("grch", str(fasta), quiet=True)
+        assert g.chromosome_names == {"NC_000001.11", "NC_000002.12"}
+        assert g.scaffold_names == {"NT_187361.1"}
+        equivalences = g.rename_features_dap(return_equivalences=True)
+        assert equivalences["NC_000001.11"] == "chr01"
+        assert equivalences["NC_000002.12"] == "chr02"
+        assert equivalences["NT_187361.1"] == "chr00000001"
+        assert equivalences["NC_012920.1"] == "chr0001"
+
+
+class TestGenomeWarnings:
+    def test_warns_when_no_chromosomes_are_left(self, tmp_path):
+        fasta = tmp_path / "acc.fa"
+        fasta.write_text(">NC_012007.3\nAAAA\n>NC_012008.3\nCCCC\n>MT\nGGGG\n")
+        g = Genome("acc", str(fasta), quiet=True)
+        with pytest.warns(UserWarning, match="No recognised nuclear chromosomes in acc genome.*only organelles"):
+            g.remove_scaffolds()
+
+    def test_warns_when_export_overwrites_earlier_export(self, tmp_path):
+        fasta = tmp_path / "toy.fa"
+        fasta.write_text(">chr1\nAAAA\n")
+        g = Genome("toy", str(fasta), quiet=True)
+        g.export(output_dir=str(tmp_path), quiet=True)
+        with pytest.warns(UserWarning, match="already written earlier in this run"):
+            g.export(output_dir=str(tmp_path), quiet=True)

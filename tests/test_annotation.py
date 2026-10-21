@@ -4349,3 +4349,93 @@ class TestReadUTRs:
         c = next(iter(t.CDSs.values()))
         assert (c.start, c.end) == (11, 103)
         assert [(u.start, u.end) for u in c.UTRs] == [(1, 10), (104, 200)]
+
+
+class TestCircularSequences:
+    SEQ = "AAAACCCCGGGGTTTTACGT"  # 20 bp
+
+    def _feature_seq(self, monkeypatch, name, start, end, strand="+", circular=False):
+        from aegis.feature import Feature
+        from aegis.genome import Scaffold
+        genome = MockGenome({name: self.SEQ})
+        genome.scaffolds[name].circular = circular
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", genome)
+        return Feature("f1", name, "test", "exon", strand, start, end, ".", [], {})
+
+    def test_organelle_feature_crossing_origin(self, monkeypatch):
+        f = self._feature_seq(monkeypatch, "chrC", 18, 23)
+        assert f.seq == "CGT" + "AAA"
+        assert f.seqs == ["CGTAAA", "TTTACG"]
+
+    def test_organelle_feature_past_end_is_shifted(self, monkeypatch):
+        f = self._feature_seq(monkeypatch, "chrC", 21, 24, strand="-")
+        assert f.seq == "TTTT"
+
+    def test_linear_feature_past_end_is_truncated(self, monkeypatch):
+        f = self._feature_seq(monkeypatch, "chr1", 18, 23)
+        with pytest.warns(UserWarning, match="Sequence will be truncated"):
+            assert f.seq == "CGT"
+
+    def test_is_circular_region_marks_scaffold(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "NC_1\tRefSeq\tregion\t1\t20\t.\t+\t.\tID=NC_1:1..20;Is_circular=true\n"
+            "NC_1\tRefSeq\tgene\t18\t23\t.\t+\t.\tID=g1\n"
+            "NC_1\tRefSeq\tmRNA\t18\t23\t.\t+\t.\tID=t1;Parent=g1\n"
+            "NC_1\tRefSeq\texon\t18\t23\t.\t+\t.\tID=e1;Parent=t1\n"
+        )
+        genome = MockGenome({"NC_1": self.SEQ})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+        assert annot.circular_chromosomes == {"NC_1"}
+        assert genome.scaffolds["NC_1"].circular is True
+        assert annot.chrs["NC_1"]["g1"].transcripts["t1"].exons[0].seq == "CGTAAA"
+
+
+class TestSelfParentedTranscripts:
+    def test_mrna_with_gene_id_is_kept(self, tmp_path, capsys):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=g1;Parent=g1;Note=kept\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=g1\n"
+        )
+        annot = Annotation(str(gff_file), quiet=False)
+        transcripts = annot.chrs["chr1"]["g1"].transcripts
+        assert list(transcripts) == ["g1_t1"]
+        assert transcripts["g1_t1"].feature == "mRNA"
+        assert "Note=kept" in transcripts["g1_t1"].misc_attributes
+        assert len(transcripts["g1_t1"].exons) == 1
+        assert annot.warnings["self_parented_transcript"] == {"g1"}
+        out = capsys.readouterr().out
+        assert "1 transcripts had their gene's id as their own id and parent" in out
+        assert "run `aegis summary` on this annotation, which exports them in the 'self_parented_transcript' column" in out
+        assert "Transcript g1 has its own id as a parent" not in out
+
+    def test_list_load_warnings_prints_each_id(self, tmp_path, capsys):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=g1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=g1\n"
+        )
+        Annotation(str(gff_file), list_load_warnings=True)
+        out = capsys.readouterr().out
+        assert "Transcript g1 has its own id as a parent, kept as transcript g1_t1 of gene g1" in out
+        assert "aegis summary" not in out
+
+    def test_repeated_self_parented_entry_is_ignored(self, tmp_path):
+        """lifton/liftoff-style repeated entry: the gene already has its real transcript."""
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=g1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        assert list(annot.chrs["chr1"]["g1"].transcripts) == ["t1"]
+        assert annot.warnings["self_parented_transcript"] == {"g1"}
