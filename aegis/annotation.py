@@ -98,8 +98,10 @@ class Annotation():
     bar_colors = ["31", "32", "34", "33", "33", "33"]
     overlapped_annotations: set[str]
 
-    tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
-    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
+    tags_to_detect:set[str] = { "clean", "dapfit", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
+    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_pseudogene", "minus_non_pseudogene", "minus_small_CDS", "combined", "full_renamed_ids"}
+    # Tags of renamed chromosomes only change exports that list chromosome names
+    chromosome_tags:set[str] = {"confrenamed", "dapmod"}
 
     def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
         
@@ -180,16 +182,10 @@ class Annotation():
         # Here we insert any recognisable feature that was impossible to fit into the current structure
         self.orphaned_features = []
 
-        # optional default tag system for output gffs/gtfs
-        self.tags = set()
-        for tag in self.tags_to_detect:
-            if f"_{tag}" in annot_file_path:
-                self.tags.add(tag)
-
-        self.feature_tags = set()
-        for tag in self.feature_tags_to_detect:
-            if f"_{tag}" in annot_file_path:
-                self.feature_tags.add(tag)
+        # optional default tag system for output gffs/gtfs, detected from the file name (not its folders)
+        file_name = Path(annot_file_path).name
+        self.tags = {tag for tag in self.tags_to_detect if self._has_tag(file_name, tag)}
+        self.feature_tags = {tag for tag in self.feature_tags_to_detect if self._has_tag(file_name, tag)}
 
         self.renamed_features = []
 
@@ -646,22 +642,29 @@ class Annotation():
         if include_orphaned:
             yield from self.orphaned_features
 
+    @staticmethod
+    def _has_tag(text:str, tag:str) -> bool:
+        # A tag is a whole part of a name: "_combined" in "X_combined_on_Y" or "X_combined.gff3", but not in "X_combinedV2"
+        return re.search(rf"_{re.escape(tag)}(?=[_.]|$)", text) is not None
+
+    def _suffix(self, tags:set[str]) -> str:
+        # Tags already in the id (e.g. kept from the name of a reloaded file) are not repeated
+        return "".join(f"_{tag}" for tag in sorted(tags) if not self._has_tag(self.id, tag))
+
     @property
     def feature_suffix(self) -> str:
-        sorted_suffixes = sorted(list(self.feature_tags))
-        sorted_suffixes = "_".join(sorted_suffixes)
-        if sorted_suffixes:
-            sorted_suffixes = "_" + sorted_suffixes
-        return sorted_suffixes
+        """Tags that change the features themselves, naming every export."""
+        return self._suffix(self.feature_tags)
 
     @property
     def all_suffixes(self) -> str:
-        combined_suffixes = list(self.feature_tags) + list(self.tags)
-        combined_suffixes = sorted(list(set(combined_suffixes)))
-        combined_suffixes = "_".join(combined_suffixes)
-        if combined_suffixes:
-            combined_suffixes = "_" + combined_suffixes
-        return combined_suffixes
+        """All tags, naming gff/gtf exports."""
+        return self._suffix(self.feature_tags | self.tags)
+
+    @property
+    def chromosome_suffix(self) -> str:
+        """Tags of renamed chromosomes, naming exports that list chromosome names."""
+        return self._suffix(self.tags & self.chromosome_tags)
 
     def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None, 
         suffix:str = "", extra_suffixes: list[str] | None = None, 
@@ -2155,7 +2158,7 @@ class Annotation():
             for g in genes.values():
                 g.combine_transcripts(respect_non_coding=respect_non_coding, respect_non_combined=respect_non_combined, redetect_CDS=redetect_CDS, quiet=quiet)
         self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
-        self.tags.add("combined")
+        self.feature_tags.add("combined")
 
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:

@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from ..genome import Genome
     from ..subfeatures import CDS
 
+import re
 import time
 import warnings
 
@@ -876,6 +877,11 @@ class AnnotationExport(AnnotationComponent):
         if just_genes:
             extra_suffixes.append("just_genes")
 
+        # A name kept from a featureCounts gff loses its tag when the export has no Gene_id attributes
+        if not featurecountsID and filepath is None and filename is None and self._annot._has_tag(self._annot.id, "fcounts"):
+            ext = extension if extension.startswith(".") else f".{extension}"
+            filename = re.sub(r"_fcounts(?=[_.]|$)", "", self._annot.id) + self._annot.all_suffixes + "".join(f"_{t}" for t in extra_suffixes) + ext
+
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
         if not quiet:
@@ -1142,7 +1148,16 @@ class AnnotationExport(AnnotationComponent):
             print("Warning: Both skip_coding and skip_non_coding are set to True. No genes will be listed.")
             return
 
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+        # Only tags that change what is written name the list: combining transcripts keeps gene ids, coordinates
+        # and exonic lengths, and renamed chromosomes only show in the chromosome column
+        tags = set(self._annot.feature_tags)
+        if not ((lengths and length_type in ("coding_exonic", "main_transcript")) or coding_info):
+            tags.discard("combined")
+        suffix = self._annot._suffix(tags)
+        if chromosomes or coordinates:
+            suffix += self._annot.chromosome_suffix
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
 
         if not quiet:
             print(f"Exporting {self._annot.id} gene list to {final_output_path}.")
@@ -1232,7 +1247,12 @@ class AnnotationExport(AnnotationComponent):
             print("Warning: Both skip_coding and skip_non_coding are set to True. No transcripts will be listed.")
             return
 
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+        # Renamed chromosomes only show in the chromosome column
+        suffix = self._annot.feature_suffix
+        if chromosomes or coordinates:
+            suffix += self._annot.chromosome_suffix
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
 
         if not quiet:
             print(f"Exporting {self._annot.id} transcript list to {final_output_path}.")

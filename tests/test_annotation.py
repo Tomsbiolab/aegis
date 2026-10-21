@@ -1572,6 +1572,99 @@ class TestAnnotationRenameChromosomes:
         annot.rename_chromosomes(equivalences)
         assert "confrenamed" in annot.tags
 
+
+# ============================================================
+# Annotation — feature tags round trip
+# ============================================================
+
+class TestFeatureTagsRoundTrip:
+    # Feature tags name every export of an annotation, and are detected again from the gff file name when it is reloaded
+    @staticmethod
+    def _reload(annot, tmp_path):
+        annot.export.gff(output_dir=str(tmp_path), quiet=True)
+        gff_file, = tmp_path.glob("*.gff3")
+        return Annotation(str(gff_file), quiet=True)
+
+    def test_combined_is_a_feature_tag(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.combine_transcripts(redetect_CDS=False, quiet=True)
+        assert "combined" in annot.feature_tags
+        assert "_combined" in annot.feature_suffix
+        assert "combined" in self._reload(annot, tmp_path).feature_tags
+
+    def test_minus_small_CDS_is_detected(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.remove_genes_with_small_CDSs(CDS_threshold=10**9, quiet=True)
+        assert "minus_small_CDS" in annot.feature_tags
+        assert "minus_small_CDS" in self._reload(annot, tmp_path).feature_tags
+
+    @pytest.mark.parametrize("pseudogene", [True, False])
+    def test_minus_pseudogene_tags_are_detected(self, multi_gene_gff3_file, tmp_path, pseudogene):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.chrs["chr1"]["geneA"].pseudogene = pseudogene
+        if pseudogene:
+            annot.remove_pseudogene_genes(quiet=True)
+        else:
+            annot.remove_non_pseudogene_genes(quiet=True)
+        tag = "minus_pseudogene" if pseudogene else "minus_non_pseudogene"
+        assert self._reload(annot, tmp_path).feature_tags == {tag}
+
+    def test_tags_are_detected_from_the_file_name_only(self, multi_gene_gff3_file, tmp_path):
+        for file_name in ("my_combined_runs/plain.gff3", "plain_combinedV2.gff3", "plain_dapfit.gff3"):
+            path = tmp_path / file_name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(Path(multi_gene_gff3_file).read_text())
+            annot = Annotation(str(path), quiet=True)
+            assert annot.feature_tags == set()
+            assert annot.tags & {"combined", "dapfit"} == ({"dapfit"} if "dapfit" in file_name else set())
+
+    def test_reexport_does_not_repeat_tags(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.combine_transcripts(redetect_CDS=False, quiet=True)
+        reloaded = self._reload(annot, tmp_path / "first")
+        first_name = next((tmp_path / "first").glob("*.gff3")).name
+        reloaded.export.gff(output_dir=str(tmp_path / "second"), quiet=True)
+        assert next((tmp_path / "second").glob("*.gff3")).name == first_name
+        assert reloaded.feature_suffix == ""
+
+    def test_fcounts_tag_follows_gene_id_attributes(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.export.gff(output_dir=str(tmp_path / "first"), featurecountsID=True, quiet=True)
+        fcounts_name = next((tmp_path / "first").glob("*.gff3")).name
+        reloaded = Annotation(str(tmp_path / "first" / fcounts_name), quiet=True)
+        reloaded.export.gff(output_dir=str(tmp_path / "second"), quiet=True)
+        reloaded.export.gff(output_dir=str(tmp_path / "second"), just_genes=True, quiet=True)
+        reloaded.export.gff(output_dir=str(tmp_path / "third"), featurecountsID=True, quiet=True)
+        assert fcounts_name == "multi_gene_clean_fcounts.gff3"
+        assert sorted(p.name for p in (tmp_path / "second").iterdir()) == ["multi_gene_clean.gff3", "multi_gene_clean_just_genes.gff3"]
+        assert next((tmp_path / "third").glob("*.gff3")).name == fcounts_name
+
+    def test_lists_are_named_by_the_tags_that_change_them(self, multi_gene_gff3_file, tmp_path):
+        # Files with the same content get the same name, as across the passes of a pipeline renaming chromosomes
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.combine_transcripts(redetect_CDS=False, quiet=True)
+        annot.rename_chromosomes({"chr1": "scaffold_1"})
+        annot.rename_ids(quiet=True)
+        export = annot.export
+        export.gene_list(output_dir=str(tmp_path), lengths=True, quiet=True)
+        export.gene_list(output_dir=str(tmp_path), lengths=True, length_type="main_transcript", quiet=True)
+        export.gene_list(output_dir=str(tmp_path), coordinates=True, quiet=True)
+        export.transcript_list(output_dir=str(tmp_path), quiet=True)
+        assert sorted(p.name for p in tmp_path.iterdir()) == sorted([
+            "multi_gene_full_renamed_ids_genes.txt",
+            "multi_gene_combined_full_renamed_ids_genes.txt",
+            "multi_gene_full_renamed_ids_confrenamed_genes.txt",
+            "multi_gene_combined_full_renamed_ids_transcripts.txt",
+        ])
+
+    def test_contig_stats_are_named_by_renamed_chromosomes(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.rename_chromosomes({"chr1": "scaffold_1"})
+        annot.stats.update(output_dir=str(tmp_path), export=True, quiet=True)
+        stats_files = {p.name for p in tmp_path.iterdir()}
+        assert "multi_gene_confrenamed_contig_stats.tsv" in stats_files
+        assert "multi_gene_basic_stats.csv" in stats_files
+
 # ============================================================
 # Annotation — clear_gene_names_and_symbols
 # ============================================================
