@@ -100,6 +100,10 @@ def main(
         "--keep-stop", "--keep-protein-stop", help="Keep trailing stop codon (* in proteins) when exporting protein sequences (by default trailing stop codons are stripped).",
         rich_help_panel=EXTRACTION_PANEL,
     )] = False,
+    internal_stops: Annotated[str, typer.Option(
+        "--internal-stops", help="How to export internal (premature) stop codons in proteins: 'keep' (as *), 'x' (as X, for tools rejecting * inside sequences) or 'skip' (leave out proteins with internal stops). The terminal stop follows --keep-stop (default: 'keep').",
+        rich_help_panel=EXTRACTION_PANEL,
+    )] = "keep",
     strip_stop_cds: Annotated[bool, typer.Option(
         "--strip-stop-cds", "--strip-cds-stop", help="Strip trailing stop codon (terminal 3-nt stop codon) when exporting CDS sequences (by default CDS sequences retain the stop codon).",
         rich_help_panel=EXTRACTION_PANEL,
@@ -295,6 +299,9 @@ def main(
     if orf_choice_mode not in ("longest", "earliest"):
         raise typer.BadParameter(f"Invalid orf_choice_mode: '{orf_choice_mode}'. Choose from: 'longest', 'earliest'.")
 
+    if internal_stops not in ("keep", "x", "skip"):
+        raise typer.BadParameter(f"Invalid internal_stops: '{internal_stops}'. Choose from: 'keep', 'x', 'skip'.")
+
 
     genome = Genome(
         name=genome_name,
@@ -406,13 +413,13 @@ def main(
             used_id = "protein"
 
         if "unique_per_gene" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, strip_stop=protein_strip, filename=resolve_export_filename("protein", "unique_per_gene"))
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "unique_per_gene"))
         elif "unique" in mode:
-            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, strip_stop=protein_strip, filename=resolve_export_filename("protein", "unique"))
+            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "unique"))
         elif "all" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, strip_stop=protein_strip, filename=resolve_export_filename("protein", "all"))
+            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "all"))
         else:
-            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, strip_stop=protein_strip, filename=resolve_export_filename("protein", "main"))
+            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "main"))
 
     if "CDS" in features:
 

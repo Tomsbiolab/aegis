@@ -263,3 +263,72 @@ def test_simple_headers_use_each_cds_own_transcript_id(tmp_path, export):
         out = tmp_path / f"{used_id}.fasta"
         getattr(annot.export, export)(only_main=used_id == "gene", verbose=False, used_id=used_id, filepath=str(out))
         assert [line for line in out.read_text().splitlines() if line.startswith(">")] == headers
+
+
+@pytest.mark.parametrize("seq, strip_stop, expected", [
+    ("MK*", True, "MK"),
+    ("MK*", False, "MK*"),
+    ("M*K*", True, "MXK"),
+    ("M*K*", False, "MXK*"),
+    ("MK**", False, "MKX*"),  # the stop right before the terminal one is internal
+    ("M*K", True, "MXK"),     # 3' partial: no terminal stop to remove
+    ("M*K", False, "MXK"),    # nor to add back
+    ("MK", False, "MK"),
+])
+def test_protein_export_seq_internal_stops_as_x(seq, strip_stop, expected):
+    from aegis.annotation_components.export import _protein_export_seq
+    assert _protein_export_seq(seq, strip_stop, "x") == expected
+    assert _protein_export_seq(seq, strip_stop, "keep") == (seq[:-1] if strip_stop and seq.endswith("*") else seq)
+
+
+def _internal_stops_annotation(tmp_path):
+    # t1: complete with an internal stop (M*K*); t2: 3' partial with an internal stop (M*K); t3: complete (MK*)
+    seq = "ATGTAAAAATAA" + "ATGTAAAAA" + "ATGAAATAA"
+    fasta = tmp_path / "internal_stops.fasta"
+    fasta.write_text(f">chr1\n{seq}\n")
+    lines = ["##gff-version 3", f"chr1\ttest\tgene\t1\t{len(seq)}\t.\t+\t.\tID=g1"]
+    for n, (start, end) in enumerate(((1, 12), (13, 21), (22, 30)), 1):
+        lines += [
+            f"chr1\ttest\tmRNA\t{start}\t{end}\t.\t+\t.\tID=t{n};Parent=g1",
+            f"chr1\ttest\texon\t{start}\t{end}\t.\t+\t.\tID=e{n};Parent=t{n}",
+            f"chr1\ttest\tCDS\t{start}\t{end}\t.\t+\t0\tID=c{n};Parent=t{n}",
+        ]
+    gff = tmp_path / "internal_stops.gff3"
+    gff.write_text("\n".join(lines) + "\n")
+    genome = Genome(name="internal_stops", genome_file_path=str(fasta), quiet=True)
+    return Annotation(name="internal_stops", annot_file_path=str(gff), genome=genome, quiet=True)
+
+
+def _read_fasta(path):
+    records, name = {}, None
+    for line in path.read_text().splitlines():
+        if line.startswith(">"):
+            name = line[1:].split("|")[0]
+            records[name] = ""
+        elif line:
+            records[name] += line.strip()
+    return records
+
+
+@pytest.mark.parametrize("strip_stop, internal_stops, expected", [
+    (True, "keep", ["M*K", "M*K", "MK"]),
+    (False, "keep", ["M*K*", "M*K", "MK*"]),
+    (True, "x", ["MXK", "MXK", "MK"]),
+    (False, "x", ["MXK*", "MXK", "MK*"]),
+    (True, "skip", ["MK"]),
+    (False, "skip", ["MK*"]),
+])
+def test_export_proteins_internal_stops(tmp_path, strip_stop, internal_stops, expected):
+    annot = _internal_stops_annotation(tmp_path)
+    annot.export.proteins(output_dir=str(tmp_path), filename="all.fasta", only_main=False, only_cds_main=False, used_id="CDS", verbose=False, strip_stop=strip_stop, internal_stops=internal_stops, quiet=True)
+    annot.export.unique_proteins(output_dir=str(tmp_path), filename="unique.fasta", strip_stop=strip_stop, internal_stops=internal_stops, quiet=True)
+    assert list(_read_fasta(tmp_path / "all.fasta").values()) == expected
+    assert sorted(_read_fasta(tmp_path / "unique.fasta").values()) == sorted(expected)
+
+
+def test_export_proteins_invalid_internal_stops(tmp_path):
+    annot = _internal_stops_annotation(tmp_path)
+    with pytest.raises(ValueError):
+        annot.export.proteins(output_dir=str(tmp_path), internal_stops="drop", quiet=True)
+    with pytest.raises(ValueError):
+        annot.export.unique_proteins(output_dir=str(tmp_path), internal_stops="drop", quiet=True)

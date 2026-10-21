@@ -24,6 +24,19 @@ def _location(segments, strand:str) -> str:
         location = f"complement({location})"
     return location
 
+INTERNAL_STOP_MODES = ("keep", "x", "skip")
+
+def _protein_export_seq(seq:str, strip_stop:bool, internal_stops:str) -> str:
+    """
+    Protein sequence as exported. Only a final "*" is a terminal stop, removed with strip_stop (3' partial proteins have
+    none, so nothing is removed or added). Any other "*" is an internal stop, written as X with internal_stops="x".
+    """
+    end_stop = seq.endswith("*")
+    body = seq[:-1] if end_stop else seq
+    if internal_stops == "x":
+        body = body.replace("*", "X")
+    return body + "*" if (end_stop and not strip_stop) else body
+
 
 class AnnotationExport(AnnotationComponent):
     """
@@ -120,6 +133,7 @@ class AnnotationExport(AnnotationComponent):
         extension: str = ".fasta",
         quiet: bool = True,
         strip_stop: bool = True,
+        internal_stops: Literal["keep", "x", "skip"] = "keep",
         #deprecated arguments
         custom_filename: str = "",
         custom_path: str = "",
@@ -143,6 +157,9 @@ class AnnotationExport(AnnotationComponent):
         valid_id_choices = ["gene", "transcript", "CDS", "protein"]
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
+
+        if internal_stops not in INTERNAL_STOP_MODES:
+            raise ValueError(f"internal_stops={internal_stops} is not amongst the valid choices={INTERNAL_STOP_MODES} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
             self._annot.generate_proteins(quiet=quiet)
@@ -210,6 +227,9 @@ class AnnotationExport(AnnotationComponent):
                                     else:
                                         temp_cs.append(c)
 
+                    if internal_stops == "skip":
+                        temp_cs = [c for c in temp_cs if not c.protein.internal_stops]
+
                     if not unique_proteins_per_gene:
                         final_cs = temp_cs.copy()
 
@@ -243,10 +263,7 @@ class AnnotationExport(AnnotationComponent):
                             tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
                             f_out.write(f"{tags}|{c.strand}|{c.protein.ch}|location={_location(c.protein.segments, c.strand)}")
 
-                        prot_seq = c.protein.seq
-                        if strip_stop and prot_seq.endswith("*"):
-                            prot_seq = prot_seq[:-1]
-                        f_out.write(f"\n{prot_seq}\n")
+                        f_out.write(f"\n{_protein_export_seq(c.protein.seq, strip_stop, internal_stops)}\n")
 
     def unique_proteins(
         self,
@@ -260,9 +277,13 @@ class AnnotationExport(AnnotationComponent):
         extension: str = ".fasta",
         quiet: bool = False,
         strip_stop: bool = True,
+        internal_stops: Literal["keep", "x", "skip"] = "keep",
         #deprecated arguments
         custom_path: str = "",
     ):
+
+        if internal_stops not in INTERNAL_STOP_MODES:
+            raise ValueError(f"internal_stops={internal_stops} is not amongst the valid choices={INTERNAL_STOP_MODES} to export proteins.")
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -283,10 +304,10 @@ class AnnotationExport(AnnotationComponent):
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for protein_id in self._annot.protein_equivalences:
                 chrom, g, t, c = self._annot.all_protein_ids[protein_id]
-                sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
-                if strip_stop and sequence.endswith("*"):
-                    sequence = sequence[:-1]
-                f_out.write(f">{protein_id}\n{sequence}\n")
+                protein = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                if internal_stops == "skip" and protein.internal_stops:
+                    continue
+                f_out.write(f">{protein_id}\n{_protein_export_seq(protein.seq, strip_stop, internal_stops)}\n")
 
         now = time.time()
         lapse = now - start_time
