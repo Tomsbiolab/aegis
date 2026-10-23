@@ -509,16 +509,23 @@ class Genome():
 
             use_chromosome_count = False
             chromosome_numbers = []
+            nuclear_chromosome_found = False
 
             for scaffold in self.scaffolds.values():
                 if scaffold.chromosome:
                     if not scaffold.mitochondria and not scaffold.chloroplast:
+                        if not scaffold.organelle:
+                            nuclear_chromosome_found = True
                         if not scaffold.number.isdigit():
                             use_chromosome_count = True
                         else:
                             if scaffold.number in chromosome_numbers:
                                 use_chromosome_count = True
                             chromosome_numbers.append(scaffold.number)
+
+            # Otherwise every nuclear sequence silently becomes a chr00000001-style scaffold
+            if not nuclear_chromosome_found:
+                warnings.warn(f"No recognised nuclear chromosomes in {self.name} genome: all {len(self.scaffolds)} sequences were classed as scaffolds or organelles, so DAP renaming gives every non-organelle sequence a scaffold name (chr00000001...). Name its chromosomes with a chromosome dictionary (rename_chromosomes=True).")
 
             organelle_count = 0
             scaffold_count = 0
@@ -617,6 +624,10 @@ class Genome():
             if not self.chromosome_names:
                 kept = f"only organelles ({', '.join(sorted(self.accessory_chromosome_names))}) are left" if self.scaffolds else "nothing is left"
                 warnings.warn(f"No recognised nuclear chromosomes in {self.name} genome: {sequence_count} sequences were classed as scaffolds or organelles, so after removing scaffolds {kept}. Name its chromosomes with a chromosome dictionary (rename_chromosomes=True).")
+                # An organelle-only genome is not a scaffold-free version of the input
+                if export:
+                    warnings.warn(f"There was nothing to export for {self.name} genome.")
+                    export = False
 
             if not remove_organelles and export:
                 self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)

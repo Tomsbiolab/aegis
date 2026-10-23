@@ -20,7 +20,6 @@ import pandas as pd
 import os
 import warnings
 import math
-import gc
 import re
 
 from multiprocessing import Pool
@@ -280,7 +279,6 @@ class Annotation():
 
             progress_bar.close()
             staging[stage] = []
-            gc.collect()
 
             if stage == "transcript":
                 self._add_self_parented_transcripts(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
@@ -289,8 +287,6 @@ class Annotation():
         del self._transcript_info
         del self._miRNA_info
         del staging
-
-        gc.collect()
 
         if self.file != gff_file:
             os.remove(gff_file)
@@ -1719,6 +1715,16 @@ class Annotation():
             else:
                 print(f"Correcting feature coordinates ({mode} mode) for {self.id}")
 
+        # Features are counted under a summary printed once at the end, and printed individually only with list_load_warnings
+        list_load_warnings = getattr(self, "list_load_warnings", False)
+        flagged = {}
+        def note(summary:str, warning_key:str, feature_id:str, message:str):
+            if quiet:
+                return
+            flagged.setdefault((summary, warning_key), set()).add(feature_id)
+            if list_load_warnings:
+                print(message)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 earliest_start = None
@@ -1737,21 +1743,17 @@ class Annotation():
                             if c.start != seg_start:
                                 if skip_correction:
                                     record_to["cds_segment_coordinate_mismatch"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
+                                    note("CDSs have a start or end that differs from their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
+                                    note("CDSs had their start or end set to those of their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
                                     c.start = seg_start
 
                             if c.end != seg_end:
                                 if skip_correction:
                                     record_to["cds_segment_coordinate_mismatch"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
+                                    note("CDSs have a start or end that differs from their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
+                                    note("CDSs had their start or end set to those of their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
                                     c.end = seg_end
 
                     if t.exons:
@@ -1768,21 +1770,18 @@ class Annotation():
                                 overlapping = [e for e in t.exons if e.start <= end and start <= e.end]
                                 if skip_correction:
                                     record_to["cds_segment_in_intron"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron ({self.id})")
+                                    note("CDSs have segments reaching into an intron", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron ({self.id})")
                                     continue
                                 if len(overlapping) == 1:
                                     exon = overlapping[0]
                                     new_start, new_end = min(exon.start, start), max(exon.end, end)
                                     # An extension touching another exon would remove a splice junction, so it is only reported
                                     if not any(e is not exon and e.start <= new_end + 1 and new_start - 1 <= e.end for e in t.exons):
-                                        if not quiet:
-                                            print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron, proceeding to extend exon {exon.id} {self.id}")
+                                        note("CDSs had segments reaching into an intron, fixed by extending the exon they overlap", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron, proceeding to extend exon {exon.id} {self.id}")
                                         exon.start, exon.end = new_start, new_end
                                         extended_exons.append(exon)
                                         continue
-                                if not quiet:
-                                    print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron and cannot be fixed by extending one exon ({self.id})")
+                                note("CDSs have segments reaching into an intron that cannot be fixed by extending one exon", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron and cannot be fixed by extending one exon ({self.id})")
 
                         if len(t.exons) > 1:
                             t.exons.sort()
@@ -1794,21 +1793,17 @@ class Annotation():
                             if c.start < first_exon.start:
                                 if skip_correction:
                                     record_to["cds_exceeds_exon"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
+                                    note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                     first_exon.start = c.start
                                     extended_exons.append(first_exon)
                             if c.end > last_exon.end:
                                 if skip_correction:
                                     record_to["cds_exceeds_exon"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
+                                    note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                     last_exon.end = c.end
                                     extended_exons.append(last_exon)
 
@@ -1816,36 +1811,32 @@ class Annotation():
                                 if u.start < first_exon.start:
                                     if skip_correction:
                                         record_to["utr_exceeds_exon"].add(u.id)
-                                        if not quiet:
-                                            print(f"Warning: {u.id} start is earlier than for first {t.id} exon ({self.id})")
+                                        note("UTRs extend beyond the first or last exon of their transcript", "utr_exceeds_exon", u.id, f"Warning: {u.id} start is earlier than for first {t.id} exon ({self.id})")
                                     else:
-                                        if not quiet:
-                                            print(f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                        note("UTRs extended beyond the first or last exon of their transcript, which was extended to cover them", "utr_exceeds_exon", u.id, f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                         first_exon.start = u.start
                                         extended_exons.append(first_exon)
                                 if u.end > last_exon.end:
                                     if skip_correction:
                                         record_to["utr_exceeds_exon"].add(u.id)
-                                        if not quiet:
-                                            print(f"Warning: {u.id} end extends beyond the last {t.id} exon ({self.id})")
+                                        note("UTRs extend beyond the first or last exon of their transcript", "utr_exceeds_exon", u.id, f"Warning: {u.id} end extends beyond the last {t.id} exon ({self.id})")
                                     else:
-                                        if not quiet:
-                                            print(f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                        note("UTRs extended beyond the first or last exon of their transcript, which was extended to cover them", "utr_exceeds_exon", u.id, f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                         last_exon.end = u.end
                                         extended_exons.append(last_exon)
 
+                        if skip_correction:
+                            boundary_summary = "transcripts do not start and end with their first and last exons"
+                        else:
+                            boundary_summary = "transcripts were set to span exactly from their first to their last exon"
                         if first_exon.start < t.start:
-                            if not quiet:
-                                print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon start is earlier than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon start is earlier than for {t.id} ({self.id})")
                         elif first_exon.start > t.start:
-                            if not quiet:
-                                print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon starts later than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"First exon should not start later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon starts later than for {t.id} ({self.id})")
                         if last_exon.end < t.end:
-                            if not quiet:
-                                print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes earlier than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes earlier than for {t.id} ({self.id})")
                         elif last_exon.end > t.end:
-                            if not quiet:
-                                print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
                         if t.start != first_exon.start or t.end != last_exon.end:
                             if skip_correction:
                                 record_to["exon_transcript_boundary_mismatch"].add(t.id)
@@ -1857,20 +1848,16 @@ class Annotation():
                     if t.start < g.start:
                         if skip_correction:
                             record_to["transcript_exceeds_gene"].add(t.id)
-                            if not quiet:
-                                print(f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
+                            note("transcripts extend beyond their gene", "transcript_exceeds_gene", t.id, f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
                         else:
-                            if not quiet:
-                                print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
+                            note("transcripts extended beyond their gene, which was extended to cover them", "transcript_exceeds_gene", t.id, f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
                             g.start = t.start
                     if t.end > g.end:
                         if skip_correction:
                             record_to["transcript_exceeds_gene"].add(t.id)
-                            if not quiet:
-                                print(f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
+                            note("transcripts extend beyond their gene", "transcript_exceeds_gene", t.id, f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
                         else:
-                            if not quiet:
-                                print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
+                            note("transcripts extended beyond their gene, which was extended to cover them", "transcript_exceeds_gene", t.id, f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                             g.end = t.end
                     if earliest_start is None or latest_end is None:
                         earliest_start = t.start
@@ -1892,16 +1879,20 @@ class Annotation():
                     if g.start < earliest_start or g.end > latest_end:
                         if skip_correction:
                             record_to["gene_exceeds_transcripts"].add(g.id)
-                            if not quiet:
-                                print(f"Warning: {g.id} extends beyond its transcripts ({self.id})")
+                            note("genes extend beyond their transcripts", "gene_exceeds_transcripts", g.id, f"Warning: {g.id} extends beyond its transcripts ({self.id})")
                         elif mode == "trim":
-                            if not quiet:
-                                print(f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
+                            note("genes extended beyond their transcripts and were trimmed to them", "gene_exceeds_transcripts", g.id, f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
                             g.start = earliest_start
                             g.end = latest_end
-                        elif not quiet:
-                            print(f"{g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
+                        else:
+                            note("genes extend beyond their transcripts, keeping gene boundaries", "gene_exceeds_transcripts", g.id, f"{g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
         if not quiet:
+            # Only the check (mode "none") points to the ids, as update() runs it before any correction of the same features
+            for (summary, warning_key), ids in flagged.items():
+                if skip_correction:
+                    print(f"Warning: {len(ids)} {summary} ({self.id})" + ("" if list_load_warnings else Annotation._warning_ids_hint(warning_key)))
+                else:
+                    print(f"{len(ids)} {summary} ({self.id})")
             if skip_correction:
                 print(f"Checked feature coordinates (skipped correction) for {self.id}")
             else:

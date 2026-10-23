@@ -420,6 +420,34 @@ class TestGenomeWarnings:
         with pytest.warns(UserWarning, match="No recognised nuclear chromosomes in acc genome.*only organelles"):
             g.remove_scaffolds()
 
+    def test_organelle_only_scffree_genome_is_not_exported(self, tmp_path):
+        fasta = tmp_path / "acc.fa"
+        fasta.write_text(">NC_012007.3\nAAAA\n>NC_012008.3\nCCCC\n>MT\nGGGG\n")
+        g = Genome("acc", str(fasta), quiet=True)
+        out_dir = tmp_path / "out"
+        with pytest.warns(UserWarning) as record:
+            g.remove_scaffolds(export=True, output_dir=str(out_dir))
+        messages = [str(w.message) for w in record]
+        assert any("only organelles (MT) are left" in m for m in messages)
+        assert any("nothing to export for acc genome" in m for m in messages)
+        assert not out_dir.exists() or not any(out_dir.iterdir())
+
+    def test_dap_renaming_warns_when_no_chromosomes_are_found(self, tmp_path):
+        fasta = tmp_path / "acc.fa"
+        fasta.write_text(">NC_012007.3\nAAAA\n>NC_012008.3\nCCCC\n>MT\nGGGG\n")
+        g = Genome("acc", str(fasta), quiet=True)
+        with pytest.warns(UserWarning, match="No recognised nuclear chromosomes in acc genome.*DAP renaming"):
+            equivalences = g.rename_features_dap(return_equivalences=True)
+        assert equivalences["NC_012007.3"] == "chr00000001"
+        assert equivalences["MT"] == "chr0001"
+
+    def test_dap_renaming_does_not_warn_with_chromosomes(self, tmp_path, recwarn):
+        fasta = tmp_path / "toy.fa"
+        fasta.write_text(">chr01\nAAAA\n>scf1\nCCCC\n>chrM\nGGGG\n")
+        g = Genome("toy", str(fasta), quiet=True)
+        g.rename_features_dap()
+        assert not [w for w in recwarn if "No recognised nuclear chromosomes" in str(w.message)]
+
     def test_warns_when_export_overwrites_earlier_export(self, tmp_path):
         fasta = tmp_path / "toy.fa"
         fasta.write_text(">chr1\nAAAA\n")

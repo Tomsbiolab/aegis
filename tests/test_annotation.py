@@ -1118,6 +1118,32 @@ class TestAnnotationCorrectCoordinates:
         assert u.id in annot.recheck_warnings()["utr_exceeds_exon"]
         assert t.exons[0].start == 1000
 
+    def test_inconsistencies_are_printed_as_counts(self, sample_gff3_file, capsys):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1
+        gene.end = 50000
+        capsys.readouterr()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=False)
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="trim", quiet=False)
+        out = capsys.readouterr().out
+        assert "Warning: 1 genes extend beyond their transcripts" in out
+        assert "exports them in the 'gene_exceeds_transcripts' column" in out
+        assert "1 genes extended beyond their transcripts and were trimmed to them" in out
+        assert "gene1 extends beyond its transcripts" not in out
+
+    def test_inconsistencies_are_listed_with_list_load_warnings(self, sample_gff3_file, capsys):
+        annot = Annotation(sample_gff3_file, quiet=True, list_load_warnings=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1
+        gene.end = 50000
+        capsys.readouterr()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=False)
+        out = capsys.readouterr().out
+        assert "Warning: gene1 extends beyond its transcripts" in out
+        assert "Warning: 1 genes extend beyond their transcripts" in out
+        assert "aegis summary" not in out
+
     def test_invalid_mode(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         with pytest.raises(ValueError):
