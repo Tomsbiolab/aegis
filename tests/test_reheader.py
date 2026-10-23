@@ -137,8 +137,9 @@ def test_cli_tidy_genome_gwh(gwh_sample_files, tmp_path):
     assert out_gff.exists()
 
     fa_headers = [line.strip() for line in out_fa.read_text().splitlines() if line.startswith(">")]
-    # Scaffold ctg100000 should be removed, chr1 and chr2 kept
-    assert fa_headers == [">chr1", ">chr2"]
+    # Scaffold ctg100000 should be removed, chr1 and chr2 kept, with their GWH ids after the new ones
+    assert [h.split()[0] for h in fa_headers] == [">chr1", ">chr2"]
+    assert fa_headers[0].startswith(">chr1 GWHBAVD00000001 OriSeqID=chr1")
 
     gff_content = out_gff.read_text()
     assert "chr1" in gff_content
@@ -242,3 +243,13 @@ def test_cli_summary_gwh(gwh_sample_files, tmp_path):
     result = runner.invoke(summary_app, args)
     assert result.exit_code == 0, f"Error: {result.stdout}"
     assert (out_dir / "gwh_sample_on_gwh_sample_full_stats.csv").exists()
+
+
+def test_cli_tidy_genome_no_keep_description(gwh_sample_files, tmp_path):
+    fasta_path, gff_path = gwh_sample_files
+    out_dir = tmp_path / "tidy_out"
+    args = [str(fasta_path), str(gff_path), "--gwh", "--remove-scaffolds", "--no-keep-description", "-d", str(out_dir), "-og", "tidy.fasta", "-oa", "tidy.gff3"]
+    result = runner.invoke(tidy_genome_app, args)
+    assert result.exit_code == 0, f"Error: {result.stdout}"
+    fa_headers = [line.strip() for line in (out_dir / "tidy.fasta").read_text().splitlines() if line.startswith(">")]
+    assert fa_headers == [">chr1", ">chr2"]

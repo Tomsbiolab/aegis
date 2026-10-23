@@ -17,7 +17,10 @@ from aegis.utils.misc import open_file
 from aegis.utils.genefunctions import reverse_complement, sequence_hash
 
 class Scaffold():
-    unknown_chromosome_names = ["chrUn", "chrun", "ChrUn", "Chrun", "chr00", "Chr00", "chr0", "Chr0"]
+    # Compared in lower case, also as the prefix before the first "_" (e.g. chrUn_KI270302v1, chr00_scaffold_1)
+    unknown_chromosome_names = {"chrun", "chr00", "chr0"}
+    # Unlocalised, alternate and fix-patch scaffolds of a chromosome, e.g. chr1_random, chr4_KI270790v1_alt, chr1_NW_123.1
+    chromosome_scaffold_name_pattern = re.compile(r"_(?:random|alt|fix)(?:_|$)|_[A-Z]{2}\d{6}v\d+|_N[TW]_\d", re.IGNORECASE)
     # Bare "m"/"c" are deliberately excluded: single-letter names are also used for nuclear chromosomes or linkage groups
     mitochondria_names = {"mt", "mito", "chrm", "chrmt", "mitochondria", "mitochondrion"}
     chloroplast_names = {"pt", "chrc", "chrpt", "pltd", "plastid", "chloroplast"}
@@ -92,19 +95,38 @@ class Scaffold():
         else:
             self.original_name = self.name
 
-        if self.description and self.original_name != self.name:
-            if self.description.startswith(self.original_name):
-                self.description = self.name + self.description[len(self.original_name):]
+        if self.original_name != self.name:
+            self._rename_description(self.original_name, self.name)
 
         self.update()
+
+    def _rename_description(self, old_name:str, new_name:str):
+        """
+        Gives the description (the FASTA header) new_name as its id, followed by the id of the input
+        file (original_name) whenever the two differ, e.g. "NC_012007.3 Malus domestica chromosome 1"
+        renamed chr01 becomes "chr01 NC_012007.3 Malus domestica chromosome 1". Descriptions not
+        starting with old_name or original_name are left as they are.
+        """
+        parts = self.description.split(maxsplit=1)
+        if not parts or parts[0] not in (old_name, self.original_name):
+            return
+        rest = parts[1] if len(parts) > 1 else ""
+        # The original id is only given once, however many times the sequence is renamed
+        rest_parts = rest.split(maxsplit=1)
+        if rest_parts and rest_parts[0] == self.original_name:
+            rest = rest_parts[1] if len(rest_parts) > 1 else ""
+        # The input id of a reloaded _dapmod genome is not known (its placeholder is not given), but its
+        # description already holds it if it was exported by aegis
+        if new_name == self.original_name or self.original_name.startswith("unknown_dapmod_"):
+            ids = [new_name]
+        else:
+            ids = [new_name, self.original_name]
+        self.description = " ".join(ids + ([rest] if rest else []))
 
     def update(self, new_name:str=""):
         if new_name:
             if hasattr(self, "description") and self.description:
-                if self.description.startswith(self.name):
-                    self.description = new_name + self.description[len(self.name):]
-                elif hasattr(self, "original_name") and self.description.startswith(self.original_name):
-                    self.description = new_name + self.description[len(self.original_name):]
+                self._rename_description(self.name, new_name)
             self.name = new_name
 
         if self.name != self.original_name:
@@ -121,23 +143,27 @@ class Scaffold():
         # otherwise be classified as chromosomes for starting with "ch". The organelle
         # type can't be told from a DAP name, so it is only kept if already known.
         dap_scaffold = self.dapmod and Scaffold.dap_scaffold_name_pattern.match(self.name)
+        lower_name = self.name.lower()
+        # Checked before the "ch" prefix, which would otherwise make all of them chromosomes
+        chromosome_scaffold = Scaffold.chromosome_scaffold_name_pattern.search(self.name)
         if dap_scaffold:
             pass
         elif self.dapmod and Scaffold.dap_organelle_name_pattern.match(self.name):
             self.chromosome = True
             self.organelle = True
+        elif lower_name in Scaffold.unknown_chromosome_names or lower_name.split("_")[0] in Scaffold.unknown_chromosome_names:
+            self.unknown_chromosome = True
+        elif chromosome_scaffold:
+            pass
         elif self.renamed and not self.name.startswith("chr"):
             if len(self.number) == 2 or len(self.number) == 3:
                 self.chromosome = True
-        else:
-            if self.name.lower() in Scaffold.unknown_chromosome_names:
-                self.unknown_chromosome = True
-            elif self.name.lower().startswith("ch"):
-                self.chromosome = True
+        elif lower_name.startswith("ch"):
+            self.chromosome = True
 
         # Accession-named chromosomes (e.g. NC_000001.11) are recognised from the description,
         # which also gives their number
-        if not (self.chromosome and self.number.isdigit()) and not self.unknown_chromosome and not dap_scaffold:
+        if not (self.chromosome and self.number.isdigit()) and not self.unknown_chromosome and not dap_scaffold and not chromosome_scaffold:
             description_chromosome = Scaffold.description_chromosome(self.description)
             if description_chromosome is not None:
                 self.chromosome = True
@@ -349,6 +375,8 @@ class Genome():
         self.organelles = False
         self.unknown_chromosome = False
         self.non_chromosomal_scaffolds = False
+        # Scaffolds other than unknown chromosomes (chr00), which are marked by _chr00 instead of preventing _scffree
+        other_scaffolds = False
         self.chromosomes = False
         self.dapmod = False
         self.confrenamed = False
@@ -400,6 +428,8 @@ class Genome():
             else:
                 self.non_chromosomal_scaffolds = True
                 self.scaffold_names.add(scaffold.name)
+                if not scaffold.unknown_chromosome:
+                    other_scaffolds = True
 
             if update_scaffolds:
                 scaffold.update()
@@ -416,7 +446,7 @@ class Genome():
         if self.confrenamed:
             self.suffix += "_confrenamed"
 
-        if not self.non_chromosomal_scaffolds:
+        if not other_scaffolds:
             self.suffix += "_scffree"
 
         if self.dapfit and not self.dapmod:
@@ -490,7 +520,7 @@ class Genome():
         elif not quiet:
             print(f"No scaffolds/chromosomes found in {self.name} genome object.")
 
-    def rename_features_dap(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", return_equivalences:bool=False, export:bool=False, 
+    def rename_features_dap(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", return_equivalences:bool=False, export:bool=False, keep_description:bool=True,
         #deprecated argument
         output_folder:str=""):
         """
@@ -572,7 +602,7 @@ class Genome():
             self.update()
 
             if export:
-                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
+                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension, keep_description=keep_description)
 
             if return_equivalences:
                 return self.equivalences
@@ -604,7 +634,7 @@ class Genome():
 
         return final_equivalences
 
-    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False):
+    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False, keep_description:bool=True):
         
         if self.non_chromosomal_scaffolds:
             sequence_count = len(self.scaffolds)
@@ -620,6 +650,8 @@ class Genome():
             del new_scaffolds
 
             self.update()
+            # e.g. chr00 is the only scaffold and remove_00=False: the result is the full genome under the same name
+            unchanged = len(self.scaffolds) == sequence_count
 
             if not self.chromosome_names:
                 kept = f"only organelles ({', '.join(sorted(self.accessory_chromosome_names))}) are left" if self.scaffolds else "nothing is left"
@@ -628,14 +660,16 @@ class Genome():
                 if export:
                     warnings.warn(f"There was nothing to export for {self.name} genome.")
                     export = False
+            elif unchanged and export and not remove_organelles:
+                warnings.warn(f"No scaffolds were removed from {self.name} genome, so its scaffold-free version was not exported.")
 
-            if not remove_organelles and export:
-                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
+            if not remove_organelles and export and not unchanged:
+                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension, keep_description=keep_description)
 
         if remove_organelles:
-            self.remove_organelles(export=export, output_dir=output_dir)
+            self.remove_organelles(export=export, output_dir=output_dir, keep_description=keep_description)
 
-    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True):
+    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True, keep_description:bool=True):
 
         new_scaffolds = {}
 
@@ -657,9 +691,9 @@ class Genome():
         self.update()
 
         if export:
-            self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
+            self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension, keep_description=keep_description)
 
-    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool = False,
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool = True,
         #deprecated arguments
         output_folder:str="", file:str=".fasta"):
 
