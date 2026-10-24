@@ -489,11 +489,13 @@ class Genome():
             self.suffix += "_chr00"
 
     def _resolve_output_path(self, filepath: str | None = None, output_dir: str | None = None, 
-        filename: str | None = None, suffix: str = "", extra_suffixes: list[str] | None = None, extension: str = ".fasta", subfolder_name: str = "out_genomes", subfolder: bool = False, use_genome_dir: bool = False):
+        filename: str | None = None, suffix: str = "", extra_suffixes: list[str] | None = None, extension: str = ".fasta", subfolder_name: str = "out_genomes", subfolder: bool = False, use_genome_dir: bool = False, create: bool = True):
+        """Output file path; its folder is created unless create=False (when the path is only looked up)."""
 
         if filepath:
             out_path = Path(filepath)
-            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if create:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
             if (output_dir is not None) or subfolder or filename or use_genome_dir:
                 warnings.warn(f"Exact output file path ({filepath}) was specified. Ignoring output_dir, use_genome_dir, subfolder, and filename arguments.")
             return out_path
@@ -508,8 +510,9 @@ class Genome():
 
             if subfolder:
                 export_folder = export_folder / subfolder_name.strip("/")
-            
-            export_folder.mkdir(parents=True, exist_ok=True)
+
+            if create:
+                export_folder.mkdir(parents=True, exist_ok=True)
 
             if extension and not extension.startswith("."):
                 extension = f".{extension}"
@@ -550,7 +553,7 @@ class Genome():
         elif not quiet:
             print(f"No scaffolds/chromosomes found in {self.name} genome object.")
 
-    def rename_features_dap(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", return_equivalences:bool=False, export:bool=False, keep_description:bool=True,
+    def rename_features_dap(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", return_equivalences:bool=False, export:bool=False, keep_description: bool | Literal["both"] = True,
         #deprecated argument
         output_folder:str=""):
         """
@@ -561,6 +564,9 @@ class Genome():
             warnings.warn("'output_folder' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
             if output_dir is None:
                 output_dir = output_folder
+
+        if export:
+            Genome._check_keep_description(keep_description, filepath, filename)
 
         if not self.dapfit:
 
@@ -673,7 +679,17 @@ class Genome():
 
         return final_equivalences
 
-    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False, keep_description:bool=True):
+    def remove_scaffolds(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_00:bool=True, remove_organelles:bool=False, keep_description: bool | Literal["both"] = True) -> dict[str, Path]:
+        """
+        Removes non-chromosomal scaffolds (and organelles with remove_organelles=True). With export=True,
+        returns the exported paths as Genome.export does. When nothing was removed, nothing is written:
+        the paths returned are those of the unchanged genome's export, which this call did NOT write, and
+        only those written earlier in this run. Returns {} when the export is refused (no recognised
+        nuclear chromosomes) or export=False.
+        """
+
+        if export:
+            Genome._check_keep_description(keep_description, filepath, filename)
 
         sequence_count = len(self.scaffolds)
 
@@ -702,16 +718,28 @@ class Genome():
         if remove_organelles:
             self.remove_organelles()
 
-        if export:
-            # e.g. chr00 is the only scaffold and remove_00=False: the result is the full genome under the same name
-            if len(self.scaffolds) == sequence_count:
-                removed = "scaffolds or organelles were" if remove_organelles else "scaffolds were"
-                version = "scaffold- and organelle-free" if remove_organelles else "scaffold-free"
-                warnings.warn(f"No {removed} removed from {self.name} genome, so its {version} version was not exported.")
-            else:
-                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension, keep_description=keep_description)
+        if not export:
+            return {}
 
-    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True, keep_description:bool=True):
+        output_args = dict(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
+        # e.g. chr00 is the only scaffold and remove_00=False: the result is the full genome under the same name
+        if len(self.scaffolds) == sequence_count:
+            removed = "scaffolds or organelles were" if remove_organelles else "scaffolds were"
+            version = "scaffold- and organelle-free" if remove_organelles else "scaffold-free"
+            warnings.warn(f"No {removed} removed from {self.name} genome, so its {version} version was not exported.")
+            return self._paths_exported_this_run(keep_description, **output_args)
+        return self.export(keep_description=keep_description, **output_args)
+
+    def remove_organelles(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", export:bool=False, remove_mitochondria:bool=True, remove_chloroplast:bool=True, keep_description: bool | Literal["both"] = True) -> dict[str, Path]:
+        """
+        Removes organelles. With export=True, returns the exported paths as Genome.export does. When
+        nothing was removed, nothing is written: the paths returned are those of the unchanged genome's
+        export, which this call did NOT write, and only those written earlier in this run. Returns {}
+        when export=False.
+        """
+
+        if export:
+            Genome._check_keep_description(keep_description, filepath, filename)
 
         sequence_count = len(self.scaffolds)
         new_scaffolds = {}
@@ -733,15 +761,72 @@ class Genome():
 
         self.update()
 
-        if export:
-            if len(self.scaffolds) == sequence_count:
-                warnings.warn(f"No organelles were removed from {self.name} genome, so its organelle-free version was not exported.")
-            else:
-                self.export(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension, keep_description=keep_description)
+        if not export:
+            return {}
 
-    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool = True,
+        output_args = dict(filepath=filepath, output_dir=output_dir, use_genome_dir=use_genome_dir, subfolder=subfolder, subfolder_name=subfolder_name, filename=filename, extension=extension)
+        if len(self.scaffolds) == sequence_count:
+            warnings.warn(f"No organelles were removed from {self.name} genome, so its organelle-free version was not exported.")
+            return self._paths_exported_this_run(keep_description, **output_args)
+        return self.export(keep_description=keep_description, **output_args)
+
+    def _export_headers(self, keep_description: bool) -> list[str]:
+        # Tabs (e.g. GWH "OriSeqID=chr1\tLen=120") are handled badly by some tools
+        return [scaffold.description.replace("\t", " ") if (keep_description and getattr(scaffold, "description", None)) else scaffold.name for scaffold in self.scaffolds.values()]
+
+    @staticmethod
+    def _id_only_headers(headers: list[str]) -> bool:
+        return bool(headers) and all(len(header.split()) == 1 for header in headers)
+
+    @staticmethod
+    def _check_keep_description(keep_description, filepath: str | None, filename: str | None):
+        """Checked before anything is changed, so that a bad call leaves the genome as it was."""
+        if keep_description not in (True, False, "both"):
+            raise ValueError(f"keep_description must be True, False or 'both', not {keep_description!r}.")
+        # Both writes are told apart by the automatic _no_description tag, which an explicit name replaces
+        if keep_description == "both" and (filepath or filename):
+            raise ValueError("keep_description='both' needs automatic file names: it cannot be used with filepath or filename.")
+
+    def _export_paths(self, keep_description: bool | Literal["both"], create: bool = True, **output_args) -> dict[str, Path]:
+        """
+        Output path of each header type ("description", "no_description") that keep_description asks for.
+        Headers that are only ids, whether descriptions were dropped or never given, are marked by
+        _no_description, so with such headers both types share one path.
+        """
+        header_types = {"description": True, "no_description": False}
+        if keep_description != "both":
+            header_types = {header_type: keep for header_type, keep in header_types.items() if keep == keep_description}
+        paths = {}
+        for header_type, keep in header_types.items():
+            suffix = self.suffix + ("_no_description" if Genome._id_only_headers(self._export_headers(keep)) else "")
+            paths[header_type] = self._resolve_output_path(suffix=suffix, create=create, **output_args)
+        return paths
+
+    def _paths_exported_this_run(self, keep_description: bool | Literal["both"], **output_args) -> dict[str, Path]:
+        """
+        Paths an export of the genome as it is would use, keeping only those already written in this run,
+        so that a caller is never pointed to a missing or stale file.
+        """
+        paths = self._export_paths(keep_description, create=False, **output_args)
+        written = {header_type: Path(path).absolute() for header_type, path in paths.items() if str(Path(path).resolve()) in Genome._exported_files}
+        missing = sorted({str(path) for header_type, path in paths.items() if header_type not in written})
+        if missing:
+            warnings.warn(f"{', '.join(missing)} was not written earlier in this run, so it is not returned for {self.name} genome.")
+        return written
+
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_genome_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_genomes", extension=".fasta", quiet:bool=False, keep_description: bool | Literal["both"] = True,
         #deprecated arguments
-        output_folder:str="", file:str=".fasta"):
+        output_folder:str="", file:str=".fasta") -> dict[str, Path]:
+        """
+        Writes the genome as FASTA. keep_description="both" writes it with descriptions and again without
+        them (tagged _no_description), or only once when its headers are just ids anyway; it needs
+        automatic file names, so it cannot be combined with filepath or filename.
+
+        Returns the absolute path written for each header type: {"description": path, "no_description": path}
+        with "both" (the same _no_description path twice when headers are just ids), only "description"
+        with keep_description=True and only "no_description" with False. Returns {} when there is nothing
+        to export.
+        """
 
         if output_folder != "":
             warnings.warn("'output_folder' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -753,32 +838,38 @@ class Genome():
             if filename is None:
                 filename = file
 
+        Genome._check_keep_description(keep_description, filepath, filename)
+
         self.update()
-
-        # Tabs (e.g. GWH "OriSeqID=chr1\tLen=120") are handled badly by some tools
-        headers = [scaffold.description.replace("\t", " ") if (keep_description and getattr(scaffold, "description", None)) else scaffold.name for scaffold in self.scaffolds.values()]
-        # Headers that are only ids, whether descriptions were dropped or never given, are marked by _no_description
-        suffix = self.suffix
-        if headers and all(len(header.split()) == 1 for header in headers):
-            suffix += "_no_description"
-
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, use_genome_dir=use_genome_dir, subfolder_name=subfolder_name, subfolder=subfolder, extension=extension)
 
         if not self.scaffolds:
             warnings.warn(f"There was nothing to export for {self.name} genome.")
-            return
+            return {}
 
-        resolved_output_path = str(Path(final_output_path).resolve())
-        if resolved_output_path in Genome._exported_files:
-            warnings.warn(f"{final_output_path} was already written earlier in this run and is being overwritten by {self.name} genome (suffix '{suffix}').")
-        Genome._exported_files.add(resolved_output_path)
+        paths = self._export_paths(keep_description, filepath=filepath, output_dir=output_dir, filename=filename, use_genome_dir=use_genome_dir, subfolder_name=subfolder_name, subfolder=subfolder, extension=extension)
 
-        if not quiet:
-            print(f"Exporting {self.name} genome to {final_output_path}.")
+        written = set()
+        for header_type, final_output_path in paths.items():
+            resolved_output_path = str(Path(final_output_path).resolve())
+            # ID-only headers are the same either way, so a second write would only repeat the first
+            if resolved_output_path in written:
+                continue
+            written.add(resolved_output_path)
 
-        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
-            for scaffold, header in zip(self.scaffolds.values(), headers):
-                f_out.write(f">{header}\n{scaffold.seq}\n")
+            if resolved_output_path in Genome._exported_files:
+                warnings.warn(f"{final_output_path} was already written earlier in this run and is being overwritten by {self.name} genome (suffix '{self.suffix}').")
+            Genome._exported_files.add(resolved_output_path)
+
+            if not quiet:
+                print(f"Exporting {self.name} genome to {final_output_path}.")
+
+            headers = self._export_headers(header_type == "description")
+            with open(str(final_output_path), "w", encoding="utf-8") as f_out:
+                for scaffold, header in zip(self.scaffolds.values(), headers):
+                    f_out.write(f">{header}\n{scaffold.seq}\n")
+
+        # absolute() rather than resolve(), so that paths given through symlinks are not rewritten
+        return {header_type: Path(path).absolute() for header_type, path in paths.items()}
 
     def copy(self):
         return copy.deepcopy(self)

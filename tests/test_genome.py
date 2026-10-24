@@ -740,6 +740,187 @@ class TestNoDescriptionTag:
         assert (tmp_path / "out" / "toy_genome_feature_sizes_scffree_dapfit_organellefree.tsv").exists()
 
 
+class TestExportBothDescriptions:
+    @staticmethod
+    def _headers(path):
+        return [line[1:] for line in path.read_text().splitlines() if line.startswith(">")]
+
+    @staticmethod
+    def _genome(tmp_path, fasta_text):
+        (tmp_path / "toy.fa").write_text(fasta_text)
+        return Genome("toy", str(tmp_path / "toy.fa"), quiet=True)
+
+    def test_writes_both_versions(self, tmp_path):
+        g = self._genome(tmp_path, ">chr1 some text\nAAAA\n>chr2\nCCCC\n")
+        g.export(output_dir=str(tmp_path / "out"), quiet=True, keep_description="both")
+        out = tmp_path / "out"
+        assert sorted(p.name for p in out.iterdir()) == [
+            "toy_scffree_dapfit_organellefree.fasta", "toy_scffree_dapfit_organellefree_no_description.fasta"]
+        assert self._headers(out / "toy_scffree_dapfit_organellefree.fasta") == ["chr1 some text", "chr2"]
+        assert self._headers(out / "toy_scffree_dapfit_organellefree_no_description.fasta") == ["chr1", "chr2"]
+
+    def test_id_only_headers_are_written_once(self, tmp_path, recwarn):
+        g = self._genome(tmp_path, ">chr1\nAAAA\n>chr2\nCCCC\n")
+        g.export(output_dir=str(tmp_path / "out"), quiet=True, keep_description="both")
+        assert [p.name for p in (tmp_path / "out").iterdir()] == ["toy_scffree_dapfit_organellefree_no_description.fasta"]
+        assert not [w for w in recwarn if "already written earlier" in str(w.message)]
+
+    @pytest.mark.parametrize("method", ["export", "rename_features_dap", "remove_scaffolds", "remove_organelles"])
+    @pytest.mark.parametrize("name_kwargs", [{"filename": "clean.fa"}, {"filepath": "out/clean.fa"}])
+    def test_explicit_names_are_rejected(self, tmp_path, method, name_kwargs):
+        g = self._genome(tmp_path, ">chr1 some text\nAAAA\n>scf1\nCCCC\n>chrM\nGGGG\n")
+        name_kwargs = {k: str(tmp_path / v) if k == "filepath" else v for k, v in name_kwargs.items()}
+        export_kwargs = {} if method == "export" else {"export": True}
+        with pytest.raises(ValueError, match="cannot be used with filepath or filename"):
+            getattr(g, method)(output_dir=str(tmp_path / "out"), keep_description="both", **export_kwargs, **name_kwargs)
+        # rejected before the genome is changed or anything is written
+        assert list(g.scaffolds) == ["chr1", "scf1", "chrM"]
+        assert not (tmp_path / "out").exists()
+
+    def test_explicit_names_are_fine_without_export(self, tmp_path):
+        """Output arguments are ignored when nothing is exported."""
+        g = self._genome(tmp_path, ">chr1 some text\nAAAA\n>scf1\nCCCC\n")
+        g.remove_scaffolds(filename="clean.fa", keep_description="both")
+        assert list(g.scaffolds) == ["chr1"]
+
+    def test_empty_genome_warns_once(self, tmp_path):
+        g = self._genome(tmp_path, ">chr1 some text\nAAAA\n")
+        g.remove_features({"chr1"})
+        with pytest.warns(UserWarning) as record:
+            g.export(output_dir=str(tmp_path / "out"), quiet=True, keep_description="both")
+        assert sum("nothing to export" in str(w.message) for w in record) == 1
+
+    def test_invalid_value(self, tmp_path):
+        g = self._genome(tmp_path, ">chr1\nAAAA\n")
+        with pytest.raises(ValueError, match="keep_description must be True, False or 'both'"):
+            g.export(output_dir=str(tmp_path / "out"), quiet=True, keep_description="yes")
+
+    def test_dap_renaming(self, tmp_path):
+        g = self._genome(tmp_path, ">chr1\nAAAA\n>scf1 some scaffold\nCCCC\n")
+        g.rename_features_dap(export=True, output_dir=str(tmp_path / "out"), keep_description="both")
+        out = tmp_path / "out"
+        assert self._headers(out / "toy_dapmod_organellefree.fasta") == ["chr01 chr1", "chr00000001 scf1 some scaffold"]
+        assert self._headers(out / "toy_dapmod_organellefree_no_description.fasta") == ["chr01", "chr00000001"]
+
+    def test_scaffold_and_organelle_removal(self, tmp_path):
+        fasta_text = ">chr1 one\nAAAA\n>scf1\nCCCC\n>chrM mito\nGGGG\n"
+        out = tmp_path / "out"
+        g = self._genome(tmp_path, fasta_text)
+        g.remove_scaffolds(export=True, output_dir=str(out / "scf"), keep_description="both")
+        # chrM is not DAP-fit, so _dapfit only comes once organelles are removed
+        assert sorted(p.name for p in (out / "scf").iterdir()) == ["toy_scffree.fasta", "toy_scffree_no_description.fasta"]
+
+        g = self._genome(tmp_path, fasta_text)
+        g.remove_organelles(export=True, output_dir=str(out / "org"), keep_description="both")
+        assert sorted(p.name for p in (out / "org").iterdir()) == ["toy_organellefree.fasta", "toy_organellefree_no_description.fasta"]
+
+        g = self._genome(tmp_path, fasta_text)
+        g.remove_scaffolds(export=True, remove_organelles=True, output_dir=str(out / "both"), keep_description="both")
+        assert sorted(p.name for p in (out / "both").iterdir()) == [
+            "toy_scffree_dapfit_organellefree.fasta", "toy_scffree_dapfit_organellefree_no_description.fasta"]
+
+
+class TestExportPaths:
+    @staticmethod
+    def _genome(tmp_path, fasta_text, name="toy"):
+        (tmp_path / f"{name}.fa").write_text(fasta_text)
+        return Genome(name, str(tmp_path / f"{name}.fa"), quiet=True)
+
+    @pytest.mark.parametrize("keep_description, expected", [
+        (True, {"description": "toy_scffree_dapfit_organellefree.fasta"}),
+        (False, {"no_description": "toy_scffree_dapfit_organellefree_no_description.fasta"}),
+        ("both", {"description": "toy_scffree_dapfit_organellefree.fasta", "no_description": "toy_scffree_dapfit_organellefree_no_description.fasta"}),
+    ])
+    def test_export_returns_absolute_paths_by_header_type(self, tmp_path, monkeypatch, keep_description, expected):
+        monkeypatch.chdir(tmp_path)
+        g = self._genome(tmp_path, ">chr1 some text\nAAAA\n")
+        paths = g.export(output_dir="out", quiet=True, keep_description=keep_description)
+        assert paths == {header_type: tmp_path / "out" / name for header_type, name in expected.items()}
+        assert all(path.is_absolute() and path.exists() for path in paths.values())
+
+    @pytest.mark.parametrize("keep_description, expected_keys", [(True, ["description"]), ("both", ["description", "no_description"])])
+    def test_id_only_headers_point_every_type_to_one_file(self, tmp_path, keep_description, expected_keys):
+        g = self._genome(tmp_path, ">chr1\nAAAA\n")
+        paths = g.export(output_dir=str(tmp_path / "out"), quiet=True, keep_description=keep_description)
+        assert list(paths) == expected_keys
+        assert set(paths.values()) == {tmp_path / "out" / "toy_scffree_dapfit_organellefree_no_description.fasta"}
+        assert len(list((tmp_path / "out").iterdir())) == 1
+
+    def test_nothing_to_export(self, tmp_path):
+        g = self._genome(tmp_path, ">chr1\nAAAA\n")
+        g.remove_features({"chr1"})
+        with pytest.warns(UserWarning, match="nothing to export"):
+            assert g.export(output_dir=str(tmp_path / "out"), quiet=True) == {}
+
+    def test_symlinked_paths_are_not_rewritten(self, tmp_path):
+        (tmp_path / "real").mkdir()
+        (tmp_path / "link").symlink_to(tmp_path / "real")
+        g = self._genome(tmp_path, ">chr1 some text\nAAAA\n")
+        paths = g.export(output_dir=str(tmp_path / "link"), quiet=True)
+        assert paths == {"description": tmp_path / "link" / "toy_scffree_dapfit_organellefree.fasta"}
+        # the overwrite check still sees through the link
+        with pytest.warns(UserWarning, match="already written earlier in this run"):
+            g.export(output_dir=str(tmp_path / "real"), quiet=True)
+
+    @pytest.mark.parametrize("method", ["remove_scaffolds", "remove_organelles"])
+    def test_removal_returns_exported_paths(self, tmp_path, method):
+        g = self._genome(tmp_path, ">chr1 one\nAAAA\n>scf1\nCCCC\n>chrM\nGGGG\n")
+        paths = getattr(g, method)(export=True, output_dir=str(tmp_path / "out"), keep_description="both")
+        assert set(paths) == {"description", "no_description"}
+        assert paths["description"] != paths["no_description"]
+        assert all(path.exists() for path in paths.values())
+
+    def test_scaffold_and_organelle_removal_returns_exported_paths(self, tmp_path):
+        g = self._genome(tmp_path, ">chr1 one\nAAAA\n>scf1\nCCCC\n>chrM\nGGGG\n")
+        paths = g.remove_scaffolds(export=True, remove_organelles=True, output_dir=str(tmp_path / "out"))
+        assert paths == {"description": tmp_path / "out" / "toy_scffree_dapfit_organellefree.fasta"}
+
+    @pytest.mark.parametrize("method", ["remove_scaffolds", "remove_organelles"])
+    def test_removal_without_export_returns_nothing(self, tmp_path, method):
+        g = self._genome(tmp_path, ">chr1 one\nAAAA\n>scf1\nCCCC\n>chrM\nGGGG\n")
+        assert getattr(g, method)(output_dir=str(tmp_path / "out")) == {}
+
+    def test_refused_scaffold_free_export_returns_nothing(self, tmp_path):
+        g = self._genome(tmp_path, ">NC_012007.3\nAAAA\n>MT\nGGGG\n")
+        with pytest.warns(UserWarning, match="nothing to export"):
+            assert g.remove_scaffolds(export=True, output_dir=str(tmp_path / "out")) == {}
+
+    @pytest.mark.parametrize("method, fasta_text", [
+        ("remove_scaffolds", ">chr1 one\nAAAA\n>chrM\nGGGG\n"),
+        ("remove_organelles", ">chr1 one\nAAAA\n>scf1\nCCCC\n"),
+    ])
+    def test_skipped_export_returns_paths_written_this_run(self, tmp_path, method, fasta_text):
+        out = str(tmp_path / "out")
+        g = self._genome(tmp_path, fasta_text)
+        exported = g.export(output_dir=out, quiet=True, keep_description="both")
+        mtimes = {path: path.stat().st_mtime_ns for path in exported.values()}
+        with pytest.warns(UserWarning, match="was not exported"):
+            paths = getattr(g, method)(export=True, output_dir=out, keep_description="both")
+        assert paths == exported
+        # not written again by the skipped export
+        assert {path: path.stat().st_mtime_ns for path in paths.values()} == mtimes
+
+    @pytest.mark.parametrize("method, fasta_text", [
+        ("remove_scaffolds", ">chr1 one\nAAAA\n>chrM\nGGGG\n"),
+        ("remove_organelles", ">chr1 one\nAAAA\n>scf1\nCCCC\n"),
+    ])
+    def test_skipped_export_returns_nothing_not_written_this_run(self, tmp_path, method, fasta_text):
+        # a stale file from an earlier run is not reported
+        (tmp_path / "out").mkdir()
+        g = self._genome(tmp_path, fasta_text, name=f"stale_{method}")
+        (tmp_path / "out" / f"stale_{method}{g.suffix}.fasta").write_text(">old\nA\n")
+        with pytest.warns(UserWarning, match="was not written earlier in this run, so it is not returned"):
+            assert getattr(g, method)(export=True, output_dir=str(tmp_path / "out")) == {}
+
+    def test_skipped_export_checks_each_path(self, tmp_path):
+        out = str(tmp_path / "out")
+        g = self._genome(tmp_path, ">chr1 one\nAAAA\n>chrM\nGGGG\n")
+        exported = g.export(output_dir=out, quiet=True, keep_description=True)
+        with pytest.warns(UserWarning, match="_no_description.fasta was not written earlier in this run"):
+            paths = g.remove_scaffolds(export=True, output_dir=out, keep_description="both")
+        assert paths == exported
+
+
 class TestGenomeAttributes:
     def test_other_scaffolds(self, tmp_path):
         fasta = tmp_path / "toy.fa"
