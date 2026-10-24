@@ -381,13 +381,13 @@ class TestDapRenaming:
         g.remove_organelles(export=True, output_dir=str(tmp_path))
         g.remove_scaffolds(export=True, output_dir=str(tmp_path))
         assert self._headers(tmp_path / "toy_dapmod_organellefree.fasta") == ["chr01", "chr02", "chr00000001 NW_0001.1", "chr00000002 scf2"]
-        assert self._headers(tmp_path / "toy_dapmod_scffree_organellefree.fasta") == ["chr01", "chr02"]
+        assert self._headers(tmp_path / "toy_dapmod_scffree_organellefree_no_description.fasta") == ["chr01", "chr02"]
 
     def test_dap_export_can_drop_descriptions(self, tmp_path):
         fasta = self._write_fasta(tmp_path / "toy.fa", ["chr01", "NW_0001.1", "chrM"])
         g = Genome("toy", fasta, quiet=True)
         g.rename_features_dap(export=True, output_dir=str(tmp_path), keep_description=False)
-        assert self._headers(tmp_path / "toy_dapmod.fasta") == ["chr01", "chr00000001", "chr0001"]
+        assert self._headers(tmp_path / "toy_dapmod_no_description.fasta") == ["chr01", "chr00000001", "chr0001"]
 
     def test_reloaded_dap_genome_keeps_input_ids(self, tmp_path):
         fasta = self._write_fasta(tmp_path / "toy.fa", ["chr01", "NW_0001.1", "chrM"])
@@ -428,6 +428,112 @@ class TestDapRenaming:
         assert Scaffold("chr0001", "ACGT").organelle is False
         assert Scaffold("chr00000001", "ACGT", dapmod=True).chromosome is False
         assert Scaffold("chr0001", "ACGT", dapmod=True).organelle is True
+
+    @staticmethod
+    def _mixed_fasta(tmp_path):
+        path = tmp_path / "mixed.fasta"
+        path.write_text(">chr1 desc one\nAAAA\n>chr2\nCCCC\n>chr00\nGGGG\n>scf1 some scaffold\nTTTT\n>ChrC\nACGT\n")
+        return str(path)
+
+    @staticmethod
+    def _flags(genome):
+        return {name: (s.chromosome, s.unknown_chromosome, s.organelle, s.mitochondria, s.chloroplast) for name, s in genome.scaffolds.items()}
+
+    def test_single_unknown_chromosome_is_named_chr00(self, tmp_path):
+        g = Genome("mixed", self._mixed_fasta(tmp_path), quiet=True)
+        equivalences = g.rename_features_dap(return_equivalences=True)
+        assert {k: equivalences[k] for k in ("chr1", "chr2", "chr00", "scf1", "ChrC")} == {
+            "chr1": "chr01", "chr2": "chr02", "chr00": "chr00", "scf1": "chr00000001", "ChrC": "chr0001"}
+        assert g.scaffolds["chr00"].unknown_chromosome is True
+        assert g.suffix == "_dapmod_chr00"
+
+    def test_single_unknown_chromosome_name_is_kept_for_chrun(self, tmp_path):
+        fasta = self._write_fasta(tmp_path / "un.fa", ["chr1", "chrUn_KI270302v1", "scf1"])
+        g = Genome("un", fasta, quiet=True)
+        equivalences = g.rename_features_dap(return_equivalences=True)
+        assert equivalences["chrUn_KI270302v1"] == "chr00"
+        assert equivalences["scf1"] == "chr00000001"
+
+    def test_several_unknown_chromosomes_get_scaffold_names(self, tmp_path):
+        fasta = self._write_fasta(tmp_path / "multi.fa", ["chr1", "chrUn", "chr00", "scf1"])
+        g = Genome("multi", fasta, quiet=True)
+        equivalences = g.rename_features_dap(return_equivalences=True)
+        assert [equivalences[k] for k in ("chrUn", "chr00", "scf1")] == ["chr00000001", "chr00000002", "chr00000003"]
+        assert g.scaffolds["chr00000001"].unknown_chromosome is True
+        assert g.scaffolds["chr00000002"].unknown_chromosome is True
+        assert g.scaffolds["chr00000003"].unknown_chromosome is False
+
+    def test_chromosome_numbered_0_keeps_chr00(self, tmp_path):
+        """An unknown chromosome must not take the chr00 name of a chromosome numbered 0."""
+        fasta = self._write_fasta(tmp_path / "zero.fa", ["Ch0", "Ch1", "chrUn"])
+        g = Genome("zero", fasta, quiet=True)
+        equivalences = g.rename_features_dap(return_equivalences=True)
+        assert equivalences["Ch0"] == "chr00"
+        assert equivalences["chrUn"] == "chr00000001"
+        assert len(g.scaffolds) == 3
+
+    def test_dapfit_genome_with_chr00_is_unchanged(self, tmp_path, capsys):
+        fasta = self._write_fasta(tmp_path / "fit.fa", ["chr01", "chr02", "chr00"])
+        g = Genome("fit", fasta, quiet=True)
+        assert g.rename_features_dap(return_equivalences=True) is None
+        assert "already fit for DAP-Seq analysis" in capsys.readouterr().out
+        assert list(g.scaffolds) == ["chr01", "chr02", "chr00"]
+        assert g.suffix == "_scffree_dapfit_organellefree_chr00"
+
+    @pytest.mark.parametrize("fasta_text", [
+        ">chr1 desc one\nAAAA\n>chr2\nCCCC\n>chr00\nGGGG\n>scf1 some scaffold\nTTTT\n>ChrC\nACGT\n",
+        # several unknown chromosomes get scaffold names, recognised from their input ids
+        ">chr1\nAAAA\n>chrUn\nCCCC\n>chr00\nGGGG\n>scf1\nTTTT\n>NC_1 mitochondrion genome\nACGT\n>ChrC\nAC\n",
+    ])
+    @pytest.mark.parametrize("remove_00", [None, False, True])
+    def test_reloaded_dap_exports_keep_classification(self, tmp_path, fasta_text, remove_00):
+        (tmp_path / "mixed.fasta").write_text(fasta_text)
+        g = Genome("mixed", str(tmp_path / "mixed.fasta"), quiet=True)
+        out_dir = tmp_path / "out"
+        g.rename_features_dap()
+        if remove_00 is not None:
+            g.remove_scaffolds(remove_00=remove_00)
+        g.export(output_dir=str(out_dir), quiet=True)
+        reloaded = Genome("mixed", str(out_dir / f"mixed{g.suffix}.fasta"), quiet=True)
+        assert reloaded.suffix == g.suffix
+        assert self._flags(reloaded) == self._flags(g)
+        for genome in (g, reloaded):
+            genome.remove_scaffolds(remove_00=True)
+        assert reloaded.suffix == g.suffix
+        assert self._flags(reloaded) == self._flags(g)
+
+    def test_reloaded_dap_genome_reads_input_ids_of_dap_names_only(self, tmp_path):
+        g = Genome("mixed", self._mixed_fasta(tmp_path), quiet=True)
+        g.rename_features_dap(export=True, output_dir=str(tmp_path / "out"))
+        reloaded = Genome("mixed", str(tmp_path / "out" / "mixed_dapmod_chr00.fasta"), quiet=True)
+        # chr01 was renamed too, but its second header word is only known to be an id for DAP scaffold/organelle names
+        assert {name: s.original_name for name, s in reloaded.scaffolds.items()} == {
+            "chr01": "unknown_dapmod_1", "chr02": "unknown_dapmod_2", "chr00": "unknown_dapmod_3",
+            "chr00000001": "scf1", "chr0001": "ChrC"}
+        reloaded.export(output_dir=str(tmp_path / "again"), quiet=True)
+        assert self._headers(tmp_path / "again" / "mixed_dapmod_chr00.fasta") == [
+            "chr01 chr1 desc one", "chr02 chr2", "chr00", "chr00000001 scf1 some scaffold", "chr0001 ChrC"]
+
+    def test_dapmod_is_read_from_the_file_name_only(self, tmp_path):
+        folder = tmp_path / "results_dapmod"
+        folder.mkdir()
+        (folder / "toy.fa").write_text(">chr01\nAAAA\n>chr00000001 chrUn\nCCCC\n>chr0001 ChrM\nGGGG\n")
+        g = Genome("toy", str(folder / "toy.fa"), quiet=True)
+        assert g.dapmod is False
+        assert "_dapmod" not in g.suffix
+        # outside DAP genomes, the second header word is not an input id
+        assert g.scaffolds["chr00000001"].original_name == "chr00000001"
+        assert g.scaffolds["chr00000001"].unknown_chromosome is False
+
+    def test_reloaded_dap_genome_without_input_ids(self, tmp_path):
+        g = Genome("mixed", self._mixed_fasta(tmp_path), quiet=True)
+        g.rename_features_dap(export=True, output_dir=str(tmp_path / "out"), keep_description=False)
+        reloaded = Genome("mixed", str(tmp_path / "out" / "mixed_dapmod_chr00_no_description.fasta"), quiet=True)
+        assert reloaded.scaffolds["chr00000001"].original_name == "unknown_dapmod_4"
+        assert reloaded.scaffolds["chr0001"].original_name == "unknown_dapmod_5"
+        # the organelle type is lost with the input id, but it is still an organelle
+        assert reloaded.scaffolds["chr0001"].organelle is True
+        assert reloaded.scaffolds["chr0001"].chloroplast is False
 
 
 # ============================================================
@@ -512,8 +618,8 @@ class TestGenomeWarnings:
         g = self._mixed_genome(tmp_path)
         g.export(output_dir=str(tmp_path), quiet=True)
         g.remove_scaffolds(export=True, output_dir=str(tmp_path), remove_00=False)
-        assert (tmp_path / "mixed_chr00.fasta").exists()
-        assert (tmp_path / "mixed_scffree_chr00.fasta").exists()
+        assert (tmp_path / "mixed_chr00_no_description.fasta").exists()
+        assert (tmp_path / "mixed_scffree_chr00_no_description.fasta").exists()
 
     def test_unchanged_scffree_genome_is_not_exported(self, tmp_path):
         fasta = tmp_path / "only00.fa"
@@ -546,3 +652,113 @@ class TestGenomeWarnings:
         g.export(output_dir=str(tmp_path), quiet=True)
         with pytest.warns(UserWarning, match="already written earlier in this run"):
             g.export(output_dir=str(tmp_path), quiet=True)
+
+    def test_scaffold_and_organelle_removal_passes_output_arguments(self, tmp_path):
+        g = self._mixed_genome(tmp_path)
+        g.remove_scaffolds(export=True, remove_organelles=True, use_genome_dir=True, subfolder=True, subfolder_name="sub", filename="clean", extension="fa")
+        out = tmp_path / "sub" / "clean.fa"
+        assert out.exists()
+        assert [line[1:] for line in out.read_text().splitlines() if line.startswith(">")] == ["Chr1", "Chr2"]
+
+        g = self._mixed_genome(tmp_path)
+        g.remove_scaffolds(export=True, remove_organelles=True, filepath=str(tmp_path / "exact" / "clean.fasta"))
+        assert (tmp_path / "exact" / "clean.fasta").exists()
+
+    def test_unchanged_organelle_free_genome_is_not_exported(self, tmp_path):
+        fasta = tmp_path / "noorg.fa"
+        fasta.write_text(">chr1\nAAAA\n>scf1\nCCCC\n")
+        g = Genome("noorg", str(fasta), quiet=True)
+        with pytest.warns(UserWarning, match="No organelles were removed from noorg genome"):
+            g.remove_organelles(export=True, output_dir=str(tmp_path / "out"))
+        assert not (tmp_path / "out").exists()
+
+    def test_scaffold_and_organelle_removal_exports_without_organelles(self, tmp_path):
+        """Only scaffolds are removed, which is still worth exporting."""
+        fasta = tmp_path / "noorg.fa"
+        fasta.write_text(">chr1\nAAAA\n>scf1\nCCCC\n")
+        g = Genome("noorg", str(fasta), quiet=True)
+        g.remove_scaffolds(export=True, remove_organelles=True, output_dir=str(tmp_path / "out"))
+        assert (tmp_path / "out" / "noorg_scffree_dapfit_organellefree_no_description.fasta").exists()
+
+    def test_scaffold_and_organelle_removal_exports_without_scaffolds(self, tmp_path):
+        fasta = tmp_path / "noscf.fa"
+        fasta.write_text(">chr1\nAAAA\n>chrM\nCCCC\n")
+        g = Genome("noscf", str(fasta), quiet=True)
+        g.remove_scaffolds(export=True, remove_organelles=True, output_dir=str(tmp_path / "out"))
+        assert (tmp_path / "out" / "noscf_scffree_dapfit_organellefree_no_description.fasta").exists()
+
+    @pytest.mark.parametrize("remove_organelles, message", [
+        (False, "No scaffolds were removed from clean genome, so its scaffold-free version"),
+        (True, "No scaffolds or organelles were removed from clean genome, so its scaffold- and organelle-free version"),
+    ])
+    def test_genome_without_scaffolds_is_not_exported(self, tmp_path, remove_organelles, message):
+        fasta = tmp_path / "clean.fa"
+        fasta.write_text(">chr1\nAAAA\n>chr2\nCCCC\n")
+        g = Genome("clean", str(fasta), quiet=True)
+        with pytest.warns(UserWarning, match=message):
+            g.remove_scaffolds(export=True, remove_organelles=remove_organelles, output_dir=str(tmp_path / "out"))
+        assert not (tmp_path / "out").exists()
+
+
+class TestNoDescriptionTag:
+    @staticmethod
+    def _export_names(tmp_path, fasta_text, **export_kwargs):
+        (tmp_path / "toy.fa").write_text(fasta_text)
+        g = Genome("toy", str(tmp_path / "toy.fa"), quiet=True)
+        g.export(output_dir=str(tmp_path / "out"), quiet=True, **export_kwargs)
+        return sorted(p.name for p in (tmp_path / "out").iterdir())
+
+    def test_dropped_descriptions(self, tmp_path):
+        names = self._export_names(tmp_path, ">chr1 some text\nAAAA\n>chr2 more\nCCCC\n", keep_description=False)
+        assert names == ["toy_scffree_dapfit_organellefree_no_description.fasta"]
+
+    def test_input_without_descriptions(self, tmp_path):
+        names = self._export_names(tmp_path, ">chr1\nAAAA\n>chr2\nCCCC\n")
+        assert names == ["toy_scffree_dapfit_organellefree_no_description.fasta"]
+
+    def test_kept_descriptions(self, tmp_path):
+        names = self._export_names(tmp_path, ">chr1 some text\nAAAA\n>chr2\nCCCC\n")
+        assert names == ["toy_scffree_dapfit_organellefree.fasta"]
+
+    def test_explicit_filename_has_no_tag(self, tmp_path):
+        names = self._export_names(tmp_path, ">chr1\nAAAA\n", filename="plain.fasta")
+        assert names == ["plain.fasta"]
+
+    def test_renamed_input_ids_count_as_description(self, tmp_path):
+        """DAP renaming keeps each renamed sequence's input id in its header."""
+        (tmp_path / "toy.fa").write_text(">chr1\nAAAA\n>scf1\nCCCC\n")
+        g = Genome("toy", str(tmp_path / "toy.fa"), quiet=True)
+        g.rename_features_dap(export=True, output_dir=str(tmp_path / "out"))
+        assert (tmp_path / "out" / "toy_dapmod_organellefree.fasta").exists()
+
+    def test_tag_is_not_in_genome_suffix(self, tmp_path):
+        """Other outputs (e.g. feature sizes) do not depend on FASTA headers."""
+        (tmp_path / "toy.fa").write_text(">chr1\nAAAA\n")
+        g = Genome("toy", str(tmp_path / "toy.fa"), quiet=True)
+        g.export_feature_sizes(output_dir=str(tmp_path / "out"))
+        assert "_no_description" not in g.suffix
+        assert (tmp_path / "out" / "toy_genome_feature_sizes_scffree_dapfit_organellefree.tsv").exists()
+
+
+class TestGenomeAttributes:
+    def test_other_scaffolds(self, tmp_path):
+        fasta = tmp_path / "toy.fa"
+        fasta.write_text(">chr1\nAAAA\n>chr00\nCCCC\n>scf1\nGGGG\n")
+        g = Genome("toy", str(fasta), quiet=True)
+        assert g.non_chromosomal_scaffolds is True
+        assert g.other_scaffolds is True
+        g.remove_scaffolds(remove_00=False)
+        assert g.non_chromosomal_scaffolds is True
+        assert g.other_scaffolds is False
+
+    def test_export_replaces_tabs_in_descriptions(self, tmp_path):
+        fasta = tmp_path / "gwh.fa"
+        fasta.write_text(">GWHAAAA00000001\tOriSeqID=chr1\tLen=4\nAAAA\n>GWHAAAA00000002\tOriSeqID=chr2\tLen=4\nCCCC\n")
+        g = Genome("gwh", str(fasta), quiet=True, gwh=True)
+        assert "\t" in g.scaffolds["chr1"].description
+        g.export(output_dir=str(tmp_path / "out"), quiet=True)
+        exported = tmp_path / "out" / f"gwh{g.suffix}.fasta"
+        headers = [line[1:] for line in exported.read_text().splitlines() if line.startswith(">")]
+        assert headers == ["chr1 GWHAAAA00000001 OriSeqID=chr1 Len=4", "chr2 GWHAAAA00000002 OriSeqID=chr2 Len=4"]
+        reloaded = Genome("gwh", str(exported), quiet=True, gwh=True)
+        assert list(reloaded.scaffolds) == ["chr1", "chr2"]
