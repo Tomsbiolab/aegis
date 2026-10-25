@@ -3090,7 +3090,84 @@ class TestAnnotationOverlaps:
 
         assert annot.chrs["chr2"]["g2"].overlaps["other"] == []
 
-        
+    def test_overlaps_shared_bases_and_frames(self, tmp_path):
+        """
+        CDS rows that overlap each other (a -1 ribosomal slippage rereads a base) count shared
+        bases once, matching the covered_length CDS size, and in-frame overlap follows the
+        annotated phases on both strands. The reverse hit mirrors query and target percents.
+        """
+        query_gff = tmp_path / "query.gff3"
+        query_gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t5000\t6000\t.\t-\t.\tID=gm\n"
+            "chr1\tt\tmRNA\t5000\t6000\t.\t-\t.\tID=gm.t1;Parent=gm\n"
+            "chr1\tt\texon\t5000\t6000\t.\t-\t.\tID=gm.e1;Parent=gm.t1\n"
+            "chr1\tt\tCDS\t5100\t5900\t.\t-\t0\tID=gm.c1;Parent=gm.t1\n"
+            "chr1\tt\tgene\t8000\t9000\t.\t+\t.\tID=gs\n"
+            "chr1\tt\tmRNA\t8000\t9000\t.\t+\t.\tID=gs.t1;Parent=gs\n"
+            "chr1\tt\texon\t8000\t9000\t.\t+\t.\tID=gs.e1;Parent=gs.t1\n"
+            "chr1\tt\tCDS\t8000\t8500\t.\t+\t0\tID=gs.c1;Parent=gs.t1\n"
+            "chr1\tt\tCDS\t8500\t9000\t.\t+\t0\tID=gs.c1;Parent=gs.t1\n"
+        )
+        target_gff = tmp_path / "target.gff3"
+        target_gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t5000\t6000\t.\t-\t.\tID=gm_inframe\n"
+            "chr1\tt\tmRNA\t5000\t6000\t.\t-\t.\tID=gm_inframe.t1;Parent=gm_inframe\n"
+            "chr1\tt\texon\t5000\t6000\t.\t-\t.\tID=gm_inframe.e1;Parent=gm_inframe.t1\n"
+            "chr1\tt\tCDS\t5100\t5897\t.\t-\t0\tID=gm_inframe.c1;Parent=gm_inframe.t1\n"
+            "chr1\tt\tgene\t5000\t6000\t.\t-\t.\tID=gm_shift\n"
+            "chr1\tt\tmRNA\t5000\t6000\t.\t-\t.\tID=gm_shift.t1;Parent=gm_shift\n"
+            "chr1\tt\texon\t5000\t6000\t.\t-\t.\tID=gm_shift.e1;Parent=gm_shift.t1\n"
+            "chr1\tt\tCDS\t5100\t5898\t.\t-\t0\tID=gm_shift.c1;Parent=gm_shift.t1\n"
+            "chr1\tt\tgene\t8000\t8600\t.\t+\t.\tID=gs2\n"
+            "chr1\tt\tmRNA\t8000\t8600\t.\t+\t.\tID=gs2.t1;Parent=gs2\n"
+            "chr1\tt\texon\t8000\t8600\t.\t+\t.\tID=gs2.e1;Parent=gs2.t1\n"
+            "chr1\tt\tCDS\t8000\t8600\t.\t+\t0\tID=gs2.c1;Parent=gs2.t1\n"
+        )
+        annot = Annotation(str(query_gff), quiet=True)
+        annot2 = Annotation(str(target_gff), quiet=True)
+        annot.overlaps.detect(other=annot2, quiet=True)
+
+        hits = {h.id: h for h in annot.chrs["chr1"]["gm"].overlaps["other"]}
+        assert hits["gm_inframe"].CDS_query_percent == 99.6
+        assert hits["gm_inframe"].protein_query_percent == 99.6
+        assert hits["gm_inframe"].protein_target_percent == 100.0
+        assert hits["gm_shift"].CDS_query_percent == 99.8
+        assert hits["gm_shift"].protein_query_percent == 0
+        assert hits["gm_shift"].protein_target_percent == 0
+
+        hit = annot.chrs["chr1"]["gs"].overlaps["other"][0]
+        assert hit.id == "gs2"
+        # The base reread at 8500 is counted once: 601 shared bases of 1001 and 601
+        assert hit.CDS_query_percent == 60.0
+        assert hit.CDS_target_percent == 100.0
+        # Only the first row (8000-8500) is read in the frame of gs2
+        assert hit.protein_query_percent == 50.0
+        assert hit.protein_target_percent == 83.4
+        assert hit.score == 8
+
+        reverse = annot2.chrs["chr1"]["gs2"].overlaps["other"][0]
+        assert reverse.id == "gs"
+        assert reverse.CDS_query_percent == 100.0
+        assert reverse.CDS_target_percent == 60.0
+        assert reverse.protein_query_percent == 83.4
+        assert reverse.protein_target_percent == 50.0
+
+        annot.overlaps.clear()
+        annot.overlaps.detect(quiet=True)
+        self_hit = annot.chrs["chr1"]["gs"].overlaps["self"]
+        assert self_hit == []
+
+        annot3 = Annotation(str(query_gff), quiet=True)
+        annot.overlaps.clear()
+        annot.overlaps.detect(other=annot3, quiet=True)
+        same = [h for h in annot.chrs["chr1"]["gs"].overlaps["other"] if h.id == "gs"][0]
+        assert same.CDS_query_percent == 100.0
+        assert same.CDS_target_percent == 100.0
+        assert same.score == 11
+
+
 # ============================================================
 # Testing transcript combining
 # ============================================================

@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from ..hits import OverlapHit
 from .base import AnnotationComponent
-from ..utils.misc import start_progress_bar
+from ..utils.misc import start_progress_bar, shared_bases
 
 class AnnotationOverlaps(AnnotationComponent):
     """
@@ -115,14 +115,9 @@ class AnnotationOverlaps(AnnotationComponent):
                                                 target_exons = True
                                             if t1.strand == t2.strand:
                                                 exon_orientation = True
-                                            overlap_exon_temp = 0
-                                            for e1 in t1.exons:
-                                                for e2 in t2.exons:
-                                                    overlap_temp, overlap_bp = e1.overlap(e2)
-                                                    if overlap_temp:
-                                                        overlap_exon_temp += overlap_bp
-                                                        overlapping = True
+                                            overlap_exon_temp = shared_bases(t1.exons, t2.exons)
                                             if overlap_exon_temp != 0:
+                                                overlapping = True
                                                 if overlap_exon_temp > best_exon_overlap:
                                                     best_exon_overlap = overlap_exon_temp
                                                     exon_query_size = t1.size
@@ -166,15 +161,9 @@ class AnnotationOverlaps(AnnotationComponent):
                                                 CDS_orientation = True
                                             for CDS1 in t1.CDSs.values():
                                                 for CDS2 in t2.CDSs.values():
-                                                    overlap_CDS_temp = 0
-                                                    for c1 in CDS1.CDS_segments:
-                                                        for c2 in CDS2.CDS_segments:
-                                                            overlap_temp, overlap_bp = c1.overlap(c2)
-                                                            if not overlap_temp:
-                                                                continue
-                                                            overlap_CDS_temp += overlap_bp
-                                                            overlapping = True
+                                                    overlap_CDS_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments)
                                                     if overlap_CDS_temp != 0:
+                                                        overlapping = True
                                                         if overlap_CDS_temp > best_CDS_overlap:
                                                             best_CDS_overlap = overlap_CDS_temp
                                                             CDS_query_size = CDS1.size
@@ -219,18 +208,9 @@ class AnnotationOverlaps(AnnotationComponent):
                                                         target_protein = True
                                                     for CDS1 in t1.CDSs.values():
                                                         for CDS2 in t2.CDSs.values():
-                                                            overlap_protein_temp = 0
-                                                            for c1 in CDS1.CDS_segments:
-                                                                for c2 in CDS2.CDS_segments:
-                                                                    overlap_temp, overlap_bp = c1.overlap(c2)
-                                                                    if not overlap_temp:
-                                                                        continue
-                                                                    if c1.frame != c2.frame:
-                                                                        continue
-                                                                    
-                                                                    overlap_protein_temp += overlap_bp
-                                                                    overlapping = True
+                                                            overlap_protein_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments, same_frame=True)
                                                             if overlap_protein_temp != 0:
+                                                                overlapping = True
                                                                 if overlap_protein_temp > best_protein_overlap:
                                                                     best_protein_overlap = overlap_protein_temp
                                                                     protein_query_size = CDS1.size
@@ -276,8 +256,8 @@ class AnnotationOverlaps(AnnotationComponent):
                                                                     CDSs_in_both,
                                                                     CDS_target_percent,
                                                                     CDS_query_percent,
-                                                                    protein_query_percent,
                                                                     protein_target_percent,
+                                                                    protein_query_percent,
                                                                     g1.synteny.liftover_conserved,
                                                                     g1.extra_copy))
                     self._annot.add_aliases()
@@ -342,14 +322,9 @@ class AnnotationOverlaps(AnnotationComponent):
                                         target_exons = True
                                     if t1.strand == t2.strand:
                                         exon_orientation = True
-                                    overlap_exon_temp = 0
-                                    for e1 in t1.exons:
-                                        for e2 in t2.exons:
-                                            overlap_temp, overlap_bp = e1.overlap(e2)
-                                            if overlap_temp:
-                                                overlap_exon_temp += overlap_bp
-                                                overlapping = True
+                                    overlap_exon_temp = shared_bases(t1.exons, t2.exons)
                                     if overlap_exon_temp != 0:
+                                        overlapping = True
                                         if overlap_exon_temp > best_exon_overlap:
                                             best_exon_overlap = overlap_exon_temp
                                             exon_query_size = t1.size
@@ -392,15 +367,9 @@ class AnnotationOverlaps(AnnotationComponent):
                                         CDS_orientation = True
                                     for CDS1 in t1.CDSs.values():
                                         for CDS2 in t2.CDSs.values():
-                                            overlap_CDS_temp = 0
-                                            for c1 in CDS1.CDS_segments:
-                                                for c2 in CDS2.CDS_segments:
-                                                    overlap_temp, overlap_bp = c1.overlap(c2)
-                                                    if not overlap_temp:
-                                                        continue
-                                                    overlap_CDS_temp += overlap_bp
-                                                    overlapping = True
+                                            overlap_CDS_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments)
                                             if overlap_CDS_temp != 0:
+                                                overlapping = True
                                                 if overlap_CDS_temp > best_CDS_overlap:
                                                     best_CDS_overlap = overlap_CDS_temp
                                                     CDS_query_size = CDS1.size
@@ -445,18 +414,9 @@ class AnnotationOverlaps(AnnotationComponent):
                                                     target_protein = True
                                                 for CDS1 in t1.CDSs.values():
                                                     for CDS2 in t2.CDSs.values():
-                                                        overlap_protein_temp = 0
-                                                        for c1 in CDS1.CDS_segments:
-                                                            for c2 in CDS2.CDS_segments:
-                                                                overlap_temp, overlap_bp = c1.overlap(c2)
-                                                                if not overlap_temp:
-                                                                    continue
-                                                                if c1.frame != c2.frame:
-                                                                    continue
-                                                                
-                                                                overlap_protein_temp += overlap_bp
-                                                                overlapping = True
+                                                        overlap_protein_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments, same_frame=True)
                                                         if overlap_protein_temp != 0:
+                                                            overlapping = True
                                                             if overlap_protein_temp > best_protein_overlap:
                                                                 best_protein_overlap = overlap_protein_temp
                                                                 protein_query_size = CDS1.size
@@ -501,8 +461,8 @@ class AnnotationOverlaps(AnnotationComponent):
                                                                 CDSs_in_both,
                                                                 CDS_target_percent,
                                                                 CDS_query_percent,
-                                                                protein_query_percent,
                                                                 protein_target_percent,
+                                                                protein_query_percent,
                                                                 g1.synteny.liftover_conserved,
                                                                 g1.extra_copy))
                         try:

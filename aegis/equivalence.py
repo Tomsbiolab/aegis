@@ -366,16 +366,16 @@ class Equivalence():
             if "blast" in self.type or "rbh" in self.type or "rbbh" in self.type:
                 for score_component in self.score.split(", "):
                     if score_component.startswith("coverage="):
-                        self.identity = round(float(score_component.split("=")[-1].split("/")[0]), 1)
-                    elif score_component.startswith("identity="):
                         self.coverage = round(float(score_component.split("=")[-1].split("/")[0]), 1)
+                    elif score_component.startswith("identity="):
+                        self.identity = round(float(score_component.split("=")[-1].split("/")[0]), 1)
 
                 if "rbh" in self.type or "rbbh" in self.type:
                     for score_component in self.score.split(", "):
                         if score_component.startswith("coverage="):
-                            self.identity_rev = round(float(score_component.split("=")[-1].split("/")[1]), 1)
-                        elif score_component.startswith("identity="):
                             self.coverage_rev = round(float(score_component.split("=")[-1].split("/")[1]), 1)
+                        elif score_component.startswith("identity="):
+                            self.identity_rev = round(float(score_component.split("=")[-1].split("/")[1]), 1)
                 
             elif "aegis" in self.type:
 
@@ -425,16 +425,16 @@ class Equivalence():
                 if "blast" in master_score_component or "rbh" in master_score_component or "rbbh" in master_score_component:
                     for score_component in master_score_component.split("[")[1].split(", "):
                         if score_component.startswith("coverage="):
-                            self.identity = round(float(score_component.split("=")[-1].split("/")[0]), 1)
-                        elif score_component.startswith("identity="):
                             self.coverage = round(float(score_component.split("=")[-1].split("/")[0]), 1)
+                        elif score_component.startswith("identity="):
+                            self.identity = round(float(score_component.split("=")[-1].split("/")[0]), 1)
 
                     if "rbh" in master_score_component or "rbbh" in master_score_component:
                         for score_component in master_score_component.split("[")[1].split(", "):
                             if score_component.startswith("coverage="):
-                                self.identity_rev = round(float(score_component.split("=")[-1].split("/")[1]), 1)
-                            elif score_component.startswith("identity="):
                                 self.coverage_rev = round(float(score_component.split("=")[-1].split("/")[1]), 1)
+                            elif score_component.startswith("identity="):
+                                self.identity_rev = round(float(score_component.split("=")[-1].split("/")[1]), 1)
 
                 elif "aegis" in master_score_component:
 
@@ -569,15 +569,21 @@ class Equivalence():
         return f"{self.id}\t{self.type}\t{self.score}\t{self.target_annotation}\t{self.species}\t{self.reliability}"
 
 class Simple_gene():
-    __slots__ = ('id', 'equivalences', 'filtered_equivalences')
-    def __init__(self, id):
+    __slots__ = ('id', 'chrom', 'equivalences', 'filtered_equivalences')
+    def __init__(self, id, chrom:str|None=None):
         self.id = id
+        self.chrom = chrom
         self.equivalences = []
         self.filtered_equivalences = []
 
-    def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf')):
+    def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), same_assembly_targets:dict|None=None):
         """
         For now thresholds only apply to rbhs and unidirectional_blasts.
+
+        same_assembly_targets maps the names of target annotations on the same assembly to their
+        genes. There coordinates are exact, so a medium confidence pair without an overlap score of
+        at least 6 is lowered when its genes are on different chromosomes, or when the query gene
+        already overlaps another gene of that annotation with a score of at least 7.
         """
 
         if self.filtered_equivalences == [] or replace:
@@ -588,6 +594,13 @@ class Simple_gene():
 
             for equivalence in self.equivalences:
                 grouped_eqs[(equivalence.target_annotation, equivalence.id)].append(equivalence)
+
+            # Target genes the query gene overlaps with a score of at least 7, per same assembly target annotation
+            positional_partners = defaultdict(set)
+            if same_assembly_targets:
+                for (target_annotation, equivalent_gene), eqs in grouped_eqs.items():
+                    if target_annotation in same_assembly_targets and any(e.type == "aegis_overlap" and e.aegis_score >= 7 for e in eqs):
+                        positional_partners[target_annotation].add(equivalent_gene)
 
             for (target_annotation, equivalent_gene), eqs in grouped_eqs.items():
                 evidences = []
@@ -635,31 +648,43 @@ class Simple_gene():
 
                 summary_evidence = ", ".join(evidences)
 
-                if (liftoff_score >= 9 or lifton_score >= 9) and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
-                    reliability = "vvvtop_reliable"
-                elif liftoff_score >= 9 or lifton_score >= 9:
-                    reliability = "vvtop_reliable"
+                overlap_score = max(liftoff_score, lifton_score)
+                rbbh = "rbbh" in summary_evidence
+                rbh = "rbh" in summary_evidence
+                mcscan = "mcscan_anchors" in summary_evidence
 
-                elif liftoff_score >= 7 or lifton_score >= 7 and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
+                # High confidence requires an overlap score of at least 7
+                if overlap_score >= 9 and rbbh and mcscan:
+                    reliability = "vvvtop_reliable"
+                elif overlap_score >= 9:
+                    reliability = "vvtop_reliable"
+                elif overlap_score >= 7 and rbbh and mcscan:
                     reliability = "vtop_reliable"
-                elif liftoff_score >= 7 or lifton_score >= 7:
+                elif overlap_score >= 7:
                     reliability = "top_reliable"
 
-                elif liftoff_score >= 6 or lifton_score >= 6 and "rbbh" in summary_evidence and "mcscan_anchors" in summary_evidence:
+                # Medium confidence: RBBH, an overlap score of at least 6 with RBH, or RBH with MCscan synteny
+                elif overlap_score >= 6 and rbbh and mcscan:
                     reliability = "vvvvv_reliable"
-                elif "rbbh" in summary_evidence or (liftoff_score >= 6 or lifton_score >= 6 and "rbh" in summary_evidence and "mcscan_anchors" in summary_evidence):
+                elif rbbh or (overlap_score >= 6 and rbh and mcscan):
                     reliability = "vvvv_reliable"
-                elif liftoff_score >= 6 or lifton_score >= 6 and "rbh" in summary_evidence in summary_evidence:
+                elif overlap_score >= 6 and rbh:
                     reliability = "vvv_reliable"
-
-                elif "mcscan_anchors" in summary_evidence and "rbh" in summary_evidence:
+                elif mcscan and rbh:
                     reliability = "vv_reliable"
 
-                elif "mcscan_anchors" in summary_evidence or "rbh" in summary_evidence:
-                    reliability = "v_reliable"                   
+                elif mcscan or rbh:
+                    reliability = "v_reliable"
 
                 else:
                     reliability = "reliable"
+
+                # On the same assembly, sequence similarity without positional support points to a paralog
+                if target_annotation in (same_assembly_targets or {}) and "vv_reliable" in reliability and overlap_score < 6:
+                    target_gene = same_assembly_targets[target_annotation].get(equivalent_gene)
+                    different_chrom = target_gene is not None and self.chrom is not None and target_gene.chrom is not None and target_gene.chrom != self.chrom
+                    if different_chrom or positional_partners[target_annotation] - {equivalent_gene}:
+                        reliability = "v_reliable"
 
                 if found_evalue:
                     evalue = str(lowest_evalue)
@@ -684,13 +709,18 @@ class Simple_annotation():
         self.genes = {}
         self.species = species
         self.target = annotation_object.target
-        for gene in annotation_object.all_gene_ids:
+        for gene, chrom in annotation_object.all_gene_ids.items():
             if gene not in self.genes:
-                self.genes[gene] = Simple_gene(gene)
+                self.genes[gene] = Simple_gene(gene, chrom)
             else:
                 print(f"Warning: repeated gene id: {gene}")
 
         self.added_equivalences = {}
+        # Target annotations on the same assembly (name -> genes), whose chromosomes can be compared
+        self.same_assembly_targets = {}
+
+    def add_same_assembly_target(self, other:Simple_annotation):
+        self.same_assembly_targets[other.name] = other.genes
 
     def export_summary_equivalences(self, output_file, filtered:bool=False, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), verbose:bool=True, quiet:bool=False, export_csv:bool=True, return_df:bool=False):
         
@@ -1115,4 +1145,4 @@ class Simple_annotation():
     def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float("inf")):
 
         for gene in self.genes.values():
-            gene.filter_equivalences(simple_rbh_blasts=simple_rbh_blasts, unidirectional_blasts=unidirectional_blasts, replace=replace, identity_threshold=identity_threshold, coverage_threshold=coverage_threshold, evalue_threshold=evalue_threshold)
+            gene.filter_equivalences(simple_rbh_blasts=simple_rbh_blasts, unidirectional_blasts=unidirectional_blasts, replace=replace, identity_threshold=identity_threshold, coverage_threshold=coverage_threshold, evalue_threshold=evalue_threshold, same_assembly_targets=self.same_assembly_targets)

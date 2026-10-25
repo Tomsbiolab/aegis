@@ -11,7 +11,7 @@
 [![Docker Hub](https://img.shields.io/badge/docker-pull-blue)](https://hub.docker.com/r/tomsbiolab/aegis)
 [![GitHub license](https://img.shields.io/github/license/tomsbiolab/aegis)](https://github.com/tomsbiolab/aegis/blob/main/LICENSE.md)
 
-**AEGIS** is a powerful and flexible Python-based suite for the manipulation, analysis, and integration of genomic annotations. It provides a robust, object-oriented framework for working with genomic data, enabling complex analyses and data transformations with intuitive, high-level commands.
+**AEGIS** is a flexible Python-based suite for the manipulation, analysis, and integration of genomic annotations. It provides a robust, object-oriented framework for working with genomic data, enabling complex analyses and data transformations with intuitive, high-level commands.
 
 ## Key Features
 
@@ -156,7 +156,64 @@ All of the commands are called with aegis {subcommand} in a terminal:
         - Lists gene ids or transcript ids from an annotation file, optionally selecting which types ofgenes/transcripts to include/exclude.
 - Integrative Pipelines (require Docker/Singularity or manual install):
     - Orthology
-        - Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level.
+        - Comprehensive multi-tool comparison of gene ids from different genomes. All evidence is summarised and converted to a qualitative scale, allowing to select orthologues by confidence level (see [Orthology confidence tiers](#orthology-confidence-tiers)).
+
+### Orthology confidence tiers
+
+`aegis orthology` gathers every line of evidence linking a gene pair (one gene from each annotation) and assigns the pair a single confidence tier, reported in the `summary_score` column of the output table. The evidence behind the tier is kept in the `score` column (or one column per tool with `--split-scores`).
+
+**Sources of evidence**
+
+| Evidence | Tool | What it shows |
+|---|---|---|
+| Lift-over overlap | Liftoff and/or LiftOn, scored by AEGIS | The genes of one annotation are mapped onto the other genome and AEGIS scores how well each mapped gene overlaps the genes annotated there (both directions are run; `rec_` marks pairs found in both). |
+| Direct overlap | AEGIS | Used instead of lift-over when both annotations are on the same assembly, so coordinates are compared directly. |
+| RBBH | DIAMOND BLASTp | Reciprocal best BLASTp hit: each protein is the other's single best hit. |
+| RBH | DIAMOND BLASTp | Filtered reciprocal BLASTp hit: the proteins hit each other, but not necessarily as best hits. |
+| Synteny | MCscan | Both genes are anchors of the same syntenic block. |
+| OrthoFinder | OrthoFinder | Orthologue assignment from OrthoFinder. |
+
+**Overlap score**
+
+Overlaps (lift-over or direct) are scored from 1 to 11 based on the smallest percentage of overlap between the two genes, so a short gene fully contained in a long one does not score highly. Only genes on the same strand are scored, and only scores of 6 or more are carried into the orthology results. The score is based on the most informative feature present in both genes:
+
+| Minimum overlap | Both coding (CDS) | Both with exons, not both coding | Not both with exons (gene span) |
+|---|---|---|---|
+| 100% | 11 | 10 | 9 |
+| ≥ 90% | 10 | 9 | 8 |
+| ≥ 70% | 9 | 8 | 7 |
+| ≥ 50% | 8 | 7 | 6 |
+| ≥ 30% | 7 | 6 | 5 |
+| ≥ 10% | 6 | 5 | 4 |
+| > 0% | 5 | 4 | 3 |
+| Genes overlap, features do not | 3 | 2 | — |
+
+For example, two coding genes whose CDSs share at least 30% of the bases of each CDS score 7.
+
+**Tiers**
+
+Tiers are hierarchical: a pair gets the highest tier whose conditions it meets.
+
+| Tier | Conditions |
+|---|---|
+| `high_confidence` | Overlap score ≥ 7 (Liftoff, LiftOn or direct overlap). |
+| `medium_confidence` | Any of: RBBH; overlap score ≥ 6 **and** RBH; RBH **and** MCscan synteny. |
+| `lower_confidence` | Any other evidence: RBH alone, MCscan synteny alone, OrthoFinder, unidirectional BLASTp hits, or an overlap score of 6 without further support. |
+
+Positional evidence comes first: an overlap score of 7 or more is enough for a high-confidence pair, whereas sequence similarity alone (an RBBH) can at most reach medium confidence. Additional support (RBBH and MCscan synteny on top of a high overlap score) does not change the tier but makes the pair more reliable within it.
+
+**Annotations on the same assembly**
+
+When both annotations are on the same genome assembly (e.g. two annotation versions), coordinates are exact, so the counterpart of a gene is expected at the same locus. A pair supported only by sequence similarity (no overlap score of 6 or more) is therefore lowered from medium to lower confidence when:
+- the two genes are on different chromosomes, or
+- both genes already overlap a different gene of the other annotation with a score of 7 or more (e.g. an RBBH between paralogues whose own counterparts are already matched by position).
+
+Such pairs are usually paralogues rather than the same gene in both annotations. They are kept, as lower-confidence pairs, since the sequence similarity is real.
+
+**Using the tiers**
+
+- `--confidence` keeps only the chosen tiers, e.g. `--confidence high,medium`.
+- The `cardinality` column marks each pair as `1:1`, `1:N`, `N:1` or `N:N` considering the pairs in the chosen tiers; `--tiered-cardinality` reports it separately for high only (`cardinality_strict`), high and medium (`cardinality_moderate`) and all tiers (`cardinality_relaxed`).
 
 
 ### As a Python library

@@ -49,6 +49,23 @@ def covered_length(intervals) -> int:
         total += cur_end - cur_start + 1
     return total
 
+def shared_bases(features1, features2, same_frame:bool=False) -> int:
+    """
+    Bases covered by both lists of features, each counted once, so it matches the covered_length
+    sizes of exons and CDSs even when rows of one list overlap (e.g. a -1 ribosomal slippage).
+    same_frame only counts the bases of pairs of rows read in the same frame.
+    """
+    shared = []
+    for f1 in features1:
+        for f2 in features2:
+            if same_frame and f1.frame != f2.frame:
+                continue
+            start = max(f1.start, f2.start)
+            end = min(f1.end, f2.end)
+            if start <= end:
+                shared.append((start, end))
+    return covered_length(shared)
+
 def unambiguous_numbers(numbered) -> bool:
     """
     Whether (key, number) pairs can keep their numbers when renaming: every key has a number

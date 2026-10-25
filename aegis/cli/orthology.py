@@ -1115,6 +1115,7 @@ def main(
                     continue
 
             if genome_files[n1] == genome_files[n2]:
+                a1.add_same_assembly_target(a2)
                 a1.add_liftless_overlap_equivalences(str(liftless_overlaps_dir), a1.name, a2.name, group_names[n2], quiet=quiet)
             else:
                 if not skip_mcscan:
