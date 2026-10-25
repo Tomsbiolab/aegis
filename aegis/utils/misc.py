@@ -15,6 +15,8 @@ import subprocess
 import sys
 import gzip
 
+import pandas as pd
+
 from pathlib import Path
 from collections import Counter
 from tqdm import tqdm
@@ -97,9 +99,21 @@ def start_progress_bar(total: int, description: str, quiet: bool = False, colour
             f'\033[1;{colour}m{{bar}}\033[0m| '
             '{n}/{total} [{elapsed}<{remaining}]'))
 
+def read_headerless_tsv(file, columns:list, **kwargs) -> pd.DataFrame:
+    """
+    Reads a tab separated table without a header (e.g. DIAMOND or MCscan output) and names its
+    columns. A file without rows (e.g. a search with no hits) gives an empty table with those columns.
+    """
+    try:
+        df = pd.read_csv(file, sep="\t", header=None, **kwargs)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame(columns=columns)
+    df.columns = columns
+    return df
+
 def run_command(working_directory: Path, command: list):
     """
-    Executes a generic command inside a Docker container.
+    Executes an external command (e.g. Liftoff, DIAMOND) in working_directory.
 
     Args:
         working_directory (Path): The working directory for the command.

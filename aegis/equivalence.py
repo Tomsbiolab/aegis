@@ -14,7 +14,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .annotation import Annotation
-from .utils.misc import run_command
+from .utils.misc import run_command, read_headerless_tsv
 from .utils.evalue import parse_evalue
 
 def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, annot2_file: str, genome1: Genome, genome2: Genome, working_directory: Path, num_threads: int, types: str, evalue:float=0.00001, coverage:float=30, max_hsps:int=1, copies:bool=True, synteny:bool=False, skip_liftoff:bool=False, skip_lifton:bool=False, skip_mcscan:bool=False, skip_blasts:bool=False, pairwise_orthofinder:bool=False, skip_orthofinder:bool=False, strip_gene_tags:bool=False, quiet:bool=True):
@@ -578,7 +578,8 @@ class Simple_gene():
 
     def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float('inf'), same_assembly_targets:dict|None=None):
         """
-        For now thresholds only apply to rbhs and unidirectional_blasts.
+        Thresholds filter out rbhs and unidirectional_blasts. RBBHs are kept, but only count as
+        medium confidence evidence when they cover at least coverage_threshold of both proteins.
 
         same_assembly_targets maps the names of target annotations on the same assembly to their
         genes. There coordinates are exact, so a medium confidence pair without an overlap score of
@@ -610,6 +611,8 @@ class Simple_gene():
                 lowest_evalue = float('inf')
                 found_evalue = False
                 species = ""
+                # RBBHs count towards medium confidence only when they cover both proteins well
+                covered_rbbh = False
 
                 for equivalence in eqs:
                     species = equivalence.species
@@ -640,6 +643,11 @@ class Simple_gene():
                             if equivalence.evalue > evalue_threshold:
                                 continue
 
+                        if equivalence.type == "rbbh":
+                            coverages = [c for c in (equivalence.coverage, equivalence.coverage_rev) if c is not None]
+                            if all(c >= coverage_threshold for c in coverages):
+                                covered_rbbh = True
+
                         if equivalence.evalue < lowest_evalue:
                             lowest_evalue = equivalence.evalue
                         found_evalue = True
@@ -649,7 +657,9 @@ class Simple_gene():
                 summary_evidence = ", ".join(evidences)
 
                 overlap_score = max(liftoff_score, lifton_score)
-                rbbh = "rbbh" in summary_evidence
+                rbbh = covered_rbbh
+                # An RBBH covering less than coverage_threshold of either protein (e.g. a single shared domain) is lower confidence evidence
+                partial_rbbh = "rbbh" in summary_evidence and not covered_rbbh
                 rbh = "rbh" in summary_evidence
                 mcscan = "mcscan_anchors" in summary_evidence
 
@@ -673,7 +683,7 @@ class Simple_gene():
                 elif mcscan and rbh:
                     reliability = "vv_reliable"
 
-                elif mcscan or rbh:
+                elif mcscan or rbh or partial_rbbh:
                     reliability = "v_reliable"
 
                 else:
@@ -779,8 +789,6 @@ class Simple_annotation():
 
         if os.path.isfile(file):
 
-            df = pd.read_csv(file, comment='#', header=None, sep="\t", dtype=str)
-
             if key_col == "0":
                 target_col = "1"
             else:
@@ -788,11 +796,11 @@ class Simple_annotation():
 
             if file.endswith(".filtered"):
                 equivalence_type = "mcscan_last_filtered"
-                df.columns = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
+                df = read_headerless_tsv(file, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], comment='#', dtype=str)
                 score_col = "11"
             else:
                 equivalence_type = "mcscan_anchors"
-                df.columns = ["0", "1", "2"]
+                df = read_headerless_tsv(file, ["0", "1", "2"], comment='#', dtype=str)
                 score_col = "2"
 
             for gene_query, gene_target, score in zip(df[key_col], df[target_col], df[score_col]):
@@ -922,8 +930,7 @@ class Simple_annotation():
                         equivalence_type = "fwd_blast"
 
                     if os.path.isfile(fwd_file):
-                        df = pd.read_csv(fwd_file, sep="\t", dtype=str, header=None)
-                        df.columns = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
+                        df = read_headerless_tsv(fwd_file, ["0", "1", "2", "3", "4", "5", "6", "7", "8"], dtype=str)
                         for q, s, pident, qcov, qlen, _, _, bitscore, evalue in zip(
                             df["0"], df["1"], df["2"], df["3"], df["4"], df["5"], df["6"], df["7"], df["8"]
                         ):
@@ -943,8 +950,7 @@ class Simple_annotation():
                         equivalence_type = "rev_blast"
 
                     if os.path.isfile(rev_file):
-                        df = pd.read_csv(rev_file, sep="\t", dtype=str, header=None)
-                        df.columns = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
+                        df = read_headerless_tsv(rev_file, ["0", "1", "2", "3", "4", "5", "6", "7", "8"], dtype=str)
                         for q, s, pident, qcov, qlen, _, _, bitscore, evalue in zip(
                             df["0"], df["1"], df["2"], df["3"], df["4"], df["5"], df["6"], df["7"], df["8"]
                         ):
@@ -1038,7 +1044,8 @@ class Simple_annotation():
                     fwd_hits[pair] = f"{new_score}{mod_str} (multiple {match_num})"
 
             rev_hits = {}
-            rev_synteny_col = rev_df["gene_id_B_synteny_conserved"] if (synteny_present and "gene_id_B_synteny_conserved" in rev_df.columns) else [None] * len(rev_df)
+            # In the rev file the lifted genes (those with synteny conservation) are gene_id_A
+            rev_synteny_col = rev_df["gene_id_A_synteny_conserved"] if (synteny_present and "gene_id_A_synteny_conserved" in rev_df.columns) else [None] * len(rev_df)
             
             for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
                 rev_df["gene_id_B"], rev_df["gene_id_A"], rev_df["gene_id_B_copy"], rev_df["gene_id_A_copy"], rev_synteny_col, rev_df["overlap_score"]

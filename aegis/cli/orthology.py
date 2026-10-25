@@ -16,7 +16,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..annotation import Annotation
 from ..genome import Genome
 from ..feature import Feature
+from ..conf import default_features
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
+from ..utils.misc import read_headerless_tsv
 from .utils import (
     split_callback,
     TaxonomyOption,
@@ -177,6 +179,42 @@ def flip_masked_rows(df, mask):
         
     return df
 
+def merge_overlap_scores(vals):
+    """
+    Merges the overlap scores of one tool direction by direction (the two sides of a 'rec_' score
+    such as '9 (synteny)/8 (copies) (multiple 2)' are merged separately), keeping for each the
+    highest score, the synteny/copies modifiers found and the largest 'multiple' count, written in
+    the same format as add_reciprocal_overlap_equivalences.
+    """
+    directions = {}
+    for val in vals:
+        for n, part in enumerate(val.split("/")):
+            score_match = re.match(r'\s*(\d+)', part)
+            if not score_match:
+                continue
+            direction = directions.setdefault(n, {"score": -1, "synteny": False, "copies": False, "multiple": 0})
+            direction["score"] = max(direction["score"], int(score_match.group(1)))
+            direction["synteny"] = direction["synteny"] or "synteny" in part
+            direction["copies"] = direction["copies"] or "copies" in part
+            mult_match = re.search(r'multiple\s+(\d+)', part)
+            if mult_match:
+                direction["multiple"] = max(direction["multiple"], int(mult_match.group(1)))
+
+    if not directions:
+        return vals[0]
+
+    parts = []
+    for n in sorted(directions):
+        direction = directions[n]
+        part = str(direction["score"])
+        modifiers = [m for m in ("synteny", "copies") if direction[m]]
+        if modifiers:
+            part += f" ({' and '.join(modifiers)})"
+        if direction["multiple"]:
+            part += f" (multiple {direction['multiple']})"
+        parts.append(part)
+    return "/".join(parts)
+
 def merge_score_strings(series):
     """Combines the score strings of identical edges so no tool evidence is lost,
     and cleanly merges multiple scores from the same tool."""
@@ -203,53 +241,7 @@ def merge_score_strings(series):
             continue
             
         if "aegis" in tool or "liftoff" in tool or "lifton" in tool:
-            best_score_nums = None
-            best_score_str = ""
-            has_synteny = False
-            has_copies = False
-            max_multiple = 0
-            
-            for val in unique_vals:
-                if "synteny" in val:
-                    has_synteny = True
-                if "copies" in val:
-                    has_copies = True
-                
-                mult_match = re.search(r'multiple\s+(\d+)', val)
-                if mult_match:
-                    max_multiple = max(max_multiple, int(mult_match.group(1)))
-                    
-                core = re.sub(r'\(.*?\)', '', val).strip()
-                core = " ".join(core.split())
-                
-                try:
-                    if "/" in core:
-                        parts = [float(x) for x in core.split("/")]
-                        score_val = sum(parts)
-                    else:
-                        score_val = float(core)
-                except ValueError:
-                    score_val = 0
-                    
-                if best_score_nums is None or score_val > best_score_nums:
-                    best_score_nums = score_val
-                    best_score_str = core
-            
-            modifiers = []
-            if has_synteny and has_copies:
-                modifiers.append("synteny and copies")
-            elif has_synteny:
-                modifiers.append("synteny")
-            elif has_copies:
-                modifiers.append("copies")
-                
-            res_val = best_score_str
-            if modifiers:
-                res_val += f" ({modifiers[0]})"
-            if max_multiple > 0:
-                res_val += f" (multiple {max_multiple})"
-                
-            merged_entries.append(f"{tool} [{res_val}]")
+            merged_entries.append(f"{tool} [{merge_overlap_scores(unique_vals)}]")
             
         elif "rbh" in tool or "rbbh" in tool or "blast" in tool:
             best_val = unique_vals[0]
@@ -333,7 +325,7 @@ def main(
     )] = False,
     lift_feature_types: Annotated[list[str], typer.Option(
         "--lift-feature-types", 
-        help="All feature types within an annotation files are lifted over by default, however a more restrictive set can be used, separated by commas, such as 'gene,mRNA,exon,CDS,pseudogene,pseudogenic_exon,pseudogenic_transcript'.", 
+        help="Feature types lifted over by Liftoff/LiftOn, separated by commas. By default all gene types read by AEGIS (gene, pseudogene, transposable_element_gene) are lifted together with mRNA, exon, CDS, pseudogenic_exon and pseudogenic_transcript features.",
         callback=split_callback,
         rich_help_panel=ORTHOLOGY_PANEL,
     )] = ["ALL"],
@@ -511,28 +503,20 @@ def main(
     """
     Provides a set of orthologues relationships leveraging external and internal tools such as Litfoff + AEGIS overlaps, LiftOn + AEGIS overlaps, MCscan, orthofinder and BLAST. Wherever relevant, tools are run reciprocally for an extra confidence mark in orthologous relationships.
 
-    Script to perform gene correspondence analysis between multiple genomes.
+    Gene correspondence analysis between any number of annotations. For each pair of
+    annotations it performs:
 
-    This script automates a bioinformatics pipeline that uses several tools
-    (Liftoff, Lifton, DIAMOND, JCVI) to find orthologous genes between all possible
-    pairs from a given list of genomes. For each pair, it performs:
+    1.  Lift-over: maps the genes of one annotation onto the other genome (Liftoff
+        and LiftOn) and scores their overlap with the annotated genes (AEGIS overlap).
+        Annotations on the same assembly are overlapped directly instead.
+    2.  Reciprocal BLASTp hits: DIAMOND searches in both directions give RBBHs and RBHs.
+    3.  Synteny: MCscan (JCVI) finds collinear blocks of genes.
 
-    1.  Annotation Liftover: Transfers annotations between the two genomes based
-        on sequence homology (using Liftoff and Lifton).
-    2.  Reciprocal Best Hit (RBH): Uses DIAMOND (a fast alternative to BLAST) to
-        find the best reciprocal homologs at the protein level.
-    3.  Synteny and Collinearity: Uses the JCVI toolkit to identify conserved gene
-        blocks (synteny) and find orthologs within that context.
+    OrthoFinder is run on all proteomes together (or per pair with --pairwise-orthofinder).
+    All evidence for each gene pair is summarised into a confidence tier (high, medium,
+    lower), see the README for the criteria.
 
-    After all pairwise comparisons, it collects all unique proteomes and runs
-    OrthoFinder to infer orthogroups across all species.
-
-    The script is designed to be scalable, processing any number of genomes provided
-    in the configuration section. All results for each pairwise comparison are stored
-    in a separate, clearly named directory.
-
-    All external tool commands are executed via Docker to ensure a reproducible
-    environment.
+    External tools must be installed; the AEGIS Docker/Singularity images include them.
     """
 
     start = time()
@@ -573,7 +557,7 @@ def main(
 
     print(f"Running command: {' '.join(sys.argv)}")
 
-    valid_confidence_levels = {"high", "medium", "lower", "high_confidence", "medium_confidence", "lower_confidence", "highest"}
+    valid_confidence_levels = {"high", "medium", "lower", "high_confidence", "medium_confidence", "lower_confidence"}
     for conf in confidence:
         if conf.strip().lower() not in valid_confidence_levels:
             raise typer.BadParameter(
@@ -609,7 +593,7 @@ def main(
     if len(annotation_files) > 1 and annotation_files[-1].lower() in ("true", "false"):
         typer.echo(
             "⚠️  Detected extra value 'true' or 'false' at the end of positional arguments.\n"
-            "👉 Did you mean to use the '--include-nas' or '--simple' flags? Use them like this: '-na' or '-s' (no 'true' needed).",
+            "👉 Did you mean to use a flag such as '--include-nas'? Use it like this: '-na' (no 'true' needed).",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -701,8 +685,12 @@ def main(
         reference_annotation = None
 
     if reference_annotation:
-        if reference_annotation not in annotation_files and reference_annotation not in annotation_names:
-            raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
+        # Output tables refer to annotations by name, so a reference given as a file is converted to its name
+        reference_path = str(Path(reference_annotation).resolve())
+        if reference_annotation not in annotation_names:
+            if reference_path not in annotation_files:
+                raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annotation_files}) nor annotation-names ({annotation_names}).")
+            reference_annotation = annotation_names[annotation_files.index(reference_path)]
 
     skip_unidirectional_blasts = not (include_single_blasts)
 
@@ -797,7 +785,8 @@ def main(
         liftless_overlaps_dir.mkdir(parents=True, exist_ok=True)
 
     if lift_feature_types == ["ALL"]:
-        lift_feature_types = ["gene", "mRNA", "exon", "CDS", "pseudogene", "pseudogenic_exon", "pseudogenic_transcript"] # type: ignore
+        # Every gene type AEGIS reads (e.g. Araport11 transposable_element_gene) plus the transcript level types used previously
+        lift_feature_types = sorted(default_features["gene"]) + ["mRNA", "exon", "CDS", "pseudogenic_exon", "pseudogenic_transcript"] # type: ignore
     
     lift_feature_types_file = results_directory / "chosen_liftover_features.txt"
     lift_feature_types_file = str(lift_feature_types_file)
@@ -990,6 +979,9 @@ def main(
             for n2, a2 in enumerate(simple_annotations):
                 if n1 == n2:
                     continue
+                # Only pairs involving the reference were blasted
+                if reference_annotation and not a1.target and not a2.target:
+                    continue
                 pair = [n1, n2]
                 pair.sort()
                 if pair in checked_pairs:
@@ -1012,12 +1004,9 @@ def main(
                 fwd_best_in = diamond_path / f"single_best_{a1.name}__to__{a2.name}.txt"
                 rev_best_in = diamond_path / f"single_best_{a2.name}__to__{a1.name}.txt"
                 
-                fwd_results = pd.read_csv(fwd_in, sep="\t", header=None)
-                rev_results = pd.read_csv(rev_in, sep="\t", header=None)
-
                 headers = ["query", "subject", "identity", "coverage", "qlength", "slength", "alength", "bitscore", "E-value"]
-                fwd_results.columns = headers
-                rev_results.columns = headers
+                fwd_results = read_headerless_tsv(fwd_in, headers)
+                rev_results = read_headerless_tsv(rev_in, headers)
 
                 fwd_results = fwd_results[(fwd_results["identity"] >= identity)]
                 rev_results = rev_results[(rev_results["identity"] >= identity)]
@@ -1045,12 +1034,8 @@ def main(
 
                 del rbh
 
-                fwd_results = pd.read_csv(fwd_best_in, sep="\t", header=None)
-                rev_results = pd.read_csv(rev_best_in, sep="\t", header=None)
-
-                headers = ["query", "subject", "identity", "coverage", "qlength", "slength", "alength", "bitscore", "E-value"]
-                fwd_results.columns = headers
-                rev_results.columns = headers
+                fwd_results = read_headerless_tsv(fwd_best_in, headers)
+                rev_results = read_headerless_tsv(rev_best_in, headers)
 
                 # Create a new column in both dataframes: normalised bitscore
                 fwd_results['norm_bitscore'] = fwd_results.bitscore/fwd_results.qlength
@@ -1153,7 +1138,7 @@ def main(
         output_file_filtered_just_rbbhs = f"{output_dir_str}{a1.name}_equivalences_just_rbbhs{extra_tag}.tsv"
 
         if skip_rbhs and skip_unidirectional_blasts and not skip_all_blasts:
-            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, verbose=False, quiet=quiet, return_df=True, export_csv=False)
+            df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs, filtered=True, simple_rbh_blasts=False, unidirectional_blasts=False, coverage_threshold=coverage, verbose=False, quiet=quiet, return_df=True, export_csv=False)
 
         elif skip_unidirectional_blasts and not skip_all_blasts:
             df = a1.export_summary_equivalences(output_file_filtered_just_rbbhs_and_rbhs, filtered=True, unidirectional_blasts=False, coverage_threshold=coverage, identity_threshold=identity, verbose=False, quiet=quiet, return_df=True, export_csv=False)

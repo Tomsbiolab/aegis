@@ -169,7 +169,7 @@ All of the commands are called with aegis {subcommand} in a terminal:
 | Lift-over overlap | Liftoff and/or LiftOn, scored by AEGIS | The genes of one annotation are mapped onto the other genome and AEGIS scores how well each mapped gene overlaps the genes annotated there (both directions are run; `rec_` marks pairs found in both). |
 | Direct overlap | AEGIS | Used instead of lift-over when both annotations are on the same assembly, so coordinates are compared directly. |
 | RBBH | DIAMOND BLASTp | Reciprocal best BLASTp hit: each protein is the other's single best hit. |
-| RBH | DIAMOND BLASTp | Filtered reciprocal BLASTp hit: the proteins hit each other, but not necessarily as best hits. |
+| RBH | DIAMOND BLASTp | Filtered reciprocal BLASTp hit: the proteins hit each other, but not necessarily as best hits. Only hits passing the identity (`-i`) and coverage (`-c`) thresholds are kept. |
 | Synteny | MCscan | Both genes are anchors of the same syntenic block. |
 | OrthoFinder | OrthoFinder | Orthologue assignment from OrthoFinder. |
 
@@ -197,8 +197,10 @@ Tiers are hierarchical: a pair gets the highest tier whose conditions it meets.
 | Tier | Conditions |
 |---|---|
 | `high_confidence` | Overlap score ≥ 7 (Liftoff, LiftOn or direct overlap). |
-| `medium_confidence` | Any of: RBBH; overlap score ≥ 6 **and** RBH; RBH **and** MCscan synteny. |
-| `lower_confidence` | Any other evidence: RBH alone, MCscan synteny alone, OrthoFinder, unidirectional BLASTp hits, or an overlap score of 6 without further support. |
+| `medium_confidence` | Any of: RBBH covering both proteins; overlap score ≥ 6 **and** RBH; RBH **and** MCscan synteny. |
+| `lower_confidence` | Any other evidence: RBH alone, an RBBH covering only part of either protein, MCscan synteny alone, OrthoFinder, unidirectional BLASTp hits, or an overlap score of 6 without further support. |
+
+An RBBH covers both proteins when its alignment spans at least the coverage threshold (`-c`, 30% by default) of each of them. RBBHs below it are kept as lower-confidence pairs: they often come from a single shared domain, but can also point to truncated or split gene models. Identity is not used for RBBHs, since orthologues of distant species can have low identity while still being each other's best hit.
 
 Positional evidence comes first: an overlap score of 7 or more is enough for a high-confidence pair, whereas sequence similarity alone (an RBBH) can at most reach medium confidence. Additional support (RBBH and MCscan synteny on top of a high overlap score) does not change the tier but makes the pair more reliable within it.
 
