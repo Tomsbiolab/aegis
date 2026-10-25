@@ -10,3 +10,4 @@ htmlcov/
 aegis/*.dot
 aegis_output/
 private/
+auto_sync.py

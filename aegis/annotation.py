@@ -20,7 +20,6 @@ import pandas as pd
 import os
 import warnings
 import math
-import gc
 import re
 
 from multiprocessing import Pool
@@ -57,7 +56,7 @@ class Annotation():
         "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron",
         "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
         "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived",
-        "repeated_subfeature_ids"
+        "repeated_subfeature_ids", "self_parented_transcript"
     )
 
     # Warnings that describe the state of the annotation object and can therefore be rechecked
@@ -68,6 +67,10 @@ class Annotation():
         "exon_transcript_boundary_mismatch", "transcript_exceeds_gene", "gene_exceeds_transcripts",
         "gene_with_no_transcripts", "transcript_with_no_exons",
     )
+
+    @staticmethod
+    def _warning_ids_hint(warning_key:str) -> str:
+        return f"; to list their ids, run `aegis summary` on this annotation, which exports them in the '{warning_key}' column of its _warnings.csv"
 
     @classmethod
     def _new_warnings_dict(cls, keys:tuple[str, ...]|None=None) -> dict[str, set[str]]:
@@ -98,10 +101,12 @@ class Annotation():
     bar_colors = ["31", "32", "34", "33", "33", "33"]
     overlapped_annotations: set[str]
 
-    tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
-    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
+    tags_to_detect:set[str] = { "clean", "dapfit", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
+    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_pseudogene", "minus_non_pseudogene", "minus_small_CDS", "combined", "full_renamed_ids"}
+    # Tags of renamed chromosomes only change exports that list chromosome names
+    chromosome_tags:set[str] = {"confrenamed", "dapmod"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False):
         
         start_time = time.time()
 
@@ -149,6 +154,13 @@ class Annotation():
         self.alt_start_methionine = alt_start_methionine
         self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
 
+        # list_load_warnings prints every feature behind the load-time warnings that are otherwise printed as counts
+        self.list_load_warnings = list_load_warnings
+        self._load_note_counts = {}
+        # self-parented transcripts are only resolved once all transcript rows are loaded
+        self._defer_self_parented_transcripts = True
+        self._self_parented_transcripts = []
+
         self.genome = genome
         
         if self.genome is not None:
@@ -179,17 +191,13 @@ class Annotation():
         self.atypical_features = []
         # Here we insert any recognisable feature that was impossible to fit into the current structure
         self.orphaned_features = []
+        # sequences marked Is_circular=true in a GFF region line
+        self.circular_chromosomes = set()
 
-        # optional default tag system for output gffs/gtfs
-        self.tags = set()
-        for tag in self.tags_to_detect:
-            if f"_{tag}" in annot_file_path:
-                self.tags.add(tag)
-
-        self.feature_tags = set()
-        for tag in self.feature_tags_to_detect:
-            if f"_{tag}" in annot_file_path:
-                self.feature_tags.add(tag)
+        # optional default tag system for output gffs/gtfs, detected from the file name (not its folders)
+        file_name = Path(annot_file_path).name
+        self.tags = {tag for tag in self.tags_to_detect if self._has_tag(file_name, tag)}
+        self.feature_tags = {tag for tag in self.feature_tags_to_detect if self._has_tag(file_name, tag)}
 
         self.renamed_features = []
 
@@ -226,6 +234,13 @@ class Annotation():
             gff_file = self.file
 
         staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_atypical_features=skip_atypical_features, quiet=quiet)
+
+        # Features crossing the origin of circular sequences are read across it (Feature.seq)
+        if self.genome is not None:
+            for ch in self.circular_chromosomes:
+                scaffold = self.genome.get_scaffold(ch)
+                if scaffold is not None:
+                    scaffold.circular = True
 
         self._gene_info = {}
         self._transcript_info = {}
@@ -264,14 +279,14 @@ class Annotation():
 
             progress_bar.close()
             staging[stage] = []
-            gc.collect()
+
+            if stage == "transcript":
+                self._add_self_parented_transcripts(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
 
         del self._gene_info
         del self._transcript_info
         del self._miRNA_info
         del staging
-
-        gc.collect()
 
         if self.file != gff_file:
             os.remove(gff_file)
@@ -344,7 +359,10 @@ class Annotation():
             self.tags.add("clean")
 
         if not quiet:
+            for (note, warning_key), count in self._load_note_counts.items():
+                print(f"{self.id} Warning: {count} {note}" + ("" if self.list_load_warnings else Annotation._warning_ids_hint(warning_key)))
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
+        del self._load_note_counts
 
         self.detect_polycistronic_transcripts(quiet=quiet)
 
@@ -646,22 +664,29 @@ class Annotation():
         if include_orphaned:
             yield from self.orphaned_features
 
+    @staticmethod
+    def _has_tag(text:str, tag:str) -> bool:
+        # A tag is a whole part of a name: "_combined" in "X_combined_on_Y" or "X_combined.gff3", but not in "X_combinedV2"
+        return re.search(rf"_{re.escape(tag)}(?=[_.]|$)", text) is not None
+
+    def _suffix(self, tags:set[str]) -> str:
+        # Tags already in the id (e.g. kept from the name of a reloaded file) are not repeated
+        return "".join(f"_{tag}" for tag in sorted(tags) if not self._has_tag(self.id, tag))
+
     @property
     def feature_suffix(self) -> str:
-        sorted_suffixes = sorted(list(self.feature_tags))
-        sorted_suffixes = "_".join(sorted_suffixes)
-        if sorted_suffixes:
-            sorted_suffixes = "_" + sorted_suffixes
-        return sorted_suffixes
+        """Tags that change the features themselves, naming every export."""
+        return self._suffix(self.feature_tags)
 
     @property
     def all_suffixes(self) -> str:
-        combined_suffixes = list(self.feature_tags) + list(self.tags)
-        combined_suffixes = sorted(list(set(combined_suffixes)))
-        combined_suffixes = "_".join(combined_suffixes)
-        if combined_suffixes:
-            combined_suffixes = "_" + combined_suffixes
-        return combined_suffixes
+        """All tags, naming gff/gtf exports."""
+        return self._suffix(self.feature_tags | self.tags)
+
+    @property
+    def chromosome_suffix(self) -> str:
+        """Tags of renamed chromosomes, naming exports that list chromosome names."""
+        return self._suffix(self.tags & self.chromosome_tags)
 
     def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None, 
         suffix:str = "", extra_suffixes: list[str] | None = None, 
@@ -760,6 +785,9 @@ class Annotation():
 
                 ID = entry.id
                 ft = entry.feature
+
+                if ft == "region" and entry.attributes.get("Is_circular", "").lower() == "true":
+                    self.circular_chromosomes.add(entry.ch)
 
                 cat = default_features_r.get(ft, "atypical")
 
@@ -933,12 +961,16 @@ class Annotation():
 
         else:
             parent = parents[0]
-            # This is an output in some lifton/liftoff cases and they are repeated entries, so ignoring them is appropriate
+            # This is an output in some lifton/liftoff cases and they are repeated entries, so ignoring them is
+            # appropriate. Other GFFs give the mRNA the id of its gene: those are kept once all transcripts are loaded.
             if parent == ID:
-                if not quiet:
-                    print(f"{self.id} Warning: Transcript {ID} has its own id as a parent so this transcript feature was ignored")
-                if not skip_orphaned_features:
-                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                if self._defer_self_parented_transcripts and ID in self.all_gene_ids:
+                    self._self_parented_transcripts.append(entry)
+                else:
+                    self.warnings["self_parented_transcript"].add(ID)
+                    self._note("transcripts had their own id as a parent so they were ignored", f"Transcript {ID} has its own id as a parent so this transcript feature was ignored", "self_parented_transcript", quiet)
+                    if not skip_orphaned_features:
+                        self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
 
             elif parent not in self.all_gene_ids:
 
@@ -1041,6 +1073,48 @@ class Annotation():
                                 print(f"{self.id} Warning: {ID} transcript was renamed to {unique_t_id} to avoid repeat transcript ids across genes ({parent} and {self.all_transcript_ids[ID][1]})")
                 elif not quiet:
                     print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as the provided transcript id was not unique")
+
+    def _note(self, summary:str, message:str, warning_key:str, quiet:bool=False):
+        """
+        Load-time note: counted under summary, which is printed once per annotation after loading
+        with a pointer to the warning_key column of the aegis summary warnings export, and printed
+        individually only with list_load_warnings.
+        """
+        if hasattr(self, "_load_note_counts"):
+            key = (summary, warning_key)
+            self._load_note_counts[key] = self._load_note_counts.get(key, 0) + 1
+            if self.list_load_warnings and not quiet:
+                print(f"{self.id} Warning: {message}")
+        elif not quiet:
+            print(f"{self.id} Warning: {message}")
+
+    def _add_self_parented_transcripts(self, skip_orphaned_features:bool=False, quiet:bool=False):
+        """
+        Transcripts whose parent is their own id (e.g. ID=Pda01g0001;Parent=Pda01g0001) are kept, renamed
+        {gene id}_t1, as the transcript of the gene with that id if it is not a pseudogene and has no other
+        transcripts. Otherwise they are repeated entries (as in some lifton/liftoff outputs) and are ignored.
+        """
+        self._defer_self_parented_transcripts = False
+        for entry in self._self_parented_transcripts:
+            ID = entry.id
+            ch = entry.ch
+            self.warnings["self_parented_transcript"].add(ID)
+            gene_ch = self.all_gene_ids.get(ID)
+            # pseudogenes get their pseudotranscript from their subfeatures instead
+            if gene_ch == ch and not self.chrs[ch][ID].transcripts and not self.chrs[ch][ID].pseudogene:
+                count = 1
+                t_id = f"{ID}_t{count}"
+                while t_id in self.all_transcript_ids:
+                    count += 1
+                    t_id = f"{ID}_t{count}"
+                self.all_transcript_ids[t_id] = (ch, ID)
+                self.chrs[ch][ID].transcripts[t_id] = Transcript(t_id, ch, entry.source, entry.feature, entry.strand, entry.start, entry.end, entry.score, [ID], entry.attributes)
+                self._note("transcripts had their gene's id as their own id and parent, so they were kept renamed as {gene id}_t1", f"Transcript {ID} has its own id as a parent, kept as transcript {t_id} of gene {ID}", "self_parented_transcript", quiet)
+            else:
+                self._note("transcripts had their own id as a parent so they were ignored", f"Transcript {ID} has its own id as a parent so this transcript feature was ignored", "self_parented_transcript", quiet)
+                if not skip_orphaned_features:
+                    self.orphaned_features.append(Feature(ID, ch, entry.source, entry.feature, entry.strand, entry.start, entry.end, entry.score, entry.parents, entry.attributes))
+        self._self_parented_transcripts = []
 
     def _add_subfeature(self, entry, ft_level, infer_gene_and_transcript_from_subfeatures:bool=False, only_infer_if_none_of_the_parents_exist:bool=True, skip_orphaned_features:bool=False, liftover_exception:bool=True, quiet:bool=False):
         ID = entry.id
@@ -1188,8 +1262,7 @@ class Annotation():
                                     auto_t_id, gene_obj.ch, gene_obj.source, "mRNA",
                                     gene_obj.strand, gene_obj.start, gene_obj.end,
                                     gene_obj.score, [parent])
-                                if not quiet:
-                                    print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}")
+                                self._note("genes with subfeatures but no transcripts got an auto-created transcript", f"{ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}", "subfeature_to_gene", quiet)
                                 self.warnings["subfeature_to_gene"].add(ID)
                         # correctly linking the subfeature to the single transcript that exists
                         if len(self.chrs[ch][parent].transcripts) == 1:
@@ -1642,6 +1715,16 @@ class Annotation():
             else:
                 print(f"Correcting feature coordinates ({mode} mode) for {self.id}")
 
+        # Features are counted under a summary printed once at the end, and printed individually only with list_load_warnings
+        list_load_warnings = getattr(self, "list_load_warnings", False)
+        flagged = {}
+        def note(summary:str, warning_key:str, feature_id:str, message:str):
+            if quiet:
+                return
+            flagged.setdefault((summary, warning_key), set()).add(feature_id)
+            if list_load_warnings:
+                print(message)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 earliest_start = None
@@ -1660,21 +1743,17 @@ class Annotation():
                             if c.start != seg_start:
                                 if skip_correction:
                                     record_to["cds_segment_coordinate_mismatch"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
+                                    note("CDSs have a start or end that differs from their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
+                                    note("CDSs had their start or end set to those of their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
                                     c.start = seg_start
 
                             if c.end != seg_end:
                                 if skip_correction:
                                     record_to["cds_segment_coordinate_mismatch"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
+                                    note("CDSs have a start or end that differs from their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
+                                    note("CDSs had their start or end set to those of their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
                                     c.end = seg_end
 
                     if t.exons:
@@ -1691,21 +1770,18 @@ class Annotation():
                                 overlapping = [e for e in t.exons if e.start <= end and start <= e.end]
                                 if skip_correction:
                                     record_to["cds_segment_in_intron"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron ({self.id})")
+                                    note("CDSs have segments reaching into an intron", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron ({self.id})")
                                     continue
                                 if len(overlapping) == 1:
                                     exon = overlapping[0]
                                     new_start, new_end = min(exon.start, start), max(exon.end, end)
                                     # An extension touching another exon would remove a splice junction, so it is only reported
                                     if not any(e is not exon and e.start <= new_end + 1 and new_start - 1 <= e.end for e in t.exons):
-                                        if not quiet:
-                                            print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron, proceeding to extend exon {exon.id} {self.id}")
+                                        note("CDSs had segments reaching into an intron, fixed by extending the exon they overlap", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron, proceeding to extend exon {exon.id} {self.id}")
                                         exon.start, exon.end = new_start, new_end
                                         extended_exons.append(exon)
                                         continue
-                                if not quiet:
-                                    print(f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron and cannot be fixed by extending one exon ({self.id})")
+                                note("CDSs have segments reaching into an intron that cannot be fixed by extending one exon", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron and cannot be fixed by extending one exon ({self.id})")
 
                         if len(t.exons) > 1:
                             t.exons.sort()
@@ -1717,21 +1793,17 @@ class Annotation():
                             if c.start < first_exon.start:
                                 if skip_correction:
                                     record_to["cds_exceeds_exon"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
+                                    note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                     first_exon.start = c.start
                                     extended_exons.append(first_exon)
                             if c.end > last_exon.end:
                                 if skip_correction:
                                     record_to["cds_exceeds_exon"].add(c.id)
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
+                                    note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
                                 else:
-                                    if not quiet:
-                                        print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                     last_exon.end = c.end
                                     extended_exons.append(last_exon)
 
@@ -1739,36 +1811,32 @@ class Annotation():
                                 if u.start < first_exon.start:
                                     if skip_correction:
                                         record_to["utr_exceeds_exon"].add(u.id)
-                                        if not quiet:
-                                            print(f"Warning: {u.id} start is earlier than for first {t.id} exon ({self.id})")
+                                        note("UTRs extend beyond the first or last exon of their transcript", "utr_exceeds_exon", u.id, f"Warning: {u.id} start is earlier than for first {t.id} exon ({self.id})")
                                     else:
-                                        if not quiet:
-                                            print(f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                        note("UTRs extended beyond the first or last exon of their transcript, which was extended to cover them", "utr_exceeds_exon", u.id, f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
                                         first_exon.start = u.start
                                         extended_exons.append(first_exon)
                                 if u.end > last_exon.end:
                                     if skip_correction:
                                         record_to["utr_exceeds_exon"].add(u.id)
-                                        if not quiet:
-                                            print(f"Warning: {u.id} end extends beyond the last {t.id} exon ({self.id})")
+                                        note("UTRs extend beyond the first or last exon of their transcript", "utr_exceeds_exon", u.id, f"Warning: {u.id} end extends beyond the last {t.id} exon ({self.id})")
                                     else:
-                                        if not quiet:
-                                            print(f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                        note("UTRs extended beyond the first or last exon of their transcript, which was extended to cover them", "utr_exceeds_exon", u.id, f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
                                         last_exon.end = u.end
                                         extended_exons.append(last_exon)
 
+                        if skip_correction:
+                            boundary_summary = "transcripts do not start and end with their first and last exons"
+                        else:
+                            boundary_summary = "transcripts were set to span exactly from their first to their last exon"
                         if first_exon.start < t.start:
-                            if not quiet:
-                                print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon start is earlier than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon start is earlier than for {t.id} ({self.id})")
                         elif first_exon.start > t.start:
-                            if not quiet:
-                                print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon starts later than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"First exon should not start later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon starts later than for {t.id} ({self.id})")
                         if last_exon.end < t.end:
-                            if not quiet:
-                                print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes earlier than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes earlier than for {t.id} ({self.id})")
                         elif last_exon.end > t.end:
-                            if not quiet:
-                                print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
                         if t.start != first_exon.start or t.end != last_exon.end:
                             if skip_correction:
                                 record_to["exon_transcript_boundary_mismatch"].add(t.id)
@@ -1780,20 +1848,16 @@ class Annotation():
                     if t.start < g.start:
                         if skip_correction:
                             record_to["transcript_exceeds_gene"].add(t.id)
-                            if not quiet:
-                                print(f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
+                            note("transcripts extend beyond their gene", "transcript_exceeds_gene", t.id, f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
                         else:
-                            if not quiet:
-                                print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
+                            note("transcripts extended beyond their gene, which was extended to cover them", "transcript_exceeds_gene", t.id, f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
                             g.start = t.start
                     if t.end > g.end:
                         if skip_correction:
                             record_to["transcript_exceeds_gene"].add(t.id)
-                            if not quiet:
-                                print(f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
+                            note("transcripts extend beyond their gene", "transcript_exceeds_gene", t.id, f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
                         else:
-                            if not quiet:
-                                print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
+                            note("transcripts extended beyond their gene, which was extended to cover them", "transcript_exceeds_gene", t.id, f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
                             g.end = t.end
                     if earliest_start is None or latest_end is None:
                         earliest_start = t.start
@@ -1815,16 +1879,20 @@ class Annotation():
                     if g.start < earliest_start or g.end > latest_end:
                         if skip_correction:
                             record_to["gene_exceeds_transcripts"].add(g.id)
-                            if not quiet:
-                                print(f"Warning: {g.id} extends beyond its transcripts ({self.id})")
+                            note("genes extend beyond their transcripts", "gene_exceeds_transcripts", g.id, f"Warning: {g.id} extends beyond its transcripts ({self.id})")
                         elif mode == "trim":
-                            if not quiet:
-                                print(f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
+                            note("genes extended beyond their transcripts and were trimmed to them", "gene_exceeds_transcripts", g.id, f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
                             g.start = earliest_start
                             g.end = latest_end
-                        elif not quiet:
-                            print(f"{g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
+                        else:
+                            note("genes extend beyond their transcripts, keeping gene boundaries", "gene_exceeds_transcripts", g.id, f"{g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
         if not quiet:
+            # Only the check (mode "none") points to the ids, as update() runs it before any correction of the same features
+            for (summary, warning_key), ids in flagged.items():
+                if skip_correction:
+                    print(f"Warning: {len(ids)} {summary} ({self.id})" + ("" if list_load_warnings else Annotation._warning_ids_hint(warning_key)))
+                else:
+                    print(f"{len(ids)} {summary} ({self.id})")
             if skip_correction:
                 print(f"Checked feature coordinates (skipped correction) for {self.id}")
             else:
@@ -2155,7 +2223,7 @@ class Annotation():
             for g in genes.values():
                 g.combine_transcripts(respect_non_coding=respect_non_coding, respect_non_combined=respect_non_combined, redetect_CDS=redetect_CDS, quiet=quiet)
         self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
-        self.tags.add("combined")
+        self.feature_tags.add("combined")
 
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:
@@ -2699,15 +2767,22 @@ class Annotation():
         """
         if record_to is None:
             record_to = self.warnings
+        list_load_warnings = getattr(self, "list_load_warnings", False)
+        flagged = {}
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     if t.temp_CDSs:
                         warnings = t._detect_polycistronic()
                         for warning in warnings:
-                            if t.id not in record_to[warning] and not quiet:
-                                print(f"Warning: Transcript {t.id} flagged as {warning} ({self.id})")
+                            if t.id not in record_to[warning]:
+                                flagged[warning] = flagged.get(warning, 0) + 1
+                                if list_load_warnings and not quiet:
+                                    print(f"Warning: Transcript {t.id} flagged as {warning} ({self.id})")
                             record_to[warning].add(t.id)
+        if not quiet:
+            for warning, count in flagged.items():
+                print(f"Warning: {count} transcripts flagged as {warning} ({self.id})" + ("" if list_load_warnings else Annotation._warning_ids_hint(warning)))
 
 
     def remove_missing_transcript_parent_references(self, quiet:bool=True):

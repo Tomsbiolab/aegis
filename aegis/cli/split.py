@@ -328,9 +328,9 @@ def main(
         rich_help_panel=FASTA_HEADER_PANEL,
     )] = False,
     keep_description: Annotated[bool, typer.Option(
-        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files.",
+        "--keep-description/--no-keep-description", help="Preserve full FASTA header descriptions in output genome files; renamed sequences keep their input id after the new one (default: True).",
         rich_help_panel=FASTA_HEADER_PANEL,
-    )] = False,
+    )] = True,
 
     # 3. Input / Output Options
     annotation_file: Annotated[str, typer.Option(

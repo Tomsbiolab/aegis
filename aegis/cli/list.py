@@ -23,6 +23,10 @@ def genes(
         "--length-type", help="Gene length written with --lengths, to match how reads were counted for normalisation (e.g. TPM): 'exonic' (exons of all transcripts, each base once, as featureCounts counting exons by gene_id), 'coding-exonic' (exons of coding transcripts), 'main-transcript' (mature main transcript) or 'span' (genomic span, introns included).",
         rich_help_panel=COLUMNS_PANEL,
     )] = "exonic",
+    span_fallback: Annotated[bool, typer.Option(
+        "--span-fallback/--no-span-fallback", help="Write the genomic span for genes whose chosen length is 0 (no exons, transcripts or coding transcripts), so that normalisations such as TPM do not divide by zero (default: True).",
+        rich_help_panel=COLUMNS_PANEL,
+    )] = True,
     coordinates: Annotated[bool, typer.Option(
         "-c", "--coordinates", help="Include feature coordinates in the output.",
         rich_help_panel=COLUMNS_PANEL,
@@ -140,6 +144,7 @@ def genes(
         skip_transposables=skip_transposables,
         gene_symbols=gene_symbols,
         length_type=length_type.replace("-", "_"),
+        span_fallback=span_fallback,
         quiet=quiet,
     )
 

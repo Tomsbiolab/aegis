@@ -304,3 +304,17 @@ class TestGeneCombineTranscripts:
         assert "g1_t001_CDS1" in combined_t.CDSs
         assert combined_t.CDSs["g1_t001_CDS1"].protein is not None
         assert combined_t.CDS_size == 30
+
+    def test_combine_transcripts_spans_combined_exons(self, make_gene, make_transcript, make_exon):
+        g = make_gene(feature_id="g1", start=1, end=100, strand="+")
+        t1 = make_transcript(feature_id="t1", start=20, end=60, strand="+")
+        t1.exons = [make_exon(feature_id="e1", start=20, end=60, strand="+")]
+        t1.main = True
+        t2 = make_transcript(feature_id="t2", start=1, end=100, strand="+")
+        t2.exons = [make_exon(feature_id="e2", start=1, end=10, strand="+"), make_exon(feature_id="e3", start=80, end=100, strand="+")]
+        g.transcripts = {"t1": t1, "t2": t2}
+
+        g.combine_transcripts(quiet=True)
+
+        combined_t = g.transcripts["g1_t001"]
+        assert (combined_t.start, combined_t.end) == (1, 100)

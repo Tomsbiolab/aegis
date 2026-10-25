@@ -485,7 +485,8 @@ class AnnotationStats(AnnotationComponent):
             contig_stats = self.get_contig_stats()
             if contig_stats:
                 contig_df = pd.DataFrame(contig_stats)
-                contig_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}_contig_stats.tsv", sep="\t", index=False)
+                # The only stats listing chromosome names, so the only ones named by renamed chromosomes
+                contig_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}{self._annot.chromosome_suffix}_contig_stats.tsv", sep="\t", index=False)
 
             f_out = open(f"{export_folder}{out_file}", "w", encoding="utf-8")
             f_out.write("")

@@ -183,6 +183,11 @@ class Gene(Feature):
                 if new_transcript.collapsed_exons == True:
                     collapsed_exons = True
 
+                # The main transcript's span is widened to all the combined exons, so the coordinate check in
+                # the annotation update does not report the expected mismatch
+                new_transcript.start = min(e.start for e in new_transcript.exons)
+                new_transcript.end = max(e.end for e in new_transcript.exons)
+
                 if collapsed_exons:
                     self.rename_exons()
 

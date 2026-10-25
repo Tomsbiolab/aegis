@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from ..genome import Genome
     from ..subfeatures import CDS
 
+import re
 import time
 import warnings
 
@@ -22,6 +23,19 @@ def _location(segments, strand:str) -> str:
     if strand == "-":
         location = f"complement({location})"
     return location
+
+INTERNAL_STOP_MODES = ("keep", "x", "skip")
+
+def _protein_export_seq(seq:str, strip_stop:bool, internal_stops:str) -> str:
+    """
+    Protein sequence as exported. Only a final "*" is a terminal stop, removed with strip_stop (3' partial proteins have
+    none, so nothing is removed or added). Any other "*" is an internal stop, written as X with internal_stops="x".
+    """
+    end_stop = seq.endswith("*")
+    body = seq[:-1] if end_stop else seq
+    if internal_stops == "x":
+        body = body.replace("*", "X")
+    return body + "*" if (end_stop and not strip_stop) else body
 
 
 class AnnotationExport(AnnotationComponent):
@@ -119,6 +133,7 @@ class AnnotationExport(AnnotationComponent):
         extension: str = ".fasta",
         quiet: bool = True,
         strip_stop: bool = True,
+        internal_stops: Literal["keep", "x", "skip"] = "keep",
         #deprecated arguments
         custom_filename: str = "",
         custom_path: str = "",
@@ -142,6 +157,9 @@ class AnnotationExport(AnnotationComponent):
         valid_id_choices = ["gene", "transcript", "CDS", "protein"]
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
+
+        if internal_stops not in INTERNAL_STOP_MODES:
+            raise ValueError(f"internal_stops={internal_stops} is not amongst the valid choices={INTERNAL_STOP_MODES} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
             self._annot.generate_proteins(quiet=quiet)
@@ -209,6 +227,9 @@ class AnnotationExport(AnnotationComponent):
                                     else:
                                         temp_cs.append(c)
 
+                    if internal_stops == "skip":
+                        temp_cs = [c for c in temp_cs if not c.protein.internal_stops]
+
                     if not unique_proteins_per_gene:
                         final_cs = temp_cs.copy()
 
@@ -242,10 +263,7 @@ class AnnotationExport(AnnotationComponent):
                             tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
                             f_out.write(f"{tags}|{c.strand}|{c.protein.ch}|location={_location(c.protein.segments, c.strand)}")
 
-                        prot_seq = c.protein.seq
-                        if strip_stop and prot_seq.endswith("*"):
-                            prot_seq = prot_seq[:-1]
-                        f_out.write(f"\n{prot_seq}\n")
+                        f_out.write(f"\n{_protein_export_seq(c.protein.seq, strip_stop, internal_stops)}\n")
 
     def unique_proteins(
         self,
@@ -259,9 +277,13 @@ class AnnotationExport(AnnotationComponent):
         extension: str = ".fasta",
         quiet: bool = False,
         strip_stop: bool = True,
+        internal_stops: Literal["keep", "x", "skip"] = "keep",
         #deprecated arguments
         custom_path: str = "",
     ):
+
+        if internal_stops not in INTERNAL_STOP_MODES:
+            raise ValueError(f"internal_stops={internal_stops} is not amongst the valid choices={INTERNAL_STOP_MODES} to export proteins.")
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -282,10 +304,10 @@ class AnnotationExport(AnnotationComponent):
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for protein_id in self._annot.protein_equivalences:
                 chrom, g, t, c = self._annot.all_protein_ids[protein_id]
-                sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
-                if strip_stop and sequence.endswith("*"):
-                    sequence = sequence[:-1]
-                f_out.write(f">{protein_id}\n{sequence}\n")
+                protein = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                if internal_stops == "skip" and protein.internal_stops:
+                    continue
+                f_out.write(f">{protein_id}\n{_protein_export_seq(protein.seq, strip_stop, internal_stops)}\n")
 
         now = time.time()
         lapse = now - start_time
@@ -804,7 +826,7 @@ class AnnotationExport(AnnotationComponent):
                         elif not quiet:
                             print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter.\n")
 
-    def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False,
+    def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False, genome_keep_description: bool = True,
         #deprecated arguments
         genome_out_folder:str="", gff_out_folder:str="", tag:str="_for_dap.gff3"):
 
@@ -830,7 +852,7 @@ class AnnotationExport(AnnotationComponent):
             if gff_filename is None:
                 gff_filename = tag
 
-        equivalences = genome.rename_features_dap(output_dir=genome_output_dir, filename=genome_filename, filepath=genome_filepath, extension=genome_extension, use_genome_dir=use_genome_dir, subfolder_name=genome_subfolder_name, subfolder=genome_subfolder, return_equivalences=True, export=True)
+        equivalences = genome.rename_features_dap(output_dir=genome_output_dir, filename=genome_filename, filepath=genome_filepath, extension=genome_extension, use_genome_dir=use_genome_dir, subfolder_name=genome_subfolder_name, subfolder=genome_subfolder, return_equivalences=True, export=True, keep_description=genome_keep_description)
 
         self._annot.rename_chromosomes(equivalences)
 
@@ -875,6 +897,11 @@ class AnnotationExport(AnnotationComponent):
         extra_suffixes = []
         if just_genes:
             extra_suffixes.append("just_genes")
+
+        # A name kept from a featureCounts gff loses its tag when the export has no Gene_id attributes
+        if not featurecountsID and filepath is None and filename is None and self._annot._has_tag(self._annot.id, "fcounts"):
+            ext = extension if extension.startswith(".") else f".{extension}"
+            filename = re.sub(r"_fcounts(?=[_.]|$)", "", self._annot.id) + self._annot.all_suffixes + "".join(f"_{t}" for t in extra_suffixes) + ext
 
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
@@ -1108,7 +1135,7 @@ class AnnotationExport(AnnotationComponent):
 
             progress_bar.close()
 
-    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, length_type: Literal["exonic", "coding_exonic", "main_transcript", "span"] = "exonic", quiet:bool=False,
+    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, length_type: Literal["exonic", "coding_exonic", "main_transcript", "span"] = "exonic", span_fallback: bool = True, quiet:bool=False,
         #deprecated arguments
         custom_path: str = "", output_file: str = ""):
 
@@ -1126,6 +1153,8 @@ class AnnotationExport(AnnotationComponent):
         length_type: the gene length written with lengths, to match how reads were counted: "exonic" (exons of
         all transcripts, each base once; featureCounts on exons by gene_id), "coding_exonic" (exons of coding
         transcripts), "main_transcript" (mature main transcript) or "span" (genomic span, introns included).
+        span_fallback: genes whose chosen length is 0 (no exons, transcripts or coding transcripts) are written
+        with their genomic span instead, so that length normalisations (e.g. TPM) do not divide by zero.
         """
         length_columns = {"exonic": "exonic_length", "coding_exonic": "coding_exonic_length", "main_transcript": "main_transcript_length", "span": "genomic_span"}
         if length_type not in length_columns:
@@ -1140,11 +1169,21 @@ class AnnotationExport(AnnotationComponent):
             print("Warning: Both skip_coding and skip_non_coding are set to True. No genes will be listed.")
             return
 
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+        # Only tags that change what is written name the list: combining transcripts keeps gene ids, coordinates
+        # and exonic lengths, and renamed chromosomes only show in the chromosome column
+        tags = set(self._annot.feature_tags)
+        if not ((lengths and length_type in ("coding_exonic", "main_transcript")) or coding_info):
+            tags.discard("combined")
+        suffix = self._annot._suffix(tags)
+        if chromosomes or coordinates:
+            suffix += self._annot.chromosome_suffix
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
 
         if not quiet:
             print(f"Exporting {self._annot.id} gene list to {final_output_path}.")
 
+        zero_length_genes = []
         with open(final_output_path, "w", encoding="utf-8") as f_out:
 
             header = ["gene_id"]
@@ -1181,18 +1220,30 @@ class AnnotationExport(AnnotationComponent):
                         out.append(str(g.end))
                     if lengths:
                         if length_type == "exonic":
-                            out.append(str(g.exonic_size))
+                            length = g.exonic_size
                         elif length_type == "coding_exonic":
-                            out.append(str(g.coding_exonic_size))
+                            length = g.coding_exonic_size
                         elif length_type == "main_transcript":
-                            out.append(str(g.main_transcript_size))
+                            length = g.main_transcript_size
                         else:
-                            out.append(str(g.genomic_span))
+                            length = g.genomic_span
+                        if length == 0:
+                            zero_length_genes.append(g.id)
+                            if span_fallback:
+                                length = g.genomic_span
+                        out.append(str(length))
                     if coding_info:
                         out.append(str(g.coding))
                     if gene_symbols and g.symbols:
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
+
+        if zero_length_genes:
+            examples = ", ".join(zero_length_genes[:5]) + (", ..." if len(zero_length_genes) > 5 else "")
+            if span_fallback:
+                print(f"Warning: {len(zero_length_genes)} {self._annot.id} genes have no {length_columns[length_type]} and were written with their genomic span instead ({examples}). Use span_fallback=False (--no-span-fallback) to write 0, or remove them first (e.g. genes with no transcripts).")
+            else:
+                print(f"Warning: {len(zero_length_genes)} {self._annot.id} genes were written with a 0 {length_columns[length_type]} ({examples}), which breaks length normalisations such as TPM. Use span_fallback=True (--span-fallback) to write their genomic span instead.")
 
     def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False, gene_id: bool = False,
         #deprecated arguments
@@ -1217,7 +1268,12 @@ class AnnotationExport(AnnotationComponent):
             print("Warning: Both skip_coding and skip_non_coding are set to True. No transcripts will be listed.")
             return
 
-        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+        # Renamed chromosomes only show in the chromosome column
+        suffix = self._annot.feature_suffix
+        if chromosomes or coordinates:
+            suffix += self._annot.chromosome_suffix
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
 
         if not quiet:
             print(f"Exporting {self._annot.id} transcript list to {final_output_path}.")

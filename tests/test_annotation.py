@@ -1118,6 +1118,32 @@ class TestAnnotationCorrectCoordinates:
         assert u.id in annot.recheck_warnings()["utr_exceeds_exon"]
         assert t.exons[0].start == 1000
 
+    def test_inconsistencies_are_printed_as_counts(self, sample_gff3_file, capsys):
+        annot = Annotation(sample_gff3_file, quiet=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1
+        gene.end = 50000
+        capsys.readouterr()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=False)
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="trim", quiet=False)
+        out = capsys.readouterr().out
+        assert "Warning: 1 genes extend beyond their transcripts" in out
+        assert "exports them in the 'gene_exceeds_transcripts' column" in out
+        assert "1 genes extended beyond their transcripts and were trimmed to them" in out
+        assert "gene1 extends beyond its transcripts" not in out
+
+    def test_inconsistencies_are_listed_with_list_load_warnings(self, sample_gff3_file, capsys):
+        annot = Annotation(sample_gff3_file, quiet=True, list_load_warnings=True)
+        gene = annot.chrs["chr1"]["gene1"]
+        gene.start = 1
+        gene.end = 50000
+        capsys.readouterr()
+        annot.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=False)
+        out = capsys.readouterr().out
+        assert "Warning: gene1 extends beyond its transcripts" in out
+        assert "Warning: 1 genes extend beyond their transcripts" in out
+        assert "aegis summary" not in out
+
     def test_invalid_mode(self, sample_gff3_file):
         annot = Annotation(sample_gff3_file, quiet=True)
         with pytest.raises(ValueError):
@@ -1243,6 +1269,31 @@ class TestGeneLengths:
         header, row = (tmp_path / "genes.tsv").read_text().splitlines()
         assert header.split("\t") == ["gene_id", column]
         assert row.split("\t") == ["g1", value]
+
+    @pytest.mark.parametrize("length_type, span_fallback, values", [
+        ("exonic", True, {"g1": "350", "g2": "100"}),
+        ("exonic", False, {"g1": "350", "g2": "0"}),
+        ("main_transcript", True, {"g1": "200", "g2": "100"}),
+        ("coding_exonic", True, {"g1": "200", "g2": "100", "g3": "201"}),
+        ("coding_exonic", False, {"g1": "200", "g2": "0", "g3": "0"}),
+    ])
+    def test_gene_list_span_fallback(self, tmp_path, capsys, length_type, span_fallback, values):
+        # g2 has no transcripts and g3 is non-coding, so their lengths can be 0
+        gff_file = tmp_path / "lengths.gff3"
+        gff_file.write_text(
+            GENE_LENGTHS_GFF
+            + "chr1\ttest\tgene\t1001\t1100\t.\t+\t.\tID=g2\n"
+            + "chr1\ttest\tgene\t2000\t2200\t.\t+\t.\tID=g3\n"
+            + "chr1\ttest\tlnc_RNA\t2000\t2200\t.\t+\t.\tID=t3;Parent=g3\n"
+            + "chr1\ttest\texon\t2000\t2200\t.\t+\t.\tID=e5;Parent=t3\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        capsys.readouterr()
+        annot.export.gene_list(output_dir=str(tmp_path), filename="genes.tsv", lengths=True, length_type=length_type, span_fallback=span_fallback, quiet=True)
+        rows = dict(line.split("\t") for line in (tmp_path / "genes.tsv").read_text().splitlines()[1:])
+        assert {g: rows[g] for g in values} == values
+        out = capsys.readouterr().out
+        assert "span_fallback=False" in out if span_fallback else "span_fallback=True" in out
 
     def test_gene_list_rejects_unknown_length_type(self, tmp_path):
         with pytest.raises(ValueError, match="length_type"):
@@ -1546,6 +1597,99 @@ class TestAnnotationRenameChromosomes:
         equivalences = {"chr1": "scaffold_1"}
         annot.rename_chromosomes(equivalences)
         assert "confrenamed" in annot.tags
+
+
+# ============================================================
+# Annotation — feature tags round trip
+# ============================================================
+
+class TestFeatureTagsRoundTrip:
+    # Feature tags name every export of an annotation, and are detected again from the gff file name when it is reloaded
+    @staticmethod
+    def _reload(annot, tmp_path):
+        annot.export.gff(output_dir=str(tmp_path), quiet=True)
+        gff_file, = tmp_path.glob("*.gff3")
+        return Annotation(str(gff_file), quiet=True)
+
+    def test_combined_is_a_feature_tag(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.combine_transcripts(redetect_CDS=False, quiet=True)
+        assert "combined" in annot.feature_tags
+        assert "_combined" in annot.feature_suffix
+        assert "combined" in self._reload(annot, tmp_path).feature_tags
+
+    def test_minus_small_CDS_is_detected(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.remove_genes_with_small_CDSs(CDS_threshold=10**9, quiet=True)
+        assert "minus_small_CDS" in annot.feature_tags
+        assert "minus_small_CDS" in self._reload(annot, tmp_path).feature_tags
+
+    @pytest.mark.parametrize("pseudogene", [True, False])
+    def test_minus_pseudogene_tags_are_detected(self, multi_gene_gff3_file, tmp_path, pseudogene):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.chrs["chr1"]["geneA"].pseudogene = pseudogene
+        if pseudogene:
+            annot.remove_pseudogene_genes(quiet=True)
+        else:
+            annot.remove_non_pseudogene_genes(quiet=True)
+        tag = "minus_pseudogene" if pseudogene else "minus_non_pseudogene"
+        assert self._reload(annot, tmp_path).feature_tags == {tag}
+
+    def test_tags_are_detected_from_the_file_name_only(self, multi_gene_gff3_file, tmp_path):
+        for file_name in ("my_combined_runs/plain.gff3", "plain_combinedV2.gff3", "plain_dapfit.gff3"):
+            path = tmp_path / file_name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(Path(multi_gene_gff3_file).read_text())
+            annot = Annotation(str(path), quiet=True)
+            assert annot.feature_tags == set()
+            assert annot.tags & {"combined", "dapfit"} == ({"dapfit"} if "dapfit" in file_name else set())
+
+    def test_reexport_does_not_repeat_tags(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.combine_transcripts(redetect_CDS=False, quiet=True)
+        reloaded = self._reload(annot, tmp_path / "first")
+        first_name = next((tmp_path / "first").glob("*.gff3")).name
+        reloaded.export.gff(output_dir=str(tmp_path / "second"), quiet=True)
+        assert next((tmp_path / "second").glob("*.gff3")).name == first_name
+        assert reloaded.feature_suffix == ""
+
+    def test_fcounts_tag_follows_gene_id_attributes(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.export.gff(output_dir=str(tmp_path / "first"), featurecountsID=True, quiet=True)
+        fcounts_name = next((tmp_path / "first").glob("*.gff3")).name
+        reloaded = Annotation(str(tmp_path / "first" / fcounts_name), quiet=True)
+        reloaded.export.gff(output_dir=str(tmp_path / "second"), quiet=True)
+        reloaded.export.gff(output_dir=str(tmp_path / "second"), just_genes=True, quiet=True)
+        reloaded.export.gff(output_dir=str(tmp_path / "third"), featurecountsID=True, quiet=True)
+        assert fcounts_name == "multi_gene_clean_fcounts.gff3"
+        assert sorted(p.name for p in (tmp_path / "second").iterdir()) == ["multi_gene_clean.gff3", "multi_gene_clean_just_genes.gff3"]
+        assert next((tmp_path / "third").glob("*.gff3")).name == fcounts_name
+
+    def test_lists_are_named_by_the_tags_that_change_them(self, multi_gene_gff3_file, tmp_path):
+        # Files with the same content get the same name, as across the passes of a pipeline renaming chromosomes
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.combine_transcripts(redetect_CDS=False, quiet=True)
+        annot.rename_chromosomes({"chr1": "scaffold_1"})
+        annot.rename_ids(quiet=True)
+        export = annot.export
+        export.gene_list(output_dir=str(tmp_path), lengths=True, quiet=True)
+        export.gene_list(output_dir=str(tmp_path), lengths=True, length_type="main_transcript", quiet=True)
+        export.gene_list(output_dir=str(tmp_path), coordinates=True, quiet=True)
+        export.transcript_list(output_dir=str(tmp_path), quiet=True)
+        assert sorted(p.name for p in tmp_path.iterdir()) == sorted([
+            "multi_gene_full_renamed_ids_genes.txt",
+            "multi_gene_combined_full_renamed_ids_genes.txt",
+            "multi_gene_full_renamed_ids_confrenamed_genes.txt",
+            "multi_gene_combined_full_renamed_ids_transcripts.txt",
+        ])
+
+    def test_contig_stats_are_named_by_renamed_chromosomes(self, multi_gene_gff3_file, tmp_path):
+        annot = Annotation(multi_gene_gff3_file, quiet=True)
+        annot.rename_chromosomes({"chr1": "scaffold_1"})
+        annot.stats.update(output_dir=str(tmp_path), export=True, quiet=True)
+        stats_files = {p.name for p in tmp_path.iterdir()}
+        assert "multi_gene_confrenamed_contig_stats.tsv" in stats_files
+        assert "multi_gene_basic_stats.csv" in stats_files
 
 # ============================================================
 # Annotation — clear_gene_names_and_symbols
@@ -2946,7 +3090,84 @@ class TestAnnotationOverlaps:
 
         assert annot.chrs["chr2"]["g2"].overlaps["other"] == []
 
-        
+    def test_overlaps_shared_bases_and_frames(self, tmp_path):
+        """
+        CDS rows that overlap each other (a -1 ribosomal slippage rereads a base) count shared
+        bases once, matching the covered_length CDS size, and in-frame overlap follows the
+        annotated phases on both strands. The reverse hit mirrors query and target percents.
+        """
+        query_gff = tmp_path / "query.gff3"
+        query_gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t5000\t6000\t.\t-\t.\tID=gm\n"
+            "chr1\tt\tmRNA\t5000\t6000\t.\t-\t.\tID=gm.t1;Parent=gm\n"
+            "chr1\tt\texon\t5000\t6000\t.\t-\t.\tID=gm.e1;Parent=gm.t1\n"
+            "chr1\tt\tCDS\t5100\t5900\t.\t-\t0\tID=gm.c1;Parent=gm.t1\n"
+            "chr1\tt\tgene\t8000\t9000\t.\t+\t.\tID=gs\n"
+            "chr1\tt\tmRNA\t8000\t9000\t.\t+\t.\tID=gs.t1;Parent=gs\n"
+            "chr1\tt\texon\t8000\t9000\t.\t+\t.\tID=gs.e1;Parent=gs.t1\n"
+            "chr1\tt\tCDS\t8000\t8500\t.\t+\t0\tID=gs.c1;Parent=gs.t1\n"
+            "chr1\tt\tCDS\t8500\t9000\t.\t+\t0\tID=gs.c1;Parent=gs.t1\n"
+        )
+        target_gff = tmp_path / "target.gff3"
+        target_gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t5000\t6000\t.\t-\t.\tID=gm_inframe\n"
+            "chr1\tt\tmRNA\t5000\t6000\t.\t-\t.\tID=gm_inframe.t1;Parent=gm_inframe\n"
+            "chr1\tt\texon\t5000\t6000\t.\t-\t.\tID=gm_inframe.e1;Parent=gm_inframe.t1\n"
+            "chr1\tt\tCDS\t5100\t5897\t.\t-\t0\tID=gm_inframe.c1;Parent=gm_inframe.t1\n"
+            "chr1\tt\tgene\t5000\t6000\t.\t-\t.\tID=gm_shift\n"
+            "chr1\tt\tmRNA\t5000\t6000\t.\t-\t.\tID=gm_shift.t1;Parent=gm_shift\n"
+            "chr1\tt\texon\t5000\t6000\t.\t-\t.\tID=gm_shift.e1;Parent=gm_shift.t1\n"
+            "chr1\tt\tCDS\t5100\t5898\t.\t-\t0\tID=gm_shift.c1;Parent=gm_shift.t1\n"
+            "chr1\tt\tgene\t8000\t8600\t.\t+\t.\tID=gs2\n"
+            "chr1\tt\tmRNA\t8000\t8600\t.\t+\t.\tID=gs2.t1;Parent=gs2\n"
+            "chr1\tt\texon\t8000\t8600\t.\t+\t.\tID=gs2.e1;Parent=gs2.t1\n"
+            "chr1\tt\tCDS\t8000\t8600\t.\t+\t0\tID=gs2.c1;Parent=gs2.t1\n"
+        )
+        annot = Annotation(str(query_gff), quiet=True)
+        annot2 = Annotation(str(target_gff), quiet=True)
+        annot.overlaps.detect(other=annot2, quiet=True)
+
+        hits = {h.id: h for h in annot.chrs["chr1"]["gm"].overlaps["other"]}
+        assert hits["gm_inframe"].CDS_query_percent == 99.6
+        assert hits["gm_inframe"].protein_query_percent == 99.6
+        assert hits["gm_inframe"].protein_target_percent == 100.0
+        assert hits["gm_shift"].CDS_query_percent == 99.8
+        assert hits["gm_shift"].protein_query_percent == 0
+        assert hits["gm_shift"].protein_target_percent == 0
+
+        hit = annot.chrs["chr1"]["gs"].overlaps["other"][0]
+        assert hit.id == "gs2"
+        # The base reread at 8500 is counted once: 601 shared bases of 1001 and 601
+        assert hit.CDS_query_percent == 60.0
+        assert hit.CDS_target_percent == 100.0
+        # Only the first row (8000-8500) is read in the frame of gs2
+        assert hit.protein_query_percent == 50.0
+        assert hit.protein_target_percent == 83.4
+        assert hit.score == 8
+
+        reverse = annot2.chrs["chr1"]["gs2"].overlaps["other"][0]
+        assert reverse.id == "gs"
+        assert reverse.CDS_query_percent == 100.0
+        assert reverse.CDS_target_percent == 60.0
+        assert reverse.protein_query_percent == 83.4
+        assert reverse.protein_target_percent == 50.0
+
+        annot.overlaps.clear()
+        annot.overlaps.detect(quiet=True)
+        self_hit = annot.chrs["chr1"]["gs"].overlaps["self"]
+        assert self_hit == []
+
+        annot3 = Annotation(str(query_gff), quiet=True)
+        annot.overlaps.clear()
+        annot.overlaps.detect(other=annot3, quiet=True)
+        same = [h for h in annot.chrs["chr1"]["gs"].overlaps["other"] if h.id == "gs"][0]
+        assert same.CDS_query_percent == 100.0
+        assert same.CDS_target_percent == 100.0
+        assert same.score == 11
+
+
 # ============================================================
 # Testing transcript combining
 # ============================================================
@@ -4231,3 +4452,93 @@ class TestReadUTRs:
         c = next(iter(t.CDSs.values()))
         assert (c.start, c.end) == (11, 103)
         assert [(u.start, u.end) for u in c.UTRs] == [(1, 10), (104, 200)]
+
+
+class TestCircularSequences:
+    SEQ = "AAAACCCCGGGGTTTTACGT"  # 20 bp
+
+    def _feature_seq(self, monkeypatch, name, start, end, strand="+", circular=False):
+        from aegis.feature import Feature
+        from aegis.genome import Scaffold
+        genome = MockGenome({name: self.SEQ})
+        genome.scaffolds[name].circular = circular
+        monkeypatch.setattr(Feature, "_ACTIVE_GENOME", genome)
+        return Feature("f1", name, "test", "exon", strand, start, end, ".", [], {})
+
+    def test_organelle_feature_crossing_origin(self, monkeypatch):
+        f = self._feature_seq(monkeypatch, "chrC", 18, 23)
+        assert f.seq == "CGT" + "AAA"
+        assert f.seqs == ["CGTAAA", "TTTACG"]
+
+    def test_organelle_feature_past_end_is_shifted(self, monkeypatch):
+        f = self._feature_seq(monkeypatch, "chrC", 21, 24, strand="-")
+        assert f.seq == "TTTT"
+
+    def test_linear_feature_past_end_is_truncated(self, monkeypatch):
+        f = self._feature_seq(monkeypatch, "chr1", 18, 23)
+        with pytest.warns(UserWarning, match="Sequence will be truncated"):
+            assert f.seq == "CGT"
+
+    def test_is_circular_region_marks_scaffold(self, tmp_path):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "NC_1\tRefSeq\tregion\t1\t20\t.\t+\t.\tID=NC_1:1..20;Is_circular=true\n"
+            "NC_1\tRefSeq\tgene\t18\t23\t.\t+\t.\tID=g1\n"
+            "NC_1\tRefSeq\tmRNA\t18\t23\t.\t+\t.\tID=t1;Parent=g1\n"
+            "NC_1\tRefSeq\texon\t18\t23\t.\t+\t.\tID=e1;Parent=t1\n"
+        )
+        genome = MockGenome({"NC_1": self.SEQ})
+        annot = Annotation(str(gff_file), genome=genome, quiet=True)
+        assert annot.circular_chromosomes == {"NC_1"}
+        assert genome.scaffolds["NC_1"].circular is True
+        assert annot.chrs["NC_1"]["g1"].transcripts["t1"].exons[0].seq == "CGTAAA"
+
+
+class TestSelfParentedTranscripts:
+    def test_mrna_with_gene_id_is_kept(self, tmp_path, capsys):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=g1;Parent=g1;Note=kept\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=g1\n"
+        )
+        annot = Annotation(str(gff_file), quiet=False)
+        transcripts = annot.chrs["chr1"]["g1"].transcripts
+        assert list(transcripts) == ["g1_t1"]
+        assert transcripts["g1_t1"].feature == "mRNA"
+        assert "Note=kept" in transcripts["g1_t1"].misc_attributes
+        assert len(transcripts["g1_t1"].exons) == 1
+        assert annot.warnings["self_parented_transcript"] == {"g1"}
+        out = capsys.readouterr().out
+        assert "1 transcripts had their gene's id as their own id and parent" in out
+        assert "run `aegis summary` on this annotation, which exports them in the 'self_parented_transcript' column" in out
+        assert "Transcript g1 has its own id as a parent" not in out
+
+    def test_list_load_warnings_prints_each_id(self, tmp_path, capsys):
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=g1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=g1\n"
+        )
+        Annotation(str(gff_file), list_load_warnings=True)
+        out = capsys.readouterr().out
+        assert "Transcript g1 has its own id as a parent, kept as transcript g1_t1 of gene g1" in out
+        assert "aegis summary" not in out
+
+    def test_repeated_self_parented_entry_is_ignored(self, tmp_path):
+        """lifton/liftoff-style repeated entry: the gene already has its real transcript."""
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\ttest\tmRNA\t1\t30\t.\t+\t.\tID=g1;Parent=g1\n"
+            "chr1\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        assert list(annot.chrs["chr1"]["g1"].transcripts) == ["t1"]
+        assert annot.warnings["self_parented_transcript"] == {"g1"}
