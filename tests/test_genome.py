@@ -695,9 +695,11 @@ class TestGenomeWarnings:
         fasta = tmp_path / "clean.fa"
         fasta.write_text(">chr1\nAAAA\n>chr2\nCCCC\n")
         g = Genome("clean", str(fasta), quiet=True)
-        with pytest.warns(UserWarning, match=message):
+        with pytest.warns(UserWarning, match=message) as record:
             g.remove_scaffolds(export=True, remove_organelles=remove_organelles, output_dir=str(tmp_path / "out"))
         assert not (tmp_path / "out").exists()
+        # Nothing was written in this run and no earlier file is there, so the paths are not warned about too
+        assert len(record) == 1
 
 
 class TestNoDescriptionTag:
@@ -882,8 +884,9 @@ class TestExportPaths:
 
     def test_refused_scaffold_free_export_returns_nothing(self, tmp_path):
         g = self._genome(tmp_path, ">NC_012007.3\nAAAA\n>MT\nGGGG\n")
-        with pytest.warns(UserWarning, match="nothing to export"):
-            assert g.remove_scaffolds(export=True, output_dir=str(tmp_path / "out")) == {}
+        with pytest.warns(UserWarning, match="No recognised nuclear chromosomes in toy genome"):
+            with pytest.warns(UserWarning, match="nothing to export"):
+                assert g.remove_scaffolds(export=True, output_dir=str(tmp_path / "out")) == {}
 
     @pytest.mark.parametrize("method, fasta_text", [
         ("remove_scaffolds", ">chr1 one\nAAAA\n>chrM\nGGGG\n"),
@@ -909,15 +912,18 @@ class TestExportPaths:
         (tmp_path / "out").mkdir()
         g = self._genome(tmp_path, fasta_text, name=f"stale_{method}")
         (tmp_path / "out" / f"stale_{method}{g.suffix}.fasta").write_text(">old\nA\n")
-        with pytest.warns(UserWarning, match="was not written earlier in this run, so it is not returned"):
-            assert getattr(g, method)(export=True, output_dir=str(tmp_path / "out")) == {}
+        removed = "scaffolds" if method == "remove_scaffolds" else "organelles"
+        with pytest.warns(UserWarning, match=f"No {removed} were removed from stale_{method} genome"):
+            with pytest.warns(UserWarning, match="was not written earlier in this run, so it is not returned"):
+                assert getattr(g, method)(export=True, output_dir=str(tmp_path / "out")) == {}
 
     def test_skipped_export_checks_each_path(self, tmp_path):
         out = str(tmp_path / "out")
         g = self._genome(tmp_path, ">chr1 one\nAAAA\n>chrM\nGGGG\n")
         exported = g.export(output_dir=out, quiet=True, keep_description=True)
-        with pytest.warns(UserWarning, match="_no_description.fasta was not written earlier in this run"):
-            paths = g.remove_scaffolds(export=True, output_dir=out, keep_description="both")
+        with pytest.warns(UserWarning, match="No scaffolds were removed from toy genome"):
+            with pytest.warns(UserWarning, match="_no_description.fasta was not written earlier in this run"):
+                paths = g.remove_scaffolds(export=True, output_dir=out, keep_description="both")
         assert paths == exported
 
 

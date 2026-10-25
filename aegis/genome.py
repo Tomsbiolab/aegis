@@ -805,11 +805,13 @@ class Genome():
     def _paths_exported_this_run(self, keep_description: bool | Literal["both"], **output_args) -> dict[str, Path]:
         """
         Paths an export of the genome as it is would use, keeping only those already written in this run,
-        so that a caller is never pointed to a missing or stale file.
+        so that a caller is never pointed to a missing or stale file. A path left out is warned about when
+        a file from an earlier run is there (stale) or other paths are returned; otherwise the caller's
+        warning that nothing was exported already says it all.
         """
         paths = self._export_paths(keep_description, create=False, **output_args)
         written = {header_type: Path(path).absolute() for header_type, path in paths.items() if str(Path(path).resolve()) in Genome._exported_files}
-        missing = sorted({str(path) for header_type, path in paths.items() if header_type not in written})
+        missing = sorted({str(path) for header_type, path in paths.items() if header_type not in written and (written or Path(path).exists())})
         if missing:
             warnings.warn(f"{', '.join(missing)} was not written earlier in this run, so it is not returned for {self.name} genome.")
         return written
