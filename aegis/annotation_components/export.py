@@ -807,7 +807,7 @@ class AnnotationExport(AnnotationComponent):
                         if only_main and not t.main:
                             continue
 
-                        if hasattr(t, "promoter"):
+                        if t.promoter is not None:
                             if t.promoter.seq != "":
 
                                 if used_id == "promoter":
@@ -824,7 +824,7 @@ class AnnotationExport(AnnotationComponent):
                             elif not quiet:
                                 print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter sequence.\n")
                         elif not quiet:
-                            print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter.\n")
+                            print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter (strand='{t.strand}'), skipping.\n")
 
     def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False, genome_keep_description: bool = True,
         #deprecated arguments

@@ -66,6 +66,8 @@ class AnnotationMotifs (AnnotationComponent):
             for t in g.transcripts.values():
                 if t.main:
                     p = t.promoter
+                    if p is None:
+                        continue
                     occurrences_t = find_all_occurrences(motif, p.seq.upper())
                     occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq).upper()) #type: ignore
                     occurrence_count_total = len(occurrences_t) + len(occurrences_a)
@@ -132,6 +134,8 @@ class AnnotationMotifs (AnnotationComponent):
             for t in g.transcripts.values():
                 if t.main:
                     p = t.promoter
+                    if p is None:
+                        continue
                     occurrences_t = find_all_occurrences(motif, p.seq.upper())
                     occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq).upper()) #type: ignore
                     occurrence_count_total = len(occurrences_t) + len(occurrences_a)
@@ -194,6 +198,8 @@ class AnnotationMotifs (AnnotationComponent):
                 for t in g.transcripts.values():
                     if t.main:
                         p = t.promoter
+                        if p is None:
+                            continue
                         occurrences_t = find_all_occurrences(motif, p.seq.upper())
                         occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq).upper()) #type: ignore
                         occurrence_count_total = len(occurrences_t) + len(occurrences_a)
@@ -242,6 +248,8 @@ class AnnotationMotifs (AnnotationComponent):
                 for t in g.transcripts.values():
                     if t.main:
                         p = t.promoter
+                        if p is None:
+                            continue
                         occurrences_t = find_all_occurrences(motif, p.seq.upper())
                         occurrences_a = find_all_occurrences(motif, reverse_complement(p.seq).upper()) #type: ignore
                         occurrence_count_total = len(occurrences_t) + len(occurrences_a)
