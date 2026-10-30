@@ -153,6 +153,12 @@ class TestTranscriptGeneratePromoter:
         assert t.promoter is not None
         assert t.promoter.end <= 100000
 
+    def test_strandless_transcript_has_no_promoter(self, make_transcript, capsys):
+        t = make_transcript(start=5000, end=10000, strand=".")
+        t.generate_promoter(promoter_size=2000, ch_size=100000)
+        assert t.promoter is None
+        assert "does not have a strand" in capsys.readouterr().out
+
 
 # ============================================================
 # clear_UTRs

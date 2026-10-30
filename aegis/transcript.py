@@ -361,8 +361,9 @@ class Transcript(Feature):
                 else:
                     promoter_type = "standard"
         else:
-            print(f"Warning: {self.id} does not have a strand.")
+            print(f"Warning: {self.id} does not have a strand, no promoter generated.")
             promoter_type = "none"
+            self.promoter = None
         
         if promoter_type != "none":
             # Making sure genes at the end of chromosomes or contigs have a defined

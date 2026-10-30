@@ -639,7 +639,8 @@ class Annotation():
         for chrom in self.chrs.values():
             for g in chrom.values():
                 for t in g.transcripts.values():
-                    yield t.promoter
+                    if t.promoter is not None:
+                        yield t.promoter
 
     def iter_features(self, include_atypical: bool = True, include_orphaned: bool = True):
         for chrom in self.chrs.values():
