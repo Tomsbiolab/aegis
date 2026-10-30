@@ -2,6 +2,11 @@
 Shared Pytest fixtures for the Aegis test suite.
 """
 
+import os
+
+# Prevent Typer/Rich from forcing ANSI escape codes during testing (e.g. in GitHub Actions)
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
 import pytest
 from pathlib import Path
 
@@ -87,6 +92,11 @@ def exons_to_collapse_gff3_file():
 def multi_cds_ids_gff3_file():
     """Transcript with CDS segments having different IDs (polycistronic)."""
     return str(TEST_DATA_DIR / "input/annotation/multi_cds_ids.gff3")
+
+@pytest.fixture
+def canonical_gene_example_gff3_file():
+    """Return path to canonical GFF3 specification example (EDEN gene with polycistronic mRNA00003)."""
+    return str(TEST_DATA_DIR / "input/annotation/canonical_gene_example.gff3")
 
 @pytest.fixture
 def transcript_no_parent_gff3_file():
@@ -183,6 +193,11 @@ def arabidopsis_araport11_no_CDS_gff3_file():
     """GFF3 file with Araport11 subset annotation without CDS."""
     return str(TEST_DATA_DIR / "input/annotation/arabidopsis_araport11_no_CDS.gff3")
 
+@pytest.fixture
+def keyless_attributes_gtf_file():
+    """GTF file with keyless/bare attributes (e.g. GFACS output)."""
+    return str(TEST_DATA_DIR / "input/annotation/keyless_attributes.gtf")
+
 # ---------------------------------------------------------------------------
 # Output GFF3 files
 # ---------------------------------------------------------------------------
@@ -242,10 +257,10 @@ def make_transcript():
 @pytest.fixture
 def make_CDS_segment():
     """Create a Feature segment to use as a CDS segment."""
-    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None):
+    def _make(feature_id="seg1", ch="chr1", source="aegis", feature="mRNA", strand="+", start=100, end=300, score=".", parents=None, attributes=None, phase=None):
         if parents is None: parents = ["mRNA1"]
         if attributes is None: attributes = {}
-        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy())
+        return Feature(feature_id, ch, source, feature, strand, start, end, score, parents[:], attributes.copy(), phase=phase)
     return _make
 
 @pytest.fixture

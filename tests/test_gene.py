@@ -3,6 +3,8 @@ Tests for aegis.gene — the Gene class.
 """
 
 import pytest
+from aegis.feature import Feature
+from aegis.subfeatures import UTR
 
 # ============================================================
 # __init__
@@ -46,6 +48,12 @@ class TestGeneRename:
         # Format: VIT + chr1 + g + 00005
         assert g.id == "VITchr1g00005"
         assert g.renamed is True
+
+    def test_rename_with_prefix_and_chrom_label(self, make_gene):
+        """The chromosome label replaces the chromosome name (e.g. chrMT for mitochondrial genes)."""
+        g = make_gene()
+        g.rename(count=5, prefix="VIT", chrom_label="chrMT")
+        assert g.id == "VITchrMTg00005"
 
     def test_rename_with_prefix_and_suffix(self, make_gene):
         """Gene.rename with prefix+suffix generates: {prefix}{ch}g{count:0{digits}d}{sep}{suffix}"""
@@ -161,3 +169,152 @@ class TestGeneLongerCDS:
         # No transcript has main=True, so it returns None
         result = g1.longer_CDS(g2)
         assert result is None
+
+
+# ============================================================
+# name_new_UTRs
+# ============================================================
+
+class TestGeneNameNewUTRs:
+    @staticmethod
+    def _gene(make_gene, make_transcript, make_CDS, utrs_per_transcript, strand="+"):
+        # utrs_per_transcript: {transcript id: [(UTR id, start, end)]}
+        g = make_gene(feature_id="g1", strand=strand)
+        for t_id, utrs in utrs_per_transcript.items():
+            t = make_transcript(t_id, strand=strand)
+            c = make_CDS(feature_id=f"{t_id}_cds", strand=strand)
+            c.UTRs = [UTR(u_id, "chr1", "aegis", "UTR", strand, start, end, ".", [t_id]) for u_id, start, end in utrs]
+            t.CDSs[c.id] = c
+            g.transcripts[t_id] = t
+        return g
+
+    @staticmethod
+    def _new(g, t_ids):
+        return [u for t_id in t_ids for c in g.transcripts[t_id].CDSs.values() for u in c.UTRs]
+
+    @staticmethod
+    def _ids(g):
+        return {t.id: [u.id for c in t.CDSs.values() for u in c.UTRs] for t in g.transcripts.values()}
+
+    def test_existing_ids_are_kept_and_shared_coordinates_reuse_them(self, make_gene, make_transcript, make_CDS):
+        g = self._gene(make_gene, make_transcript, make_CDS, {
+            "t1": [("my_utr", 100, 150)],
+            "t2": [("t2_cds_u1", 100, 150), ("t2_cds_u2", 2000, 2100)],
+            "t3": [("t3_cds_u1", 2000, 2100)],
+        })
+        g.name_new_UTRs(self._new(g, ["t2", "t3"]))
+        assert self._ids(g) == {"t1": ["my_utr"], "t2": ["my_utr", "g1_u001"], "t3": ["g1_u001"]}
+
+    def test_numbers_used_by_existing_ids_are_skipped(self, make_gene, make_transcript, make_CDS):
+        g = self._gene(make_gene, make_transcript, make_CDS, {
+            "t1": [("g1_u001", 100, 150)],
+            "t2": [("t2_cds_u1", 120, 150), ("t2_cds_u2", 2000, 2100)],
+        })
+        g.name_new_UTRs(self._new(g, ["t2"]))
+        assert self._ids(g)["t2"] == ["g1_u002", "g1_u003"]
+        assert [u.id_number for u in self._new(g, ["t2"])] == [2, 3]
+
+    def test_minus_strand_is_numbered_in_transcript_order(self, make_gene, make_transcript, make_CDS):
+        g = self._gene(make_gene, make_transcript, make_CDS, {"t1": [("t1_cds_u1", 100, 150), ("t1_cds_u2", 2000, 2100)]}, strand="-")
+        g.name_new_UTRs(self._new(g, ["t1"]))
+        assert self._ids(g)["t1"] == ["g1_u002", "g1_u001"]
+
+
+# ============================================================
+# compare_protein_blast_hits
+# ============================================================
+
+class TestGeneCompareProteinBlastHits:
+    def test_compare_protein_blast_hits_quiet(self, make_gene, make_transcript, capsys):
+        g1 = make_gene(feature_id="g1")
+        g2 = make_gene(feature_id="g2")
+        t1 = make_transcript("t1", start=100, end=1000)
+        t2 = make_transcript("t2", start=100, end=2000)
+        g1.transcripts["t1"] = t1
+        g2.transcripts["t2"] = t2
+
+        res = g1.compare_protein_blast_hits(g2, source_priority=["sp"], quiet=True)
+        assert res is None
+        captured = capsys.readouterr()
+        assert "Warning" not in captured.out
+
+    def test_compare_protein_blast_hits_not_quiet(self, make_gene, make_transcript, capsys):
+        g1 = make_gene(feature_id="g1")
+        g2 = make_gene(feature_id="g2")
+        t1 = make_transcript("t1", start=100, end=1000)
+        t2 = make_transcript("t2", start=100, end=2000)
+        g1.transcripts["t1"] = t1
+        g2.transcripts["t2"] = t2
+
+        res = g1.compare_protein_blast_hits(g2, source_priority=["sp"], quiet=False)
+        assert res is None
+        captured = capsys.readouterr()
+        assert "Warning: g1 and g2 genes have no associated proteins." in captured.out
+
+
+# ============================================================
+# combine_transcripts
+# ============================================================
+
+class MockScaffold:
+    def __init__(self, seq: str):
+        self.seq = seq
+
+
+class MockGenome:
+    def __init__(self, seq_dict: dict[str, str]):
+        self.name = "mock_genome"
+        self.scaffolds = {k: MockScaffold(v) for k, v in seq_dict.items()}
+
+
+class TestGeneCombineTranscripts:
+    @pytest.fixture
+    def setup_mock_genome(self):
+        saved = Feature._ACTIVE_GENOME
+        def _activate(seq: str, chrom: str = "chr1"):
+            Feature._ACTIVE_GENOME = MockGenome({chrom: seq})
+        yield _activate
+        Feature._ACTIVE_GENOME = saved
+
+    def test_combine_transcripts_orf_or_end_fallback(self, setup_mock_genome, make_gene, make_transcript, make_exon):
+        # 30bp sequence without start/stop codons
+        seq = "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+        setup_mock_genome(seq)
+
+        g = make_gene(feature_id="g1", start=1, end=30, strand="+")
+        t1 = make_transcript(feature_id="t1", start=1, end=20, strand="+")
+        e1 = make_exon(feature_id="e1", start=1, end=20, strand="+")
+        t1.exons = [e1]
+        t1.main = True
+        t1.coding = True
+
+        t2 = make_transcript(feature_id="t2", start=10, end=30, strand="+")
+        e2 = make_exon(feature_id="e2", start=10, end=30, strand="+")
+        t2.exons = [e2]
+
+        g.transcripts = {"t1": t1, "t2": t2}
+        g.coding = True
+
+        g.combine_transcripts(redetect_CDS=True, respect_non_coding=True, quiet=True)
+
+        assert len(g.transcripts) == 1
+        combined_t = list(g.transcripts.values())[0]
+        assert combined_t.id == "g1_t001"
+        assert combined_t.coding is True
+        assert "g1_t001_CDS1" in combined_t.CDSs
+        assert combined_t.CDSs["g1_t001_CDS1"].protein is not None
+        assert combined_t.CDS_size == 30
+
+    def test_combine_transcripts_spans_combined_exons(self, make_gene, make_transcript, make_exon):
+        g = make_gene(feature_id="g1", start=1, end=100, strand="+")
+        t1 = make_transcript(feature_id="t1", start=20, end=60, strand="+")
+        t1.exons = [make_exon(feature_id="e1", start=20, end=60, strand="+")]
+        t1.main = True
+        t2 = make_transcript(feature_id="t2", start=1, end=100, strand="+")
+        t2.exons = [make_exon(feature_id="e2", start=1, end=10, strand="+"), make_exon(feature_id="e3", start=80, end=100, strand="+")]
+        g.transcripts = {"t1": t1, "t2": t2}
+
+        g.combine_transcripts(quiet=True)
+
+        combined_t = g.transcripts["g1_t001"]
+        assert (combined_t.start, combined_t.end) == (1, 100)

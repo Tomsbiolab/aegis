@@ -8,3 +8,6 @@ dist/
 htmlcov/
 .vscode/settings.json
 aegis/*.dot
+aegis_output/
+private/
+auto_sync.py

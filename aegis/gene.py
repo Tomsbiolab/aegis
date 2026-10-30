@@ -9,13 +9,13 @@ from .feature import Feature
 from .subfeatures import Exon
 from .other_components import GeneSynteny
 from .transcript import Transcript
+from .utils.misc import unambiguous_numbers, covered_length
 
 class Gene(Feature):
 
     __slots__ = ('pseudogene', 'transposable', 'transcripts', 'noncoding', '_overlaps', '_synteny', '_quality', 'original_base_id', 'renamed_exons', 'renamed_utrs')
 
     transcripts:dict[str, Transcript]
-    alternative_transcript_rescue:list
     _overlaps:dict[str, list[OverlapHit]]|None
     _synteny: GeneSynteny | None
     
@@ -94,7 +94,11 @@ class Gene(Feature):
         if generated_exons:
             self.rename_exons()
 
-    def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False):
+    def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False, chrom_label:str=""):
+        """
+        With a prefix, the id becomes {prefix}{chrom_label}g{count}{sep}{suffix}; chrom_label defaults
+        to the chromosome name (Annotation.rename_ids passes chrMT/chrCP for organelles).
+        """
 
         if remove_point_suffix:
             if "." in self.id:
@@ -113,7 +117,7 @@ class Gene(Feature):
             if suffix:
                 suffix = f"{sep}{suffix}"
 
-            self.id = f"{prefix}{self.ch}g{count:0{digits}d}{suffix}"
+            self.id = f"{prefix}{chrom_label or self.ch}g{count:0{digits}d}{suffix}"
     
             if self.original_id != self.id:
                 self.renamed = True
@@ -179,6 +183,11 @@ class Gene(Feature):
                 if new_transcript.collapsed_exons == True:
                     collapsed_exons = True
 
+                # The main transcript's span is widened to all the combined exons, so the coordinate check in
+                # the annotation update does not report the expected mismatch
+                new_transcript.start = min(e.start for e in new_transcript.exons)
+                new_transcript.end = max(e.end for e in new_transcript.exons)
+
                 if collapsed_exons:
                     self.rename_exons()
 
@@ -207,6 +216,10 @@ class Gene(Feature):
                 if t.coding_ratio < 0.80:
                     t.generate_best_protein(must_have_stop=False, quiet=quiet)
                 t.update(quiet=quiet)
+
+                if t.coding_ratio < 0.80:
+                    t.generate_best_protein(mode="orf_or_end", must_have_stop=False, quiet=quiet)
+                t.update(quiet=quiet)
             
             self.update(quiet=quiet)
 
@@ -224,7 +237,7 @@ class Gene(Feature):
                                         else:
                                             return False
                                         
-    def compare_protein_blast_hits(self, other:Gene, source_priority:list):
+    def compare_protein_blast_hits(self, other:Gene, source_priority:list, quiet:bool=True):
         """
         Method required to deal with the fact that a gene may have several blast hits due to several proteins...
         """
@@ -232,13 +245,16 @@ class Gene(Feature):
         other_proteins = [c.protein for t in other.transcripts.values() for c in t.CDSs.values() if c.protein]
 
         if not self_proteins and not other_proteins:
-            print(f"Warning: {self.id} and {other.id} genes have no associated proteins.")
+            if not quiet:
+                print(f"Warning: {self.id} and {other.id} genes have no associated proteins.")
             return None
         elif not self_proteins:
-            print(f"Warning: {self.id} gene has no associated proteins.")
+            if not quiet:
+                print(f"Warning: {self.id} gene has no associated proteins.")
             return False
         elif not other_proteins:
-            print(f"Warning: {other.id} gene has no associated proteins.")
+            if not quiet:
+                print(f"Warning: {other.id} gene has no associated proteins.")
             return True
 
         if not source_priority:
@@ -248,6 +264,24 @@ class Gene(Feature):
         best_other_protein = min(other_proteins, key=lambda p: p.get_blast_hits_key(source_priority))
 
         return best_self_protein.compare_blast_hits(best_other_protein, source_priority)
+
+    @property
+    def exonic_size(self) -> int:
+        """
+        Bases covered by the exons of all its transcripts, each counted once: the gene length when its reads
+        are counted on all its exons (as featureCounts counts exons grouped by gene_id). size is its genomic span.
+        """
+        return covered_length((e.start, e.end) for t in self.transcripts.values() for e in t.exons)
+
+    @property
+    def coding_exonic_size(self) -> int:
+        """Bases covered by the exons of its coding transcripts, each counted once (0 without coding transcripts)."""
+        return covered_length((e.start, e.end) for t in self.transcripts.values() if t.coding for e in t.exons)
+
+    @property
+    def main_transcript_size(self) -> int:
+        """Mature length of its main transcript (0 without transcripts)."""
+        return next((t.size for t in self.transcripts.values() if t.main), 0)
 
     def get_main_CDS_range(self):
         for t in self.transcripts.values():
@@ -286,7 +320,8 @@ class Gene(Feature):
                         self.renamed_exons = True
 
             else:
-                
+                keep_numbering = keep_numbering and unambiguous_numbers(((e.start, e.end, e.ch, e.strand), e.id_number) for t in self.transcripts.values() for e in t.exons)
+
                 exon_names: dict[tuple[int, int, str, str], str] = {}
 
                 exon_d:dict[str, list[Exon]] = {"+":[], "-":[], ".": []}
@@ -315,7 +350,7 @@ class Gene(Feature):
                     key = (e.start, e.end, e.ch, e.strand)
                     if key not in rev_exon_names:
                         if keep_numbering and e.id_number != None:
-                            rev_exon_names[key] = str(e.id_number)
+                            rev_exon_names[key] = e.id_number
                         else:
                             rev_exon_names[key] = ""
 
@@ -352,6 +387,34 @@ class Gene(Feature):
 
 
 
+    def name_new_UTRs(self, new_UTRs:list[UTR], sep:str="_", digits:int=3):
+        """
+        Names UTRs added to the gene (derived with provisional ids, see UTR.provisional) without renaming
+        the others: a new UTR with the coordinates of an existing one takes its id, and the rest take the
+        free <gene>_u<n> numbers in transcript order, new UTRs shared between transcripts sharing their id.
+        """
+        new = {id(u) for u in new_UTRs}
+        names: dict[tuple[int, int, str, str], str] = {}
+        used = set()
+        for t in self.transcripts.values():
+            for c in t.CDSs.values():
+                for u in c.UTRs:
+                    if id(u) not in new:
+                        names.setdefault((u.start, u.end, u.ch, u.strand), u.id)
+                        used.add(u.id)
+        n = 0
+        for u in sorted(new_UTRs, key=lambda u: -u.end if u.strand == "-" else u.start):
+            key = (u.start, u.end, u.ch, u.strand)
+            if key not in names:
+                n += 1
+                while f"{self.base_id}{sep}u{n:0{digits}d}" in used:
+                    n += 1
+                names[key] = f"{self.base_id}{sep}u{n:0{digits}d}"
+                used.add(names[key])
+            u.id = names[key]
+            u.provisional = False
+            u.update_numbering()
+
     def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):
         """
         Deals with gene level naming of utrs, making sure shared utrs receive the same numbering, also considering strand orientation.
@@ -380,7 +443,8 @@ class Gene(Feature):
                         self.renamed_utrs = True
 
             else:
-                
+                keep_numbering = keep_numbering and unambiguous_numbers(((u.start, u.end, u.ch, u.strand), u.id_number) for t in self.transcripts.values() for c in t.CDSs.values() for u in c.UTRs)
+
                 utr_names: dict[tuple[int, int, str, str], str] = {}
 
                 utr_d:dict[str, list[UTR]] = {"+":[], "-":[], ".": []}
@@ -410,7 +474,7 @@ class Gene(Feature):
                     key = (u.start, u.end, u.ch, u.strand)
                     if key not in rev_utr_names:
                         if keep_numbering and u.id_number != None:
-                            rev_utr_names[key] = str(u.id_number)
+                            rev_utr_names[key] = u.id_number
                         else:
                             rev_utr_names[key] = ""
 
@@ -440,6 +504,7 @@ class Gene(Feature):
                         for u in c.UTRs:
                             key = (u.start, u.end, u.ch, u.strand)
                             u.id = utr_names[key]
+                            u.provisional = False
 
                             if u.original_id != u.id:
                                 self.renamed_utrs = True
@@ -450,9 +515,10 @@ class Gene(Feature):
 
         collapsed_exons = False
         collapsed_CDS_segments = False
+        merged_exons = []
         for t in self.transcripts.values():
             if exons:
-                t.collapse_exons()
+                merged_exons.extend(t.collapse_exons())
                 if t.collapsed_exons == True:
                     collapsed_exons = True
             if CDSs:
@@ -461,11 +527,35 @@ class Gene(Feature):
                     collapsed_CDS_segments = True
 
         if collapsed_exons or collapsed_CDS_segments:
-            if collapsed_exons:
-                self.rename_exons()
-            if collapsed_CDS_segments:
-                self.rename_utrs()
+            # Merged exons keep the id of their 5'-most exon unless it is still used by another exon
+            self.resolve_exon_id_clashes(merged_exons)
             self.update(quiet=quiet)
+
+    def resolve_exon_id_clashes(self, changed:list[Exon]):
+        """
+        Gives exons whose coordinates were changed (merged or extended) a new id, <id>_<n>, when their
+        id is also used by an exon with other coordinates, e.g. the unchanged copy of a shared exon in
+        another transcript. Changed copies with the same coordinates get the same new id; all other
+        exons keep theirs.
+        """
+        coordinates: dict[str, set[tuple[int, int]]] = {}
+        for t in self.transcripts.values():
+            for e in t.exons:
+                coordinates.setdefault(e.id, set()).add((e.start, e.end))
+        used_ids = set(coordinates)
+        new_ids = {}
+        for e in changed:
+            if len(coordinates.get(e.id, ())) <= 1:
+                continue
+            key = (e.id, e.start, e.end)
+            if key not in new_ids:
+                n = 2
+                while f"{e.id}_{n}" in used_ids:
+                    n += 1
+                new_ids[key] = f"{e.id}_{n}"
+                used_ids.add(new_ids[key])
+            e.id = new_ids[key]
+            e.update_numbering()
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 
@@ -513,7 +603,7 @@ class Gene(Feature):
             temp_attributes.extend(extra)
 
         attribute_string = ";".join(temp_attributes)
-        phase = self.phase if self.phase is not None else "."
+        phase = "."
         return(f"{self.ch}\t{self.source}\t{self.feature}\t{self.start}\t{self.end}\t{self.score}\t{self.strand}\t{phase}\t{attribute_string}\n")
 
     def __str__(self):

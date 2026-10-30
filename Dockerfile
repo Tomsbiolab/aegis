@@ -46,31 +46,8 @@ RUN conda install -n base -c conda-forge mamba -y
 # -----------------------------------------------------------------------------
 # STAGE 3: ENVIRONMENT CREATION & SOFTWARE INSTALLATION
 # -----------------------------------------------------------------------------
-# Install most packages directly with Mamba.
-# This is more reliable and avoids compilation/dependency issues.
-# Mamba will resolve compatible versions for Python 3.14.
-RUN mamba create -n bio_env -c conda-forge -c bioconda -y \
-    python=3.12 \
-    pip \
-    setuptools \
-    cigar \
-    # Bioinformatics tools
-    jcvi \
-    last \
-    diamond=2.1.8 \
-    minimap2 \
-    liftoff \
-    orthofinder \
-    # Python libraries
-    pandas \
-    plotly \
-    python-kaleido \
-    biopython \
-    matplotlib \
-    scipy \
-    colorlover \
-    tqdm \
-    typing_extensions
+COPY spec-file.txt .
+RUN mamba create -n bio_env --file spec-file.txt
 
 # Activate the environment for subsequent commands
 SHELL ["conda", "run", "-n", "bio_env", "/bin/bash", "-c"]

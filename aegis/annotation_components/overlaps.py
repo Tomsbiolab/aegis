@@ -7,6 +7,8 @@ if TYPE_CHECKING:
 
 import time
 import sys
+import warnings
+
 import networkx as nx
 import pandas as pd
 
@@ -14,43 +16,33 @@ from pathlib import Path
 from tqdm import tqdm
 
 from ..hits import OverlapHit
+from .base import AnnotationComponent
+from ..utils.misc import start_progress_bar, shared_bases
 
-class AnnotationOverlaps:
+class AnnotationOverlaps(AnnotationComponent):
     """
     Component for handling overlaps methods for the Annotation class.
     Accessed via 'annotation_object.overlaps'.
     """
-    _annot: Annotation
     self_genes: set[str]
     other_genes: set[str]
 
     def __init__(self, annotation:Annotation):
-        self._annot = annotation
+        super().__init__(annotation)
         self.self_genes = set()
         self.other_genes = set()
-    
+
     def detect(self, other:Annotation|None=None, sort_processes:int=1, clear=True, quiet:bool=True):
         """
         Detecting gene overlaps within the same annotation object or between
         annotation objects, provided they refer to the same genome.
         """
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
+        self._annot.sort_genes(processes=sort_processes)
 
-        if not self._annot.sorted:
-            self._annot.sort_genes(processes=sort_processes)
-        
         if other != None:
-            if not other.sorted:
-                other.sort_genes(processes=sort_processes)
+            other.sort_genes(processes=sort_processes)
 
         if self._annot.original_annotation is not None:
             self._annot.define_synteny(sort_processes=sort_processes)
@@ -78,12 +70,8 @@ class AnnotationOverlaps:
                            "recalculate them")
                 else:
                     start_time = time.time()
-                    progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mWorking out overlaps between {self._annot.id} and {other.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+                    progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Working out overlaps between {self._annot.id} and {other.id} annotations", colour="91", quiet=quiet)
 
                     if other.name not in self._annot.overlapped_annotations: # type: ignore
                         self._annot.overlapped_annotations.add(other.name)
@@ -127,14 +115,9 @@ class AnnotationOverlaps:
                                                 target_exons = True
                                             if t1.strand == t2.strand:
                                                 exon_orientation = True
-                                            overlap_exon_temp = 0
-                                            for e1 in t1.exons:
-                                                for e2 in t2.exons:
-                                                    overlap_temp, overlap_bp = e1.overlap(e2)
-                                                    if overlap_temp:
-                                                        overlap_exon_temp += overlap_bp
-                                                        overlapping = True
+                                            overlap_exon_temp = shared_bases(t1.exons, t2.exons)
                                             if overlap_exon_temp != 0:
+                                                overlapping = True
                                                 if overlap_exon_temp > best_exon_overlap:
                                                     best_exon_overlap = overlap_exon_temp
                                                     exon_query_size = t1.size
@@ -148,7 +131,8 @@ class AnnotationOverlaps:
                                     if target_exons and query_exons:
                                         exons_in_both = True
                                         if gene_orientation != exon_orientation:
-                                            print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}.")
+                                            if not quiet:
+                                                print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}.")
                                         if overlapping:
                                             exon_query_percent = (best_exon_overlap / exon_query_size) * 100
                                             exon_target_percent = (best_exon_overlap / exon_target_size) * 100
@@ -177,15 +161,9 @@ class AnnotationOverlaps:
                                                 CDS_orientation = True
                                             for CDS1 in t1.CDSs.values():
                                                 for CDS2 in t2.CDSs.values():
-                                                    overlap_CDS_temp = 0
-                                                    for c1 in CDS1.CDS_segments:
-                                                        for c2 in CDS2.CDS_segments:
-                                                            overlap_temp, overlap_bp = c1.overlap(c2)
-                                                            if not overlap_temp:
-                                                                continue
-                                                            overlap_CDS_temp += overlap_bp
-                                                            overlapping = True
+                                                    overlap_CDS_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments)
                                                     if overlap_CDS_temp != 0:
+                                                        overlapping = True
                                                         if overlap_CDS_temp > best_CDS_overlap:
                                                             best_CDS_overlap = overlap_CDS_temp
                                                             CDS_query_size = CDS1.size
@@ -199,7 +177,8 @@ class AnnotationOverlaps:
                                     if target_CDS and query_CDS:
                                         CDSs_in_both = True
                                         if gene_orientation != CDS_orientation:
-                                            print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}.")
+                                            if not quiet:
+                                                print(f"Warning: {self._annot.id} query and {other.id} target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}.")
                                         if overlapping:
                                             CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
                                             CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
@@ -229,18 +208,9 @@ class AnnotationOverlaps:
                                                         target_protein = True
                                                     for CDS1 in t1.CDSs.values():
                                                         for CDS2 in t2.CDSs.values():
-                                                            overlap_protein_temp = 0
-                                                            for c1 in CDS1.CDS_segments:
-                                                                for c2 in CDS2.CDS_segments:
-                                                                    overlap_temp, overlap_bp = c1.overlap(c2)
-                                                                    if not overlap_temp:
-                                                                        continue
-                                                                    if c1.frame != c2.frame:
-                                                                        continue
-                                                                    
-                                                                    overlap_protein_temp += overlap_bp
-                                                                    overlapping = True
+                                                            overlap_protein_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments, same_frame=True)
                                                             if overlap_protein_temp != 0:
+                                                                overlapping = True
                                                                 if overlap_protein_temp > best_protein_overlap:
                                                                     best_protein_overlap = overlap_protein_temp
                                                                     protein_query_size = CDS1.size
@@ -286,8 +256,8 @@ class AnnotationOverlaps:
                                                                     CDSs_in_both,
                                                                     CDS_target_percent,
                                                                     CDS_query_percent,
-                                                                    protein_query_percent,
                                                                     protein_target_percent,
+                                                                    protein_query_percent,
                                                                     g1.synteny.liftover_conserved,
                                                                     g1.extra_copy))
                     self._annot.add_aliases()
@@ -305,12 +275,8 @@ class AnnotationOverlaps:
             if self.self_genes != set():
                 print("There are already detected 'self' gene overlaps, please run 'self.clear()' if you want to recalculate them")
             else:
-                progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                            bar_format=(
-                f'\033[1;91mWorking out overlaps within {self._annot.id} annotation:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;91m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
+
+                progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Working out overlaps within {self._annot.id} annotation", colour="91", quiet=quiet)
 
                 # making sure self overlaps are not added twice
                 start_time = time.time()
@@ -356,14 +322,9 @@ class AnnotationOverlaps:
                                         target_exons = True
                                     if t1.strand == t2.strand:
                                         exon_orientation = True
-                                    overlap_exon_temp = 0
-                                    for e1 in t1.exons:
-                                        for e2 in t2.exons:
-                                            overlap_temp, overlap_bp = e1.overlap(e2)
-                                            if overlap_temp:
-                                                overlap_exon_temp += overlap_bp
-                                                overlapping = True
+                                    overlap_exon_temp = shared_bases(t1.exons, t2.exons)
                                     if overlap_exon_temp != 0:
+                                        overlapping = True
                                         if overlap_exon_temp > best_exon_overlap:
                                             best_exon_overlap = overlap_exon_temp
                                             exon_query_size = t1.size
@@ -377,7 +338,8 @@ class AnnotationOverlaps:
                             if target_exons and query_exons:
                                 exons_in_both = True
                                 if gene_orientation != exon_orientation:
-                                    print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}")
+                                    if not quiet:
+                                        print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and exons. Genes: {g1.id} and {g2.id}")
                                 if overlapping:
                                     exon_query_percent = (best_exon_overlap / exon_query_size) * 100
                                     exon_target_percent = (best_exon_overlap / exon_target_size) * 100
@@ -405,15 +367,9 @@ class AnnotationOverlaps:
                                         CDS_orientation = True
                                     for CDS1 in t1.CDSs.values():
                                         for CDS2 in t2.CDSs.values():
-                                            overlap_CDS_temp = 0
-                                            for c1 in CDS1.CDS_segments:
-                                                for c2 in CDS2.CDS_segments:
-                                                    overlap_temp, overlap_bp = c1.overlap(c2)
-                                                    if not overlap_temp:
-                                                        continue
-                                                    overlap_CDS_temp += overlap_bp
-                                                    overlapping = True
+                                            overlap_CDS_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments)
                                             if overlap_CDS_temp != 0:
+                                                overlapping = True
                                                 if overlap_CDS_temp > best_CDS_overlap:
                                                     best_CDS_overlap = overlap_CDS_temp
                                                     CDS_query_size = CDS1.size
@@ -427,7 +383,8 @@ class AnnotationOverlaps:
                             if target_CDS and query_CDS:
                                 CDSs_in_both = True
                                 if gene_orientation != CDS_orientation:
-                                    print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}")
+                                    if not quiet:
+                                        print(f"Warning: {self._annot.id} query and target have discrepancies in the orientation of gene and CDS. Genes: {g1.id} and {g2.id}")
                                 if overlapping:
                                     CDS_query_percent = (best_CDS_overlap / CDS_query_size) * 100
                                     CDS_target_percent = (best_CDS_overlap / CDS_target_size) * 100
@@ -457,18 +414,9 @@ class AnnotationOverlaps:
                                                     target_protein = True
                                                 for CDS1 in t1.CDSs.values():
                                                     for CDS2 in t2.CDSs.values():
-                                                        overlap_protein_temp = 0
-                                                        for c1 in CDS1.CDS_segments:
-                                                            for c2 in CDS2.CDS_segments:
-                                                                overlap_temp, overlap_bp = c1.overlap(c2)
-                                                                if not overlap_temp:
-                                                                    continue
-                                                                if c1.frame != c2.frame:
-                                                                    continue
-                                                                
-                                                                overlap_protein_temp += overlap_bp
-                                                                overlapping = True
+                                                        overlap_protein_temp = shared_bases(CDS1.CDS_segments, CDS2.CDS_segments, same_frame=True)
                                                         if overlap_protein_temp != 0:
+                                                            overlapping = True
                                                             if overlap_protein_temp > best_protein_overlap:
                                                                 best_protein_overlap = overlap_protein_temp
                                                                 protein_query_size = CDS1.size
@@ -513,8 +461,8 @@ class AnnotationOverlaps:
                                                                 CDSs_in_both,
                                                                 CDS_target_percent,
                                                                 CDS_query_percent,
-                                                                protein_query_percent,
                                                                 protein_target_percent,
+                                                                protein_query_percent,
                                                                 g1.synteny.liftover_conserved,
                                                                 g1.extra_copy))
                         try:
@@ -570,23 +518,9 @@ class AnnotationOverlaps:
         """
         Number of unique full segment overlaps between genes including all transcript variants.
         """
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        total = len(self._annot.all_gene_ids.keys())
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Adding qualitative info to {self._annot.id} overlaps", colour="95", quiet=quiet)
 
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mAdding qualitative info to {self._annot.id} overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -635,31 +569,54 @@ class AnnotationOverlaps:
     def clear_with_selected_CDSs(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
-                g.quality.overlap_with_selected_CDS = False   
+                g.quality.overlap_with_selected_CDS = False
 
     def clear_with_selected_exons(self):
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 g.quality.overlap_with_selected_exon = False
 
-    def export(self, custom_path: str = "", overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_csv: bool = False, export_self: bool = False, output_file: str = "", quiet: bool = False, copies_info: bool = False) -> pd.DataFrame:
-        start_time = time.time()
-        if export_self:
-            export = "self"
-            export_tag = "self_"
-        else:
-            export = "other"
-            export_tag = ""
+    def export(self, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "overlaps", subfolder: bool = False, save_csv: bool = False, use_annot_dir: bool = False, overlap_threshold: int = 6, verbose: bool = True, synteny: bool = False, NAs: bool = True, export_self: bool = False, quiet: bool = False, copies_info: bool = False, sep: str = "\t", extension: str = "", use_name_not_id: bool = False,
+               # Deprecated arguments
+               output_file: str | None = None, custom_path: str | None = None, export_csv: bool | None = None
+               ) -> pd.DataFrame:
 
-        tag = f"{export_tag}{self._annot.id}{self._annot.feature_suffix}_overlap_t{overlap_threshold}"
-        
+        start_time = time.time()
+
+        if output_file is not None:
+            warnings.warn("'output_file' is deprecated and will be removed in a future version. Please use 'filepath' instead.", DeprecationWarning, stacklevel=2)
+            if filepath is None:
+                filepath = output_file
 
         if custom_path:
-            export_folder = Path(custom_path)
+            warnings.warn("'custom_path' is deprecated and will be removed in a future version. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if export_csv is not None:
+            warnings.warn("'export_csv' is deprecated. Please use 'save_csv' instead.", DeprecationWarning, stacklevel=2)
+            save_csv = export_csv
+
+        if subfolder_name != "overlaps":
+            subfolder = True
+            save_csv = True
+
+        elif filepath or filename or output_dir or subfolder:
+            save_csv = True
+
+        if sep == "\t" and extension == "":
+            extension = ".tsv"
+        elif sep == "," and extension == "":
+            extension = ".csv"
+
+        if export_self:
+            export_mode = "self"
+            prefix = "self"
         else:
-            export_folder = Path(custom_path or self._annot.path) / "overlaps"
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+            export_mode = "other"
+            prefix = ""
+
+        extra_suffixes = [f"overlap_t{overlap_threshold}"]
 
         correct_order = ["gene_id_A", "gene_id_B", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "same_strand", "min_gene_percent", "min_exon_percent", "min_CDS_percent", "gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_copy", "gene_id_B_copy"]
 
@@ -668,7 +625,7 @@ class AnnotationOverlaps:
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 for name, hits in g.overlaps.items():
-                    if name == export:
+                    if name == export_mode:
                         for hit in hits:
                             if hit.score < overlap_threshold:
                                 continue
@@ -699,10 +656,9 @@ class AnnotationOverlaps:
 
         eq_df = pd.DataFrame(rows)
 
-
         if eq_df.empty:
 
-            if export == "self":
+            if export_mode == "self":
                 print(f"\nNo {self._annot.id} self overlaps were detected.")
             else:
                 print(f"\nNo {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' were detected.")
@@ -736,9 +692,7 @@ class AnnotationOverlaps:
             rows = []
             eq_df = pd.DataFrame(rows, columns=cols)
 
-
-
-        if export == "self":
+        if export_mode == "self":
             eq_df["sorted_id_pair"] = eq_df.apply(lambda row: tuple(sorted([row["gene_id_A"], row["gene_id_B"]])), axis=1)
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
             eq_df.drop(inplace=True, columns=["gene_id_A_origin", "gene_id_B_origin"])
@@ -748,17 +702,19 @@ class AnnotationOverlaps:
             eq_df = eq_df.drop_duplicates(subset="sorted_id_pair").drop(columns="sorted_id_pair")
 
         if NAs:
-            tag += "_gene_id_A_NAs"
-            if export == "self":
-                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna())
+
+            extra_suffixes.append("gene_id_A_NAs")
+
+            if export_mode == "self":
+                overlapping_genes = set(pd.concat([eq_df["gene_id_A"], eq_df["gene_id_B"]]).dropna()) if not eq_df.empty else set()
             else:
-                overlapping_genes = set(eq_df["gene_id_A"].dropna())
+                overlapping_genes = set(eq_df["gene_id_A"].dropna()) if not eq_df.empty else set()
 
             na_rows = []
 
             if not copies_info:
 
-                if export == "self":
+                if export_mode == "self":
 
                     for genes in self._annot.chrs.values():
                         for g in genes.values():
@@ -790,7 +746,7 @@ class AnnotationOverlaps:
 
             else:
 
-                if export == "self":
+                if export_mode == "self":
 
                     for genes in self._annot.chrs.values():
                         for g in genes.values():
@@ -822,7 +778,6 @@ class AnnotationOverlaps:
                             "gene_id_A_origin": self._annot.name
                         })          
 
-            # Combine with the original df
             if na_rows:
                 eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
 
@@ -831,7 +786,7 @@ class AnnotationOverlaps:
         if synteny:
             column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
             ascending = [True, True, False, False, False, True, True]
-        elif export == "self":
+        elif export_mode == "self":
             column_sort_order = ["overlap_score", "gene_id_A", "gene_id_B"]
             ascending = [False, True, True]
         else:
@@ -841,18 +796,16 @@ class AnnotationOverlaps:
         eq_df.sort_values(by=column_sort_order, ascending=ascending, inplace=True)
         eq_df.reset_index(drop=True, inplace=True)
         
-        if export_csv:
-            if output_file:
-                export_path = f"{export_folder}{output_file}"
-            else:
-                export_path = f"{export_folder}{tag}.csv"
+        if save_csv:
 
-            eq_df.to_csv(export_path, sep="\t", index=False, na_rep="NA")
+            final_output_path = self._resolve_output_path(prefix=prefix, filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+            eq_df.to_csv(str(final_output_path), sep=sep, index=False, na_rep="NA")
 
             now = time.time()
             lapse = now - start_time
             if not quiet:
-                if export == "self":
+                if export_mode == "self":
                     print(f"\nExporting {self._annot.id} self overlaps took {round(lapse/60, 1)} minutes")
                 else:
                     print(f"\nExporting {self._annot.id} overlaps to the following annotation(s) '{self._annot.overlapped_annotations}' took {round(lapse/60, 1)} minutes")

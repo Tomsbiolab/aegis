@@ -1,22 +1,21 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-import networkx as nx
-import sys
-from tqdm import tqdm
-
 if TYPE_CHECKING:
     from ..annotation import Annotation
-    from ..genome import Genome
 
-class AnnotationRedundancy:
+import networkx as nx
+
+from .base import AnnotationComponent
+from ..utils.misc import start_progress_bar
+
+class AnnotationRedundancy(AnnotationComponent):
     """
     Component for handling redundancy removal for the Annotation class.
     Accessed via 'annotation_object.redundancy'.
     """
-    _annot: Annotation
     def __init__(self, annotation: Annotation):
-        self._annot = annotation
+        super().__init__(annotation)
         self._pairwise_decisions: list[dict] = []
         self._current_filter_step: str = ""
 
@@ -221,21 +220,9 @@ class AnnotationRedundancy:
                 "genemark",
                 "abinitio_",
             ]
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} noisy genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} noisy genes", colour="91", quiet=quiet)
+
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -273,21 +260,9 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def mark_transcriptomic_supported_genes(self, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} transcriptomic supported genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} transcriptomic supported genes", colour="91", quiet=quiet)
+        
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 g.quality.transcriptomic_evidence = False
@@ -303,21 +278,9 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark", "abinitio_"], quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} abinitio supported genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} abinitio supported genes", colour="91", quiet=quiet)
+
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 g.quality.abinitio_evidence = False
@@ -333,21 +296,8 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def add_reliable_CDS_evidence_score(self, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} reliable CDS evidences:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} reliable CDS evidences", colour="91", quiet=quiet)
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -365,21 +315,8 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def mark_reliable_CDS_evidences(self, unreliable_sources:list=["GlimmerHMM", "geneid_v1.4"], quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} reliable CDS evidences:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} reliable CDS evidences", colour="91", quiet=quiet)
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -401,21 +338,8 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def find_best_gene_model(self, source_priority:list, just_with_reliables:bool=True, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} noisy genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=(len(self._annot.all_gene_ids.keys())*2), description=f"Find best gene model in {self._annot.id}", colour="91", quiet=quiet)
         
         if just_with_reliables:
             for genes in self._annot.chrs.values():
@@ -477,21 +401,9 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def mark_overlap_with_reliable_genes(self, quiet:bool=False):
-                # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} overlap with reliable genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=(len(self._annot.all_gene_ids.keys())*2), description=f"Mark {self._annot.id} overlap with reliable genes", colour="91", quiet=quiet)
+
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -502,21 +414,8 @@ class AnnotationRedundancy:
         progress_bar.close()
 
     def add_better_ab_initio_models_as_alternative_transcripts(self, source_priority, reliable_sources:list=["augustus", "genemark"], quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys())*3, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mSelecting {self._annot.id} alternative transcripts:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=(len(self._annot.all_gene_ids.keys())*3), description=f"Selecting {self._annot.id} alternative transcripts", colour="91", quiet=quiet)
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -722,9 +621,9 @@ class AnnotationRedundancy:
                         if ignore_removed:
                             if self._annot.chrs[chrom][o.id].quality.remove and not self._annot.chrs[chrom][o.id].quality.rescue:
                                 continue
-                        if (o.exon_query_percent == 0 and o.exon_target_percent == 0) and (g.start > self._annot.chrs[chrom][o.id].start or g.end < self._annot.chrs[chrom][o.id].end):
+                        if (o.exon_query_percent == 0 and o.exon_target_percent == 0) and (g.start >= self._annot.chrs[chrom][o.id].start or g.end <= self._annot.chrs[chrom][o.id].end):
                             g.quality.intron_nested = True
-                            if self._annot.chrs[chrom][o.id].start < g.start and self._annot.chrs[chrom][o.id].end > g.end:
+                            if self._annot.chrs[chrom][o.id].start <= g.start and self._annot.chrs[chrom][o.id].end >= g.end:
                                 g.quality.intron_nested_fully_contained = True
 
                             target_cds = self._annot.chrs[chrom][o.id].get_main_CDS_range()
@@ -743,7 +642,7 @@ class AnnotationRedundancy:
                                 if t.main:
                                     if t.introns:
                                         for i in t.introns:
-                                            if i.start < g.start and i.end > g.end:
+                                            if i.start <= g.start and i.end >= g.end:
                                                 g.quality.intron_nested_single = True
                                                 break
                                         break
@@ -837,21 +736,9 @@ class AnnotationRedundancy:
 
     def mark_overlap_with_other_selected_CDSs(self, quiet:bool=False):
         self._annot.overlaps.clear_with_selected_CDSs()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} overlap with other selected CDSs:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))        
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} overlap with other selected CDSs", colour="91", quiet=quiet)
+
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -884,21 +771,9 @@ class AnnotationRedundancy:
 
     def mark_overlap_with_other_selected_exons(self, quiet:bool=False):
         self._annot.overlaps.clear_with_selected_exons()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
+        
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Mark {self._annot.id} overlap with other selected exons", colour="91", quiet=quiet)
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mMark {self._annot.id} overlap with other selected exons:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))   
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -933,21 +808,8 @@ class AnnotationRedundancy:
         return max(t.size for t in g.transcripts.values())
 
     def select_best_possible_non_overlapping_UTR(self, exon=False, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mSelect {self._annot.id} best possible non overlapping UTR:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Select {self._annot.id} best possible non overlapping UTR", colour="91", quiet=quiet)
         
         if not exon:
             for genes in self._annot.chrs.values():
@@ -1097,7 +959,6 @@ class AnnotationRedundancy:
                                 self._annot.chrs[g.ch][o.id].clear_UTRs()
                                 g.clear_UTRs()
 
-        self._annot.sorted = False
 
     def _snapshot_genes(self, snapshot):
         if isinstance(snapshot, dict) and "genes" in snapshot:
@@ -1257,7 +1118,7 @@ class AnnotationRedundancy:
         self._current_filter_step = ""
         if not quiet:
             print("=== Initial BLAST values ===")
-            for chrom, genes in self._annot.chrs.items():
+            for _, genes in self._annot.chrs.items():
                 for g_id, g in sorted(genes.items()):
                     gene_blasts = []
                     for b in g.quality.blast_hits:

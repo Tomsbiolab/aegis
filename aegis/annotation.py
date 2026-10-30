@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from .genome import Genome
     from .utils.gtf_gff import GffEntry
 
-import sys
 import copy
 import random
 import time
@@ -21,29 +20,61 @@ import pandas as pd
 import os
 import warnings
 import math
-import gc
+import re
 
-from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
 
 from .feature import Feature
+from .genome import classify_compartment
 from .gene import Gene
 from .transcript import Transcript
-from .subfeatures import Exon, UTR
+from .subfeatures import Exon, UTR, CDS
 from .hits import BlastHit
-from .utils.genefunctions import sort_and_update_genes
-from .utils.misc import read_file_with_fallback, open_file
+from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
+from .utils.misc import read_file_with_fallback, open_file, start_progress_bar, unambiguous_numbers
 from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
 from .annotation_components.overlaps import AnnotationOverlaps
 from .annotation_components.redundancy import AnnotationRedundancy
-from .conf import default_noncoding_transcripts, default_features_r
-
+from .conf import default_noncoding_transcripts, default_features_r, default_features
 
 class Annotation():
+
+    WARNING_KEYS = (
+        "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
+        "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
+        "missing_subfeature_parent_liftover", "overlapping_CDS_segments",
+        "possible_polycistronic_transcript", "independent_CDS_segment_ids",
+        "overlapping_exons", "abutting_exons",
+        "transcript_with_no_exons",
+        "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene",
+        "feature_exceeds_scaffold_length", "chromosome_not_in_genome",
+        "phase_mismatch_across_intron",
+        "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron",
+        "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
+        "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived",
+        "repeated_subfeature_ids", "self_parented_transcript"
+    )
+
+    # Warnings that describe the state of the annotation object and can therefore be rechecked
+    # after modifications; the rest are only detectable while parsing the input file
+    RECHECKABLE_WARNING_KEYS = (
+        "phase_mismatch_across_intron", "overlapping_exons", "abutting_exons",
+        "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron", "utr_exceeds_exon",
+        "exon_transcript_boundary_mismatch", "transcript_exceeds_gene", "gene_exceeds_transcripts",
+        "gene_with_no_transcripts", "transcript_with_no_exons",
+    )
+
+    @staticmethod
+    def _warning_ids_hint(warning_key:str) -> str:
+        return f"; to list their ids, run `aegis summary` on this annotation, which exports them in the '{warning_key}' column of its _warnings.csv"
+
+    @classmethod
+    def _new_warnings_dict(cls, keys:tuple[str, ...]|None=None) -> dict[str, set[str]]:
+        return {key: set() for key in (cls.WARNING_KEYS if keys is None else keys)}
 
     _stats: AnnotationStats
     _export: AnnotationExport
@@ -61,6 +92,7 @@ class Annotation():
     _gene_info:dict[str, set[str]]
     _transcript_info:dict[str, set[str]]
     _miRNA_info:set[str]
+    contains_promoters:bool
 
     tags:set[str]
 
@@ -69,10 +101,12 @@ class Annotation():
     bar_colors = ["31", "32", "34", "33", "33", "33"]
     overlapped_annotations: set[str]
 
-    tags_to_detect:set[str] = { "clean", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
-    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_small_CDSs", "combined", "full_renamed_ids"}
+    tags_to_detect:set[str] = { "clean", "dapfit", "dapmod", "confrenamed", "plus_symbols", "standardised_features"}
+    feature_tags_to_detect:set[str] = {"minus_TE", "minus_non_TE", "minus_coding", "minus_non_coding", "minus_pseudogene", "minus_non_pseudogene", "minus_small_CDS", "combined", "full_renamed_ids"}
+    # Tags of renamed chromosomes only change exports that list chromosome names
+    chromosome_tags:set[str] = {"confrenamed", "dapmod"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str=""):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False):
         
         start_time = time.time()
 
@@ -97,7 +131,35 @@ class Annotation():
         self.to_overlap = to_overlap
         self.overlapped_annotations = set()
         self.merged = False
-        self.sorted = False
+        self.contains_promoters = False
+
+        if coordinate_polishing not in ("none", "contain", "trim"):
+            raise ValueError(f"Invalid coordinate polishing mode: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
+        self.coordinate_polishing = coordinate_polishing
+        self.coding_ratio_threshold = coding_ratio_threshold
+        self.allow_internal_stops = allow_internal_stops
+        self.allow_partial = allow_partial
+        self.enforce_start_codon = enforce_start_codon
+        self.orf_choice_mode = orf_choice_mode
+        self.min_codon_len = min_codon_len
+        self.recalculate_phases = recalculate_phases
+        self.reset_phases_zero = reset_phases_zero
+        # Followed by every later update unless it is given its own
+        self.collapse_exons = collapse_exons
+        self.collapse_CDSs = collapse_CDSs
+        self._protein_qc_summary = None
+
+        self.adjust_internal_shifts = adjust_internal_shifts
+        self.initiator_methionine = initiator_methionine
+        self.alt_start_methionine = alt_start_methionine
+        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+
+        # list_load_warnings prints every feature behind the load-time warnings that are otherwise printed as counts
+        self.list_load_warnings = list_load_warnings
+        self._load_note_counts = {}
+        # self-parented transcripts are only resolved once all transcript rows are loaded
+        self._defer_self_parented_transcripts = True
+        self._self_parented_transcripts = []
 
         self.genome = genome
         
@@ -129,17 +191,13 @@ class Annotation():
         self.atypical_features = []
         # Here we insert any recognisable feature that was impossible to fit into the current structure
         self.orphaned_features = []
+        # sequences marked Is_circular=true in a GFF region line
+        self.circular_chromosomes = set()
 
-        # optional default tag system for output gffs/gtfs
-        self.tags = set()
-        for tag in self.tags_to_detect:
-            if f"_{tag}" in annot_file_path:
-                self.tags.add(tag)
-
-        self.feature_tags = set()
-        for tag in self.feature_tags_to_detect:
-            if f"_{tag}" in annot_file_path:
-                self.feature_tags.add(tag)
+        # optional default tag system for output gffs/gtfs, detected from the file name (not its folders)
+        file_name = Path(annot_file_path).name
+        self.tags = {tag for tag in self.tags_to_detect if self._has_tag(file_name, tag)}
+        self.feature_tags = {tag for tag in self.feature_tags_to_detect if self._has_tag(file_name, tag)}
 
         self.renamed_features = []
 
@@ -147,7 +205,7 @@ class Annotation():
 
         self.contains_protein_sequences = False
 
-        self.promoter_types = "standard"
+        self.promoter_type = "standard"
 
         keys = [
             "repeated_gene_IDs", "1bp_gene", "1bp_transcript", "subfeature_to_gene",
@@ -156,15 +214,11 @@ class Annotation():
         # Create a dictionary where every value is an empty set
         self.errors = {key: set() for key in keys}
         
-        keys = [
-            "1bp_exon", "1bp_CDS", "1bp_UTR", "1bp_miRNA", "decreasing_coordinates",
-            "missing_subfeature_parent", "transcript_to_inexistent_gene", "transcript_with_no_parent",
-            "missing_subfeature_parent_liftover", "multiple_CDSs_per_transcript",
-            "possible_policistronic_transcript", "transcript_with_no_exons",
-            "gene_with_no_transcripts", "subfeature_with_no_parent", "subfeature_to_gene", "repeat_transcript_different_genes", "repeat_transcript_same_gene"
-        ]
-
-        self.warnings = {key: set() for key in keys}
+        # Warnings describe the input annotation: they are recorded while loading (including
+        # the load-time update) and are not modified by later operations. See recheck_warnings()
+        # for the state of the annotation object after modifications.
+        self.warnings = self._new_warnings_dict()
+        self._recording_input_warnings = True
 
         del keys
         
@@ -181,15 +235,12 @@ class Annotation():
 
         staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_atypical_features=skip_atypical_features, quiet=quiet)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected or quite mode
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
+        # Features crossing the origin of circular sequences are read across it (Feature.seq)
+        if self.genome is not None:
+            for ch in self.circular_chromosomes:
+                scaffold = self.genome.get_scaffold(ch)
+                if scaffold is not None:
+                    scaffold.circular = True
 
         self._gene_info = {}
         self._transcript_info = {}
@@ -206,11 +257,7 @@ class Annotation():
             else:
                 corrected_batch_size = batch_size
 
-            progress_bar = tqdm(total=len(staging[stage]), disable=disable, bar_format=(
-                f'\033[1;{Annotation.bar_colors[n]}mAdding {stage}s:\033[0m '
-                '{percentage:3.0f}%|'
-                f'\033[1;{Annotation.bar_colors[n]}m{{bar}}\033[0m| '
-                '{n}/{total} [{elapsed}<{remaining}]'))
+            progress_bar = start_progress_bar(total=len(staging[stage]), description=f"Adding {self.id} {stage}s", colour=Annotation.bar_colors[n], quiet=quiet)
             
             count = 0
 
@@ -232,14 +279,14 @@ class Annotation():
 
             progress_bar.close()
             staging[stage] = []
-            gc.collect()
+
+            if stage == "transcript":
+                self._add_self_parented_transcripts(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
 
         del self._gene_info
         del self._transcript_info
         del self._miRNA_info
         del staging
-
-        gc.collect()
 
         if self.file != gff_file:
             os.remove(gff_file)
@@ -263,6 +310,9 @@ class Annotation():
                         break
                 if not rogue_chromosome_format:
                     self.tags.add("dapfit")
+
+        # Validated on the parsed coordinates, before any update or polishing, as a load-time check
+        self._genome_validation = self._validate_against_genome(quiet=quiet)
 
         misc_attributes = False
         for genes in self.chrs.values():
@@ -309,16 +359,85 @@ class Annotation():
             self.tags.add("clean")
 
         if not quiet:
+            for (note, warning_key), count in self._load_note_counts.items():
+                print(f"{self.id} Warning: {count} {note}" + ("" if self.list_load_warnings else Annotation._warning_ids_hint(warning_key)))
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
+        del self._load_note_counts
 
-        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
+        self.detect_polycistronic_transcripts(quiet=quiet)
+
+        if consider_read_utrs:
+            for t in self.iter_transcripts():
+                t.keep_read_UTRs()
+
+        self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
+        self._recording_input_warnings = False
+
+        self._validate_organelle_chroms()
 
         if (rework_all_CDSs or work_out_missing_CDSs) and genome:
-            self.rework_CDSs(override=rework_all_CDSs, quiet=quiet)
-            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene)
+            # rework_CDSs only gives new ids to the CDSs and UTRs it changes; rename_features then applies to all features
+            self.rework_CDSs(
+                override=rework_all_CDSs,
+                coding_ratio_threshold=coding_ratio_threshold,
+                fallback_to_trim=fallback_to_trim,
+                min_codon_len=min_codon_len,
+                quiet=quiet,
+                allow_internal_stops=allow_internal_stops,
+                allow_partial=allow_partial,
+                enforce_start_codon=enforce_start_codon,
+                orf_choice_mode=orf_choice_mode,
+            )
+            self.update(sort_processes=sort_processes, define_synteny=define_synteny, rename_features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet, collapse_exons=collapse_exons, collapse_CDSs=collapse_CDSs, standardise_features=standardise_features, remove_missing_transcript_parent_references=remove_missing_transcript_parent_references, remove_transcripts_with_no_exons=remove_transcripts_with_no_exons, remove_genes_with_no_transcripts=remove_genes_with_no_transcripts, remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, coordinate_polishing=coordinate_polishing, recalculate_phases=recalculate_phases, reset_phases_zero=reset_phases_zero)
 
         if rename_source:
             self.rename_source(rename_source)
+
+        if self.genome is not None:
+            self._check_genome_compatibility(quiet=quiet)
+
+    def _check_genome_compatibility(self, quiet: bool = False):
+        if not self.genome or not getattr(self.genome, "scaffolds", None) or not self.chrs:
+            return
+
+        annot_chrs = set(self.chrs.keys())
+        genome_scaffolds = set(self.genome.scaffolds.keys())
+        overlap = annot_chrs.intersection(genome_scaffolds)
+
+        if len(overlap) == 0:
+            # Check if any annotation chromosome matches OriSeqID in genome scaffold descriptions
+            desc_oriseq_ids = set()
+            for s in self.genome.scaffolds.values():
+                d = getattr(s, "description", "")
+                m = re.search(r"(?:^|[\s;,])OriSeqID=([^\s;,]+)", d)
+                if m:
+                    desc_oriseq_ids.add(m.group(1))
+
+            oriseq_overlap = annot_chrs.intersection(desc_oriseq_ids)
+            sample_annot = sorted(list(annot_chrs))[:3]
+            sample_scaffolds = sorted(list(genome_scaffolds))[:3]
+
+            if oriseq_overlap:
+                msg = (
+                    f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
+                    f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds}). "
+                    f"However, {len(oriseq_overlap)} chromosome IDs match 'OriSeqID' found in FASTA header descriptions (Genome Warehouse / GWH format). "
+                    f"Please use '--gwh' or '--header-id-tag OriSeqID' (or run 'aegis tidy-genome --gwh') to re-header the genome so features align."
+                )
+                raise ValueError(msg)
+            else:
+                msg = (
+                    f"None of the {len(annot_chrs)} chromosome IDs in annotation '{self.name}' (e.g. {sample_annot}) "
+                    f"match the {len(genome_scaffolds)} scaffold IDs in genome '{self.genome.name}' (e.g. {sample_scaffolds})."
+                )
+                raise ValueError(msg)
+        elif len(overlap) < len(annot_chrs) and not quiet:
+            missing = annot_chrs - genome_scaffolds
+            if len(missing) <= 5:
+                missing_str = ", ".join(sorted(missing))
+            else:
+                missing_str = f"{', '.join(sorted(list(missing))[:5])}... ({len(missing)} total)"
+            print(f"Notice: {len(missing)} chromosomes in annotation '{self.name}' are not present in genome '{self.genome.name}': {missing_str}")
 
     @property
     def motifs(self) -> AnnotationMotifs:
@@ -353,6 +472,112 @@ class Annotation():
     @property
     def summary(self) -> dict:
         return self.stats.data
+
+    @property
+    def genome_validation(self) -> dict:
+        """
+        Assembly-annotation validation findings for the input annotation, computed while loading.
+        """
+        return self._genome_validation
+
+    def _validate_against_genome(self, quiet: bool = False) -> dict:
+        """
+        Validates the input annotation features against the associated genome assembly. Run once
+        while loading, as its findings are recorded as input warnings.
+        Distinguishes between:
+          - Fatal mismatch: Zero contigs from annotation exist in genome assembly (leads to halt).
+          - Warning discrepancies: Even a single contig missing or single feature out of bounds (leads to warning).
+        Returns a dictionary summarizing findings.
+        """
+        results = {
+            "missing_chromosomes": [],
+            "out_of_bounds_features": [],
+            "unannotated_scaffolds": [],
+            "matching_chromosomes": [],
+            "fatal_mismatch": False,
+            "has_warning": False,
+            "summary_message": "",
+        }
+        if self.genome is None or not getattr(self.genome, "scaffolds", None):
+            return results
+
+        genome_scaffolds = self.genome.scaffolds
+        missing_chroms = [ch for ch in self.chrs if ch not in genome_scaffolds]
+        matching_chroms = [ch for ch in self.chrs if ch in genome_scaffolds]
+        results["matching_chromosomes"] = matching_chroms
+        results["missing_chromosomes"] = missing_chroms
+
+        for ch in missing_chroms:
+            self.warnings["chromosome_not_in_genome"].add(ch)
+
+        # Fatal mismatch check: absolutely zero contigs match between annotation and genome
+        if len(self.chrs) > 0 and len(genome_scaffolds) > 0 and len(matching_chroms) == 0:
+            results["fatal_mismatch"] = True
+            results["summary_message"] = (
+                f"Fatal mismatch: None of the {len(self.chrs)} contig(s) in annotation '{self.name}' "
+                f"were found in genome '{self.genome.name}'. Aborting assembly comparison."
+            )
+            if not quiet:
+                print(f"\n[ERROR] {results['summary_message']}")
+            return results
+
+        out_of_bounds = []
+        for ch in matching_chroms:
+            genes = self.chrs[ch]
+            scf_len = genome_scaffolds[ch].size
+            def exceeds(ft) -> bool:
+                return (ft.start is not None and ft.start < 1) or (ft.end is not None and ft.end > scf_len)
+
+            for g in genes.values():
+                # Every feature level is checked, as in the input annotation subfeatures
+                # may extend beyond the scaffold even if their parents do not
+                exceeding = []
+                if exceeds(g):
+                    exceeding.append(g.id)
+                for t in g.transcripts.values():
+                    if exceeds(t):
+                        exceeding.append(t.id)
+                    exceeding.extend(e.id for e in t.exons if exceeds(e))
+                    for c in t.CDSs.values():
+                        if any(exceeds(cs) for cs in c.CDS_segments):
+                            exceeding.append(c.id)
+                        exceeding.extend(u.id for u in c.UTRs if exceeds(u))
+                    exceeding.extend(u.id for u in (t.temp_UTRs or []) if exceeds(u))
+                    exceeding.extend(cs.id for cs in (t.temp_CDSs or []) if exceeds(cs))
+                if exceeding:
+                    out_of_bounds.append(g.id)
+                    self.warnings["feature_exceeds_scaffold_length"].update(exceeding)
+
+        results["out_of_bounds_features"] = out_of_bounds
+
+        # Genome scaffolds without genes
+        unannotated = [scf_name for scf_name in genome_scaffolds if scf_name not in self.chrs]
+        results["unannotated_scaffolds"] = unannotated
+
+        # Any missing contig or even a single out-of-bounds feature triggers warning
+        if len(out_of_bounds) > 0 or len(missing_chroms) > 0:
+            results["has_warning"] = True
+            msg_parts = []
+            if missing_chroms:
+                if len(missing_chroms) == 1:
+                    msg_parts.append(f"1 contig in annotation not found in genome ('{missing_chroms[0]}')")
+                else:
+                    msg_parts.append(f"{len(missing_chroms)} contigs in annotation not found in genome ({', '.join(missing_chroms[:3])}{'...' if len(missing_chroms) > 3 else ''})")
+            if out_of_bounds:
+                if len(out_of_bounds) == 1:
+                    msg_parts.append(f"1 feature has coordinates exceeding contig boundaries in genome ('{out_of_bounds[0]}')")
+                else:
+                    msg_parts.append(f"{len(out_of_bounds)} features have coordinates exceeding contig boundaries in genome")
+            
+            results["summary_message"] = (
+                f"Genome-annotation discrepancies detected for '{self.name}' on '{self.genome.name}': "
+                + "; ".join(msg_parts)
+                + ". Annotation coordinates and assembly contig sizes should be verified."
+            )
+            if not quiet:
+                print(f"\n[WARNING] {results['summary_message']}")
+
+        return results
 
     def iter_genes(self):
         for chrom in self.chrs.values():
@@ -414,7 +639,8 @@ class Annotation():
         for chrom in self.chrs.values():
             for g in chrom.values():
                 for t in g.transcripts.values():
-                    yield t.promoter
+                    if t.promoter is not None:
+                        yield t.promoter
 
     def iter_features(self, include_atypical: bool = True, include_orphaned: bool = True):
         for chrom in self.chrs.values():
@@ -439,22 +665,95 @@ class Annotation():
         if include_orphaned:
             yield from self.orphaned_features
 
+    @staticmethod
+    def _has_tag(text:str, tag:str) -> bool:
+        # A tag is a whole part of a name: "_combined" in "X_combined_on_Y" or "X_combined.gff3", but not in "X_combinedV2"
+        return re.search(rf"_{re.escape(tag)}(?=[_.]|$)", text) is not None
+
+    def _suffix(self, tags:set[str]) -> str:
+        # Tags already in the id (e.g. kept from the name of a reloaded file) are not repeated
+        return "".join(f"_{tag}" for tag in sorted(tags) if not self._has_tag(self.id, tag))
+
     @property
     def feature_suffix(self) -> str:
-        sorted_suffixes = sorted(list(self.feature_tags))
-        sorted_suffixes = "_".join(sorted_suffixes)
-        if sorted_suffixes:
-            sorted_suffixes = "_" + sorted_suffixes
-        return sorted_suffixes
+        """Tags that change the features themselves, naming every export."""
+        return self._suffix(self.feature_tags)
 
     @property
     def all_suffixes(self) -> str:
-        combined_suffixes = list(self.feature_tags) + list(self.tags)
-        combined_suffixes = sorted(list(set(combined_suffixes)))
-        combined_suffixes = "_".join(combined_suffixes)
-        if combined_suffixes:
-            combined_suffixes = "_" + combined_suffixes
-        return combined_suffixes
+        """All tags, naming gff/gtf exports."""
+        return self._suffix(self.feature_tags | self.tags)
+
+    @property
+    def chromosome_suffix(self) -> str:
+        """Tags of renamed chromosomes, naming exports that list chromosome names."""
+        return self._suffix(self.tags & self.chromosome_tags)
+
+    def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None, 
+        suffix:str = "", extra_suffixes: list[str] | None = None, 
+        extension: str = ".fasta", use_annot_dir: bool = False, 
+        subfolder_name: str = "features", subfolder: bool = False, use_name_not_id: bool = False, prefix:str ="", create_dir:bool=True
+    ) -> Path:
+        
+        # Exact same logic as your original code
+        if filepath:
+            p = Path(filepath)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            if (output_dir is not None) or subfolder or filename or use_annot_dir:
+                warnings.warn(f"Exact output file path ({filepath}) was specified. Ignoring output_dir, use_annot_dir, subfolder, and filename arguments.")
+            return p
+        else:
+            if use_annot_dir:
+                export_folder = Path(self.path)
+                if output_dir is not None:
+                    warnings.warn(f"Both 'use_annot_dir={use_annot_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the annotation directory ({self.path}).")
+            else:
+                export_folder = Path(output_dir or ".")
+
+            if subfolder:
+                export_folder = export_folder / subfolder_name.strip("/")
+
+
+            if create_dir:
+
+                export_folder.mkdir(parents=True, exist_ok=True)
+
+            if extension and not extension.startswith("."):
+                extension = f".{extension}"
+
+            if not filename:
+
+                if prefix and not prefix.endswith("_"):
+                    prefix = f"{prefix}_"
+
+                tag_str = "".join([f"_{t}" for t in (extra_suffixes or []) if t])
+                if use_name_not_id:
+                    filename = f"{prefix}{self.name}{suffix}{tag_str}{extension}"
+                else:
+                    filename = f"{prefix}{self.id}{suffix}{tag_str}{extension}"
+            
+            if not Path(filename).suffix:
+                filename = f"{filename}{extension}"
+
+            return export_folder / filename
+
+    def _resolve_output_dir(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:
+
+        if use_annot_dir:
+            export_folder = Path(self.path)
+            if output_dir is not None:
+                warnings.warn(f"Both 'use_annot_dir={use_annot_dir}' and 'output_dir={output_dir}' were provided. Defaulting to the annotation directory ({self.path}).")
+        else:
+            export_folder = Path(output_dir or ".")
+
+        if subfolder:
+            export_folder = export_folder / subfolder_name.strip("/")
+
+        if create_dir:
+
+            export_folder.mkdir(parents=True, exist_ok=True)
+
+        return export_folder
 
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):
         
@@ -487,6 +786,9 @@ class Annotation():
 
                 ID = entry.id
                 ft = entry.feature
+
+                if ft == "region" and entry.attributes.get("Is_circular", "").lower() == "true":
+                    self.circular_chromosomes.add(entry.ch)
 
                 cat = default_features_r.get(ft, "atypical")
 
@@ -660,12 +962,16 @@ class Annotation():
 
         else:
             parent = parents[0]
-            # This is an output in some lifton/liftoff cases and they are repeated entries, so ignoring them is appropriate
+            # This is an output in some lifton/liftoff cases and they are repeated entries, so ignoring them is
+            # appropriate. Other GFFs give the mRNA the id of its gene: those are kept once all transcripts are loaded.
             if parent == ID:
-                if not quiet:
-                    print(f"{self.id} Warning: Transcript {ID} has its own id as a parent so this transcript feature was ignored")
-                if not skip_orphaned_features:
-                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                if self._defer_self_parented_transcripts and ID in self.all_gene_ids:
+                    self._self_parented_transcripts.append(entry)
+                else:
+                    self.warnings["self_parented_transcript"].add(ID)
+                    self._note("transcripts had their own id as a parent so they were ignored", f"Transcript {ID} has its own id as a parent so this transcript feature was ignored", "self_parented_transcript", quiet)
+                    if not skip_orphaned_features:
+                        self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
 
             elif parent not in self.all_gene_ids:
 
@@ -769,6 +1075,48 @@ class Annotation():
                 elif not quiet:
                     print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as the provided transcript id was not unique")
 
+    def _note(self, summary:str, message:str, warning_key:str, quiet:bool=False):
+        """
+        Load-time note: counted under summary, which is printed once per annotation after loading
+        with a pointer to the warning_key column of the aegis summary warnings export, and printed
+        individually only with list_load_warnings.
+        """
+        if hasattr(self, "_load_note_counts"):
+            key = (summary, warning_key)
+            self._load_note_counts[key] = self._load_note_counts.get(key, 0) + 1
+            if self.list_load_warnings and not quiet:
+                print(f"{self.id} Warning: {message}")
+        elif not quiet:
+            print(f"{self.id} Warning: {message}")
+
+    def _add_self_parented_transcripts(self, skip_orphaned_features:bool=False, quiet:bool=False):
+        """
+        Transcripts whose parent is their own id (e.g. ID=Pda01g0001;Parent=Pda01g0001) are kept, renamed
+        {gene id}_t1, as the transcript of the gene with that id if it is not a pseudogene and has no other
+        transcripts. Otherwise they are repeated entries (as in some lifton/liftoff outputs) and are ignored.
+        """
+        self._defer_self_parented_transcripts = False
+        for entry in self._self_parented_transcripts:
+            ID = entry.id
+            ch = entry.ch
+            self.warnings["self_parented_transcript"].add(ID)
+            gene_ch = self.all_gene_ids.get(ID)
+            # pseudogenes get their pseudotranscript from their subfeatures instead
+            if gene_ch == ch and not self.chrs[ch][ID].transcripts and not self.chrs[ch][ID].pseudogene:
+                count = 1
+                t_id = f"{ID}_t{count}"
+                while t_id in self.all_transcript_ids:
+                    count += 1
+                    t_id = f"{ID}_t{count}"
+                self.all_transcript_ids[t_id] = (ch, ID)
+                self.chrs[ch][ID].transcripts[t_id] = Transcript(t_id, ch, entry.source, entry.feature, entry.strand, entry.start, entry.end, entry.score, [ID], entry.attributes)
+                self._note("transcripts had their gene's id as their own id and parent, so they were kept renamed as {gene id}_t1", f"Transcript {ID} has its own id as a parent, kept as transcript {t_id} of gene {ID}", "self_parented_transcript", quiet)
+            else:
+                self._note("transcripts had their own id as a parent so they were ignored", f"Transcript {ID} has its own id as a parent so this transcript feature was ignored", "self_parented_transcript", quiet)
+                if not skip_orphaned_features:
+                    self.orphaned_features.append(Feature(ID, ch, entry.source, entry.feature, entry.strand, entry.start, entry.end, entry.score, entry.parents, entry.attributes))
+        self._self_parented_transcripts = []
+
     def _add_subfeature(self, entry, ft_level, infer_gene_and_transcript_from_subfeatures:bool=False, only_infer_if_none_of_the_parents_exist:bool=True, skip_orphaned_features:bool=False, liftover_exception:bool=True, quiet:bool=False):
         ID = entry.id
         ch = entry.ch
@@ -780,6 +1128,7 @@ class Annotation():
         score = entry.score
         attributes = entry.attributes
         parents = entry.parents
+        phase = entry.phase if (ft_level == "CDS" or ft in default_features["CDS"]) else None
 
         if start == end:
             self.warnings[f"1bp_{ft_level}"].add(ID)
@@ -793,7 +1142,7 @@ class Annotation():
                     print(f"{self.id} Warning: No parent provided so the following {ft} subfeature {ID} could not be assigned to any transcript")
 
                 if not skip_orphaned_features:
-                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
             
             elif infer_gene_and_transcript_from_subfeatures:
 
@@ -813,7 +1162,7 @@ class Annotation():
                     entry.parents = [created_gene]
                     self._add_transcript(entry, quiet=quiet, skip_orphaned_features=skip_orphaned_features)
 
-                self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
 
             else:
 
@@ -821,7 +1170,7 @@ class Annotation():
                     print(f"{self.id} Warning: No parent provided and infer_gene_and_transcript_from_subfeatures={infer_gene_and_transcript_from_subfeatures} so the following {ft} subfeature {ID} could not be assigned to a created transcript")
 
                 if not skip_orphaned_features:
-                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
 
         true_orphans = True
 
@@ -839,13 +1188,13 @@ class Annotation():
                         if not quiet:
                             print(f"{self.id} Error: {ID} subfeature refers to a transcript in a different chromosome, it could not be assigned to its parent")
                         if not skip_orphaned_features:
-                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                         continue
 
                     gene_parent = self.all_transcript_ids[parent][1]
 
                     if ft_level == "CDS":
-                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                     elif ft_level == "exon":
                         self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, parents, attributes))
                     elif ft_level == "UTR":
@@ -860,7 +1209,7 @@ class Annotation():
                         if not quiet:
                             print(f"{self.id} Error: {ID} subfeature refers to a gene in a different chromosome, it could not be assigned to its parent")
                         if not skip_orphaned_features:
-                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                            self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                         continue
 
                     # cases where subfeature directly references a pseudogene creating a pseudotranscript for the pseudogene
@@ -877,7 +1226,7 @@ class Annotation():
                             
                         if pseudo_t in self.chrs[ch][parent].transcripts:
                             if ft_level == "CDS":
-                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes, phase=phase))
                             elif ft_level == "exon":
                                 self.chrs[ch][parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                             elif ft_level == "UTR":
@@ -887,7 +1236,7 @@ class Annotation():
                                 self._miRNA_info.add(ID)
                         else:
                             if not skip_orphaned_features:
-                                self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                                self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                             if not quiet:
                                 print(f"{self.id} Error: {parent} pseudogene already had a transcript which {ft} subfeature {ID} ignores")
 
@@ -898,7 +1247,7 @@ class Annotation():
                             if not infer_gene_and_transcript_from_subfeatures:
                                 self.warnings["subfeature_to_gene"].add(ID)
                                 if not skip_orphaned_features:
-                                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                                    self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
                                 if not quiet:
                                     print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is a gene, but since infer_gene_and_transcript_from_subfeatures is False, the gene and transcript were not auto-created.")
                             else:
@@ -914,14 +1263,13 @@ class Annotation():
                                     auto_t_id, gene_obj.ch, gene_obj.source, "mRNA",
                                     gene_obj.strand, gene_obj.start, gene_obj.end,
                                     gene_obj.score, [parent])
-                                if not quiet:
-                                    print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}")
+                                self._note("genes with subfeatures but no transcripts got an auto-created transcript", f"{ft} subfeature {ID} references {parent} gene which has no transcripts, auto-created transcript {auto_t_id}", "subfeature_to_gene", quiet)
                                 self.warnings["subfeature_to_gene"].add(ID)
                         # correctly linking the subfeature to the single transcript that exists
                         if len(self.chrs[ch][parent].transcripts) == 1:
                             temp_id = list(self.chrs[ch][parent].transcripts.keys())[0]
                             if ft_level == "CDS":
-                                self.chrs[ch][parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [temp_id], attributes))
+                                self.chrs[ch][parent].transcripts[temp_id].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [temp_id], attributes, phase=phase))
                             elif ft_level == "exon":
                                 self.chrs[ch][parent].transcripts[temp_id].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [temp_id], attributes))
                             elif ft_level == "UTR":
@@ -939,7 +1287,7 @@ class Annotation():
                     if ft_level == "exon":
                         if not skip_orphaned_features:
                             self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
-                    else:
+                    elif not quiet:
                         print(f"Warning: {ft} subfeature {ID} references {parent} miRNA and this feature is not an exon.")
 
                 # parent not found within created genes or transcripts or miRNAs
@@ -965,7 +1313,8 @@ class Annotation():
                             self.warnings["missing_subfeature_parent"].add(ID)
                             if not skip_orphaned_features:
                                 self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
-                            print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, although at least one of the listed parents was found")
+                            if not quiet:
+                                print(f"{self.id} Warning: {ft} subfeature {ID} references {parent} which is not found in the annotation, although at least one of the listed parents was found")
 
                         else:
                             self.warnings["missing_subfeature_parent"].add(ID)
@@ -994,7 +1343,7 @@ class Annotation():
 
 
                             if ft_level == "CDS":
-                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, temp_parents, attributes))
+                                self.chrs[ch][inferred_g_id].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, temp_parents, attributes, phase=phase))
                             elif ft_level == "exon":
                                 self.chrs[ch][inferred_g_id].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, temp_parents, attributes))
                             elif ft_level == "UTR":
@@ -1024,7 +1373,7 @@ class Annotation():
                     found = True
 
                     if ft_level == "CDS":
-                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [parent], attributes))
+                        self.chrs[ch][gene_parent].transcripts[parent].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [parent], attributes, phase=phase))
                     elif ft_level == "exon":
                         self.chrs[ch][gene_parent].transcripts[parent].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [parent], attributes))
                     elif ft_level == "UTR":
@@ -1035,7 +1384,7 @@ class Annotation():
                 if not found and not quiet:
                     print(f"{self.id} Error: {ID} {ft} feature could not be assigned to any transcript. Possibly due to unforseen id clash issue")
                     if not skip_orphaned_features:
-                        self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                        self.orphaned_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
 
     def _get_unique_transcript_id(self, t_id):
         unique_id = t_id
@@ -1058,27 +1407,27 @@ class Annotation():
     def copy(self):
         return copy.deepcopy(self)
     
-    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, consider_polycistronic:bool=False, consider_read_utrs:bool=False, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False):
+    def update(self, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, define_synteny:bool=False, sort_processes:int=1, quiet:bool=False, collapse_exons:bool|None=None, collapse_CDSs:bool|None=None, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, update_gene_and_transcript_list:bool=False, coordinate_polishing:Literal["none", "contain", "trim"]|None=None, recalculate_phases:bool|None=None, reset_phases_zero:bool|None=None):
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
+        self._protein_qc_summary = None
+        if collapse_exons is None:
+            collapse_exons = getattr(self, "collapse_exons", True)
+        if collapse_CDSs is None:
+            collapse_CDSs = getattr(self, "collapse_CDSs", True)
+        if recalculate_phases is None:
+            recalculate_phases = getattr(self, "recalculate_phases", False)
+        if reset_phases_zero is None:
+            reset_phases_zero = getattr(self, "reset_phases_zero", False)
+        # Checks only record into the input warnings during the load-time update
+        warnings_sink = self.warnings if getattr(self, "_recording_input_warnings", False) else self._new_warnings_dict()
+
+        self.detect_polycistronic_transcripts(quiet=quiet, record_to=warnings_sink)
 
         batch_size = 1000
         count = 0
 
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;62mUpdating {self.id} genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;62m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Updating {self.id} genes", colour="62", quiet=quiet)
 
         for genes in self.chrs.values():
             for g in genes.values():
@@ -1086,15 +1435,28 @@ class Annotation():
                 if count >= batch_size:
                     progress_bar.update(count)
                     count = 0
+                # UTRs read from the GFF are only staged until the first update, which decides whether they are used
+                read_UTRs = {}
+                for t in g.transcripts.values():
+                    # Checked before collapsing, so the input exons are assessed
+                    self._check_exon_overlaps(t, warnings_sink)
+                    if t.temp_UTRs:
+                        read_UTRs[t.id] = (t.read_UTRs_CDS is not None, {(u.start, u.end) for u in t.temp_UTRs})
                 g.collapse_subfeatures(exons=collapse_exons, CDSs=collapse_CDSs)
                 for t in g.transcripts.values():
-                    t.update(quiet=quiet, consider_polycistronic=consider_polycistronic, consider_read_utrs=consider_read_utrs)
-                    if t.polycistronic == "no":
-                        continue
-                    elif t.polycistronic == "maybe":
-                        self.warnings["possible_policistronic_transcript"].add(t.id) 
-                    elif t.polycistronic == "yes":
-                        self.warnings["multiple_CDSs_per_transcript"].add(t.id)
+                    t.update(quiet=quiet)
+                    if t.id in read_UTRs:
+                        self._check_read_UTRs(t, *read_UTRs[t.id], warnings_sink)
+
+                    for c in t.CDSs.values():
+                        # Checked before phases are recalculated, so the input phases are assessed
+                        self._check_phase_mismatch_across_intron(c, warnings_sink)
+                        if reset_phases_zero:
+                            c.update_phase(override=True, full_override=True)
+                            c.update_frame()
+                        elif recalculate_phases:
+                            c.update_phase(override=True, full_override=False)
+                            c.update_frame()
                 g.update(quiet=quiet)
 
         if count > 0:
@@ -1104,22 +1466,41 @@ class Annotation():
         if standardise_features:
             self.update_features(standardise=standardise_features, quiet=quiet)
         
+        # Removals happen before renaming so that numbering has no gaps
+        self.detect_genes_with_no_transcripts(remove=remove_genes_with_no_transcripts, remove_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, quiet=quiet, record_to=warnings_sink)
+        self.detect_transcripts_with_no_exons(remove_transcripts=remove_transcripts_with_no_exons, remove_genes_accordingly=remove_genes_with_no_transcripts, quiet=quiet, record_to=warnings_sink)
+
+        if coordinate_polishing is None:
+            coordinate_polishing = getattr(self, "coordinate_polishing", "contain")
+
+        # Coordinate inconsistencies are always checked (and recorded during loading) on the
+        # unpolished coordinates, so warnings do not depend on the polishing mode
+        self.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=quiet, record_to=warnings_sink)
+        if coordinate_polishing != "none":
+            self.correct_gene_transcript_and_subfeature_coordinates(mode=coordinate_polishing, quiet=quiet)
+
+        # Coordinates must be final and genes sorted before renaming, as ids are numbered by position
+        self.sort_genes(processes=sort_processes)
+
+        # Named before shared UTRs are homogenised, so a derived UTR takes the id of a read one with its coordinates
+        for genes in self.chrs.values():
+            for g in genes.values():
+                provisional = [u for t in g.transcripts.values() for c in t.CDSs.values() for u in c.UTRs if u.provisional]
+                if provisional:
+                    g.name_new_UTRs(provisional)
+        self.homogenise_shared_exons_utrs()
+        # Resolved before renaming, so repeated input ids are recorded whether or not they are renamed
+        self.resolve_subfeature_id_clashes(record_to=warnings_sink)
+
         if rename_features:
             self.rename_ids(features=rename_features, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, quiet=quiet)
 
         if remove_missing_transcript_parent_references:
             self.remove_missing_transcript_parent_references(quiet=quiet)
 
-        self.detect_genes_with_no_transcripts(remove=remove_genes_with_no_transcripts, remove_pseudogene=remove_genes_with_no_transcripts_even_if_pseudogene, quiet=quiet)
-        self.detect_transcripts_with_no_exons(remove_transcripts=remove_transcripts_with_no_exons, remove_genes_accordingly=remove_genes_with_no_transcripts, quiet=quiet)
-
         if update_gene_and_transcript_list:
             self.update_gene_and_transcript_list(quiet=quiet)
 
-        self.homogenise_parents_for_shared_exons_utrs()
-        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
-        if not self.sorted:
-            self.sort_genes(processes=sort_processes)
         if define_synteny:
             self.define_synteny(sort_processes=sort_processes)
         if self.original_annotation is not None:
@@ -1225,6 +1606,7 @@ class Annotation():
                         t.main = False
                         t.temp_CDSs = []
                         t.temp_UTRs = []
+                        t.read_UTRs_CDS = None
 
         if clean:
             self.remove_other_mRNA_transcripts_from_rRNA_genes()
@@ -1250,73 +1632,234 @@ class Annotation():
                     for t_id in mRNA_transcripts_to_remove:
                         del self.chrs[chrom][g.id].transcripts[t_id]   
 
-    def correct_gene_transcript_and_subfeature_coordinates(self, quiet:bool=True):
+    def _check_exon_overlaps(self, t:Transcript, record_to:dict[str, set[str]]):
+        """
+        Flags transcripts with overlapping or directly adjacent (abutting) exons, which collapse_exons merges.
+        """
+        cur_end = None
+        for e in sorted(t.exons):
+            if cur_end is not None:
+                if e.start <= cur_end:
+                    record_to["overlapping_exons"].add(t.id)
+                elif e.start == cur_end + 1:
+                    record_to["abutting_exons"].add(t.id)
+            cur_end = e.end if cur_end is None else max(cur_end, e.end)
+
+    def _check_read_UTRs(self, t:Transcript, kept:bool, read:set[tuple[int, int]], record_to:dict[str, set[str]]):
+        """
+        Flags transcripts whose UTRs read from the GFF were replaced by UTRs derived from the exons: with
+        consider_read_utrs because they do not fit the exons and CDS (read_utrs_inconsistent), and otherwise
+        when the derived UTRs have other coordinates (read_utrs_differ_from_derived).
+        """
+        if kept:
+            if t.read_UTRs_CDS is None:
+                record_to["read_utrs_inconsistent"].add(t.id)
+        elif read != {(u.start, u.end) for c in t.CDSs.values() for u in c.UTRs}:
+            record_to["read_utrs_differ_from_derived"].add(t.id)
+
+    def _check_phase_mismatch_across_intron(self, c:CDS, record_to:dict[str, set[str]]):
+        """
+        Flags CDSs whose segment phases are inconsistent across an intron (see CDS.inconsistent_junctions).
+        """
+        if any(not within_exon for _, within_exon in c.inconsistent_junctions()):
+            record_to["phase_mismatch_across_intron"].add(c.id)
+
+    def recheck_warnings(self, quiet:bool=True) -> dict[str, set[str]]:
+        """
+        Runs the checks that describe the annotation object (coordinate hierarchy, phases across
+        introns, overlapping/abutting exons, genes with no transcripts and transcripts with no exons) on its current state and
+        returns the findings, keyed as in self.warnings. Unlike self.warnings, which describes the
+        input annotation, this reflects any modifications made since loading. self.warnings is not
+        modified. Checks only possible while parsing the input (e.g. parent references) are not included.
+        """
+        rechecked = self._new_warnings_dict(self.RECHECKABLE_WARNING_KEYS)
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    self._check_exon_overlaps(t, rechecked)
+                    for c in t.CDSs.values():
+                        self._check_phase_mismatch_across_intron(c, rechecked)
+        self.correct_gene_transcript_and_subfeature_coordinates(mode="none", quiet=quiet, record_to=rechecked)
+        self.detect_genes_with_no_transcripts(quiet=quiet, record_to=rechecked)
+        self.detect_transcripts_with_no_exons(quiet=quiet, record_to=rechecked)
+        return rechecked
+
+    def correct_gene_transcript_and_subfeature_coordinates(self, mode:Literal["none", "contain", "trim"]="contain", quiet:bool=True, record_to:dict[str, set[str]]|None=None):
+        """
+        Enforces the coordinate hierarchy gene >= transcript >= exons >= CDSs/UTRs.
+
+        mode:
+            "none": coordinates are left untouched; inconsistencies are recorded into record_to.
+            "contain": CDSs and UTRs are kept within their transcript's exons (by extending
+                the first/last exon, or the one exon a CDS row reaching into an intron overlaps;
+                rows within an intron or spanning one are only reported), transcripts span exactly
+                their exons and genes are
+                extended to cover all their transcripts. Gene regions extending beyond
+                their transcripts (e.g. polyA sites or TF binding sites) are kept.
+            "trim": same as "contain", but genes are also trimmed to span exactly from
+                the start of their earliest transcript to the end of their latest one.
+
+        record_to: warnings dict where inconsistencies are recorded in "none" mode (not
+            recorded if None). Correcting modes do not record, as update() always checks
+            the unpolished coordinates first.
+        """
+        if mode not in ("none", "contain", "trim"):
+            raise ValueError(f"Invalid coordinate polishing mode: '{mode}'. Choose from: 'none', 'contain', 'trim'.")
+
+        skip_correction = mode == "none"
+        if record_to is None:
+            record_to = self._new_warnings_dict()
+
         if not quiet:
-            print(f"Correcting feature coordinates for {self.id}")
+            if skip_correction:
+                print(f"Checking feature coordinates (skipping correction) for {self.id}")
+            else:
+                print(f"Correcting feature coordinates ({mode} mode) for {self.id}")
+
+        # Features are counted under a summary printed once at the end, and printed individually only with list_load_warnings
+        list_load_warnings = getattr(self, "list_load_warnings", False)
+        flagged = {}
+        def note(summary:str, warning_key:str, feature_id:str, message:str):
+            if quiet:
+                return
+            flagged.setdefault((summary, warning_key), set()).add(feature_id)
+            if list_load_warnings:
+                print(message)
 
         for genes in self.chrs.values():
             for g in genes.values():
                 earliest_start = None
                 latest_end = None
+                transcripts_moved = False
+                extended_exons = []
                 for t in g.transcripts.values():
 
                     for c in t.CDSs.values():
                         if hasattr(c, 'CDS_segments') and c.CDS_segments:
+                            if len(c.CDS_segments) > 1:
+                                c.CDS_segments.sort()
                             seg_start = c.CDS_segments[0].start
-                            seg_end = c.CDS_segments[-1].end
-                            
+                            seg_end = max(cs.end for cs in c.CDS_segments)
+
                             if c.start != seg_start:
-                                if not quiet:
-                                    print(f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
-                                c.start = seg_start
-                                self.sorted = False
-                                
+                                if skip_correction:
+                                    record_to["cds_segment_coordinate_mismatch"].add(c.id)
+                                    note("CDSs have a start or end that differs from their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} start differs from its first CDS_segment ({self.id})")
+                                else:
+                                    note("CDSs had their start or end set to those of their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} start differs from its first CDS_segment, proceeding to fix {self.id}")
+                                    c.start = seg_start
+
                             if c.end != seg_end:
-                                if not quiet:
-                                    print(f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
-                                c.end = seg_end
-                                self.sorted = False
+                                if skip_correction:
+                                    record_to["cds_segment_coordinate_mismatch"].add(c.id)
+                                    note("CDSs have a start or end that differs from their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} end differs from its last CDS_segment ({self.id})")
+                                else:
+                                    note("CDSs had their start or end set to those of their CDS_segments", "cds_segment_coordinate_mismatch", c.id, f"Warning: {c.id} end differs from its last CDS_segment, proceeding to fix {self.id}")
+                                    c.end = seg_end
 
                     if t.exons:
+                        # CDS rows must not reach into introns (parts beyond the first/last exon are checked below as
+                        # cds_exceeds_exon). When correcting, a row reaching past the one exon it overlaps extends that exon;
+                        # rows within an intron, spanning one, or whose fix would make two exons touch are only reported
+                        span_start = min(e.start for e in t.exons)
+                        span_end = max(e.end for e in t.exons)
                         for c in t.CDSs.values():
-                            if c.start < t.exons[0].start:
-                                if not quiet:
-                                    print(f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
-                                t.exons[0].start = c.start
-                                self.sorted = False
-                            if c.end > t.exons[-1].end:
-                                if not quiet:
-                                    print(f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
-                                t.exons[-1].end = c.end
-                                self.sorted = False
+                            for cs in c.CDS_segments:
+                                start, end = max(cs.start, span_start), min(cs.end, span_end)
+                                if start > end or any(e.start <= start and end <= e.end for e in t.exons):
+                                    continue
+                                overlapping = [e for e in t.exons if e.start <= end and start <= e.end]
+                                if skip_correction:
+                                    record_to["cds_segment_in_intron"].add(c.id)
+                                    note("CDSs have segments reaching into an intron", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron ({self.id})")
+                                    continue
+                                if len(overlapping) == 1:
+                                    exon = overlapping[0]
+                                    new_start, new_end = min(exon.start, start), max(exon.end, end)
+                                    # An extension touching another exon would remove a splice junction, so it is only reported
+                                    if not any(e is not exon and e.start <= new_end + 1 and new_start - 1 <= e.end for e in t.exons):
+                                        note("CDSs had segments reaching into an intron, fixed by extending the exon they overlap", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron, proceeding to extend exon {exon.id} {self.id}")
+                                        exon.start, exon.end = new_start, new_end
+                                        extended_exons.append(exon)
+                                        continue
+                                note("CDSs have segments reaching into an intron that cannot be fixed by extending one exon", "cds_segment_in_intron", c.id, f"Warning: {c.id} segment {cs.start}..{cs.end} reaches into a {t.id} intron and cannot be fixed by extending one exon ({self.id})")
 
-                        if t.exons[0].start < t.start:
-                            if not quiet:
-                                print(f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}")
-                        elif t.exons[0].start > t.start:
-                            if not quiet:
-                                print(f"First exon should not start later than {t.id}, proceeding to fix {self.id}")
-                        if t.exons[-1].end < t.end:
-                            if not quiet:
-                                print(f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}")
-                        elif t.exons[-1].end > t.end:
-                            if not quiet:
-                                print(f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}")
-                        if t.start != t.exons[0].start or t.end != t.exons[-1].end:
-                            t.start = t.exons[0].start
-                            t.end = t.exons[-1].end
-                            self.sorted = False
+                        if len(t.exons) > 1:
+                            t.exons.sort()
+                        # Exons are sorted by (start, end), so the first one has the earliest start,
+                        # but with overlapping/nested exons the last one may not have the latest end
+                        first_exon = t.exons[0]
+                        last_exon = max(t.exons, key=lambda e: e.end)
+                        for c in t.CDSs.values():
+                            if c.start < first_exon.start:
+                                if skip_correction:
+                                    record_to["cds_exceeds_exon"].add(c.id)
+                                    note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
+                                else:
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                    first_exon.start = c.start
+                                    extended_exons.append(first_exon)
+                            if c.end > last_exon.end:
+                                if skip_correction:
+                                    record_to["cds_exceeds_exon"].add(c.id)
+                                    note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
+                                else:
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                    last_exon.end = c.end
+                                    extended_exons.append(last_exon)
+
+                            for u in c.UTRs:
+                                if u.start < first_exon.start:
+                                    if skip_correction:
+                                        record_to["utr_exceeds_exon"].add(u.id)
+                                        note("UTRs extend beyond the first or last exon of their transcript", "utr_exceeds_exon", u.id, f"Warning: {u.id} start is earlier than for first {t.id} exon ({self.id})")
+                                    else:
+                                        note("UTRs extended beyond the first or last exon of their transcript, which was extended to cover them", "utr_exceeds_exon", u.id, f"Warning: {u.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
+                                        first_exon.start = u.start
+                                        extended_exons.append(first_exon)
+                                if u.end > last_exon.end:
+                                    if skip_correction:
+                                        record_to["utr_exceeds_exon"].add(u.id)
+                                        note("UTRs extend beyond the first or last exon of their transcript", "utr_exceeds_exon", u.id, f"Warning: {u.id} end extends beyond the last {t.id} exon ({self.id})")
+                                    else:
+                                        note("UTRs extended beyond the first or last exon of their transcript, which was extended to cover them", "utr_exceeds_exon", u.id, f"Warning: {u.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
+                                        last_exon.end = u.end
+                                        extended_exons.append(last_exon)
+
+                        if skip_correction:
+                            boundary_summary = "transcripts do not start and end with their first and last exons"
+                        else:
+                            boundary_summary = "transcripts were set to span exactly from their first to their last exon"
+                        if first_exon.start < t.start:
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"First exon start should not be earlier than for {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon start is earlier than for {t.id} ({self.id})")
+                        elif first_exon.start > t.start:
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"First exon should not start later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: First exon starts later than for {t.id} ({self.id})")
+                        if last_exon.end < t.end:
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"Last exon should not finish earlier than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes earlier than for {t.id} ({self.id})")
+                        elif last_exon.end > t.end:
+                            note(boundary_summary, "exon_transcript_boundary_mismatch", t.id, f"Last exon should not finish later than {t.id}, proceeding to fix {self.id}" if not skip_correction else f"Warning: Last exon finishes later than for {t.id} ({self.id})")
+                        if t.start != first_exon.start or t.end != last_exon.end:
+                            if skip_correction:
+                                record_to["exon_transcript_boundary_mismatch"].add(t.id)
+                            else:
+                                t.start = first_exon.start
+                                t.end = last_exon.end
+                                transcripts_moved = True
 
                     if t.start < g.start:
-                        if not quiet:
-                            print(f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
-                        g.start = t.start
-                        self.sorted = False
+                        if skip_correction:
+                            record_to["transcript_exceeds_gene"].add(t.id)
+                            note("transcripts extend beyond their gene", "transcript_exceeds_gene", t.id, f"Warning: {t.id} start is earlier than for {g.id} ({self.id})")
+                        else:
+                            note("transcripts extended beyond their gene, which was extended to cover them", "transcript_exceeds_gene", t.id, f"{t.id} start should not be earlier than for {g.id}, proceeding to fix {self.id}")
+                            g.start = t.start
                     if t.end > g.end:
-                        if not quiet:
-                            print(f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
-                        g.end = t.end
-                        self.sorted = False
+                        if skip_correction:
+                            record_to["transcript_exceeds_gene"].add(t.id)
+                            note("transcripts extend beyond their gene", "transcript_exceeds_gene", t.id, f"Warning: {t.id} end extends beyond {g.id} ({self.id})")
+                        else:
+                            note("transcripts extended beyond their gene, which was extended to cover them", "transcript_exceeds_gene", t.id, f"{t.id} end should not extend beyond {g.id}, proceeding to fix {self.id}")
+                            g.end = t.end
                     if earliest_start is None or latest_end is None:
                         earliest_start = t.start
                         latest_end = t.end
@@ -1326,15 +1869,35 @@ class Annotation():
                         if t.end > latest_end:
                             latest_end = t.end
 
+                if transcripts_moved and len(g.transcripts) > 1:
+                    g.sort_transcripts()
+
+                # An extended exon may now differ from a copy shared with another transcript under the same id
+                if extended_exons:
+                    g.resolve_exon_id_clashes(extended_exons)
+
                 if earliest_start is not None and latest_end is not None:
-                    if g.start != earliest_start or g.end != latest_end:
-                        if not quiet:
-                            print(f"{g.id} was too long and had to be trimmed to longest transcript ({self.id})")
-                        g.start = earliest_start
-                        g.end = latest_end
-                        self.sorted = False
+                    if g.start < earliest_start or g.end > latest_end:
+                        if skip_correction:
+                            record_to["gene_exceeds_transcripts"].add(g.id)
+                            note("genes extend beyond their transcripts", "gene_exceeds_transcripts", g.id, f"Warning: {g.id} extends beyond its transcripts ({self.id})")
+                        elif mode == "trim":
+                            note("genes extended beyond their transcripts and were trimmed to them", "gene_exceeds_transcripts", g.id, f"{g.id} extends beyond its transcripts and was trimmed to them ({self.id})")
+                            g.start = earliest_start
+                            g.end = latest_end
+                        else:
+                            note("genes extend beyond their transcripts, keeping gene boundaries", "gene_exceeds_transcripts", g.id, f"{g.id} extends beyond its transcripts, keeping gene boundaries ({self.id})")
         if not quiet:
-            print(f"Corrected feature coordinates for {self.id}")
+            # Only the check (mode "none") points to the ids, as update() runs it before any correction of the same features
+            for (summary, warning_key), ids in flagged.items():
+                if skip_correction:
+                    print(f"Warning: {len(ids)} {summary} ({self.id})" + ("" if list_load_warnings else Annotation._warning_ids_hint(warning_key)))
+                else:
+                    print(f"{len(ids)} {summary} ({self.id})")
+            if skip_correction:
+                print(f"Checked feature coordinates (skipped correction) for {self.id}")
+            else:
+                print(f"Corrected feature coordinates ({mode} mode) for {self.id}")
 
     def generate_promoters(self, promoter_size:int=2000, promoter_type:str = "standard"):
         """
@@ -1343,7 +1906,7 @@ class Annotation():
             - upstream_ATG : Promoter based on 'promoter_size' is generated upstream of the main CDS's start codon (ATG). If no CDS, falls back to standard.
             - standard_plus_up_to_ATG : Promoter based on 'promoter_size' is generated upstream of the transcript's start site (TSS) and any gene sequence up to the start codon (ATG) is also added. If no CDS, falls back to standard.
         """
-        self.promoter_types = promoter_type
+        self.promoter_type = promoter_type
         self.promoter_size = promoter_size
 
         self.contains_promoters = True
@@ -1360,17 +1923,250 @@ class Annotation():
                     t.clear_promoter()
         self.contains_promoters = False
 
-    def generate_proteins(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet:bool=True):
+    def _store_genetic_codes(
+        self,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str = "plant",
+        table: int | str | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        auto_organelle_detection: bool = True,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+    ):
+        self.taxonomy = taxonomy
+        self.table, self.mito_table, self.plastid_table = resolve_taxonomy_tables(
+            taxonomy=taxonomy,
+            table=table,
+            mito_table=mito_table,
+            plastid_table=plastid_table,
+        )
+        self.auto_organelle_detection = auto_organelle_detection
+        parsed = []
+        for chroms in (mitochondria_chroms, chloroplast_chroms):
+            if not chroms:
+                parsed.append(())
+            elif isinstance(chroms, str):
+                parsed.append(tuple(c.strip() for c in chroms.split(",") if c.strip()))
+            else:
+                parsed.append(tuple(chroms))
+        self.mitochondria_chroms, self.chloroplast_chroms = parsed
+
+    def set_genetic_codes(
+        self,
+        taxonomy: Literal["plant", "vertebrate", "invertebrate", "yeast"] | str = "plant",
+        table: int | str | None = None,
+        mito_table: int | str | None = None,
+        plastid_table: int | str | None = None,
+        auto_organelle_detection: bool = True,
+        mitochondria_chroms: list[str] | tuple[str, ...] | str | None = None,
+        chloroplast_chroms: list[str] | tuple[str, ...] | str | None = None,
+    ):
+        """
+        Replaces the genetic code configuration used to translate CDSs. Tables
+        left as None follow the taxonomy preset. Existing proteins are cleared
+        if the configuration changes, since they were translated with the old codes.
+        """
+        previous = self.genetic_codes
+        self._store_genetic_codes(taxonomy=taxonomy, table=table, mito_table=mito_table, plastid_table=plastid_table, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+        self._validate_organelle_chroms()
+        if self.genetic_codes != previous:
+            self.clear_proteins()
+
+    @property
+    def genetic_codes(self) -> dict:
+        """The genetic code configuration used to translate CDSs."""
+        return {
+            "taxonomy": self.taxonomy,
+            "table": self.table,
+            "mito_table": self.mito_table,
+            "plastid_table": self.plastid_table,
+            "auto_organelle_detection": self.auto_organelle_detection,
+            "mitochondria_chroms": self.mitochondria_chroms,
+            "chloroplast_chroms": self.chloroplast_chroms,
+        }
+
+    def _validate_organelle_chroms(self):
+        all_known = set(self.chrs.keys())
+        if self.genome:
+            all_known.update(self.genome.scaffolds.keys())
+        for kind, chroms in (("mitochondrial", self.mitochondria_chroms), ("chloroplast", self.chloroplast_chroms)):
+            for chrom in chroms:
+                if chrom not in all_known:
+                    raise ValueError(f"Specified {kind} chromosome '{chrom}' was not found in the annotation or genome.")
+
+    def chromosome_compartment(self, chrom: str) -> Literal["nuclear", "mitochondria", "chloroplast"]:
+        """
+        Compartment of a chromosome, deciding its genetic code, its gene ids (see rename_ids) and how it is
+        reported: user-listed organelle chromosomes first, then (with auto_organelle_detection) the
+        classification of its genome scaffold or, without one, of its name (see classify_compartment).
+        """
+        scaffold = self.genome.get_scaffold(chrom) if self.genome is not None else None
+        return classify_compartment(chrom, scaffold=scaffold, mitochondria_chroms=self.mitochondria_chroms, chloroplast_chroms=self.chloroplast_chroms, auto_detection=self.auto_organelle_detection)
+
+    def translation_table(self, chrom: str, cds: CDS | None = None) -> int | str:
+        """
+        Returns the genetic code table used to translate CDSs on a chromosome. A CDS given with its
+        own GFF transl_table attribute is translated with that table instead.
+        """
+        if cds is not None and cds.transl_table is not None:
+            return cds.transl_table
+        compartment = self.chromosome_compartment(chrom)
+        if compartment == "mitochondria":
+            return self.mito_table
+        if compartment == "chloroplast":
+            return self.plastid_table
+        return self.table
+
+    def _print_genetic_code_info(self):
+        names = {}
+        for key in ("table", "mito_table", "plastid_table"):
+            t = getattr(self, key)
+            names[key] = NCBI_GENETIC_CODES.get(t, {}).get("name", "Custom") if isinstance(t, int) else "Custom"
+        print(f"Info: Genetic code configuration [taxonomy='{self.taxonomy}']: nuclear={self.table} ({names['table']}), mitochondrial={self.mito_table} ({names['mito_table']}), plastid={self.plastid_table} ({names['plastid_table']})")
+
+    def generate_proteins(
+        self,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        max_nucleotide_trim: int | None = None,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"] = "longest",
+        must_have_stop: bool = False,
+        enforce_start_codon: bool = True,
+        min_codon_len: int = 2,
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
+        correct_CDS: bool = False,
+        always_resolve_strand: bool = True,
+        ignore_ambiguous_strands: bool = False,
+        quiet: bool = True,
+    ):
+        if not quiet and self.auto_organelle_detection:
+            self._print_genetic_code_info()
+
+        for chrom, genes in self.chrs.items():
+            if self.genome is not None and chrom not in self.genome.scaffolds:
+                continue
+
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    for c in t.CDSs.values():
+                        c.generate_protein(
+                            mode=mode,
+                            max_nucleotide_trim=max_nucleotide_trim,
+                            tolerated_stops=tolerated_stops,
+                            orf_choice_mode=orf_choice_mode,
+                            must_have_stop=must_have_stop,
+                            enforce_start_codon=enforce_start_codon,
+                            min_codon_len=min_codon_len,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            correct_CDS=correct_CDS,
+                            always_resolve_strand=always_resolve_strand,
+                            ignore_ambiguous_strands=ignore_ambiguous_strands,
+                            quiet=quiet,
+                            adjust_internal_shifts=self.adjust_internal_shifts,
+                            table=self.translation_table(chrom, c),
+                            initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
+                        )
+                    if correct_CDS:
+                        t.update(quiet=quiet)
+                if correct_CDS:
+                    g.update(quiet=quiet)
+        self.contains_protein_sequences = True
+
+    def get_protein_qc_summary(self) -> dict[str, int]:
+        """
+        Computes summary metrics for CDSs and translated proteins across the annotation. Protein
+        metrics are counted from Protein.tags, as written in detailed FASTA headers:
+        - total_cds: Total CDS features.
+        - total_proteins: CDSs with translated protein sequences.
+        - complete_proteins: Translated proteins with valid start codon, stop codon and no early stop.
+        - alt_start_proteins: Complete proteins whose start codon is an alternative (non-curated) NCBI initiator.
+        - partial_proteins: Proteins missing a start codon or a stop codon.
+        - partial_5prime: Proteins missing valid start codon (or with skipped 5' CDS bases).
+        - partial_3prime: Proteins missing stop codon.
+        - ambiguous_proteins: Proteins with residues translated from ambiguous codons (X).
+        - truncated_proteins: Proteins with premature internal stop codons.
+        - frameshifted_proteins: Proteins translated across a frameshift (annotated overlap or gap, or adjusted phases).
+        - frameshifted_cds: CDSs with internal phase shifts / frameshifts (intra-exon or intron); needs no genome.
+        - phase_mismatches: CDSs with phase mismatch across introns.
+        """
+        if hasattr(self, "_protein_qc_summary") and self._protein_qc_summary is not None:
+            return self._protein_qc_summary
+
+        if self.genome is not None and not getattr(self, "contains_protein_sequences", False):
+            try:
+                self.generate_proteins(quiet=True)
+            except Exception:
+                pass
+
+        total_cds = 0
+        total_proteins = 0
+        complete_proteins = 0
+        alt_start_proteins = 0
+        ambiguous_proteins = 0
+        partial_proteins = 0
+        partial_5p = 0
+        partial_3p = 0
+        truncated_proteins = 0
+        frameshifted_proteins = 0
+        frameshifted_cds = 0
+
+        intron_phase_mismatches = self.warnings.get("phase_mismatch_across_intron", set())
+
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
                     for c in t.CDSs.values():
-                        c.generate_protein(mode=mode, quiet=quiet)
-        self.contains_protein_sequences = True
+                        total_cds += 1
+                        if getattr(c, "has_internal_shift", False) or c.id in intron_phase_mismatches:
+                            frameshifted_cds += 1
+                        p = c.protein
+                        if p is not None and p.seq:
+                            total_proteins += 1
+                            tags = p.tags
+                            partial = tags.get("partial", "")
+                            if partial:
+                                partial_proteins += 1
+                                if "5'" in partial:
+                                    partial_5p += 1
+                                if "3'" in partial:
+                                    partial_3p += 1
+                            if "internal_stops" in tags:
+                                truncated_proteins += 1
+                            elif not partial:
+                                complete_proteins += 1
+                                if "alt_start" in tags:
+                                    alt_start_proteins += 1
+                            if "ambiguous_residues" in tags:
+                                ambiguous_proteins += 1
+                            if "frameshifts" in tags:
+                                frameshifted_proteins += 1
 
-    def generate_protein_equivalences(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", quiet: bool = True):
+        summary = {
+            "total_cds": total_cds,
+            "total_proteins": total_proteins,
+            "complete_proteins": complete_proteins,
+            "alt_start_proteins": alt_start_proteins,
+            "partial_proteins": partial_proteins,
+            "partial_5prime": partial_5p,
+            "partial_3prime": partial_3p,
+            "truncated_proteins": truncated_proteins,
+            "ambiguous_proteins": ambiguous_proteins,
+            "frameshifted_proteins": frameshifted_proteins,
+            "frameshifted_cds": frameshifted_cds,
+            "phase_mismatches": len(intron_phase_mismatches),
+        }
+        self._protein_qc_summary = summary
+        return summary
+
+    def generate_protein_equivalences(
+        self,
+        quiet: bool = True,
+    ):
         if not self.contains_protein_sequences:
-            self.generate_proteins(mode=mode)
+            self.generate_proteins(quiet=quiet)
 
         all_protein_seqs = {}
         self.all_protein_ids = {}
@@ -1384,22 +2180,7 @@ class Annotation():
                                     all_protein_seqs[c.protein.id] = c.protein.seq
                                     self.all_protein_ids[c.protein.id] = (chrom, g.id, t.id, c.id)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(all_protein_seqs.keys()), disable=disable,
-                        bar_format=(
-            f'\033[1;91mDetermining unique {self.id} proteins:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;91m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(all_protein_seqs.keys()), description=f"Determining unique {self.id} proteins", colour="91", quiet=quiet)
 
         unique_sequences = {}
         self.protein_equivalences = {}
@@ -1414,41 +2195,6 @@ class Annotation():
                 self.protein_equivalences[first_protein_id].append(protein_id)
 
         progress_bar.close()
-    
-    def correct_CDS_coordinates_based_on_protein(self, quiet:bool=True):
-        for genes in self.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    for c in t.CDSs.values():
-                        if c.protein:
-
-                            if c.protein.start != c.CDS_segments[0].start or c.protein.end != c.CDS_segments[-1].end:
-                                new_CDS_segments = []
-                                
-                                for cs in c.CDS_segments: 
-
-                                    if cs.end < c.protein.start:
-                                        continue
-
-                                    elif cs.start > c.protein.end:
-                                        continue
-
-                                    else:
-                                        
-                                        if cs.start < c.protein.start:
-                                            cs.start = c.protein.start
-
-                                        if cs.end > c.protein.end:
-                                            cs.end = c.protein.end
-                                            
-                                        new_CDS_segments.append(cs)
-                                
-                                c.CDS_segments = new_CDS_segments
-
-                            c.start = c.CDS_segments[0].start
-                            c.end = c.CDS_segments[-1].end
-
-        self.correct_gene_transcript_and_subfeature_coordinates(quiet=quiet)
 
     def clear_proteins(self):
         for genes in self.chrs.values():
@@ -1457,6 +2203,8 @@ class Annotation():
                     for c in t.CDSs.values():
                         c.clear_protein()
         self.contains_protein_sequences = False
+        self.protein_equivalences = {}
+        self._protein_qc_summary = None
 
     def return_random_gene_ids(self, number:int=1, to_avoid:list=[], coding:bool=True):
         random_ids = []
@@ -1475,28 +2223,14 @@ class Annotation():
         for genes in self.chrs.values():
             for g in genes.values():
                 g.combine_transcripts(respect_non_coding=respect_non_coding, respect_non_combined=respect_non_combined, redetect_CDS=redetect_CDS, quiet=quiet)
-        self.sorted = False
         self.update(rename_features=("transcript", "CDS", "exon", "UTR"), quiet=quiet)
-        self.tags.add("combined")
+        self.feature_tags.add("combined")
 
     def sort_genes(self, processes:int=2, quiet:bool=True, noisy:bool=False):
         if not quiet:
             print(f"\nSorting genes for {self.id}")
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                        bar_format=(
-            f'\033[38;2;210;180;140m\033[1mSorting {self.id} genes:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[38;2;210;180;140m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Sorting {self.id} genes", colour="38;2;210;180;140", quiet=quiet)
 
         if processes > 1:
             if not quiet:
@@ -1520,7 +2254,6 @@ class Annotation():
                 progress_bar.update(len(sorted_genes))
 
         progress_bar.close()
-        self.sorted = True
         if not quiet:
             print(f"Sorted genes for {self.id}")
 
@@ -1528,8 +2261,7 @@ class Annotation():
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes")
         start_time = time.time()
-        if not self.sorted:
-            self.sort_genes(processes=sort_processes)
+        self.sort_genes(processes=sort_processes)
         # defining synteny
         for genes in self.chrs.values():
             gene_list = list(genes.values())
@@ -1572,56 +2304,114 @@ class Annotation():
         if not quiet:
             print(f"\nDefining synteny for {self.id} annotation genes took {round(lapse, 1)} seconds\n")
 
-    def homogenise_parents_for_shared_exons_utrs(self):
+    def homogenise_shared_exons_utrs(self):
+        """
+        Exons (and UTRs) of a gene with the same coordinates are one shared feature: they take the id of
+        the first one, whether ids were renamed or kept, and their parents are the transcripts of the gene
+        containing them (references to transcripts outside the gene are kept, see
+        remove_missing_transcript_parent_references), so features no longer shared after being merged
+        or extended lose the transcripts that no longer contain them.
+        Different features left with the same id (e.g. ids numbered per transcript, such as exon_3 being
+        a different exon in each transcript) keep it for the first one; the others get <id>_<n>.
+        """
         for genes in self.chrs.values():
             for g in genes.values():
-                exon_groups: dict[tuple[int, int, str, str], list[Exon]] = {}
+                transcript_ids = {t.id for t in g.transcripts.values()}
+                exon_groups: dict[tuple[int, int, str, str], list[tuple[str, Exon]]] = {}
+                utr_groups: dict[tuple[int, int, str, str], list[tuple[str, UTR]]] = {}
                 for t in g.transcripts.values():
                     for e in t.exons:
-                        key = (e.start, e.end, e.ch, e.strand)
-                        if key not in exon_groups:
-                            exon_groups[key] = [e]
-                        else:
-                            exon_groups[key].append(e)
-
-                for group in exon_groups.values():
-                    if len(group) > 1:
-                        all_parents = set()
-                        for e in group:
-                            if e.parents:
-                                all_parents.update(e.parents)
-                        merged_parents = sorted(all_parents)
-                        for e in group:
-                            e.parents = merged_parents[:]
-                    else:
-                        if group[0].parents:
-                            group[0].parents.sort()
-
-                utr_groups: dict[tuple[int, int, str, str], list[UTR]] = {}
-                for t in g.transcripts.values():
+                        exon_groups.setdefault((e.start, e.end, e.ch, e.strand), []).append((t.id, e))
                     for c in t.CDSs.values():
                         for u in c.UTRs:
-                            key = (u.start, u.end, u.ch, u.strand)
-                            if key not in utr_groups:
-                                utr_groups[key] = [u]
-                            else:
-                                utr_groups[key].append(u)
+                            utr_groups.setdefault((u.start, u.end, u.ch, u.strand), []).append((t.id, u))
 
-                for group in utr_groups.values():
-                    if len(group) > 1:
-                        all_parents = set()
-                        for u in group:
-                            if u.parents:
-                                all_parents.update(u.parents)
-                        merged_parents = sorted(all_parents)
-                        for u in group:
-                            u.parents = merged_parents[:]
-                    else:
-                        if group[0].parents:
-                            group[0].parents.sort()
+                for groups in (exon_groups, utr_groups):
+                    for group in groups.values():
+                        first = group[0][1]
+                        containing = {t_id for t_id, _ in group}
+                        outside_gene = {p for _, f in group for p in (f.parents or []) if p not in transcript_ids}
+                        parents = sorted(containing | outside_gene)
+                        for _, f in group:
+                            f.parents = parents[:]
+                            f.id, f.id_number = first.id, first.id_number
+
+                    owners = {}
+                    used_ids = {group[0][1].id for group in groups.values()}
+                    for key, group in groups.items():
+                        f_id = group[0][1].id
+                        if owners.setdefault(f_id, key) == key:
+                            continue
+                        n = 2
+                        while f"{f_id}_{n}" in used_ids:
+                            n += 1
+                        used_ids.add(f"{f_id}_{n}")
+                        for _, f in group:
+                            f.id = f"{f_id}_{n}"
+                            f.update_numbering()
 
         self.shared_exons = True
         self.shared_UTRs = True
+
+    def resolve_subfeature_id_clashes(self, record_to:dict[str, set[str]]|None=None):
+        """
+        Exon, CDS and UTR ids are only reconciled within a gene (see homogenise_shared_exons_utrs), but
+        an id may only be used by one feature of the annotation. An id is kept by the first gene (in
+        chromosome order) and feature type using it; later uses, and uses of a gene or transcript id, get
+        <id>_<n>, shared by the features of that gene and type with that id. Repeated ids read from the
+        input are recorded as repeated_subfeature_ids.
+        """
+        all_ids = set()
+        for genes in self.chrs.values():
+            for g in genes.values():
+                all_ids.add(g.id)
+                for t in g.transcripts.values():
+                    all_ids.add(t.id)
+                    all_ids.update(e.id for e in t.exons)
+                    for c in t.CDSs.values():
+                        all_ids.add(c.id)
+                        all_ids.update(cs.id for cs in c.CDS_segments)
+                        all_ids.update(u.id for u in c.UTRs)
+        taken = {g.id for genes in self.chrs.values() for g in genes.values()}
+        taken.update(t.id for genes in self.chrs.values() for g in genes.values() for t in g.transcripts.values())
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                groups: dict[tuple[str, str], list[Feature]] = {}
+                for t in g.transcripts.values():
+                    for e in t.exons:
+                        groups.setdefault(("exon", e.id), []).append(e)
+                    for c in t.CDSs.values():
+                        groups.setdefault(("CDS", c.id), []).append(c)
+                        for cs in c.CDS_segments:
+                            groups.setdefault(("CDS", cs.id), []).append(cs)
+                        for u in c.UTRs:
+                            groups.setdefault(("UTR", u.id), []).append(u)
+
+                renamed_CDSs = False
+                for (kind, f_id), features in groups.items():
+                    if f_id not in taken:
+                        taken.add(f_id)
+                        continue
+                    if record_to is not None and any(f.original_id == f_id for f in features):
+                        record_to["repeated_subfeature_ids"].add(f_id)
+                    n = 2
+                    while f"{f_id}_{n}" in all_ids:
+                        n += 1
+                    new_id = f"{f_id}_{n}"
+                    all_ids.add(new_id)
+                    taken.add(new_id)
+                    for f in features:
+                        f.id = new_id
+                        f.update_numbering()
+                        if isinstance(f, CDS):
+                            renamed_CDSs = True
+                            if f.protein is not None:
+                                f.protein.id = f"{new_id}.prot"
+
+                if renamed_CDSs:
+                    for t in g.transcripts.values():
+                        t.CDSs = {c.id: c for c in t.CDSs.values()}
 
     def single_parent_for_exons_utrs(self):
         for genes in self.chrs.values():
@@ -1735,22 +2525,8 @@ class Annotation():
         if max_cds_overlap != 100 or max_exon_overlap != 100 or max_gene_overlap != 100:
             self.overlaps.detect(other, quiet=quiet)
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(other.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mMerging {other.id} and {self.id} annotations:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(other.all_gene_ids), description=f"Adding {other.id} annotation to {self.id}", colour="38;2;46;204;113", quiet=quiet)
+        
         if self.merged:
             if "_..._" in self.name:
                 first_name = self.name.split("_..._")[0]
@@ -1853,7 +2629,6 @@ class Annotation():
                             self.all_gene_ids[temp_id] = chr
 
         self.merged = True
-        self.sorted = False
   
         self.clear_proteins()
         progress_bar.close()
@@ -1888,17 +2663,20 @@ class Annotation():
                     del g.transcripts[t_id]
                     if not quiet:
                         print(f"{t_id} Warning: transcript with no exons was removed because of exon strand inconsistencies")
-                    self.warnings["transcript_with_no_exons"].add(t_id)
             for g_id in genes_to_remove:
                 del genes[g_id]
                 if not quiet:
                     print(f"{g_id} Warning: gene with no transcripts because of exon strand inconsistencies was removed")
-                self.warnings["gene_with_no_transcripts"].add(g_id)
 
         self.update_gene_and_transcript_list(quiet=quiet)
         self.remove_missing_transcript_parent_references(quiet=quiet)
 
-    def detect_transcripts_with_no_exons(self, remove_transcripts:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False):
+    def detect_transcripts_with_no_exons(self, remove_transcripts:bool=False, remove_genes_accordingly:bool=False, quiet:bool=False, record_to:dict[str, set[str]]|None=None):
+        """
+        record_to: warnings dict where findings are recorded (not recorded if None).
+        """
+        if record_to is None:
+            record_to = self._new_warnings_dict()
         removed = False
         for genes in self.chrs.values():
             genes_to_remove = set()
@@ -1906,7 +2684,7 @@ class Annotation():
                 transcripts_to_remove = set()
                 for t in g.transcripts.values():
                     if t.exons == []:
-                        self.warnings["transcript_with_no_exons"].add(t.id)
+                        record_to["transcript_with_no_exons"].add(t.id)
                         if remove_transcripts:
                             transcripts_to_remove.add(t.id)
                             removed = True
@@ -1923,7 +2701,7 @@ class Annotation():
                 del genes[g_id]
                 if not quiet:
                     print(f"{g_id} Warning: gene with no transcripts, deleted because of lack of exons, was removed")
-                self.warnings["gene_with_no_transcripts"].add(g_id)
+                record_to["gene_with_no_transcripts"].add(g_id)
 
         if removed:
             self.update_gene_and_transcript_list(quiet=quiet)
@@ -1940,9 +2718,7 @@ class Annotation():
                 removed = True
                 if remove_genes_accordingly:
                     if self.chrs[chrom][g_id].transcripts == {}:
-                        if g_id not in self.warnings["gene_with_no_transcripts"]:
-                            del self.chrs[chrom][g_id]
-                            self.warnings["gene_with_no_transcripts"].add(g_id)
+                        del self.chrs[chrom][g_id]
             elif not quiet:
                 warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}", category=UserWarning)
 
@@ -1950,13 +2726,18 @@ class Annotation():
             self.update_gene_and_transcript_list(quiet=quiet)
             self.remove_missing_transcript_parent_references(quiet=quiet)
 
-    def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False):
+    def detect_genes_with_no_transcripts(self, remove:bool=False, remove_pseudogene:bool=False, quiet:bool=False, record_to:dict[str, set[str]]|None=None):
+        """
+        record_to: warnings dict where findings are recorded (not recorded if None).
+        """
+        if record_to is None:
+            record_to = self._new_warnings_dict()
         removed = False
         for genes in self.chrs.values():
             genes_to_remove = set()
             for g in genes.values():
                 if g.transcripts == {}:
-                    self.warnings["gene_with_no_transcripts"].add(g.id)
+                    record_to["gene_with_no_transcripts"].add(g.id)
                     if remove:
                         removed = True
                         if g.pseudogene:
@@ -1972,6 +2753,38 @@ class Annotation():
 
         if removed:
             self.update_gene_and_transcript_list(quiet=quiet)
+
+    def detect_polycistronic_transcripts(self, quiet:bool=False, record_to:dict[str, set[str]]|None=None):
+        """
+        Detects polycistronic transcripts, overlapping CDS segments, or independent CDS segment ID
+        formatting across the annotation based on raw temp_CDSs before CDS generation, and populates
+        self.warnings['overlapping_CDS_segments'], self.warnings['possible_polycistronic_transcript'],
+        and self.warnings['independent_CDS_segment_ids'].
+
+        Exemplified by canonical_gene_example.gff3 (the Sequence Ontology / GFF3 specification EDEN gene example),
+        where mRNA00003 contains multiple logical CDSs (cds00003 and cds00004) under the same transcript.
+
+        record_to: warnings dict where findings are recorded (defaults to self.warnings, as this is a load-time check).
+        """
+        if record_to is None:
+            record_to = self.warnings
+        list_load_warnings = getattr(self, "list_load_warnings", False)
+        flagged = {}
+        for genes in self.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    if t.temp_CDSs:
+                        warnings = t._detect_polycistronic()
+                        for warning in warnings:
+                            if t.id not in record_to[warning]:
+                                flagged[warning] = flagged.get(warning, 0) + 1
+                                if list_load_warnings and not quiet:
+                                    print(f"Warning: Transcript {t.id} flagged as {warning} ({self.id})")
+                            record_to[warning].add(t.id)
+        if not quiet:
+            for warning, count in flagged.items():
+                print(f"Warning: {count} transcripts flagged as {warning} ({self.id})" + ("" if list_load_warnings else Annotation._warning_ids_hint(warning)))
+
 
     def remove_missing_transcript_parent_references(self, quiet:bool=True):
 
@@ -2007,72 +2820,138 @@ class Annotation():
                                 cs.parents = new_parents
                                 cs.parents.sort()
 
-    def rework_CDSs(self, override:bool=True, coding_ratio_threshold:float=0.8, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), min_codon_len: int = 2, quiet:bool=False):
-        start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
+    def rework_CDSs(
+        self,
+        override: bool = True,
+        coding_ratio_threshold: float = 0.7,
+        fallback_to_trim: bool = False,
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
+        min_codon_len: int = 2,
+        quiet: bool = False,
+        enforce_start_codon: bool = True,
+        must_have_stop: bool = True,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"] = "longest",
+        mode: Literal["orf", "orf_or_end", "orf_or_start"] = "orf",
+        allow_internal_stops: bool = True,
+        allow_partial: bool = True,
+    ):
+        """
+        Replaces the CDSs of transcripts (all of them with override, otherwise only those of
+        non-coding transcripts) by the best ORF across their exons.
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mReworking {self.id} CDSs:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-    
-        for genes in self.chrs.values():
+        Only what the rework changes gets a new id: a reworked CDS with the segments and phases of
+        the CDS it replaces is that CDS (keeping its id and attributes), and so are UTRs with the
+        coordinates of replaced ones (see Transcript.keep_unchanged_subfeatures). New CDSs are named
+        <transcript>_CDS001 and new UTRs <gene>_u<n> (by update, see Gene.name_new_UTRs); other
+        features keep their ids.
+        """
+        start_time = time.time()
+
+        if not quiet and self.auto_organelle_detection:
+            self._print_genetic_code_info()
+
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
+
+        for chrom, genes in self.chrs.items():
+            chrom_table = self.translation_table(chrom)
+
             for g in genes.values():
                 progress_bar.update(1)
                 for t in g.transcripts.values():
                     if t.coding and not override:
                         continue
+                    old_CDSs = list(t.CDSs.values())
+                    old_UTRs = [u for c in old_CDSs for u in c.UTRs]
 
-                    t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len, quiet=quiet)
+                    t.generate_best_protein(
+                        mode=mode,
+                        start_codons=start_codons,
+                        stop_codons=stop_codons,
+                        min_codon_len=min_codon_len,
+                        enforce_start_codon=enforce_start_codon,
+                        must_have_stop=must_have_stop,
+                        tolerated_stops=tolerated_stops,
+                        orf_choice_mode=orf_choice_mode,
+                        quiet=quiet,
+                        table=chrom_table,
+                        initiator_methionine=self.initiator_methionine,
+                        alt_start_methionine=self.alt_start_methionine,
+                    )
                     t.update(quiet=quiet)
 
-                    if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, tolerated_stops=1, min_codon_len=min_codon_len, quiet=quiet)
-                    t.update(quiet=quiet)
+                    if t.coding_ratio < coding_ratio_threshold and allow_internal_stops:
+                        t.generate_best_protein(
+                            mode=mode,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            tolerated_stops=1 if (tolerated_stops is None or tolerated_stops == 0) else tolerated_stops,
+                            min_codon_len=min_codon_len,
+                            enforce_start_codon=enforce_start_codon,
+                            must_have_stop=must_have_stop,
+                            orf_choice_mode=orf_choice_mode,
+                            quiet=quiet,
+                            table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
+                        )
+                        t.update(quiet=quiet)
 
-                    if t.coding_ratio < coding_ratio_threshold:
-                        t.generate_best_protein(start_codons=start_codons, stop_codons=stop_codons, must_have_stop=False, min_codon_len=min_codon_len, quiet=quiet)
-                    t.update(quiet=quiet)
+                    if t.coding_ratio < coding_ratio_threshold and allow_partial:
+                        t.generate_best_protein(
+                            mode=mode,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            must_have_stop=False,
+                            tolerated_stops=tolerated_stops,
+                            min_codon_len=min_codon_len,
+                            enforce_start_codon=enforce_start_codon,
+                            orf_choice_mode=orf_choice_mode,
+                            quiet=quiet,
+                            table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
+                        )
+                        t.update(quiet=quiet)
+
+                    if t.coding_ratio < coding_ratio_threshold and fallback_to_trim:
+                        trim_mode = "orf_or_end" if mode == "orf" else mode
+                        t.generate_best_protein(
+                            mode=trim_mode,
+                            start_codons=start_codons,
+                            stop_codons=stop_codons,
+                            must_have_stop=False,
+                            min_codon_len=min_codon_len,
+                            enforce_start_codon=enforce_start_codon,
+                            orf_choice_mode=orf_choice_mode,
+                            quiet=quiet,
+                            table=chrom_table,
+                            initiator_methionine=self.initiator_methionine,
+                            alt_start_methionine=self.alt_start_methionine,
+                        )
+                        t.update(quiet=quiet)
+
+                    t.keep_unchanged_subfeatures(old_CDSs, old_UTRs, quiet=quiet)
 
                 g.update(quiet=quiet)
 
         progress_bar.close()
-        self.update(rename_features=("CDS", "exon", "UTR"), quiet=quiet)
+        # Names the new UTRs (see Gene.name_new_UTRs)
+        self.update(quiet=quiet)
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"\nReworking CDSs for {self.id} took {round(lapse/60, 1)} minutes")
 
     def update_gene_and_transcript_list(self, quiet:bool=True):
-                # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         total = 0
         for genes in self.chrs.values():
             total += len(genes)
 
-        progress_bar = tqdm(total=total, disable=disable,
-                                bar_format=(
-                    f'\033[1;95mUpdating {self.id} annotation gene and transcript lists:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;95m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=total, description=f"Updating {self.id} annotation gene and transcript lists", colour="95", quiet=quiet)
+
         self.all_gene_ids = {}
         self.all_transcript_ids = {}
         for chr, genes in self.chrs.items():
@@ -2106,6 +2985,10 @@ class Annotation():
                         self.all_gene_ids[g_new.id] = chrom
 
                 g.transcripts = new_transcripts.copy()
+                # Trim the gene to its remaining transcripts, as its span may have come from those now split off
+                if g.transcripts:
+                    g.start = min(t.start for t in g.transcripts.values())
+                    g.end = max(t.end for t in g.transcripts.values())
             new_chrs[chrom] = new_genes.copy()
 
         for nc in new_chrs:
@@ -2145,7 +3028,34 @@ class Annotation():
             for o in self.orphaned_features:
                 o.source = new_source
         
-    def rename_ids(self, custom_path:str="", features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, quiet:bool=False):
+    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, quiet:bool=False,
+    #deprecated arguments
+    custom_path:str=""):
+        """
+        Renames the chosen feature levels from their gene ids.
+
+        prefix: rename all genes as {prefix}{chromosome}g{number}{sep}{suffix}, numbered by position along
+            each chromosome. Genes on organelles (see chromosome_compartment) use chrMT or chrCP as
+            chromosome, numbered across all chromosomes of that organelle.
+        keep_subfeature_numbers: reuse the trailing number of current transcript, CDS, exon and
+            UTR ids. Exons, UTRs and CDSs only take a number written after their type
+            ('AT4G00005:exon:1', 'g1_u002', 't1_CDS1'), so e.g. the accession version in
+            'cds-NP_065184.2' is not read as one. Numbers are only kept when every feature of the
+            group (transcripts or exons/UTRs of a gene) has one and no number is shared by
+            different features; otherwise the group is numbered sequentially.
+        cds_segment_ids: give each CDS row its own id (<CDS id>_<n>) instead of the CDS id.
+        """
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'correspondences_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if correspondences_output_dir is None:
+                correspondences_output_dir = custom_path
+
+        if correspondences_subfolder_name != "out_gffs":
+            correspondences_subfolder = True
+
+        if correspondences_output_dir is not None or correspondences_subfolder or correspondences_filepath is not None or correspondences_filename is not None:
+            correspondences = True
 
         acceptable_features = ["gene", "transcript", "CDS", "exon", "UTR"]
 
@@ -2157,16 +3067,16 @@ class Annotation():
             raise ValueError(f"Rename ids was called but no feature levels were chosen. Select from: {acceptable_features}.")
         
         if prefix:
-            if keep_existing_ids_if_derived_from_base_id or features != acceptable_features or remove_point_suffix:
-                ignored_options = []
-                if keep_existing_ids_if_derived_from_base_id:
-                    ignored_options.append("keep_existing_ids_if_derived_from_base_id")
-                if set(features) != set(acceptable_features):
-                    ignored_options.append("features")
-                if remove_point_suffix:
-                    ignored_options.append("remove_point_suffix")
-                if strip_gene_tag:
-                    ignored_options.append("strip_gene_tag")
+            ignored_options = []
+            if keep_existing_ids_if_derived_from_base_id:
+                ignored_options.append("keep_existing_ids_if_derived_from_base_id")
+            if set(features) != set(acceptable_features):
+                ignored_options.append("features")
+            if remove_point_suffix:
+                ignored_options.append("remove_point_suffix")
+            if strip_gene_tag:
+                ignored_options.append("strip_gene_tag")
+            if ignored_options:
                 warnings.warn(f"Providing a prefix '{prefix}' means all features will be renamed based on the prefix, the following provided options are to be ignored: {ignored_options}.", category=UserWarning)
 
         elif suffix:
@@ -2176,33 +3086,30 @@ class Annotation():
             warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.", category=UserWarning)
 
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
         changed_features = set()
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;156;42;42m\033[1mRenaming {self.id} Gene Ids:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;156;42;42m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        # Gene ids are numbered by position along each chromosome
+        self.sort_genes(processes=1)
+
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Renaming {self.id} gene ids", colour="38;2;156;42;42", quiet=quiet)
 
         correspondences_d = {}
 
-        for genes in self.chrs.values():
-            g_count = 0
+        # Organelle genes are labelled chrMT/chrCP instead of their chromosome name; chromosomes sharing
+        # a label (e.g. several mitochondrial contigs) continue its gene numbering
+        organelle_labels = {"mitochondria": "chrMT", "chloroplast": "chrCP"}
+        g_counts: dict[str, int] = {}
+
+        for chrom, genes in self.chrs.items():
+            chrom_label = organelle_labels.get(self.chromosome_compartment(chrom), chrom)
             for g in genes.values():
                 progress_bar.update(1)
-                g_count += spacer
+                g_counts[chrom_label] = g_counts.get(chrom_label, 0) + spacer
+                g_count = g_counts[chrom_label]
 
                 if "gene" in features or prefix:
-                    g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix)
+                    g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix, chrom_label=chrom_label)
                     if g.renamed:
                         changed_features.add("gene")
 
@@ -2221,7 +3128,8 @@ class Annotation():
                     else:
                         base_id_missing = True
                     
-                if base_id_present and base_id_missing:
+                # Id formats only decide what is renamed when existing ids may be kept
+                if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                     warnings.warn(f"{self.id} annotation gene {g.original_id} has a mix of transcript id formats and renaming errors could occur!", category=UserWarning)
                 
                 if tmains > 1:
@@ -2229,6 +3137,7 @@ class Annotation():
 
 
                 t_count = 1
+                keep_transcript_numbers = keep_subfeature_numbers and unambiguous_numbers((t.id, t.id_number) for t in g.transcripts.values())
 
                 for t in g.transcripts.values():
 
@@ -2240,9 +3149,9 @@ class Annotation():
                     if "transcript" in features or prefix:
 
                         if prefix or base_id_missing:
-                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False)
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_transcript_numbers, keep_existing_ids_if_derived_from_base_id=False)
                         else:
-                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+                            t.rename(base_id=g.base_id, sep=sep, count=t_count, digits=t_id_digits, keep_numbering=keep_transcript_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
 
                         if t.renamed:
                             changed_features.add("transcript")
@@ -2265,7 +3174,7 @@ class Annotation():
                             else:
                                 base_id_missing = True
 
-                    if base_id_present and base_id_missing:
+                    if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of CDS id formats and renaming errors could occur!", category=UserWarning)
 
                     if cmains > 1:
@@ -2302,7 +3211,7 @@ class Annotation():
                         else:
                             base_id_missing = True
 
-                    if base_id_present and base_id_missing:
+                    if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
 
 
@@ -2317,7 +3226,7 @@ class Annotation():
                             else:
                                 base_id_missing = True
 
-                    if base_id_present and base_id_missing:
+                    if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of UTR id formats and renaming errors could occur!", category=UserWarning)
 
 
@@ -2327,13 +3236,16 @@ class Annotation():
                     if g.renamed_exons:
                         changed_features.add("exon")
 
+                if "UTR" in features or prefix:
+                    g.rename_utrs(sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id)
+
                     if g.renamed_utrs:
                         changed_features.add("UTR")
 
 
         progress_bar.close()
 
-        self.homogenise_parents_for_shared_exons_utrs()
+        self.homogenise_shared_exons_utrs()
         self.update_keys()
         self.update_gene_and_transcript_list(quiet=quiet)
 
@@ -2343,19 +3255,17 @@ class Annotation():
             self.feature_tags.add("full_renamed_ids")
 
         if correspondences:
-
-            export_folder = Path(custom_path or self.path) / "out_gffs"
-            export_folder.mkdir(parents=True, exist_ok=True)
-            export_folder = str(export_folder) + "/"
-
+        
             if "gene" in changed_features:
-                out_text = ["old_gene_id\tnew_gene_id"]
-                for k, v in correspondences_d.items():
-                    out_text.append(f"{k}\t{v}")
-                f_out = open(f"{export_folder}{self.id}{self.feature_suffix}_rename_eqs.tsv", "w", encoding="utf-8")
-                out_text = "\n".join(out_text)
-                f_out.write(out_text)
-                f_out.close()
+
+                extra_suffixes = ["rename_eqs"]
+
+                final_correspondences_path = self._resolve_output_path(output_dir=correspondences_output_dir, extension=correspondences_extension, extra_suffixes=extra_suffixes, suffix=self.feature_suffix, filename=correspondences_filename, use_annot_dir=correspondences_use_annot_dir, subfolder=correspondences_subfolder, filepath=correspondences_filepath)
+
+                with open(str(final_correspondences_path), "w", encoding="utf-8") as f_out:
+                    f_out.write("old_gene_id\tnew_gene_id\n")
+                    for k, v in correspondences_d.items():
+                        f_out.write(f"{k}\t{v}\n")
 
             else:
                 warnings.warn(f"Correspondences on gene ids were requested, however gene ids remained unchanged.", category=UserWarning)
@@ -2366,9 +3276,6 @@ class Annotation():
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
     def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
         for chrom, genes_dict in self.chrs.items():
             new_genes = {}
@@ -2385,8 +3292,7 @@ class Annotation():
                     gene.transcripts = new_transcripts
 
                 new_genes[gene.id] = gene
-                
-            # Replace the chromosome's gene dict with the updated version
+
             if gene_keys:
                 self.chrs[chrom] = new_genes
 
@@ -2421,8 +3327,10 @@ class Annotation():
 
                 for t in g.transcripts.values():
                     t.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
+                    num_exons = len(t.exons)
                     for x, e in enumerate(t.exons):
-                        e.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"', f'exon_number "{x+1}"']
+                        exon_num = (num_exons - x) if t.strand == "-" else (x + 1)
+                        e.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"', f'exon_number "{exon_num}"']
 
                     for c in t.CDSs.values():
                         c.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
@@ -2488,7 +3396,28 @@ class Annotation():
 
         self.gff_header = new_header
 
-    def subset(self, chosen_features:set[str]=set(), gene_cap:int=3000, common_chromosomes:set|None=None, min_genes:int=1500, quiet:bool=False):
+    def subset(
+        self,
+        chosen_features: set[str] | list[str] | tuple[str] | None = None,
+        gene_cap: int | None = 3000,
+        common_chromosomes: set | list | tuple | None = None,
+        min_genes: int | None = None,
+        quiet: bool = False,
+        chr_cap: int | None = None,
+        no_gene_cap: bool = False,
+        no_min_genes: bool = False,
+        seed: int | None = None,
+    ):
+
+        if seed is not None:
+            random.seed(seed)
+
+        if chosen_features is None:
+            chosen_features = set()
+        elif isinstance(chosen_features, (list, tuple)):
+            chosen_features = set(chosen_features)
+        else:
+            chosen_features = chosen_features.copy()
 
         initial_chosen_features = chosen_features.copy()
 
@@ -2498,11 +3427,31 @@ class Annotation():
 
         if common_chromosomes is None:
             total_chromosomes = set(self.chrs)
-
+        elif isinstance(common_chromosomes, (list, tuple)):
+            total_chromosomes = set(common_chromosomes)
         else:
             total_chromosomes = common_chromosomes.copy()
 
-        if min_genes > 0:
+        if chr_cap is not None and chr_cap > 0 and not chosen_features:
+            if chr_cap <= len(total_chromosomes):
+                chosen_features = set(random.sample(list(total_chromosomes), chr_cap))
+            else:
+                chosen_features = total_chromosomes.copy()
+
+        if not initial_chosen_features:
+            if no_min_genes or (min_genes is not None and min_genes <= 0):
+                effective_min_genes = 0
+            elif min_genes is None:
+                effective_min_genes = 1500
+            else:
+                effective_min_genes = min_genes
+        else:
+            if no_min_genes or min_genes is None or min_genes <= 0:
+                effective_min_genes = 0
+            else:
+                effective_min_genes = min_genes
+
+        if effective_min_genes > 0:
 
             num_genes_in_chosen_features = 0
             for ft in chosen_features:
@@ -2511,7 +3460,7 @@ class Annotation():
             remaining_to_chose_from = total_chromosomes - chosen_features
             chr_cap_overriden = False
 
-            while num_genes_in_chosen_features < min_genes and remaining_to_chose_from:
+            while num_genes_in_chosen_features < effective_min_genes and remaining_to_chose_from:
                 chr_cap_overriden = True
                 
                 chosen_features.add(random.choice(list(remaining_to_chose_from)))
@@ -2522,53 +3471,58 @@ class Annotation():
                 for ft in chosen_features:
                     num_genes_in_chosen_features += len(self.chrs[ft])
 
-            if chr_cap_overriden:
-                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+            if chr_cap_overriden and not quiet:
+                print(f"Chromosome/scaffold cap of {len(initial_chosen_features)} was overriden by min_genes = {effective_min_genes} parameter as not enough genes were present in {initial_chosen_features}. The final selection includes {len(chosen_features)} features: {chosen_features}")
+
+        if not chosen_features:
+            chosen_features = total_chromosomes.copy()
 
         features_to_remove = set(self.chrs) - chosen_features
-        genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features))
-
         self.remove_chromosomes(features_to_remove, update=False, quiet=quiet)
 
-        genes_to_remove = set()
+        is_gene_cap_enabled = not no_gene_cap and gene_cap is not None and gene_cap > 0
 
-        total_deficit = 0
+        if is_gene_cap_enabled:
+            genes_to_keep_per_chromosome = math.ceil(gene_cap / len(chosen_features)) if len(chosen_features) > 0 else 0 #type: ignore
 
-        for genes in self.chrs.values():
-            deficit = genes_to_keep_per_chromosome - len(genes)
-            if deficit < 0:
-                deficit = 0
-            total_deficit += deficit
+            genes_to_remove = set()
+            total_deficit = 0
 
-        for genes in self.chrs.values():
+            for genes in self.chrs.values():
+                deficit = genes_to_keep_per_chromosome - len(genes)
+                if deficit < 0:
+                    deficit = 0
+                total_deficit += deficit
 
-            gene_list = list(genes)
-            surplus = len(genes) - genes_to_keep_per_chromosome
+            for genes in self.chrs.values():
 
-            if surplus > 0 :
+                gene_list = list(genes)
+                surplus = len(genes) - genes_to_keep_per_chromosome
 
-                contribution_to_cover_deficit = min(surplus, total_deficit)
+                if surplus > 0 :
 
-                final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
-                
-                if len(gene_list) > final_genes_to_keep:
-                    genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                    contribution_to_cover_deficit = min(surplus, total_deficit)
+
+                    final_genes_to_keep = genes_to_keep_per_chromosome + contribution_to_cover_deficit
                     
-                    genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
-                    genes_to_remove.update(genes_to_remove_from_this_chr)
-                    
-                total_deficit -= contribution_to_cover_deficit
+                    if len(gene_list) > final_genes_to_keep:
+                        genes_to_keep_sample = set(random.sample(gene_list, final_genes_to_keep))
+                        
+                        genes_to_remove_from_this_chr = set(gene_list) - genes_to_keep_sample
+                        genes_to_remove.update(genes_to_remove_from_this_chr)
+                        
+                    total_deficit -= contribution_to_cover_deficit
 
-        if genes_to_remove:
-            self.remove_genes(genes_to_remove, quiet=quiet)
-        else:
-            warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
-        
+            if genes_to_remove:
+                self.remove_genes(genes_to_remove, quiet=quiet)
+            else:
+                warnings.warn(f"The cap value {gene_cap} was not enforced as there are not enough genes in the subset chromosomes in annotation {self.id}.", category=UserWarning)
+
         self.update(quiet=quiet, update_gene_and_transcript_list=True, remove_missing_transcript_parent_references=True)
 
         return chosen_features
 
-    def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=False, quiet:bool=False):
+    def filter_by_rna_class(self, rna_classes=['mRNA'], remove_genes_accordingly:bool=True, quiet:bool=False):
 
         transcript_to_remove = set()
 
@@ -2600,27 +3554,12 @@ class Annotation():
         if to_remove is None:
             to_remove = set()
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
         total_count = 0
 
         for genes in self.chrs.values():
             total_count += len(genes)
-        
-        progress_bar = tqdm(total=total_count, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving {self.id} genes:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+
+        progress_bar = start_progress_bar(total=total_count, description=f"Removing {self.id} genes", colour="91", quiet=quiet)
         
         for gene in to_remove:
             if gene in self.all_gene_ids:
@@ -2648,26 +3587,13 @@ class Annotation():
         self.update_gene_and_transcript_list(quiet=quiet)
 
     def remove_missing_genes_in_overlaps(self, quiet:bool=True):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
-
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
 
         total_count = 0
         for genes in self.chrs.values():
             total_count += len(genes)
 
-        progress_bar = tqdm(total=total_count, disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving {self.id} missing genes in overlaps:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=total_count, description=f"Removing {self.id} missing genes in overlaps", colour="91", quiet=quiet)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -2679,21 +3605,9 @@ class Annotation():
         progress_bar.close()              
 
     def remove_duplicate_transcripts(self, quiet:bool=False):
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-        progress_bar = tqdm(total=len(self.all_gene_ids), disable=disable,
-                                bar_format=(
-                    f'\033[1;91mRemoving repeat transcripts per gene of {self.id}:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[1;91m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+        progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Removing {self.id} duplicate transcripts", colour="91", quiet=quiet)
+
         for genes in self.chrs.values():
             for g in genes.values():
                 progress_bar.update(1)
@@ -2803,6 +3717,41 @@ class Annotation():
         
         if removed_any:
             self.feature_tags.add("minus_non_TE")
+
+        self.update(quiet=quiet)
+
+    def remove_pseudogene_genes(self, quiet:bool=False):
+
+        removed_any = False
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                if g.pseudogene:
+                    g.quality.rescue = False
+                    g.quality.remove = True
+                    removed_any = True
+
+        self.remove_genes(quiet=quiet)
+
+        if removed_any:
+            self.feature_tags.add("minus_pseudogene")
+        self.update(quiet=quiet)
+
+    def remove_non_pseudogene_genes(self, quiet:bool=False):
+
+        removed_any = False
+
+        for genes in self.chrs.values():
+            for g in genes.values():
+                if not g.pseudogene:
+                    g.quality.rescue = False
+                    g.quality.remove = True
+                    removed_any = True
+
+        self.remove_genes(quiet=quiet)
+        
+        if removed_any:
+            self.feature_tags.add("minus_non_pseudogene")
 
         self.update(quiet=quiet)
 
@@ -3058,7 +4007,7 @@ class Annotation():
         self.update(quiet=quiet)
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.update(quiet=quiet)
-        self.export.gff(custom_path=custom_path, extra_attributes=extra_attributes, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
+        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
 
     def generate_introns(self):
         for genes in self.chrs.values():

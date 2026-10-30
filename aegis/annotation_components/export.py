@@ -2,36 +2,64 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from ..annotation import Annotation
     from ..genome import Genome
     from ..subfeatures import CDS
 
+import re
 import time
-import os
 import warnings
-import pandas as pd
-import sys
 
-from pathlib import Path
-from tqdm import tqdm
 from typing import Literal
 
-class AnnotationExport:
+from ..utils.misc import start_progress_bar
+from ..utils.genefunctions import get_genetic_code_tables, trim_3p_bases
+from .base import AnnotationComponent
+
+def _location(segments, strand:str) -> str:
+    """Genomic location of a sequence built from (start, end) segments, as in NCBI FASTA headers: join(...), complement(...)."""
+    location = ",".join(f"{start}..{end}" for start, end in segments)
+    if len(segments) > 1:
+        location = f"join({location})"
+    if strand == "-":
+        location = f"complement({location})"
+    return location
+
+INTERNAL_STOP_MODES = ("keep", "x", "skip")
+
+def _protein_export_seq(seq:str, strip_stop:bool, internal_stops:str) -> str:
+    """
+    Protein sequence as exported. Only a final "*" is a terminal stop, removed with strip_stop (3' partial proteins have
+    none, so nothing is removed or added). Any other "*" is an internal stop, written as X with internal_stops="x".
+    """
+    end_stop = seq.endswith("*")
+    body = seq[:-1] if end_stop else seq
+    if internal_stops == "x":
+        body = body.replace("*", "X")
+    return body + "*" if (end_stop and not strip_stop) else body
+
+
+class AnnotationExport(AnnotationComponent):
     """
     Component for handling export methods for the Annotation class.
     Accessed via 'annotation_object.export'.
     """
-    _annot: Annotation
-    
-    def __init__(self, annotation: Annotation):
-        self._annot = annotation
 
-    def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, path: str = "", most_specific_id_level = "promoter", quiet: bool = False):
+    def all_features(self, feature_output: Literal["main", "all", "both"] = "main", promoters: bool = True, verbose: bool = True, most_specific_id_level = "promoter", output_dir: str | None = None, use_annot_dir:bool=False, subfolder:bool=False, subfolder_name:str="features", extension:str=".fasta", quiet: bool = False,
+        #deprecated arguments
+        path:str=""):
         """
         The "output" parameter can be both, main or all. This parameter only 
         affects promoter, transcript, CDS and protein sequences. If both is selected
         a "main features" file and and "all features" file will be produced.
         """
+
+        if path != "":
+            warnings.warn("'path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = path
+
+        if subfolder_name != "features":
+            subfolder = True
 
         feature_output_choices = ["main", "all", "both"]
         if feature_output not in feature_output_choices:
@@ -44,7 +72,7 @@ class AnnotationExport:
 
         start_time = time.time()
 
-        self.genes(verbose, path)
+        self.genes(verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
 
         if feature_output == "both":
             modes = [True, False]
@@ -56,60 +84,87 @@ class AnnotationExport:
         for b in modes:
 
             if most_specific_id_level == "promoter" or most_specific_id_level == "protein":
-                self.proteins(b, verbose, path)
-                self.CDSs(b, verbose, path)
-                self.transcripts(b, verbose, path)
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
                 if promoters:
-                    self.promoters(b, verbose, path)
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
 
             elif most_specific_id_level == "CDS":
-                self.proteins(b, verbose, path, used_id="CDS")
-                self.CDSs(b, verbose, path)
-                self.transcripts(b, verbose, path)
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="CDS")
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
                 if promoters:
-                    self.promoters(b, verbose, path)
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
 
             elif most_specific_id_level == "transcript":
-                self.proteins(b, verbose, path, used_id="transcript")
-                self.CDSs(b, verbose, path, used_id="transcript")
-                self.transcripts(b, verbose, path)
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="transcript")
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="transcript")
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir)
                 if promoters:
-                    self.promoters(b, verbose, path, used_id="transcript")
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="transcript")
 
             elif most_specific_id_level == "gene":
-                self.proteins(b, verbose, path, used_id="gene")
-                self.CDSs(b, verbose, path, used_id="gene")
-                self.transcripts(b, verbose, path, used_id="gene")
+                self.proteins(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
+                self.CDSs(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
+                self.transcripts(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
                 if promoters:
-                    self.promoters(b, verbose, path, used_id="gene")
+                    self.promoters(only_main=b, verbose=verbose, output_dir=output_dir, subfolder=subfolder, subfolder_name=subfolder_name, extension=extension, use_annot_dir=use_annot_dir, used_id="gene")
 
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"Extracting {self._annot.id} annotation features took {round(lapse, 1)} seconds\n")
 
-    def proteins(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "protein", unique_proteins_per_gene: bool = False, only_cds_main: bool = True, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", use_name_not_id: bool = False, custom_filename: str=""):
-        
+    def proteins(
+        self,
+        only_main: bool = True,
+        verbose: bool = True,
+        used_id: str = "protein",
+        unique_proteins_per_gene: bool = False,
+        only_cds_main: bool = True,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = True,
+        strip_stop: bool = True,
+        internal_stops: Literal["keep", "x", "skip"] = "keep",
+        #deprecated arguments
+        custom_filename: str = "",
+        custom_path: str = "",
+    ):
+
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
         final_cs: list[CDS]
 
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
+        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
 
-        output_file = output_path
-
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_proteins"
+        if internal_stops not in INTERNAL_STOP_MODES:
+            raise ValueError(f"internal_stops={internal_stops} is not amongst the valid choices={INTERNAL_STOP_MODES} to export proteins.")
 
         if not self._annot.contains_protein_sequences:
-            self._annot.generate_proteins(mode=mode)
+            self._annot.generate_proteins(quiet=quiet)
+
+        extra_suffixes = ["proteins"]
 
         if unique_proteins_per_gene:
             only_main = False
@@ -121,48 +176,43 @@ class AnnotationExport:
         if used_id == "gene":
             only_main = True
             only_cds_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         else:
             if used_id == "transcript":
                 only_cds_main = True
-                output_file += "_t_id"
+                extra_suffixes.append("t_id")
                 if unique_proteins_per_gene:
                     warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' or 'protein' if all CDSs are to be considered.", category=UserWarning)
             elif used_id == "CDS":
-                output_file += "_c_id"
+                extra_suffixes.append("c_id")
             elif used_id == "protein":
-                output_file += "_p_id"
+                extra_suffixes.append("p_id")
 
             if unique_proteins_per_gene:
-                output_file += "_unique_per_gene"
+                extra_suffixes.append("unique_per_gene")
             elif only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-            
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
         
-        valid_id_choices = ["gene", "transcript", "CDS", "protein"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export proteins.")
-        
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
+                    cs_transcript = {}
 
                     for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            cs_transcript[id(c)] = t
                         if only_main:
                             if t.main:
                                 for c in t.CDSs.values():
-                                    if c.seq != "":
+                                    if c.protein is not None and c.protein.seq != "":
                                         if only_cds_main:
                                             if c.main:
                                                 temp_cs.append(c)
@@ -170,12 +220,15 @@ class AnnotationExport:
                                             temp_cs.append(c)
                         else:
                             for c in t.CDSs.values():
-                                if c.seq != "":
+                                if c.protein is not None and c.protein.seq != "":
                                     if only_cds_main:
                                         if c.main:
                                             temp_cs.append(c)
                                     else:
                                         temp_cs.append(c)
+
+                    if internal_stops == "skip":
+                        temp_cs = [c for c in temp_cs if not c.protein.internal_stops]
 
                     if not unique_proteins_per_gene:
                         final_cs = temp_cs.copy()
@@ -189,7 +242,7 @@ class AnnotationExport:
                             if i > 0:
                                 add = True
                                 for c2 in final_cs:
-                                    if c1.equal_segments(c2):
+                                    if c1.equal_segments(c2) or (c1.protein is not None and c2.protein is not None and c1.protein.seq == c2.protein.seq):
                                         add = False
                                 if add:
                                     final_cs.append(c1)
@@ -201,60 +254,81 @@ class AnnotationExport:
                         elif used_id == "CDS":
                             f_out.write(f">{c.id}")
                         elif used_id == "transcript":
-                            f_out.write(f">{c.parents[0]}")
+                            f_out.write(f">{cs_transcript[id(c)].id}")
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 
-                        if c.protein.summary_tag and verbose:
-                            f_out.write(f"|{c.protein.summary_tag}")
                         if verbose:
-                            f_out.write(f"|readthrough:{c.protein.readthrough}|{c.strand}|{c.protein.ch}|{c.protein.start}:{c.protein.end}")
+                            # As in NCBI translated_cds, the location is the CDS's, stop codon included
+                            tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
+                            f_out.write(f"{tags}|{c.strand}|{c.protein.ch}|location={_location(c.protein.segments, c.strand)}")
 
-                        f_out.write(f"\n{c.protein.seq}\n")
+                        f_out.write(f"\n{_protein_export_seq(c.protein.seq, strip_stop, internal_stops)}\n")
 
-    def unique_proteins(self, custom_path: str = "", quiet: bool = False, mode: Literal["start", "end", "orf", "orf_or_end"] = "end"):
+    def unique_proteins(
+        self,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = False,
+        strip_stop: bool = True,
+        internal_stops: Literal["keep", "x", "skip"] = "keep",
+        #deprecated arguments
+        custom_path: str = "",
+    ):
+
+        if internal_stops not in INTERNAL_STOP_MODES:
+            raise ValueError(f"internal_stops={internal_stops} is not amongst the valid choices={INTERNAL_STOP_MODES} to export proteins.")
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
         start_time = time.time()
 
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_proteins.fasta"
+        extra_suffixes = ["unique_proteins"]
 
-        self._annot.generate_protein_equivalences(mode=mode, quiet=quiet)
+        if subfolder_name != "features":
+            subfolder = True
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        self._annot.generate_protein_equivalences(quiet=quiet)
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for protein_id in self._annot.protein_equivalences:
                 chrom, g, t, c = self._annot.all_protein_ids[protein_id]
-                sequence = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein.seq
-                f_out.write(f">{protein_id}\n{sequence}\n")
+                protein = self._annot.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                if internal_stops == "skip" and protein.internal_stops:
+                    continue
+                f_out.write(f">{protein_id}\n{_protein_export_seq(protein.seq, strip_stop, internal_stops)}\n")
 
         now = time.time()
         lapse = now - start_time
         if not quiet:
             print(f"\nExporting unique {self._annot.id} proteins took {round(lapse/60, 1)} minutes")
 
-    def unique_transcripts(self, custom_path: str = "", quiet: bool = False, rna_classes: list = []):
+    def unique_transcripts(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False, rna_classes: list = [],
+        #deprecated arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_transcripts.fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=["unique_transcripts"], use_name_not_id=use_name_not_id)
         
         all_transcript_seqs = {}
         for genes in self._annot.chrs.values():
@@ -264,13 +338,7 @@ class AnnotationExport:
                         if t.seq != "":
                             all_transcript_seqs[t.id] = t.seq
 
-        progress_bar = tqdm(total=len(all_transcript_seqs.keys()), disable=disable,
-                        bar_format=(
-            f'\033[1;91mDetermining and exporting unique {self._annot.id} transcripts:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;91m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
-        
+        progress_bar = start_progress_bar(total=len(all_transcript_seqs.keys()), description=f"Exporting unique {self._annot.id} transcripts", quiet=quiet, colour="91")
         
         unique_sequences = {}
 
@@ -279,7 +347,7 @@ class AnnotationExport:
             if sequence not in unique_sequences:
                 unique_sequences[sequence] = transcript_id
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for sequence, transcript_id in unique_sequences.items():
                 f_out.write(f">{transcript_id}\n{sequence}\n")
 
@@ -290,41 +358,69 @@ class AnnotationExport:
         if not quiet:
             print(f"\nExporting unique {self._annot.id} transcripts took {round(lapse/60, 1)} minutes")
 
-    def unique_CDSs(self, custom_path: str = "", quiet: bool = False):
+    def unique_CDSs(
+        self,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        quiet: bool = False,
+        protein_oriented: bool = True,
+        strip_stop: bool = False,
+        #deprecated arguments
+        custom_path: str = "",
+    ):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+        
         start_time = time.time()
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
+        extra_suffixes = ["unique_CDSs"]
+        if not protein_oriented:
+            extra_suffixes.append("raw")
 
-        if custom_path:
-            output_file = Path(custom_path)
-        else:
-            output_file = Path(self._annot.path) / "features"
-        output_file.mkdir(parents=True, exist_ok=True)
-        output_file = str(output_file) + "/"
-        output_file += f"{self._annot.id}{self._annot.feature_suffix}_unique_CDSs.fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        if protein_oriented and not self._annot.contains_protein_sequences:
+            self._annot.generate_proteins(quiet=quiet)
+
         all_CDS_seqs = {}
         for genes in self._annot.chrs.values():
             for g in genes.values():
                 if g.coding:
                     for t in g.transcripts.values():
                         for c in t.CDSs.values():
-                            if c.seq != "":
-                                all_CDS_seqs[c.id] = c.seq
+                            raw_cds = ""
+                            if protein_oriented:
+                                if c.protein is not None and c.protein.nuc_seq != "":
+                                    raw_cds = c.protein.nuc_seq
+                            else:
+                                if c.seq != "":
+                                    raw_cds = c.seq
 
-        progress_bar = tqdm(total=len(all_CDS_seqs.keys()), disable=disable,
-                        bar_format=(
-            f'\033[1;91mDetermining and exporting unique {self._annot.id} CDSs:\033[0m '
-            '{percentage:3.0f}%|'
-            f'\033[1;91m{{bar}}\033[0m| '
-            '{n}/{total} [{elapsed}<{remaining}]'))
-        
+                            if raw_cds:
+                                if strip_stop and len(raw_cds) >= 3:
+                                    if protein_oriented and c.protein is not None:
+                                        if c.protein.seq.endswith("*"):
+                                            raw_cds = raw_cds[:-3]
+                                    else:
+                                        table_to_use = self._annot.translation_table(c.ch, c)
+                                        _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                        if raw_cds[-3:].upper() in def_stops:
+                                            raw_cds = raw_cds[:-3]
+                                all_CDS_seqs[c.id] = raw_cds
+
+        progress_bar = start_progress_bar(total=len(all_CDS_seqs.keys()), description=f"Exporting unique {self._annot.id} CDSs", quiet=quiet, colour="91")
         
         unique_sequences = {}
 
@@ -333,7 +429,7 @@ class AnnotationExport:
             if sequence not in unique_sequences:
                 unique_sequences[sequence] = CDS_id
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for sequence, CDS_id in unique_sequences.items():
                 f_out.write(f">{CDS_id}\n{sequence}\n")
 
@@ -344,7 +440,28 @@ class AnnotationExport:
         if not quiet:
             print(f"\nExporting unique {self._annot.id} CDSs took {round(lapse/60, 1)} minutes")
 
-    def CDSs(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "CDS", unique_CDSs_per_gene: bool = False, only_cds_main: bool = True, use_name_not_id: bool = False, custom_filename: str=""):
+    def CDSs(
+        self,
+        only_main: bool = True,
+        verbose: bool = True,
+        used_id: str = "CDS",
+        unique_CDSs_per_gene: bool = False,
+        only_cds_main: bool = True,
+        use_name_not_id: bool = False,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        use_annot_dir: bool = False,
+        subfolder: bool = False,
+        subfolder_name: str = "features",
+        extension: str = ".fasta",
+        protein_oriented: bool = True,
+        strip_stop: bool = False,
+        quiet: bool = False,
+        #deprecated arguments
+        custom_filename: str = "",
+        custom_path: str = "",
+    ):
         """
         Main CDSs means only CDS sequence obtained from the main CDS of the
         main transcripts.
@@ -359,21 +476,26 @@ class AnnotationExport:
         valid_id_choices = ["gene", "transcript", "CDS"]
         """
 
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        output_file = output_path
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_CDSs"
+        valid_id_choices = ["gene", "transcript", "CDS"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export CDSs.")
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        extra_suffixes = ["CDSs"]
+        if not protein_oriented:
+            extra_suffixes.append("raw")
 
         if unique_CDSs_per_gene:
             only_main = False
@@ -385,58 +507,59 @@ class AnnotationExport:
         if used_id == "gene":
             only_main = True
             only_cds_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         else:
             if used_id == "transcript":
                 only_cds_main = True
-                output_file += "_t_id"
+                extra_suffixes.append("t_id")
                 if unique_CDSs_per_gene:
                     warnings.warn(f"If more than one CDS exists per transcript (this is rarely the case), CDSs beyond the main CDS will not be considered, since 'transcript' was the used_id. Select 'CDS' if all CDSs are to be considered.", category=UserWarning)
             elif used_id == "CDS":
-                output_file += "_c_id"
+                extra_suffixes.append("c_id")
 
             if unique_CDSs_per_gene:
-                output_file += "_unique_per_gene"
+                extra_suffixes.append("unique_per_gene")
             elif only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-            
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
-        
-        valid_id_choices = ["gene", "transcript", "CDS"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export CDSs.")
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        if protein_oriented and not self._annot.contains_protein_sequences:
+            self._annot.generate_proteins(quiet=True)
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     temp_cs = []
+                    cs_transcript = {}
                     for t in g.transcripts.values():
+                        for c in t.CDSs.values():
+                            cs_transcript[id(c)] = t
+                        candidate_cds_list = []
                         if only_main:
                             if t.main:
                                 for c in t.CDSs.values():
-                                    if c.seq != "":
-                                        if only_cds_main:
-                                            if c.main:
-                                                temp_cs.append(c)
-                                        else:
-                                            temp_cs.append(c)
+                                    if only_cds_main and not c.main:
+                                        continue
+                                    candidate_cds_list.append(c)
                         else:
                             for c in t.CDSs.values():
+                                if only_cds_main and not c.main:
+                                    continue
+                                candidate_cds_list.append(c)
+
+                        for c in candidate_cds_list:
+                            if protein_oriented:
+                                if c.protein is not None and c.protein.nuc_seq != "":
+                                    temp_cs.append(c)
+                            else:
                                 if c.seq != "":
-                                    if only_cds_main:
-                                        if c.main:
-                                            temp_cs.append(c)
-                                    else:
-                                        temp_cs.append(c)
+                                    temp_cs.append(c)
 
                     if not unique_CDSs_per_gene:
                         final_cs = temp_cs.copy()
@@ -450,8 +573,14 @@ class AnnotationExport:
                             if i > 0:
                                 add = True
                                 for c2 in final_cs:
-                                    if c1.equal_segments(c2):
-                                        add = False
+                                    if protein_oriented:
+                                        seq1 = c1.protein.nuc_seq if c1.protein is not None else ""
+                                        seq2 = c2.protein.nuc_seq if c2.protein is not None else ""
+                                        if c1.equal_segments(c2) or (seq1 != "" and seq1 == seq2):
+                                            add = False
+                                    else:
+                                        if c1.equal_segments(c2) or (c1.seq != "" and c1.seq == c2.seq):
+                                            add = False
                                 if add:
                                     final_cs.append(c1)
 
@@ -460,17 +589,38 @@ class AnnotationExport:
                         if used_id == "CDS":
                             f_out.write(f">{c.id}")
                         elif used_id == "transcript":
-                            f_out.write(f">{c.parents[0]}")
+                            f_out.write(f">{cs_transcript[id(c)].id}")
                         elif used_id == "gene":
                             f_out.write(f">{g.id}")
 
+                        # The header location covers exactly the written bases (plus a protein's polyA_bases)
+                        if protein_oriented and c.protein is not None:
+                            cds_seq = c.protein.nuc_seq
+                            segments = list(c.protein.segments)
+                            tags = "".join(f"|{key}={value}" for key, value in c.protein.tags.items())
+                            if strip_stop and c.protein.seq.endswith("*"):
+                                cds_seq = cds_seq[:-3]
+                                segments = trim_3p_bases(segments, 3 - c.protein.polyA_bases, c.strand)
+                        else:
+                            cds_seq = c.seq
+                            segments = [(cs.start, cs.end) for cs in c.CDS_segments]
+                            tags = ""
+                            if strip_stop and len(cds_seq) >= 3:
+                                table_to_use = self._annot.translation_table(c.ch, c)
+                                _, _, _, def_stops, _ = get_genetic_code_tables(table_to_use)
+                                if cds_seq[-3:].upper() in def_stops:
+                                    cds_seq = cds_seq[:-3]
+                                    segments = trim_3p_bases(segments, 3, c.strand)
+
                         if verbose:
-                            f_out.write(f"|{c.strand}|{c.ch}|{c.start}:{c.end}")
+                            f_out.write(f"{tags}|{c.strand}|{c.ch}|location={_location(segments, c.strand)}")
 
-                        f_out.write(f"\n{c.seq}\n")
+                        f_out.write(f"\n{cds_seq}\n")
 
 
-    def transcripts(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, custom_filename: str=""):
+    def transcripts(self, only_main: bool = True, verbose: bool = True, used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
         """
         Main means only main transcript sequences are exported.
 
@@ -483,21 +633,25 @@ class AnnotationExport:
 
         valid_id_choices = ["gene", "transcript"]
         """
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
 
-        output_file = output_path
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_transcripts"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        valid_id_choices = ["gene", "transcript"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export transcripts.")
+
+        extra_suffixes = ["transcripts"]
 
         if unique_transcripts_per_gene:
             only_main = False
@@ -507,30 +661,22 @@ class AnnotationExport:
 
         if used_id == "gene":
             only_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         elif used_id == "transcript":
-            output_file += "_t_id"
+            extra_suffixes.append("t_id")
             if unique_transcripts_per_gene:
-                output_file += "_unique_per_gene"
+                extra_suffixes.append("unique_per_gene")
             elif only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-            
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
-        valid_id_choices = ["gene", "transcript"]
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export transcripts.")
-        
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
 
             for genes in self._annot.chrs.values():
                 for g in genes.values():
@@ -570,33 +716,31 @@ class AnnotationExport:
                             f_out.write(f"|{t.strand}|{t.ch}|{t.start}:{t.end}")
                         f_out.write(f"\n{t.seq}\n")
 
-    def genes(self, verbose: bool = True, custom_path: str = "", use_name_not_id: bool = False, custom_filename: str=""):
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
+    def genes(self, verbose: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
 
-        output_file = output_path
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_genes"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
+        if subfolder_name != "features":
+            subfolder = True
+
+        extra_suffixes = ["genes"]
+        
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
-
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     if g.seq != "":
@@ -605,69 +749,65 @@ class AnnotationExport:
                             f_out.write(f"|{g.strand}|{g.ch}|{g.start}:{g.end}")
                         f_out.write(f"\n{g.seq}\n")
 
-    def promoters(self, only_main: bool = True, verbose: bool = True, custom_path: str = "", used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, custom_filename: str=""):
+    def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet:bool=False,
+        #deprecated arguments
+        custom_filename: str="", custom_path:str=""):
         """
-
         Verbose will include promoter type, strand, chromosome, and coordinates.
-
         """
-        if custom_path:
-            output_path = Path(custom_path)
-        else:
-            output_path = Path(self._annot.path) / "features"
-        output_path.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_path) + "/"
 
-        output_file = output_path
+        if custom_filename != "":
+            warnings.warn("'custom_filename' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = custom_filename
 
-        if use_name_not_id:
-            output_file += self._annot.name
-        else:
-            output_file += self._annot.id
-        output_file += self._annot.feature_suffix
-        output_file += "_promoters"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        valid_id_choices = ["gene", "transcript", "promoter"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
+
+
+        extra_suffixes = ["promoters"]
 
         if used_id == "gene":
             only_main = True
-            output_file += "_g_id_main"
+            extra_suffixes.append("g_id_main")
         else:
             if used_id == "transcript":
-                output_file += "_t_id"
+                extra_suffixes.append("t_id")
             if used_id == "promoter":
-                output_file += "_prom_id"
+                extra_suffixes.append("prom_id")
             if only_main:
-                output_file += "_main"
+                extra_suffixes.append("main")
             else:
-                output_file += "_all"
+                extra_suffixes.append("all")
 
         if verbose:
-            output_file += "_coordinates"
+            extra_suffixes.append("coordinates")
 
-        if custom_filename:
-            output_file = f"{output_path}{custom_filename}"
-
-        else:
-            output_file += f"_{self._annot.promoter_size}_{self._annot.promoter_types}.fasta"
-
-        if not output_file.endswith(".fasta"):
-            output_file += ".fasta"
-
-        valid_id_choices = ["gene", "transcript", "promoter"]
-
-        if used_id not in valid_id_choices:
-            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
+        extra_suffixes.append(str(self._annot.promoter_size))
+        extra_suffixes.append(self._annot.promoter_type)
 
         if not self._annot.contains_promoters:
             self._annot.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     for t in g.transcripts.values():
                         if only_main and not t.main:
                             continue
 
-                        if hasattr(t, "promoter"):
+                        if t.promoter is not None:
                             if t.promoter.seq != "":
 
                                 if used_id == "promoter":
@@ -681,46 +821,66 @@ class AnnotationExport:
                                     f_out.write(f"|{t.promoter.type}|{t.strand}|{t.ch}|{t.promoter.start}:{t.promoter.end}")
 
                                 f_out.write(f"\n{t.promoter.seq}\n")
-                            else:
+                            elif not quiet:
                                 print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter sequence.\n")
-                        else:
-                            print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter.\n")
+                        elif not quiet:
+                            print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter (strand='{t.strand}'), skipping.\n")
 
-    def for_dapseq(self, genome: Genome, genome_out_folder: str = "", gff_out_folder: str = "", tag: str = "_for_dap.gff3", skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False):
-        equivalences = genome.rename_features_dap(output_folder=genome_out_folder, return_equivalences=True, export=True)
+    def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False, genome_keep_description: bool = True,
+        #deprecated arguments
+        genome_out_folder:str="", gff_out_folder:str="", tag:str="_for_dap.gff3"):
+
+
+        if genome_out_folder != "":
+            warnings.warn("'genome_out_folder' is deprecated. Please use 'genome_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if genome_output_dir is None:
+                genome_output_dir = genome_out_folder
+
+        if gff_out_folder != "":
+            warnings.warn("'gff_out_folder' is deprecated. Please use 'gff_output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if gff_output_dir is None:
+                gff_output_dir = gff_out_folder
+
+        if genome_subfolder_name != "out_genomes":
+            genome_subfolder = True
+
+        if gff_subfolder_name != "out_gffs":
+            gff_subfolder = True
+
+        if tag != "_for_dap.gff3":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'gff_filename' instead or 'gff_filepath' for the whole path.", DeprecationWarning, stacklevel=2)
+            if gff_filename is None:
+                gff_filename = tag
+
+        equivalences = genome.rename_features_dap(output_dir=genome_output_dir, filename=genome_filename, filepath=genome_filepath, extension=genome_extension, use_genome_dir=use_genome_dir, subfolder_name=genome_subfolder_name, subfolder=genome_subfolder, return_equivalences=True, export=True, keep_description=genome_keep_description)
+
         self._annot.rename_chromosomes(equivalences)
-        self.gff(custom_path=gff_out_folder, tag=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-    def gff(self, custom_path: str = "", tag: str = ".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, subfolder: bool = True, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes:bool = False, clean_attributes:bool=True, aliases:bool=False, symbols:bool=False, symbols_as_description:bool=False, print_empty_attributes:bool=False, miRNAs:bool=True, clean_header:bool=False):
+        extra_suffixes = ["for_dap"]
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
+        final_output_path = self._resolve_output_path(filepath=gff_filepath, output_dir=gff_output_dir, filename=gff_filename, suffix=self._annot.all_suffixes, extension=gff_extension, use_annot_dir=use_annot_dir, subfolder_name=gff_subfolder_name, subfolder=gff_subfolder, extra_suffixes=extra_suffixes, use_name_not_id=gff_use_name_not_id)
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
+        self.gff(filepath=str(final_output_path), skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding)
 
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mExporting gff for {self._annot.id} annotation:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
+    def gff(self, 
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gffs", extension:str=".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes: bool = False, clean_attributes: bool = True, aliases: bool = False, symbols: bool = False, symbols_as_description: bool = False, print_empty_attributes: bool = False, miRNAs: bool = True, clean_header: bool = False,
+            # Deprecated arguments
+            custom_path: str = "", tag: str = ".gff3"):
 
-        if subfolder:
-            export_folder = Path(custom_path or self._annot.path) / "out_gffs"
-        else:
-            export_folder = Path(custom_path or self._annot.path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
-        output_suffix = ""
+        if tag != ".gff3":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead or 'filepath' for the whole path.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = tag
 
-        if just_genes:
-            output_suffix += "_just_genes"
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Exporting gff for {self._annot.id} annotation", quiet=quiet, colour="38;2;46;204;113")
+
+        if subfolder_name != "out_gffs":
+            subfolder = True
 
         if repeat_exons_utrs:
             self._annot.single_parent_for_exons_utrs()
@@ -734,14 +894,22 @@ class AnnotationExport:
         if clean_attributes:
             self._annot.tags.add("clean")
 
-        if tag == ".gff3":
-            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gff3"
+        extra_suffixes = []
+        if just_genes:
+            extra_suffixes.append("just_genes")
+
+        # A name kept from a featureCounts gff loses its tag when the export has no Gene_id attributes
+        if not featurecountsID and filepath is None and filename is None and self._annot._has_tag(self._annot.id, "fcounts"):
+            ext = extension if extension.startswith(".") else f".{extension}"
+            filename = re.sub(r"_fcounts(?=[_.]|$)", "", self._annot.id) + self._annot.all_suffixes + "".join(f"_{t}" for t in extra_suffixes) + ext
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
         if not quiet:
-            print(f"Exporting {self._annot.id} gff to {export_folder}{tag}.")
+            print(f"Exporting {self._annot.id} gff to {final_output_path}.")
 
-        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
-            if clean_header or "dapmod" in self._annot.tags:
+        with open(f"{final_output_path}", "w", encoding="utf-8") as f_out:
+            if clean_header or "dapmod" in self._annot.tags or self._annot.gff_header == []:
                 f_out.write("##gff-version 3\n")
             else:
                 f_out.write("\n".join(self._annot.gff_header) + "\n")
@@ -872,51 +1040,44 @@ class AnnotationExport:
                             continue
                         f_out.write("###\n")
 
-    def gtf(self, custom_path: str = "", tag: str = ".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, subfolder: bool = True):
+    def gtf(self, 
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, strict_gtf_2_2: bool = False,
+            # Deprecated arguments
+            custom_path: str = "", tag: str = ".gtf"):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if tag != ".gtf":
+            warnings.warn("'tag' is deprecated for naming files. Please use 'filename' instead or 'filepath' for the whole path.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = tag
+
+        if subfolder_name != "out_gtfs":
+            subfolder = True
 
         self._annot.create_gtf_attributes()
 
-        # Check if stdout or stderr are redirected to files
-        stdout_redirected = not sys.stdout.isatty()
-        stderr_redirected = not sys.stderr.isatty()
+        progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Exporting gtf for {self._annot.id} annotation", quiet=quiet, colour="38;2;46;204;113")
 
-        # Disable tqdm if stdout or stderr are redirected
-        if stdout_redirected or stderr_redirected or quiet:
-            disable = True
-        else:
-            disable = False
-
-        progress_bar = tqdm(total=len(self._annot.all_gene_ids.keys()), disable=disable,
-                                bar_format=(
-                    f'\033[38;2;46;204;113m\033[1mExporting gtf for {self._annot.id} annotation:\033[0m '
-                    '{percentage:3.0f}%|'
-                    f'\033[38;2;46;204;113m{{bar}}\033[0m| '
-                    '{n}/{total} [{elapsed}<{remaining}]'))
-
-        if subfolder:
-            export_folder = Path(custom_path or self._annot.path) / "out_gtfs"
-        else:
-            export_folder = Path(custom_path or self._annot.path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
-
-        output_suffix = ""
+        extra_suffixes = []
 
         if just_genes:
-            output_suffix += "_just_genes"
+            extra_suffixes.append("just_genes")
 
-        if tag == ".gtf":
-            tag = f"{self._annot.id}{self._annot.all_suffixes}{output_suffix}.gtf"
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.all_suffixes, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
 
         if not quiet:
-            print(f"Exporting {self._annot.id} gtf to {export_folder}{tag}.")
+            print(f"Exporting {self._annot.id} gtf to {final_output_path}.")
 
-        with open(f"{export_folder}{tag}", "w", encoding="utf-8") as f_out:
+        with open(f"{final_output_path}", "w", encoding="utf-8") as f_out:
             f_out.write("#gtf-version 2.2\n")
 
-            for x1, genes in enumerate(self._annot.chrs.values()):
+            for genes in self._annot.chrs.values():
                 progress_bar.update(len(genes))
-                for x2, g in enumerate(genes.values()):
+                for g in genes.values():
 
                     if no_1bp_features:
                         gene_1bp_feature = False
@@ -935,7 +1096,8 @@ class AnnotationExport:
                         if gene_1bp_feature:
                             continue
 
-                    f_out.write(g.print_gtf())
+                    if not strict_gtf_2_2 or just_genes:
+                        f_out.write(g.print_gtf())
 
                     if just_genes:
                         continue
@@ -944,10 +1106,11 @@ class AnnotationExport:
                         if main_only:
                             if not t.main:
                                 continue
-                        original_feature = t.feature
-                        t.feature = "transcript"
-                        f_out.write(t.print_gtf())
-                        t.feature = original_feature
+                        if not strict_gtf_2_2:
+                            original_feature = t.feature
+                            t.feature = "transcript"
+                            f_out.write(t.print_gtf())
+                            t.feature = original_feature
                         for e in t.exons:
                             f_out.write(e.print_gtf())
                         for c in t.CDSs.values():
@@ -959,33 +1122,69 @@ class AnnotationExport:
                             if UTRs:
                                 if hasattr(c, "UTRs"):
                                     for u in c.UTRs:
-                                        f_out.write(u.print_gtf())
-
-                    if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
-                        continue
-                    f_out.write("###\n")
+                                        if strict_gtf_2_2:
+                                            orig_ft = u.feature
+                                            if u.prime == "5'":
+                                                u.feature = "5UTR"
+                                            elif u.prime == "3'":
+                                                u.feature = "3UTR"
+                                            f_out.write(u.print_gtf())
+                                            u.feature = orig_ft
+                                        else:
+                                            f_out.write(u.print_gtf())
 
             progress_bar.close()
 
-    def gene_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, main_transcript_length_instead_of_gene_length: bool = False, main_gene_length_when_transcript_missing: bool = False):
+    def gene_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, length_type: Literal["exonic", "coding_exonic", "main_transcript", "span"] = "exonic", span_fallback: bool = True, quiet:bool=False,
+        #deprecated arguments
+        custom_path: str = "", output_file: str = ""):
 
-        if not custom_path:
-            export_folder = Path(self._annot.path) / "lists"
-        else:
-            export_folder = Path(custom_path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+        if output_file != "":
+            warnings.warn("'output_file' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = output_file
 
-        if not output_file:
-            output_file = f"{export_folder}{self._annot.name}_genes.txt"
-        else:
-            output_file = f"{export_folder}{output_file}"
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        """
+        length_type: the gene length written with lengths, to match how reads were counted: "exonic" (exons of
+        all transcripts, each base once; featureCounts on exons by gene_id), "coding_exonic" (exons of coding
+        transcripts), "main_transcript" (mature main transcript) or "span" (genomic span, introns included).
+        span_fallback: genes whose chosen length is 0 (no exons, transcripts or coding transcripts) are written
+        with their genomic span instead, so that length normalisations (e.g. TPM) do not divide by zero.
+        """
+        length_columns = {"exonic": "exonic_length", "coding_exonic": "coding_exonic_length", "main_transcript": "main_transcript_length", "span": "genomic_span"}
+        if length_type not in length_columns:
+            raise ValueError(f"Invalid length_type '{length_type}'. Choose from: {list(length_columns)}.")
+
+        if subfolder_name != "lists":
+            subfolder = True
+
+        extra_suffixes = ["genes"]
 
         if skip_coding and skip_non_coding:
             print("Warning: Both skip_coding and skip_non_coding are set to True. No genes will be listed.")
             return
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        # Only tags that change what is written name the list: combining transcripts keeps gene ids, coordinates
+        # and exonic lengths, and renamed chromosomes only show in the chromosome column
+        tags = set(self._annot.feature_tags)
+        if not ((lengths and length_type in ("coding_exonic", "main_transcript")) or coding_info):
+            tags.discard("combined")
+        suffix = self._annot._suffix(tags)
+        if chromosomes or coordinates:
+            suffix += self._annot.chromosome_suffix
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+
+        if not quiet:
+            print(f"Exporting {self._annot.id} gene list to {final_output_path}.")
+
+        zero_length_genes = []
+        with open(final_output_path, "w", encoding="utf-8") as f_out:
 
             header = ["gene_id"]
             if chromosomes or coordinates:
@@ -994,7 +1193,7 @@ class AnnotationExport:
                 header.append("gene_start")
                 header.append("gene_end")
             if lengths:
-                header.append("gene_length")
+                header.append(length_columns[length_type])
             if coding_info:
                 header.append("coding")
             if gene_symbols:
@@ -1020,44 +1219,70 @@ class AnnotationExport:
                         out.append(str(g.start))
                         out.append(str(g.end))
                     if lengths:
-                        if main_transcript_length_instead_of_gene_length:
-                            t_size = 0
-                            for t in g.transcripts.values():
-                                if t.main:
-                                    t_size = t.size
-                                    break
-                            if t_size == 0 and main_gene_length_when_transcript_missing:
-                                out.append(str(g.size))
-                            else:
-                                out.append(str(t_size))
+                        if length_type == "exonic":
+                            length = g.exonic_size
+                        elif length_type == "coding_exonic":
+                            length = g.coding_exonic_size
+                        elif length_type == "main_transcript":
+                            length = g.main_transcript_size
                         else:
-                            out.append(str(g.size))
+                            length = g.genomic_span
+                        if length == 0:
+                            zero_length_genes.append(g.id)
+                            if span_fallback:
+                                length = g.genomic_span
+                        out.append(str(length))
                     if coding_info:
                         out.append(str(g.coding))
                     if gene_symbols and g.symbols:
                         out.append("|".join(g.symbols))
                     f_out.write(sep.join(out) + "\n")
 
-    def transcript_list(self, custom_path: str = "", output_file: str = "", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True):
-        if not custom_path:
-            export_folder = Path(self._annot.path) / "lists"
-        else:
-            export_folder = Path(custom_path)
-        export_folder.mkdir(parents=True, exist_ok=True)
-        export_folder = str(export_folder) + "/"
+        if zero_length_genes:
+            examples = ", ".join(zero_length_genes[:5]) + (", ..." if len(zero_length_genes) > 5 else "")
+            if span_fallback:
+                print(f"Warning: {len(zero_length_genes)} {self._annot.id} genes have no {length_columns[length_type]} and were written with their genomic span instead ({examples}). Use span_fallback=False (--no-span-fallback) to write 0, or remove them first (e.g. genes with no transcripts).")
+            else:
+                print(f"Warning: {len(zero_length_genes)} {self._annot.id} genes were written with a 0 {length_columns[length_type]} ({examples}), which breaks length normalisations such as TPM. Use span_fallback=True (--span-fallback) to write their genomic span instead.")
 
-        if not output_file:
-            output_file = f"{export_folder}{self._annot.name}_transcripts.txt"
-        else:
-            output_file = f"{export_folder}{output_file}"
+    def transcript_list(self, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "lists", extension=".txt", lengths: bool = False, coordinates: bool = False, chromosomes: bool = False, coding_info: bool = False, skip_coding: bool = False, skip_non_coding: bool = False, sep: str = "\t", skip_pseudogenes: bool = False, skip_transposables: bool = False, gene_symbols: bool = False, include_header: bool = True, quiet:bool=False, only_main: bool = False, gene_id: bool = False,
+        #deprecated arguments
+        custom_path: str = "", output_file: str = ""):
+
+        if output_file != "":
+            warnings.warn("'output_file' is deprecated. Please use 'filename' instead.", DeprecationWarning, stacklevel=2)
+            if filename is None:
+                filename = output_file
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
+
+        if subfolder_name != "lists":
+            subfolder = True
+
+        extra_suffixes = ["transcripts"]
 
         if skip_coding and skip_non_coding:
             print("Warning: Both skip_coding and skip_non_coding are set to True. No transcripts will be listed.")
             return
 
-        with open(output_file, "w", encoding="utf-8") as f_out:
+        # Renamed chromosomes only show in the chromosome column
+        suffix = self._annot.feature_suffix
+        if chromosomes or coordinates:
+            suffix += self._annot.chromosome_suffix
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=suffix, extra_suffixes=extra_suffixes, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_name_not_id=use_name_not_id)
+
+        if not quiet:
+            print(f"Exporting {self._annot.id} transcript list to {final_output_path}.")
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
 
             header = ["transcript_id"]
+            if gene_id:
+                header.append("gene_id")
             if chromosomes or coordinates:
                 header.append("chromosome")
             if coordinates:
@@ -1080,12 +1305,16 @@ class AnnotationExport:
                         continue
 
                     for t in g.transcripts.values():
+                        if only_main and not t.main:
+                            continue
                         if skip_coding and t.coding:
                             continue
                         if skip_non_coding and not t.coding:
                             continue
 
                         out = [t.id]
+                        if gene_id:
+                            out.append(g.id)
                         if chromosomes or coordinates:
                             out.append(chrom)
                         if coordinates:

@@ -8,15 +8,18 @@ from unittest.mock import patch, PropertyMock
 from pathlib import Path
 from aegis.utils.genefunctions import (
     reverse_complement,
+    sequence_hash,
     find_ORFs,
     choose_orf,
     translate,
-    trim_surplus
+    trim_surplus,
+    parse_transl_except,
+    trim_3p_bases,
 )
 
 from aegis.feature import Feature
 from aegis.utils.gtf_gff import parse_gff_parts, parse_gff_attributes
-from aegis.utils.misc import count_occurrences, find_all_occurrences
+from aegis.utils.misc import count_occurrences, find_all_occurrences, unambiguous_numbers, covered_length
 
 
 # ============================================================
@@ -119,6 +122,21 @@ class TestParseGffLine:
 # count_occurrences
 # ============================================================
 
+class TestUnambiguousNumbers:
+    def test_unique_numbers(self):
+        assert unambiguous_numbers([("a", 1), ("b", 2)]) is True
+
+    def test_same_key_may_share_a_number(self):
+        # e.g. an exon shared by two transcripts
+        assert unambiguous_numbers([("a", 1), ("a", 1), ("b", 2)]) is True
+
+    def test_number_shared_by_different_keys(self):
+        assert unambiguous_numbers([("a", 1), ("b", 1)]) is False
+
+    def test_missing_number(self):
+        assert unambiguous_numbers([("a", 1), ("b", None)]) is False
+
+
 class TestCountOccurrences:
     def test_basic_count(self):
         assert count_occurrences("AATTGGCC", "A") == 2
@@ -165,12 +183,35 @@ class TestReverseComplement:
         rc = reverse_complement(seq)
         assert reverse_complement(rc) == seq  # double RC == original
 
+    def test_lowercase_and_rna(self):
+        assert reverse_complement("atgc") == "gcat"
+        assert reverse_complement("AUGC") == "GCAT"
+
+
+# ============================================================
+# sequence_hash
+# ============================================================
+
+class TestSequenceHash:
+    def test_basic_hash(self):
+        h = sequence_hash("ATGC")
+        assert isinstance(h, str) and len(h) == 32
+        # Case insensitive
+        assert sequence_hash("atgc") == h
+        # Distinct sequences have distinct hashes
+        assert sequence_hash("ATGG") != h
+
 
 # ============================================================
 # find_ORFs / longest_ORF
 # ============================================================
 
-class TestFindORFs:
+    def test_find_orfs_case_insensitivity(self):
+        orfs = find_ORFs("agatatgaaacccgggttgattaactaaaaagattagaaga", must_have_stop=True)
+        assert len(orfs) == 1
+        assert orfs[0][0] == "atgaaacccgggttgattaactaa"
+        assert orfs[0][1] == 4
+        assert orfs[0][2] == 27
 
     def test_orfs(self):
         # ATG + 6 codons + TAA  = 24 nt
@@ -244,6 +285,14 @@ class TestFindORFs:
         orfs = find_ORFs(seq, must_have_stop=False)
         assert len(orfs) >= 1
 
+    def test_rna_find_orfs(self):
+        seq = "AUGAAAUAA"
+        orfs = find_ORFs(seq, must_have_stop=True)
+        assert len(orfs) == 1
+        assert orfs[0][0] == "AUGAAAUAA"
+        assert orfs[0][1] == 0
+        assert orfs[0][2] == 8
+
 
 class TestLongestORF:
     def test_single_orf(self):
@@ -272,53 +321,77 @@ class TestLongestORF:
 class TestTrimSurplus:
     def test_divisible_by_3(self):
         seq = "ATGAAATAA"  # 9 nt, already divisible
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert out == seq
 
     def test_surplus_trimmed(self):
         seq = "ATGAAATAAG"  # 10 nt, surplus = 1
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
     
     def test_surplus_other(self):
 
         seq = "AGGAGATGTAAGATGAT"
-        out, surplus, _, _ = trim_surplus(seq, max_nucleotide_trim=6)
-        assert surplus is True
+        out, orf_found, _, _ = trim_surplus(seq, max_nucleotide_trim=6)
+        assert orf_found is False  # ORF needs more than 6 nt trimmed: falls back to 3' trimming
         assert len(out) % 3 == 0
         assert out == "AGGAGATGTAAGATG"
 
         seq = "AAATGTAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AATGTAA" 
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAATGTAAAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAATGTAAAAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
 
         seq = "AAAATGTAAAA"
-        out, surplus, _, _ = trim_surplus(seq)
-        assert surplus is False
+        out, orf_found, _, _ = trim_surplus(seq)
+        assert orf_found is True
         assert len(out) % 3 == 0
         assert out == "ATGTAA"
+
+    def test_trim_surplus_with_phase_1(self):
+        seq = "AATGAAATAA"  # 10 nt, phase 1 -> skip 1 -> ATGAAATAA (9 nt)
+        out, orf_found, cs, ce = trim_surplus(seq, mode="end", phase=1)
+        assert out == "ATGAAATAA"
+        assert cs == 1
+        assert ce == 9
+        assert orf_found is False
+
+    def test_trim_surplus_with_phase_2(self):
+        seq = "CCATGAAATAA"  # 11 nt, phase 2 -> skip 2 -> ATGAAATAA (9 nt)
+        out, orf_found, cs, ce = trim_surplus(seq, mode="end", phase=2)
+        assert out == "ATGAAATAA"
+        assert cs == 2
+        assert ce == 10
+        assert orf_found is False
+
+    def test_orf_fallback_with_phase_keeps_phase_offset(self):
+        # No start codon: orf_or_end falls back to trimming, so the phase-skipped base is not part of an ORF
+        seq = "AGGGCCCAAA"  # 10 nt, phase 1 -> GGGCCCAAA (9 nt, no 3' surplus)
+        out, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_end", phase=1)
+        assert out == "GGGCCCAAA"
+        assert orf_found is False
+        assert (cs, ce) == (1, 9)
 
 
 # ============================================================
@@ -331,6 +404,10 @@ class TestTranslate:
     def test_simple_orf(self):
         # ATG AAA TAA = M K *
         assert translate("ATGAAATAA") == "MK*"
+
+    def test_case_insensitivity(self):
+        assert translate("atgaaataa") == "MK*"
+        assert translate("AtgAaaTaa") == "MK*"
 
     def test_no_start_codon(self):
         # GGG AAA TAA = G K *
@@ -354,7 +431,7 @@ class TestTranslate:
         # ATG NNA TAA = M - * (NN + A can't resolve to one AA)
         prot = translate("ATGNNATAA")
         assert prot[0] == "M"
-        assert "-" in prot # ambiguous codon rendered as gap
+        assert "X" in prot # ambiguous codon rendered as gap
         assert prot[-1] == "*"
 
     def test_longer_sequence(self):
@@ -362,6 +439,62 @@ class TestTranslate:
         prot = translate("ATGAAACCCGGGTTTAA")
         # 17 nt is NOT a multiple of 3, but translate just stops when bytes run out
         assert len(prot) == 5
+
+    def test_alternative_genetic_code_table_2_vertebrate_mito(self):
+        # In Table 1: TGA is Stop (*), ATA is Ile (I), AGA is Arg (R)
+        # In Table 2: TGA is Trp (W), ATA is Met (M), AGA is Stop (*)
+        seq = "ATGATA TGATAA" # ATG (M), ATA (M in Table 2, I in Table 1), TGA (W in Table 2, * in Table 1), TAA (*)
+        assert translate("ATGATATGATAA", table=1) == "MI**"
+        assert translate("ATGATATGATAA", table=2) == "MMW*"
+
+        # AGA is stop in table 2
+        assert translate("ATGAGA", table=1) == "MR"
+        assert translate("ATGAGA", table=2) == "M*"
+
+        # IUPAC ambiguous codon: AGR (A or G).
+        # In Table 2, both AGA and AGG are stop (*), so AGR cleanly resolves to *
+        assert translate("ATGAGR", table=2) == "M*"
+
+    def test_rna_translation(self):
+        assert translate("AUGAAAUAA") == "MK*"
+        assert translate("augaaauaa") == "MK*"
+        assert translate("AugAaaUaa") == "MK*"
+
+    def test_table_none_defaults_to_table_1(self):
+        assert translate("ATGAAATAA", table=None) == "MK*"
+
+
+# ============================================================
+# parse_transl_except
+# ============================================================
+
+class TestParseTranslExcept:
+    def test_selenocysteine(self):
+        # GPX4
+        assert parse_transl_except("(pos:1105403..1105405%2Caa:Sec)") == ((1105403, 1105405, "U"),)
+
+    def test_multiple_entries(self):
+        # SELENON
+        value = "(pos:25802093..25802095%2Caa:Sec),(pos:25812789..25812791%2Caa:Sec)"
+        assert parse_transl_except(value) == ((25802093, 25802095, "U"), (25812789, 25812791, "U"))
+
+    def test_complement_and_other(self):
+        # AQP4 readthrough: the strand comes from the CDS, so complement() is dropped
+        assert parse_transl_except("(pos:complement(26856211..26856213)%2Caa:Other)") == ((26856211, 26856213, "X"),)
+
+    @pytest.mark.parametrize("value, expected", [
+        ("(pos:4261..4262%2Caa:TERM)", ((4261, 4262, "*"),)),  # ND1: stop completed by polyadenylation
+        ("(pos:5511%2Caa:TERM)", ((5511, 5511, "*"),)),  # ND2: single base
+    ])
+    def test_incomplete_stop(self, value, expected):
+        assert parse_transl_except(value) == expected
+
+    def test_three_letter_and_unknown_residues(self):
+        # VEGFA readthrough as Ser; unknown amino acid names are read as X
+        assert parse_transl_except("(pos:43784560..43784562,aa:Ser),(pos:1..3,aa:Foo)") == ((43784560, 43784562, "S"), (1, 3, "X"))
+
+    def test_unparseable(self):
+        assert parse_transl_except("not an exception") == ()
 
 
 # ============================================================
@@ -376,17 +509,17 @@ class TestTranslatePipeline:
     def test_orf_or_end_extracts_orf(self):
         # GGG ATG AAA TAA (12 nt, multiple of 3)
         seq = "GGGATGAAATAA"
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_end")
         assert trimmed == "ATGAAATAA"
-        assert surplus is False
+        assert orf_found is True
         prot = translate(trimmed)
         assert prot == "MK*"
 
     def test_orf_or_end_with_surplus(self):
-        # 13 nt = surplus flag should be False
+        # 13 nt: the ORF is found regardless of the 5' surplus
         seq = "GGGGATGAAATAA"
-        trimmed, surplus, cs, ce = trim_surplus(seq, mode="orf_or_end")
-        assert surplus is False
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_end")
+        assert orf_found is True
         prot = translate(trimmed)
         assert prot.startswith("M")
         assert prot.endswith("*")
@@ -394,16 +527,17 @@ class TestTranslatePipeline:
     def test_end_mode_trims_from_3prime(self):
         # 10 nt = end-trim removes 1 nt
         seq = "ATGAAATAAG"
-        trimmed, surplus, _, _ = trim_surplus(seq, mode="end")
+        trimmed, orf_found, _, _ = trim_surplus(seq, mode="end")
         assert len(trimmed) % 3 == 0
-        assert surplus is True
+        assert orf_found is False
         prot = translate(trimmed)
         assert prot == "MK*"
 
     def test_no_atg_in_sequence(self):
         # No ATG = orf mode yields no ORF, fallback to end-trimming
         seq = "GGGCCCAAA"
-        trimmed, surplus, _, _ = trim_surplus(seq, mode="orf_or_end")
+        trimmed, orf_found, _, _ = trim_surplus(seq, mode="orf_or_end")
+        assert orf_found is False
         prot = translate(trimmed)
         assert "M" not in prot
         assert prot == "GPK"
@@ -427,10 +561,35 @@ class TestTranslatePipeline:
     def test_start_mode_trims_from_5prime(self):
         # "AATGTAA" = start-trim removes 1 nt from 5' to get mult-of-3
         seq = "AATGTAA"
-        trimmed, surplus, _, _ = trim_surplus(seq, mode="start")
+        trimmed, orf_found, _, _ = trim_surplus(seq, mode="start")
         assert len(trimmed) % 3 == 0
-        assert surplus is True
+        assert orf_found is False
         assert trimmed.startswith("ATG")
+
+    def test_orf_mode_no_orf_returns_empty(self):
+        # No ATG in sequence -> mode="orf" must return empty sequence
+        seq = "GGGCCCAAA"
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf")
+        assert trimmed == ""
+        assert orf_found is False
+        assert cs == 0
+        assert ce == -1
+
+    def test_orf_or_start_extracts_orf(self):
+        # When ORF exists, mode="orf_or_start" should find and extract it
+        seq = "GGGATGAAATAA"
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_start")
+        assert trimmed == "ATGAAATAA"
+        assert orf_found is True
+
+    def test_orf_or_start_fallback_trims_from_5prime(self):
+        # No ATG, surplus 1: trims 1 nt from 5'
+        seq = "CGGGCCCAAA"  # 10 nt -> trims C -> GGGCCCAAA (9 nt)
+        trimmed, orf_found, cs, ce = trim_surplus(seq, mode="orf_or_start")
+        assert trimmed == "GGGCCCAAA"
+        assert orf_found is False
+        assert cs == 1
+        assert ce == 9
 
 
 # ============================================================
@@ -450,6 +609,57 @@ class TestGenerateProtein:
         """Build a CDS spanning *seq_len* nucleotides."""
         seg = make_CDS_segment("seg1", start=1000, end=1000 + seq_len - 1, strand=strand)
         return make_CDS(segments=[seg], strand=strand)
+
+    @pytest.mark.parametrize("table, expected_start", [(1, False), (11, True)])
+    def test_start_codon_follows_table(self, make_CDS_segment, make_CDS, table, expected_start):
+        # GTG AAA TAA: GTG is a start codon in table 11 (plastid/bacterial) but not in table 1
+        seq = "GTGAAATAA"
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end", table=table)
+        p = cds.protein
+        assert p.table == table
+        assert p.ATG_start is expected_start
+        assert p.partial_5prime is (not expected_start)
+
+    @pytest.mark.parametrize("seq, table, initiator_methionine, alt_start_methionine, expected_status, expected_seq", [
+        # GTG is a curated start in table 11: M unless literal translation is requested
+        ("GTGAAATAA", 11, True, True, "canonical", "MK*"),
+        ("GTGAAATAA", 11, False, True, "canonical", "VK*"),
+        # CTG is only an alternative NCBI initiator in table 1: M only when alt_start_methionine is True
+        ("CTGAAATAA", 1, True, False, "alternative", "LK*"),
+        ("CTGAAATAA", 1, True, True, "alternative", "MK*"),
+        # GTG is not an initiator in table 1
+        ("GTGAAATAA", 1, True, True, "none", "VK*"),
+    ])
+    def test_start_status_and_initiator_methionine(self, make_CDS_segment, make_CDS, seq, table, initiator_methionine, alt_start_methionine, expected_status, expected_seq):
+        cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end", table=table, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
+        p = cds.protein
+        assert p.start_status == expected_status
+        assert p.seq == expected_seq
+        # Alternative starts are 5' complete, only tagged as such
+        assert p.partial_5prime is (expected_status == "none")
+        assert ("alt_start" in p.tags) is (expected_status == "alternative")
+
+    def test_skipped_5prime_bases_are_not_a_start(self):
+        from aegis.misc_features import Protein
+        # ATG translated after skipping CDS bases (e.g. phase 1) is not the annotated start
+        p = Protein("p", "MK*", "chr1", 1, 10, "end", nuc_seq="ATGAAATAA", trimmed_5p=1)
+        assert p.start_status == "none"
+        assert p.partial_5prime is True
+
+    def test_genetic_code_tables_follow_ncbi(self):
+        from aegis.utils.genefunctions import get_start_codons, get_alt_start_codons
+        assert translate("ATA", table=14) == "I"   # Alternative Flatworm Mitochondrial
+        assert translate("TAG", table=15) == "Q"   # Blepharisma Macronuclear
+        assert translate("TAG", table=32) == "W"   # Balanophoraceae Plastid
+        assert translate("AGG", table=33) == "K"   # Cephalodiscidae Mitochondrial
+        assert get_start_codons(1) == ("ATG",)
+        assert get_alt_start_codons(1) == ("CTG", "TTG")
+        assert get_alt_start_codons(2) == ()
+        assert get_alt_start_codons({"TGA": "W"}) == ()
 
     def test_standard_protein(self, make_CDS_segment, make_CDS):
         # ATG AAA TAA  ->  M K *
@@ -507,7 +717,9 @@ class TestGenerateProtein:
             cds.generate_protein(mode="end")
         p = cds.protein
         assert p.gaps is True
-        assert p.partial is True # gaps = partial
+        assert p.ambiguous_residues == 1
+        assert p.partial is False # ambiguity is counted separately, the protein has start and stop
+        assert "ambiguous_residues" in p.tags
 
     def test_orf_extraction(self, make_CDS_segment, make_CDS):
         # GGG ATG AAA TAA (12 nt)
@@ -532,15 +744,243 @@ class TestGenerateProtein:
         assert p.end_stop is True
         assert p.truncated is True
 
-    def test_no_surplus_flagged(self, make_CDS_segment, make_CDS):
+    def test_orf_hit_has_no_trimmed_ends(self, make_CDS_segment, make_CDS):
         seq = "GGGGATGAAATAA"
         cds = self._make_cds(make_CDS_segment, make_CDS, len(seq))
         with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
             cds.generate_protein(mode="orf_or_end")
         p = cds.protein
-        assert p.nucleotide_surplus is False
+        assert (p.trimmed_5p, p.trimmed_3p) == (0, 0)
         assert p.seq.startswith("M")
         assert p.seq.endswith("*")
+
+    def test_orf_fallback_with_phase_is_5prime_partial(self, make_CDS_segment, make_CDS):
+        # No start codon, phase 1 and no 3' surplus: the fallback must still record the skipped 5' base
+        seq = "AGGGCCCAAA"
+        seg = make_CDS_segment("seg1", start=1000, end=1009, strand="+", phase=1)
+        cds = make_CDS(segments=[seg], strand="+")
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="orf_or_end")
+        p = cds.protein
+        assert p.seq == "GPK"
+        assert (p.trimmed_5p, p.trimmed_3p) == (1, 0)
+        assert p.partial_5prime is True
+
+    def test_protein_with_phase_1_plus_strand(self, make_CDS_segment, make_CDS):
+        # 10 nt, phase 1: first base 'A' skipped, translates 'ATGAAATAA' -> M K *
+        seq = "AATGAAATAA"
+        seg = make_CDS_segment("seg1", start=1000, end=1009, strand="+", phase=1)
+        cds = make_CDS(segments=[seg], strand="+")
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p is not None
+        assert p.seq == "MK*"
+        assert p.nuc_seq == "ATGAAATAA"
+        assert p.start == 1001  # skipped coordinate 1000
+        assert p.end == 1009
+
+    def test_protein_with_phase_2_minus_strand(self, make_CDS_segment, make_CDS):
+        # 11 nt, phase 2: first 2 bases 'CC' skipped from 5' end, translates 'ATGAAATAA' -> M K *
+        seq = "CCATGAAATAA"
+        seg = make_CDS_segment("seg1", start=1000, end=1010, strand="-", phase=2)
+        cds = make_CDS(segments=[seg], strand="-")
+        with patch.object(type(cds), "seq", new_callable=PropertyMock, return_value=seq):
+            cds.generate_protein(mode="end")
+        p = cds.protein
+        assert p is not None
+        assert p.seq == "MK*"
+        assert p.nuc_seq == "ATGAAATAA"
+        assert p.start == 1000
+        assert p.end == 1008  # skipped coordinates 1010 and 1009 on - strand
+
+    def test_protein_with_internal_phase_shift_plus_strand(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        # Intra-exon frameshift (contiguous segments 1000..1099 and 1100..1189)
+        # seg1: 100 bp (33 'AAA' codons = 99 bp + 1 base 'T'), phase 0 -> leftover = 1
+        # seg2: 90 bp (30 'CCC' codons = 90 bp), phase 0 (frameshift: 1 + 0 = 1 != 0 mod 3)
+        seq1 = ("AAA" * 33) + "T"
+        seq2 = "CCC" * 30
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=0)
+        seg2 = make_CDS_segment("seg2", start=1100, end=1189, strand="+", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1099] = list(seq1)
+        chr_seq[1099:1189] = list(seq2)
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            # Default adjust_internal_shifts="intra_exon" adjusts contiguous frameshifts
+            cds.generate_protein(mode="end")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        # 33 Lysines (AAA) and 30 Prolines (CCC)
+        expected_prot = ("K" * 33) + ("P" * 30)
+        expected_nuc = ("AAA" * 33) + ("CCC" * 30)
+        assert p.seq == expected_prot
+        assert p.nuc_seq == expected_nuc
+        assert len(p.nuc_seq) == 3 * len(p.seq)
+        # Coordinate mapping precisely excludes dropped junction base 1099, keeping base 1189
+        assert p.segments == ((1000, 1098), (1100, 1189))
+        assert p.start == 1000
+        assert p.end == 1189
+
+    def test_protein_with_internal_phase_shift_minus_strand(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        # Minus strand intra-exon frameshift (contiguous segments 1000..1089 and 1090..1189)
+        # seg2 (1090..1189) is 5', seg1 (1000..1089) is 3'
+        seq2 = ("AAA" * 33) + "T"  # 100 bp, phase 0 -> leftover = 1
+        seq1 = "CCC" * 30           # 90 bp, phase 0 (frameshift: 1 + 0 = 1 != 0 mod 3)
+        seg1 = make_CDS_segment("seg1", start=1000, end=1089, strand="-", phase=0)
+        seg2 = make_CDS_segment("seg2", start=1090, end=1189, strand="-", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="-")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1089] = list(reverse_complement(seq1))
+        chr_seq[1089:1189] = list(reverse_complement(seq2))
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            cds.generate_protein(mode="end")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        expected_prot = ("K" * 33) + ("P" * 30)
+        expected_nuc = ("AAA" * 33) + ("CCC" * 30)
+        assert p.seq == expected_prot
+        assert p.nuc_seq == expected_nuc
+        assert len(p.nuc_seq) == 3 * len(p.seq)
+        # Coordinate mapping precisely excludes dropped junction base 1090 on minus strand
+        assert p.segments == ((1000, 1089), (1091, 1189))
+        assert p.start == 1000
+        assert p.end == 1189
+
+    def test_protein_with_intron_phase_mismatch_continuous_default(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        # Segments separated by an intron (1000..1099 and 2000..2089)
+        seq1 = ("AAA" * 33) + "T"  # 100 bp
+        seq2 = "CCC" * 30          # 90 bp
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=0)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2089, strand="+", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1099] = list(seq1)
+        chr_seq[1999:2089] = list(seq2)
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            # Default mode="intra_exon": across introns, mature mRNA is translated continuously
+            cds.generate_protein(mode="end")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        # Continuous sequence: 33 Lysines + codon 'TCC' (Serine) + 29 Prolines
+        assert p.seq.startswith("K" * 33 + "S")
+        assert len(p.nuc_seq) == 189
+        assert p.segments == ((1000, 1099), (2000, 2088))
+
+    def test_protein_with_intron_phase_mismatch_forced_all(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        seq1 = ("AAA" * 33) + "T"  # 100 bp
+        seq2 = "CCC" * 30          # 90 bp
+        seg1 = make_CDS_segment("seg1", start=1000, end=1099, strand="+", phase=0)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2089, strand="+", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1099] = list(seq1)
+        chr_seq[1999:2089] = list(seq2)
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            # Explicit adjust_internal_shifts="all" forces adjustment even across introns
+            cds.generate_protein(mode="end", adjust_internal_shifts="all")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        expected_prot = ("K" * 33) + ("P" * 30)
+        expected_nuc = ("AAA" * 33) + ("CCC" * 30)
+        assert p.seq == expected_prot
+        assert p.nuc_seq == expected_nuc
+        assert p.segments == ((1000, 1098), (2000, 2089))
+
+    def test_protein_segments_and_partial_properties(self, make_CDS_segment, make_CDS):
+        from unittest.mock import MagicMock
+        seq1 = "ATG" + ("AAA" * 10)  # 33 bp -> 11 aa
+        seq2 = ("CCC" * 10) + "TAA"   # 33 bp -> 11 aa
+        seg1 = make_CDS_segment("seg1", start=1000, end=1032, strand="+", phase=0)
+        seg2 = make_CDS_segment("seg2", start=2000, end=2032, strand="+", phase=0)
+        cds = make_CDS(segments=[seg1, seg2], strand="+")
+
+        chr_seq = ["N"] * 3000
+        chr_seq[999:1032] = list(seq1)
+        chr_seq[1999:2032] = list(seq2)
+        scaffold_mock = MagicMock()
+        scaffold_mock.seq = "".join(chr_seq)
+        mock_genome = MagicMock()
+        mock_genome.name = "test"
+        mock_genome.scaffolds = {"chr1": scaffold_mock}
+        old_genome = Feature._ACTIVE_GENOME
+        Feature._ACTIVE_GENOME = mock_genome
+        try:
+            cds.generate_protein(mode="end")
+        finally:
+            Feature._ACTIVE_GENOME = old_genome
+
+        p = cds.protein
+        assert p is not None
+        assert p.segments == ((1000, 1032), (2000, 2032))
+        assert not p.partial_5prime
+        assert not p.partial_3prime
+        assert not p.partial
+
+    def test_protein_partial_5prime_and_3prime(self):
+        from aegis.misc_features import Protein
+        p1 = Protein("p1", "LKKK*", "chr1", 100, 200, "end")
+        assert p1.partial_5prime is True   # starts with L, not M
+        assert p1.partial_3prime is False  # ends with *
+        assert p1.partial is True
+
+        p2 = Protein("p2", "MKKKP", "chr1", 100, 200, "end")
+        assert p2.partial_5prime is False  # starts with M
+        assert p2.partial_3prime is True   # no stop codon
+        assert p2.partial is True
+
+        p3 = Protein("p3", "MKKK*", "chr1", 100, 200, "end")
+        assert p3.partial_5prime is False
+        assert p3.partial_3prime is False
+        assert p3.partial is False
 
 
 # ============================================================
@@ -599,3 +1039,30 @@ class TestOverlap:
         assert is_overlapping is True
         assert bp == 101
 
+
+
+
+@pytest.mark.parametrize("intervals, expected", [
+    ([], 0),
+    ([(1, 10)], 10),
+    ([(1, 10), (21, 30)], 20),          # separate
+    ([(1, 10), (11, 20)], 20),          # abutting
+    ([(1, 10), (10, 20)], 20),          # 1 bp overlap
+    ([(1, 30), (5, 10)], 30),           # nested
+    ([(21, 30), (1, 10), (1, 10)], 20), # unsorted, duplicated
+])
+def test_covered_length(intervals, expected):
+    assert covered_length(intervals) == expected
+
+
+
+@pytest.mark.parametrize("segments, bases, strand, expected", [
+    ([(1, 30), (41, 60)], 3, "+", [(1, 30), (41, 57)]),
+    ([(1, 30), (41, 42)], 3, "+", [(1, 29)]),             # a stop split across an intron
+    ([(1, 30), (41, 60)], 3, "-", [(4, 30), (41, 60)]),   # the 3' end of a - strand CDS is its lowest base
+    ([(1, 2), (41, 60)], 3, "-", [(42, 60)]),
+    ([(1, 30), (30, 60)], 2, "+", [(1, 30), (30, 58)]),   # overlapping rows (slippage): only the last one is trimmed
+    ([(1, 30)], 0, "+", [(1, 30)]),
+])
+def test_trim_3p_bases(segments, bases, strand, expected):
+    assert trim_3p_bases(segments, bases, strand) == expected

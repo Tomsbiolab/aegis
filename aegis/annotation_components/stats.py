@@ -5,12 +5,14 @@ if TYPE_CHECKING:
     from ..annotation import Annotation
 
 import pandas as pd
+import warnings
 
 from pathlib import Path
 from statistics import mean
 
 from ..utils.plots import barplot, pie_chart
 from ..subfeatures import Intron
+from .base import AnnotationComponent
 
 KEY_DESCRIPTIONS = {
     # Mean metrics
@@ -28,6 +30,12 @@ KEY_DESCRIPTIONS = {
     # Tally counts
     "coding_genes":               "Number of coding genes",
     "noncoding_genes":            "Number of non-coding genes",
+    "complete_proteins":          "Number of complete proteins",
+    "partial_proteins":           "Number of partial proteins",
+    "truncated_proteins":         "Number of truncated proteins",
+    "frameshifted_proteins":      "Number of proteins translated across a frameshift",
+    "frameshifted_cds":           "Number of phase-shifted / frameshifted CDSs",
+    "phase_mismatches":           "Number of phase mismatches across introns",
     "CDSs_without_stop":          "Number of CDS without stop codon",
     "CDSs_with_stop":             "Number of CDS with stop codon",
     # Feature counts (generic ones present in most annotations)
@@ -82,36 +90,38 @@ KEY_DESCRIPTIONS = {
 }
 
 
-class AnnotationStats:
+class AnnotationStats(AnnotationComponent):
     """
     Component for handling statistical methods and metric calculations for the Annotation class.
     Accessed via 'annotation_object.stats'.
     """
     data: dict
-    _annot: Annotation
 
-    def __init__(self, annotation:Annotation):
-        self._annot = annotation
+    def __init__(self, annot:Annotation):
+        super().__init__(annot)
         self.data = {}
 
     def calculate_transcript_masking(self):
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                g.quality.calculate_masking()
-                for t in g.transcripts.values():
-                    t.quality.calculate_masking()
-                    for c in t.CDSs.values():
-                        c.quality.calculate_masking()
+        if self._annot.genome is not None:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.quality.calculate_masking()
+                    for t in g.transcripts.values():
+                        t.quality.calculate_masking()
+                        for c in t.CDSs.values():
+                            c.quality.calculate_masking()
         self._annot.update()
     
     def calculate_gc_content(self):
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                g.quality.calculate_gc_content()
-                for t in g.transcripts.values():
-                    t.quality.calculate_gc_content()
-                    for c in t.CDSs.values():
-                        c.quality.calculate_gc_content()
+        if self._annot.genome is not None:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    g.quality.calculate_gc_content()
+                    for t in g.transcripts.values():
+                        t.quality.calculate_gc_content()
+                        for c in t.CDSs.values():
+                            c.quality.calculate_gc_content()
+                            
     def gene_count(self):
         gene_objects = 0
         unique_gene_ids_in_overlaps = set()
@@ -122,7 +132,95 @@ class AnnotationStats:
                     unique_gene_ids_in_overlaps.add(o.id)
         print(f"There are {gene_objects} gene objects and {len(self._annot.all_gene_ids)} genes in all gene ids and {len(unique_gene_ids_in_overlaps)} ids contained in self overlaps.")
 
-    def update(self, custom_path:str="", export:bool=False, max_x:int|None=None, quiet:bool=True):
+    def get_contig_stats(self) -> list[dict]:
+        """
+        Computes per-contig/scaffold statistics for the annotation.
+        If an associated genome is present, contig sizes and gene densities are included.
+        Returns a list of dictionaries sorted naturally by contig name.
+        """
+        contig_dict = {}
+
+        # 1. Contigs with genes in annotation
+        for ch, genes in self._annot.chrs.items():
+            total_genes = len(genes)
+            coding_genes = sum(1 for g in genes.values() if g.coding)
+            noncoding_genes = total_genes - coding_genes
+            total_tx = sum(len(g.transcripts) for g in genes.values())
+
+            size = None
+            if self._annot.genome is not None:
+                scf = self._annot.genome.scaffolds.get(ch)
+                if scf is not None:
+                    size = scf.size
+
+            density = None
+            coverage_pct = None
+            if size is not None and size > 0:
+                density = round(total_genes / (size / 1_000_000), 2)
+                # Compute merged interval coverage
+                intervals = []
+                for g in genes.values():
+                    if g.start is not None and g.end is not None:
+                        intervals.append((max(1, g.start), min(size, g.end)))
+                intervals.sort()
+                merged = []
+                for s, e in intervals:
+                    if not merged or s > merged[-1][1]:
+                        merged.append([s, e])
+                    else:
+                        merged[-1][1] = max(merged[-1][1], e)
+                covered_bp = sum(e - s + 1 for s, e in merged)
+                coverage_pct = round((covered_bp / size) * 100, 2)
+
+            contig_dict[ch] = {
+                "contig": ch,
+                "size": size,
+                "genes": total_genes,
+                "coding_genes": coding_genes,
+                "noncoding_genes": noncoding_genes,
+                "transcripts": total_tx,
+                "density_genes_per_mb": density,
+                "coverage_pct": coverage_pct,
+            }
+
+        # 2. Contigs in genome but having zero genes
+        if self._annot.genome is not None:
+            for scf_name, scf in self._annot.genome.scaffolds.items():
+                if scf_name not in contig_dict:
+                    contig_dict[scf_name] = {
+                        "contig": scf_name,
+                        "size": scf.size,
+                        "genes": 0,
+                        "coding_genes": 0,
+                        "noncoding_genes": 0,
+                        "transcripts": 0,
+                        "density_genes_per_mb": 0.0,
+                        "coverage_pct": 0.0,
+                    }
+
+        import re
+        def sort_key(item):
+            name = item["contig"]
+            nl = name.lower()
+            if self._annot.chromosome_compartment(name) != "nuclear":
+                cat = 3
+            elif nl.startswith("chr") or any(nl.startswith(p) for p in ["ch", "scaffold", "contig"]) or name.isdigit():
+                cat = 1
+            else:
+                cat = 2
+            parts = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', name)]
+            return (cat, parts)
+
+        return sorted(contig_dict.values(), key=sort_key)
+
+    def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,
+        #deprecated_arguments
+        custom_path:str=""):
+
+        if custom_path != "":
+            warnings.warn("'custom_path' is deprecated. Please use 'output_dir' instead.", DeprecationWarning, stacklevel=2)
+            if output_dir is None:
+                output_dir = custom_path
 
         self._annot.update_features(quiet=quiet)
         self._annot.generate_introns()
@@ -131,13 +229,12 @@ class AnnotationStats:
 
         if not self._annot.contains_protein_sequences:
             if self._annot.genome is not None:
-                self._annot.generate_proteins(readthrough="both")
+                self._annot.generate_proteins()
 
         self.calculate_gc_content()
 
         if export:
-            export_folder = Path(custom_path or self._annot.path) / "out_stats"
-            export_folder.mkdir(parents=True, exist_ok=True)
+            export_folder = self._resolve_output_dir(output_dir=output_dir, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder)
             export_folder = str(export_folder) + "/"
 
         to_tally = ["coding_genes", "noncoding_genes", "CDSs_without_stop", "CDSs_with_stop"]
@@ -249,8 +346,8 @@ class AnnotationStats:
                                         self.data["mean_three_prime_UTR_size"].append(u3_size)
                                     # UTR introns: introns not inside the CDS
                                     if t.introns:
-                                        cds_start = c.CDS_segments[0].start
-                                        cds_end   = c.CDS_segments[-1].end
+                                        cds_start = c.start
+                                        cds_end   = c.end
                                         for i in t.introns:
                                             if not i.intra_coding:
                                                 if t.strand == "+":
@@ -303,6 +400,14 @@ class AnnotationStats:
         self.data["shortest_CDS"]         = _shortest_CDS if _shortest_CDS is not None else 0
         self.data["longest_CDS_segment"]  = _longest_CDS_seg
         self.data["shortest_CDS_segment"] = _shortest_CDS_seg if _shortest_CDS_seg is not None else 0
+
+        qc = self._annot.get_protein_qc_summary()
+        self.data["complete_proteins"]    = qc["complete_proteins"]
+        self.data["partial_proteins"]     = qc["partial_proteins"]
+        self.data["truncated_proteins"]   = qc["truncated_proteins"]
+        self.data["frameshifted_proteins"] = qc["frameshifted_proteins"]
+        self.data["frameshifted_cds"]     = qc["frameshifted_cds"]
+        self.data["phase_mismatches"]     = qc["phase_mismatches"]
 
         # anything with mean will be also plotted as distribution plots:
         if export:
@@ -376,6 +481,12 @@ class AnnotationStats:
 
             warning_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}_warnings.csv", sep="\t", index=False)
             error_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}_errors.csv", sep="\t", index=False)
+
+            contig_stats = self.get_contig_stats()
+            if contig_stats:
+                contig_df = pd.DataFrame(contig_stats)
+                # The only stats listing chromosome names, so the only ones named by renamed chromosomes
+                contig_df.to_csv(f"{export_folder}{self._annot.id}{self._annot.feature_suffix}{self._annot.chromosome_suffix}_contig_stats.tsv", sep="\t", index=False)
 
             f_out = open(f"{export_folder}{out_file}", "w", encoding="utf-8")
             f_out.write("")

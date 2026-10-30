@@ -58,6 +58,17 @@ class TestFeatureInit:
         assert any("Dbxref" in a for a in f.misc_attributes)
         assert any("custom" in a for a in f.misc_attributes)
 
+    def test_derived_state_attributes_not_read(self, make_feature):
+        # Partial/start/stop status from NCBI or Liftoff is derived by AEGIS itself; liftover metrics are kept
+        attributes = {
+            "partial": "true", "start_range": ".,1000", "end_range": "2000,.",
+            "missing_start_codon": "True", "missing_stop_codon": "True", "inframe_stop_codon": "False", "valid_ORF": "True",
+            "coverage": "0.98", "matches_ref_protein": "True", "transl_except": "(pos:1105403..1105405%2Caa:Sec)",
+        }
+        f = make_feature(feature_id="feat1", attributes=attributes)
+        keys = {a.split("=")[0] for a in f.misc_attributes}
+        assert keys == {"coverage", "matches_ref_protein", "transl_except"}
+
 
 # ============================================================
 # Methods
@@ -136,3 +147,51 @@ class TestFeatureComparisons:
         f1 = make_feature(strand="+")
         f2 = make_feature(strand="-")
         assert not f1.equal_sequence(f2)
+
+
+# ============================================================
+# GFF output
+# ============================================================
+
+class TestFeaturePrintGff:
+    ATTRIBUTES = {"transl_except": "(pos:100..102%2Caa:Sec)", "transl_table": "2", "exception": "ribosomal slippage", "Dbxref": "GeneID:1", "Note": "x"}
+
+    def test_clean_keeps_translation_attributes_on_CDS_rows(self, make_feature):
+        line = make_feature(feature_id="c1", feature="CDS", attributes=self.ATTRIBUTES).print_gff(clean=True)
+        attributes = line.strip().split("\t")[8].split(";")
+        assert attributes == ["ID=c1", "transl_except=(pos:100..102%2Caa:Sec)", "transl_table=2", "exception=ribosomal slippage"]
+
+    def test_clean_drops_everything_on_other_rows(self, make_feature):
+        line = make_feature(feature_id="e1", feature="exon", attributes=self.ATTRIBUTES).print_gff(clean=True)
+        assert line.strip().split("\t")[8] == "ID=e1"
+
+    def test_not_clean_keeps_all(self, make_feature):
+        line = make_feature(feature_id="c1", feature="CDS", attributes=self.ATTRIBUTES).print_gff(clean=False)
+        assert "Dbxref=GeneID:1" in line and "Note=x" in line and "transl_table=2" in line
+
+
+# ============================================================
+# Quality attributes (extra GFF attributes)
+# ============================================================
+
+class TestFeatureQualityAttributes:
+    def test_gene_attributes(self, make_gene):
+        keys = [a.split("=")[0] for a in make_gene().quality.get_attributes()]
+        assert "gene_masked_fraction" in keys
+        assert "transcript_GC_content" in keys
+        assert "CDS_GC_content" in keys
+
+    def test_transcript_attributes(self, make_transcript):
+        keys = [a.split("=")[0] for a in make_transcript().quality.get_attributes()]
+        assert "transcript_masked_fraction" in keys
+        assert "gene_masked_fraction" not in keys
+
+    def test_CDS_attributes(self, make_CDS):
+        keys = [a.split("=")[0] for a in make_CDS().quality.get_attributes()]
+        assert "CDS_GC_content" in keys
+        assert "transcript_masked_fraction" not in keys
+
+    def test_gene_gff_with_extra_attributes(self, make_gene):
+        line = make_gene(feature_id="gene001").print_gff(extra_attributes=True)
+        assert "ID=gene001" in line
+        assert "reliable_score=0" in line

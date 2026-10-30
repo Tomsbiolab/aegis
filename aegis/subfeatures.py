@@ -1,72 +1,167 @@
 from __future__ import annotations
 
+import re
+import warnings
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import unquote
 
 from .feature import Feature
 from .misc_features import Protein
-from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement
+from .utils.misc import covered_length
+from .utils.genefunctions import trim_surplus, map_relative_to_genomic, translate, find_ORFs, choose_orf, reverse_complement, parse_transl_except, NCBI_GENETIC_CODES
 
 class CDS(Feature):
 
-    __slots__ = ('main', 'CDS_segments', 'full_UTR_exons', 'protein', 'UTRs')
+    __slots__ = ('main', 'CDS_segments', 'full_UTR_exons', 'protein', 'UTRs', 'transl_table', 'transl_except', 'exception')
+
+    _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])cds[:_.\-]?(\d+)$', re.IGNORECASE)
+
+    # Largest gap (bp) between consecutive CDS rows still read as one exon: a phase can only skip 1 or 2
+    # bases, so a frameshift written into the phases splits rows that abut, overlap or skip one base
+    MAX_INTRA_EXON_GAP = 1
 
     protein: Protein|None
     CDS_segments: list[Feature]
     UTRs: list[UTR]
     full_UTR_exons: int
     main:bool
+    transl_table: int|None
+    transl_except: tuple[tuple[int, int, str], ...]
+    exception: str|None
 
     def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)    
         self.main = False
         self.CDS_segments = CDS_segments
+        self.update_span()
         self.full_UTR_exons = 0
         self.protein = None
+        self.UTRs = []
+        self.read_translation_attributes()
         self.update()
 
+    def read_translation_attributes(self):
+        """
+        Reads the GFF attributes of the CDS segments that AEGIS cannot derive from its own translation:
+        transl_table (genetic code), transl_except (residues recoded at genomic codon positions) and
+        exception (why the annotated protein differs from the genome translation, e.g. ribosomal slippage).
+        NCBI repeats them on every CDS row; the first transl_table/exception found is used and
+        transl_except entries are merged across rows. Tables AEGIS does not support are ignored.
+        """
+        self.transl_table = None
+        self.exception = None
+        transl_except = set()
+        for cs in self.CDS_segments:
+            for attribute in cs.misc_attributes or ():
+                key, _, value = attribute.partition("=")
+                if key == "transl_table" and self.transl_table is None and value.strip().isdigit() and int(value) in NCBI_GENETIC_CODES:
+                    self.transl_table = int(value)
+                elif key == "exception" and self.exception is None:
+                    self.exception = unquote(value)
+                elif key == "transl_except":
+                    transl_except.update(parse_transl_except(value))
+        self.transl_except = tuple(sorted(transl_except))
+
+    def update_span(self):
+        """
+        Sorts CDS segments and sets the CDS start/end to the span they cover. Segments are
+        sorted by (start, end), so with overlapping/nested segments the last one does not
+        necessarily hold the latest end.
+        """
+        if self.CDS_segments:
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            self.start = self.CDS_segments[0].start
+            self.end = max(cs.end for cs in self.CDS_segments)
+
     def update(self):
+        self.update_span()
         self.update_phase()
         self.update_frame()
 
     @property
-    def size(self):
-        size = 0
-        for segment in self.CDS_segments:
-            size += segment.size
-        return size
+    def size(self) -> int:
+        """
+        Genomic bases covered by the CDS rows, each counted once (a base read twice at a -1 ribosomal
+        slippage counts once). The translated nucleotides, rereads included, are protein.nuc_seq.
+        """
+        return covered_length((cs.start, cs.end) for cs in self.CDS_segments)
 
-    def update_phase(self):
+    def update_phase(self, override: bool = False, full_override: bool = False):
+        """
+        Gives every segment a phase. Annotated phases are kept and only missing ones are derived, reading
+        on from the segment upstream ((3 - leftover) % 3) or, before the first annotated phase, back from
+        the segment downstream, so a derived phase never disagrees with its annotated neighbour. Without
+        any annotated phase, the first segment starts at phase 0. override recalculates every phase from
+        the first segment's (0 if missing); full_override also resets that one to 0.
+        """
+        if not self.CDS_segments:
+            return
+
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+
+        if self.strand == "-":
+            initial_seg = self.CDS_segments[-1]
+            working_segs = list(reversed(self.CDS_segments))
+        else:
+            initial_seg = self.CDS_segments[0]
+            working_segs = self.CDS_segments
+
+        known = [i for i, cs in enumerate(working_segs) if cs.phase in (0, 1, 2)]
+        if not override and not full_override and known:
+            for i in range(known[0] + 1, len(working_segs)):
+                if working_segs[i].phase not in (0, 1, 2):
+                    prev = working_segs[i - 1]
+                    working_segs[i].phase = (3 - (prev.size - prev.phase) % 3) % 3
+            # Upstream of the first annotated phase, each segment leaves the bases its downstream phase completes
+            for i in range(known[0] - 1, -1, -1):
+                cs = working_segs[i]
+                cs.phase = (cs.size - (3 - working_segs[i + 1].phase) % 3) % 3
+            self.phase = initial_seg.phase
+            return
+
+        if full_override:
+            initial_phase = 0
+        else:
+            initial_phase = initial_seg.phase if initial_seg.phase in (0, 1, 2) else 0
+
         leftover = 0
-        if self.strand == "+":
-            for cs in self.CDS_segments:
+        for i, cs in enumerate(working_segs):
+            if i == 0:
+                cs.phase = initial_phase
+            else:
                 if leftover == 0:
                     cs.phase = 0
                 else:
                     cs.phase = 3 - leftover
-                leftover = (cs.size - cs.phase) % 3
-        elif self.strand == "-":
-            for cs in reversed(self.CDS_segments):
-                if leftover == 0:
-                    cs.phase = 0
-                else:
-                    cs.phase = 3 - leftover
-                leftover = (cs.size - cs.phase) % 3    
+            leftover = (cs.size - cs.phase) % 3
+
+        self.phase = initial_phase
 
     def update_frame(self):
+        if not self.CDS_segments:
+            return
+
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+
         if self.strand == "+":
             for cs in self.CDS_segments:
-                frame = (cs.start + cs.phase) % 3 #type: ignore
-                if frame == 0:
-                    frame = 3
-                cs.frame = frame
+                if cs.phase is not None:
+                    frame = (cs.start + cs.phase) % 3
+                    if frame == 0:
+                        frame = 3
+                    cs.frame = frame
 
         if self.strand == "-":
             for cs in reversed(self.CDS_segments):
-                frame = (cs.start + cs.phase) % 3 #type: ignore
-                if frame == 0:
-                    frame = 3
-                frame = 7 - frame
-                cs.frame = frame
+                if cs.phase is not None:
+                    frame = (cs.end - cs.phase) % 3
+                    if frame == 0:
+                        frame = 3
+                    frame = 7 - frame
+                    cs.frame = frame
 
     def rename(self, base_id:str, base_gene_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, cds_segment_ids:bool=False):
 
@@ -100,16 +195,15 @@ class CDS(Feature):
                 if self.protein is not None:
                     self.protein.id = f"{self.id}.prot"
 
+        # Segments share the CDS id, unless unique ids per CDS row are requested
         cs_count = 0
         for cs in self.CDS_segments:
             cs_count += 1
 
             if rename_cs:
 
-                if keep_numbering and cs.id_number != None:
-                    cs.id = f"{base_id}{sep}CDS{cs.id_number}"
-                elif cds_segment_ids:
-                    cs.id = f"{base_id}{sep}CDS{self.id_number}{sep}{cs_count}"
+                if cds_segment_ids:
+                    cs.id = f"{self.id}{sep}{cs_count}"
                 else:
                     cs.id = self.id
 
@@ -158,28 +252,42 @@ class CDS(Feature):
         if not self._ACTIVE_GENOME:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
-            cds_seqs = ["", ""]
-            for cs in self.CDS_segments:
-                cds_seqs[0] += cs.seq
-
-            for cs in reversed(self.CDS_segments):
-                cds_seqs[1] += reverse_complement(cs.seq)
-
-            return cds_seqs
+            if not self.CDS_segments:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+                warnings.warn(
+                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            fw_seq = "".join(scf_seq[max(0, cs.start - 1):min(scf_len, cs.end)] for cs in self.CDS_segments)
+            return [fw_seq, reverse_complement(fw_seq)]
 
     @property
     def hard_seqs(self) -> list[str]:
         if not self._ACTIVE_HARD_GENOME:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
-            cds_seqs = ["", ""]
-            for cs in self.CDS_segments:
-                cds_seqs[0] += cs.hard_seq
-
-            for cs in reversed(self.CDS_segments):
-                cds_seqs[1] += reverse_complement(cs.hard_seq)
-
-            return cds_seqs
+            if not self.CDS_segments:
+                return ["", ""]
+            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+                warnings.warn(
+                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                return ["", ""]
+            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_len = len(scf_seq)
+            if len(self.CDS_segments) > 1:
+                self.CDS_segments.sort()
+            fw_seq = "".join(scf_seq[max(0, cs.start - 1):min(scf_len, cs.end)] for cs in self.CDS_segments)
+            return [fw_seq, reverse_complement(fw_seq)]
 
     @property
     def five_prime_UTR_seq(self) -> str:
@@ -207,62 +315,291 @@ class CDS(Feature):
                     three_prime_UTR_seq += u.seq # type: ignore
         return three_prime_UTR_seq
 
-    def generate_protein(self, mode: Literal["start", "end", "orf", "orf_or_end"] = "end", max_nucleotide_trim: int | None = None, tolerated_stops: int = 0, orf_choice_mode: Literal["longest", "earliest"]="longest", must_have_stop: bool = False, enforce_start_codon: bool = True, min_codon_len: int = 2, start_codons: tuple[str, ...] = ("ATG",), stop_codons: tuple[str, ...] = ("TAA", "TAG", "TGA"), correct_CDS:bool=False, quiet:bool=True):
+    def generate_protein(
+        self,
+        mode: Literal["start", "end", "orf", "orf_or_end", "orf_or_start"] = "end",
+        max_nucleotide_trim: int | None = None,
+        tolerated_stops: int | None = 0,
+        orf_choice_mode: Literal["longest", "earliest"]="longest",
+        must_have_stop: bool = False,
+        enforce_start_codon: bool = True,
+        min_codon_len: int = 2,
+        start_codons: tuple[str, ...] | None = None,
+        stop_codons: tuple[str, ...] | None = None,
+        correct_CDS: bool = False,
+        always_resolve_strand: bool = True,
+        ignore_ambiguous_strands: bool = False,
+        quiet: bool = True,
+        adjust_internal_shifts: Literal["intra_exon", "all", "none"] | bool = "intra_exon",
+        table: int | str | dict[str, str] = 1,
+        initiator_methionine: bool = True,
+        alt_start_methionine: bool = True,
+    ):
+        if table is None:
+            table = 1
 
-        if self.strand == ".":
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+
+        if (self.strand == "." or self.strand == "?") and not ignore_ambiguous_strands:
             seq_fw, seq_rv = self.seqs
-            fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
-            rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons), mode=orf_choice_mode)
+            fw_orf = choose_orf(find_ORFs(seq_fw, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons, table=table), mode=orf_choice_mode)
+            rv_orf = choose_orf(find_ORFs(seq_rv, min_codon_len=min_codon_len, enforce_start_codon=enforce_start_codon, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, start_codons=start_codons, stop_codons=stop_codons, table=table), mode=orf_choice_mode)
 
-            if len(fw_orf[0]) >= len(rv_orf[0]):
-                self.strand = "+"
+            has_orf = len(fw_orf[0]) > 0 or len(rv_orf[0]) > 0
+            if has_orf or always_resolve_strand:
+                new_strand = "+" if len(fw_orf[0]) >= len(rv_orf[0]) else "-"
+                strand_changed = (new_strand != self.strand)
+                self.strand = new_strand
                 for cs in self.CDS_segments:
-                    cs.strand = "+"
-            else:
-                self.strand = "-"
-                for cs in self.CDS_segments:
-                    cs.strand = "-"
-
-        coding_seq, nucleotide_surplus, relative_coding_start, relative_coding_end = trim_surplus(self.seq, mode=mode, max_nucleotide_trim=max_nucleotide_trim, orf_choice_mode=orf_choice_mode, must_have_stop=must_have_stop, tolerated_stops=tolerated_stops, enforce_start_codon=enforce_start_codon, start_codons=start_codons, stop_codons=stop_codons, min_codon_len=min_codon_len)
-
-        if relative_coding_end != 0:
-
-            protein_seq = translate(coding_seq)
-
-            corrected_segments = map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
-
-            protein_start = corrected_segments[0][0]
-            protein_end = corrected_segments[-1][1]
-
-            if correct_CDS:
-
-                new_CDS_segments = []
-                if self.parents:
-                    new_parents = self.parents[:]
+                    cs.strand = new_strand
+                if strand_changed:
+                    self.update_phase(override=True)
+                    self.update_frame()
                 else:
-                    new_parents = []
+                    self.update()
 
-                for start, end in corrected_segments:
-                    new_CDS_segments.append(Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature))
+        cds_phase = self.phase if self.phase in (1, 2) else 0
 
-                self.CDS_segments = new_CDS_segments
+        # Determine internal shift adjustment mode: "intra_exon" (default), "all", or "none"
+        if adjust_internal_shifts is True or adjust_internal_shifts == "intra_exon":
+            adj_mode = "intra_exon"
+        elif adjust_internal_shifts == "all":
+            adj_mode = "all"
+        else:
+            adj_mode = "none"
 
-                self.start = protein_start
-                self.end = protein_end
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
+        # Indices (in working_segs) of the segments whose upstream junction gets its bases adjusted to the annotated phases
+        adjusted_junctions = set()
+        has_unadjusted_shift = False
+        for i, within_exon in self.inconsistent_junctions():
+            if adj_mode == "all" or (adj_mode == "intra_exon" and within_exon):
+                adjusted_junctions.add(i)
+            else:
+                has_unadjusted_shift = True
+        shifts_to_adjust = bool(adjusted_junctions)
 
-            self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, nucleotide_surplus=nucleotide_surplus, readthrough=mode)
+        if not quiet:
+            if shifts_to_adjust:
+                print(f"Warning: {self.id} has an internal phase shift at segment boundaries; junction bases were adjusted.")
+            if has_unadjusted_shift:
+                print(f"Warning: {self.id} has a phase mismatch across introns; mature mRNA spliced continuously without adjusting junction bases.")
 
-            if not quiet and nucleotide_surplus:
-                print(f"{self.id} has a nucleotide surplus when translating to protein, the annotated CDS might be incorrect.")
-        elif not quiet:
-            print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+        if shifts_to_adjust and mode in ("start", "end"):
+            coding_parts = []
+            segment_intervals = []
+            pending_leftover = ""
+            # Bases dropped at each adjusted junction (index of its downstream segment in working_segs)
+            dropped_bases = {}
+            n_segs = len(working_segs)
+            for i, cs in enumerate(working_segs):
+                p = cs.phase or 0
+                s = cs.seq
+                l = len(s)
+                if i == 0:
+                    trim_5p = p
+                    lo = (l - p) % 3
+                    coding_parts.append(s[p : l - lo])
+                elif i in adjusted_junctions:
+                    leading = s[:p]
+                    if len(pending_leftover) + len(leading) == 3:
+                        trim_5p = 0
+                        coding_parts.append(pending_leftover + leading)
+                    else:
+                        trim_5p = p
+                        if pending_leftover or leading:
+                            dropped_bases[i] = len(pending_leftover) + len(leading)
+                    lo = (l - p) % 3
+                    coding_parts.append(s[p : l - lo])
+                else:
+                    # Spliced continuously: the leftover bases of the previous segment open this segment's first codon
+                    trim_5p = 0
+                    lo = (len(pending_leftover) + l) % 3
+                    coding_parts.append(pending_leftover + s[: l - lo])
+                pending_leftover = s[l - lo :]
+
+                if i == n_segs - 1:
+                    trim_3p = lo
+                elif i + 1 not in adjusted_junctions:
+                    trim_3p = 0
+                else:
+                    next_p = working_segs[i + 1].phase or 0
+                    if lo + next_p == 3:
+                        trim_3p = 0
+                    else:
+                        trim_3p = lo
+
+                if self.strand != "-":
+                    g_start = cs.start + trim_5p
+                    g_end = cs.end - trim_3p
+                else:
+                    g_end = cs.end - trim_5p
+                    g_start = cs.start + trim_3p
+
+                if g_start <= g_end:
+                    segment_intervals.append((int(g_start), int(g_end)))
+
+            coding_seq = "".join(coding_parts)
+            untranslated_3p = pending_leftover
+            trimmed_5p = cds_phase
+            trimmed_3p = len(pending_leftover)
+            relative_coding_start = cds_phase
+            relative_coding_end = relative_coding_start + len(coding_seq) - 1
+
+            if self.strand == "-":
+                corrected_segments = list(reversed(segment_intervals))
+            else:
+                corrected_segments = segment_intervals
+        else:
+            cds_seq = self.seq
+            coding_seq, orf_found, relative_coding_start, relative_coding_end = trim_surplus(
+                cds_seq, 
+                mode=mode, 
+                max_nucleotide_trim=max_nucleotide_trim, 
+                orf_choice_mode=orf_choice_mode, 
+                must_have_stop=must_have_stop, 
+                tolerated_stops=tolerated_stops, 
+                enforce_start_codon=enforce_start_codon, 
+                start_codons=start_codons, 
+                stop_codons=stop_codons, 
+                min_codon_len=min_codon_len,
+                phase=cds_phase,
+                table=table,
+            )
+            # An ORF chosen by an ORF mode defines its own start and end; otherwise skipped bases are trimmed CDS ends
+            trimmed_5p = 0 if orf_found else relative_coding_start
+            trimmed_3p = 0 if orf_found else max(0, len(cds_seq) - 1 - relative_coding_end)
+            untranslated_3p = "" if orf_found else cds_seq[relative_coding_end + 1:]
+            dropped_bases = {}
+            corrected_segments = (
+                map_relative_to_genomic(segments=self.CDS_segments, rel_start=relative_coding_start, rel_end=relative_coding_end, strand=self.strand)
+                if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start
+                else []
+            )
+
+        if coding_seq and len(coding_seq) >= 3 and relative_coding_end >= relative_coding_start:
+
+            protein_seq = translate(coding_seq, table=table)
+            applied_transl_except = ()
+            polyA_bases = 0
+            if self.transl_except and corrected_segments:
+                protein_seq, corrected_segments, applied_transl_except, completed_stop_bases = self._apply_transl_except(protein_seq, corrected_segments, len(untranslated_3p))
+                if completed_stop_bases:
+                    # nuc_seq holds the codons the protein was translated from, so the A's of the polyA tail complete the stop
+                    polyA_bases = 3 - completed_stop_bases
+                    coding_seq += untranslated_3p[:completed_stop_bases] + "A" * polyA_bases
+                trimmed_3p -= completed_stop_bases
+
+            if corrected_segments:
+                protein_start = min(start for start, _ in corrected_segments)
+                protein_end = max(end for _, end in corrected_segments)
+                frameshifts = self._junction_shifts(working_segs, dropped_bases, protein_start, protein_end)
+
+                if correct_CDS:
+
+                    new_CDS_segments = []
+                    if self.parents:
+                        new_parents = self.parents[:]
+                    else:
+                        new_parents = []
+                    # Rows of one CDS share their attributes, so corrected rows keep those of the first one
+                    segment_attributes = self.CDS_segments[0].misc_attributes if self.CDS_segments else None
+
+                    for start, end in corrected_segments:
+                        new_segment = Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature)
+                        if segment_attributes:
+                            new_segment.misc_attributes = segment_attributes[:]
+                        new_CDS_segments.append(new_segment)
+
+                    self.CDS_segments = new_CDS_segments
+
+                    self.start = protein_start
+                    self.end = protein_end
+                    self.update()
+
+                self.protein = Protein(prot_id=f"{self.id}.prot", sequence=protein_seq, chrom=self.ch, start=protein_start, end=protein_end, readthrough=mode, nuc_seq=coding_seq, segments=tuple(corrected_segments), table=table, trimmed_5p=trimmed_5p, trimmed_3p=trimmed_3p, frameshifts=frameshifts, exception=self.exception, transl_except=applied_transl_except, polyA_bases=polyA_bases, initiator_methionine=initiator_methionine, alt_start_methionine=alt_start_methionine)
+            else:
+                self.protein = None
+                if not quiet:
+                    print(f"{self.id} CDS could not be mapped to genomic coordinates with mode={mode}")
+        else:
+            self.protein = None
+            if not quiet:
+                print(f"{self.id} CDS could not be translated to a protein with mode={mode}")
+
+    def _apply_transl_except(self, protein_seq:str, segments:list[tuple[int, int]], untranslated_3p:int) -> tuple[str, list[tuple[int, int]], tuple[tuple[int, int, str], ...], int]:
+        """
+        Recodes the residues annotated in transl_except (genomic codon positions) within the translated
+        intervals (segments, ascending). Entries outside the protein or off its reading frame are ignored.
+        A TERM entry right after the last translated codon, within the untranslated_3p bases left at the
+        CDS end, completes a stop codon the genome lacks (e.g. finished by polyadenylation): its bases
+        are added to the intervals and a stop is appended.
+        Returns the recoded protein, the intervals, the applied entries as (start, end, residue) 1-based
+        positions within the protein's nucleotide sequence, and the number of bases added for a completed stop.
+        """
+        ordered = list(segments) if self.strand != "-" else list(reversed(segments))
+        coding_length = sum(end - start + 1 for start, end in ordered)
+        residues = list(protein_seq)
+        applied = []
+        completed_stop_bases = 0
+        for start, end, residue in self.transl_except:
+            # First base of the codon in transcript order, and its offset within the translated intervals
+            first_base = start if self.strand != "-" else end
+            codon_offset = None
+            offset = 0
+            for seg_start, seg_end in ordered:
+                if seg_start <= first_base <= seg_end:
+                    codon_offset = offset + (first_base - seg_start if self.strand != "-" else seg_end - first_base)
+                    break
+                offset += seg_end - seg_start + 1
+
+            if codon_offset is not None:
+                if codon_offset % 3 == 0 and codon_offset // 3 < len(residues):
+                    residues[codon_offset // 3] = residue
+                    applied.append((codon_offset + 1, codon_offset + 3, residue))
+            elif residue == "*" and not completed_stop_bases:
+                last_start, last_end = ordered[-1]
+                length = end - start + 1
+                follows_last_codon = (start == last_end + 1) if self.strand != "-" else (end == last_start - 1)
+                if follows_last_codon and length <= untranslated_3p and coding_length % 3 == 0:
+                    ordered[-1] = (last_start, end) if self.strand != "-" else (start, last_end)
+                    residues.append("*")
+                    applied.append((coding_length + 1, coding_length + length, "*"))
+                    completed_stop_bases = length
+
+        segments = ordered if self.strand != "-" else list(reversed(ordered))
+        return "".join(residues), segments, tuple(sorted(applied)), completed_stop_bases
+
+    def _junction_shifts(self, working_segs:list[Feature], dropped_bases:dict[int, int], protein_start:int, protein_end:int) -> tuple[int, ...]:
+        """
+        Net frameshift of each segment junction translated within protein_start..protein_end, in
+        transcript order (working_segs). Bases read twice at an annotated overlap of 1-2 bp count as
+        negative; bases skipped by an annotated gap of 1-2 bp, or dropped to follow the annotated
+        phases (dropped_bases), count as positive. Junctions without a net shift are left out.
+        """
+        shifts = []
+        for i in range(1, len(working_segs)):
+            prev_seg, cs = working_segs[i - 1], working_segs[i]
+            if self.strand != "-":
+                gap = cs.start - prev_seg.end - 1
+                translated = protein_start <= prev_seg.end and cs.start <= protein_end
+            else:
+                gap = prev_seg.start - cs.end - 1
+                translated = protein_start <= cs.end and prev_seg.start <= protein_end
+            shift = (gap if -2 <= gap <= 2 else 0) + dropped_bases.get(i, 0)
+            if translated and shift:
+                shifts.append(shift)
+        return tuple(shifts)
 
     def clear_protein(self):
         self.protein = None
 
     def equal_segments(self, other:CDS):
-        self.CDS_segments.sort()
-        other.CDS_segments.sort()
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+        if len(other.CDS_segments) > 1:
+            other.CDS_segments.sort()
         same = True
         if len(self.CDS_segments) == len(other.CDS_segments):
             for n, segment in enumerate(self.CDS_segments):
@@ -274,33 +611,110 @@ class CDS(Feature):
         return same
 
     @property
-    def relative_coding_start(self):
-        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
-        if self.protein:
-            return (self.protein.start - self.start)
-        else:
-            return 0
+    def relative_coding_intervals(self) -> tuple[tuple[int, int], ...]:
+        """
+        Returns exact 0-based slice intervals (start, end) within self.seq for each coding segment.
+        Guarantees that "".join(self.seq[s:e+1] for s, e in self.relative_coding_intervals) == self.protein.nuc_seq
+        even across internal phase shifts / ribosomal frameshifts, except for the A's a polyA tail adds to complete
+        a stop codon (transl_except aa:TERM), which are only in nuc_seq.
+        """
+        # self.seq concatenates the rows, so a base read twice is in it twice
+        seq_len = sum(cs.size for cs in self.CDS_segments)
+        if not self.protein or not self.CDS_segments:
+            return ((0, max(0, seq_len - 1)),)
+
+        prot_segs = self.protein.segments
+        if not prot_segs:
+            return ((0, max(0, seq_len - 1)),)
+
+        if len(self.CDS_segments) > 1:
+            self.CDS_segments.sort()
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
+
+        intervals = []
+        offset = 0
+        for cs in working_segs:
+            seg_start, seg_end = cs.start, cs.end
+            for p_start, p_end in prot_segs:
+                ov_start = max(seg_start, p_start)
+                ov_end = min(seg_end, p_end)
+                if ov_start <= ov_end:
+                    if self.strand != "-":
+                        s = offset + (ov_start - seg_start)
+                        e = offset + (ov_end - seg_start)
+                    else:
+                        s = offset + (seg_end - ov_end)
+                        e = offset + (seg_end - ov_start)
+                    intervals.append((int(s), int(e)))
+            offset += cs.size
+
+        if not intervals:
+            return ((0, max(0, seq_len - 1)),)
+        return tuple(intervals)
+
+    def _calculate_relative_coding_coords(self) -> tuple[int, int]:
+        """Calculates 0-based slice indices (start, end) within self.seq corresponding to the protein."""
+        intervals = self.relative_coding_intervals
+        return intervals[0][0], intervals[-1][1]
 
     @property
-    def relative_coding_end(self):
+    def relative_coding_start(self) -> int:
+        """ Returns python index of first protein nucleotide within the CDS sequence string, or 0 if no protein was generated yet."""
+        return self._calculate_relative_coding_coords()[0]
+
+    @property
+    def relative_coding_end(self) -> int:
         """ Returns python index of last protein nucleotide within the CDS sequence string, or the last CDS nucleotide index if no protein was generated yet."""
-        if self.protein:
-            return (self.protein.end - self.start)
-        else:
-            return self.end - self.start
+        return self._calculate_relative_coding_coords()[1]
+
+    def inconsistent_junctions(self) -> list[tuple[int, bool]]:
+        """
+        Junctions whose annotated phases disagree with reading the segments continuously: the bases left
+        over after a segment, (size - phase) % 3, are not completed by the next segment's phase. Segments are
+        walked in transcript order (reversed on the - strand); each junction is given as the index of its
+        downstream segment in that order, and whether it is within an exon (the segments overlap or are at
+        most MAX_INTRA_EXON_GAP bp apart) rather than across an intron. A junction is only judged when both
+        segments have a phase (CDS.update derives missing ones).
+        """
+        working_segs = self.CDS_segments if self.strand != "-" else list(reversed(self.CDS_segments))
+        junctions = []
+        for i in range(1, len(working_segs)):
+            prev, cs = working_segs[i - 1], working_segs[i]
+            if prev.phase is None or cs.phase is None:
+                continue
+            if ((prev.size - prev.phase) % 3 + cs.phase) % 3 != 0:
+                gap = cs.start - prev.end - 1 if self.strand != "-" else prev.start - cs.end - 1
+                junctions.append((i, gap <= self.MAX_INTRA_EXON_GAP))
+        return junctions
+
+    @property
+    def has_internal_shift(self) -> bool:
+        """Returns True if the annotated phases disagree with the segments at any junction (see inconsistent_junctions)."""
+        return bool(self.inconsistent_junctions())
 
 class Exon(Feature):
     __slots__ = ()
+
+    _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])(?:exon|e)[:_.\-]?(\d+)$', re.IGNORECASE)
 
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
 
 class UTR(Feature):
 
-    __slots__ = ('prime',)
+    # provisional: derived by AEGIS and still named after its CDS (<CDS id>_u<n>) until named after its
+    # gene by Annotation.update (see Gene.name_new_UTRs)
+    __slots__ = ('prime', 'provisional')
+
+    _ID_NUMBER_RE = re.compile(r'(?:^|[^A-Za-z])(?:five_prime_utr|three_prime_utr|utr|u)[:_.\-]?(\d+)$', re.IGNORECASE)
     def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict={}):
         super().__init__(feature_id, ch, source, feature, strand, start, end, score, parents, attributes)
-        self.prime = "3'"
+        self.provisional = False
+        feat_lower = str(feature).lower()
+        if "5" in feat_lower or "five" in feat_lower:
+            self.prime = "5'"
+        else:
+            self.prime = "3'"
 
 class Intron(Feature):
     __slots__ = ('intra_coding',)
@@ -316,11 +730,11 @@ class Intron(Feature):
     
     @property
     def splice_site_donor(self):
-        return self.seq[0:2]
+        return self.seq[0:2].upper()
     
     @property
     def splice_site_acceptor(self):
-        return self.seq[-2:]
+        return self.seq[-2:].upper()
 
     @property
     def canonical(self):
