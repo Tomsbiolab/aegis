@@ -20,6 +20,16 @@ class AnnotationRedundancy:
         self._pairwise_decisions: list[dict] = []
         self._current_filter_step: str = ""
 
+    @staticmethod
+    def _source_matches_any(source: str, patterns: list[str]) -> bool:
+        """Return True if any pattern string is contained in source."""
+        return any(p in source for p in patterns)
+
+    @staticmethod
+    def _source_matches_none(source: str, patterns: list[str]) -> bool:
+        """Return True if no pattern string is contained in source."""
+        return not any(p in source for p in patterns)
+
     def label_potential_alt_transcript_groups(self, min_overlap_score: int = 5, quiet: bool = False):
         """
         Label genes that could be alternative transcripts of each other.
@@ -133,13 +143,13 @@ class AnnotationRedundancy:
     ) -> bool:
         """True when g is supported by >1 distinct ab initio source via self or CDS overlap."""
         sources = set()
-        if g.source in reliable_sources:
+        if self._source_matches_any(g.source, reliable_sources):
             sources.add(g.source)
         for o in g.overlaps["self"]:
             if o.score < min_overlap_score:
                 continue
             other = self._annot.chrs[g.ch][o.id]
-            if other.source in reliable_sources:
+            if self._source_matches_any(other.source, reliable_sources):
                 sources.add(other.source)
         return len(sources) > 1
 
@@ -209,7 +219,7 @@ class AnnotationRedundancy:
             reliable_sources = [
                 "augustus",
                 "genemark",
-                "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit",
+                "abinitio_",
             ]
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
@@ -292,7 +302,7 @@ class AnnotationRedundancy:
                                     g.quality.transcriptomic_evidence = True
         progress_bar.close()
 
-    def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet:bool=False):
+    def mark_abinitio_supported_genes(self, reliable_sources:list=["augustus", "genemark", "abinitio_"], quiet:bool=False):
         # Check if stdout or stderr are redirected to files
         stdout_redirected = not sys.stdout.isatty()
         stderr_redirected = not sys.stderr.isatty()
@@ -312,13 +322,13 @@ class AnnotationRedundancy:
             for g in genes.values():
                 g.quality.abinitio_evidence = False
                 progress_bar.update(1)
-                if g.source in reliable_sources:
+                if self._source_matches_any(g.source, reliable_sources):
                     g.quality.abinitio_evidence = True
                 else:
                     for o in g.overlaps["self"]:
                         if o.score >= 5:
                             if o.CDS_query_percent > 30:
-                                if self._annot.chrs[g.ch][o.id].source in reliable_sources:
+                                if self._source_matches_any(self._annot.chrs[g.ch][o.id].source, reliable_sources):
                                     g.quality.abinitio_evidence = True
         progress_bar.close()
 
@@ -377,7 +387,7 @@ class AnnotationRedundancy:
                 if not g.quality.remove:
                     for o in g.overlaps["self"]:
                         if not self._annot.chrs[g.ch][o.id].quality.remove:
-                            if (self._annot.chrs[g.ch][o.id].source not in unreliable_sources) or (g.source not in unreliable_sources):
+                            if (self._source_matches_none(self._annot.chrs[g.ch][o.id].source, unreliable_sources)) or (self._source_matches_none(g.source, unreliable_sources)):
                                 if o.score == 11:
                                     g.quality.reliable = True
                                     if not self._annot.chrs[g.ch][o.id].quality.reliable:
@@ -519,7 +529,7 @@ class AnnotationRedundancy:
                     if incomplete_structure:
                         for o in g.overlaps["self"]:
                             if o.score >= 5 or (o.score == 1 and o.antiscore >= 5):
-                                if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.rescue and self._annot.chrs[g.ch][o.id].source in reliable_sources:
+                                if self._annot.chrs[g.ch][o.id].quality.remove and not self._annot.chrs[g.ch][o.id].quality.rescue and self._source_matches_any(self._annot.chrs[g.ch][o.id].source, reliable_sources):
                                     query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][o.id], source_priority)
                                     if not query_best:
                                         g.alternative_transcript_rescue.append(o.id)
@@ -628,7 +638,7 @@ class AnnotationRedundancy:
         progress_bar.close()
         self._annot.update(rename_features=("transcript", "CDS", "exon", "UTR"))
 
-    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus.hints", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet:bool=False):
+    def rescue_longer_same_frame_CDS(self, reliable_sources:list[str]=["augustus", "genemark", "abinitio_"], quiet:bool=False):
 
         for genes in self._annot.chrs.values():
             for g in genes.values():
@@ -658,7 +668,7 @@ class AnnotationRedundancy:
                                     if c.main:
                                         overlap_main_CDS_size = c.size
 
-                        if overlap_gene.source not in reliable_sources:
+                        if self._source_matches_none(overlap_gene.source, reliable_sources):
                             continue
                         if not ((o.full_protein_overlaps >= 2) or (o.protein_query_percent >= 90)):
                             continue
@@ -1323,7 +1333,7 @@ class AnnotationRedundancy:
         self.find_best_gene_model(source_priority, just_with_reliables=False, quiet=quiet)
         snapshot = self._print_changes("find_best_gene_model (without reliables)", snapshot, quiet=quiet)
 
-        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["augustus.hints", "Liftoff", "genemark", "v4.3_from_40X_ref_on_T2T_ref_aegis_fcounts_dapfit"], quiet=quiet)
+        self.add_better_ab_initio_models_as_alternative_transcripts(source_priority, reliable_sources=["augustus", "genemark", "abinitio_"], quiet=quiet)
         snapshot = self._print_changes("add_better_ab_initio_models_as_alternative_transcripts", snapshot, quiet=quiet)
 
         self._annot.overlaps.detect(quiet=quiet)
