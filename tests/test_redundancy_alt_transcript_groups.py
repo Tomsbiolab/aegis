@@ -18,7 +18,7 @@ def _score10_hit(gene_id: str) -> OverlapHit:
         exon_target_percent=50,
         CDSs_in_both=True,
         CDS_query_percent=100,
-        CDS_target_percent=50,
+        CDS_target_percent=90,
         protein_query_percent=100,
         protein_target_percent=50,
         target_synteny_conserved=False,
@@ -60,6 +60,7 @@ def _build_gene(gene_id: str, cds_len: int, exon_len: int) -> Gene:
 
 class _DummyAnnotation:
     def __init__(self, genes):
+        self.id = "test_annotation"
         self.chrs = {"chr1": {gene.id: gene for gene in genes}}
         self.all_gene_ids = {gene.id: "chr1" for gene in genes}
 
@@ -73,6 +74,9 @@ def test_compete_within_alt_transcript_groups_keeps_highest_reliable_score():
     loser.quality.potential_alt_transcript_group = 42
     loser.quality.reliable_score = 2
 
+    winner.overlaps["self"] = [_score10_hit(loser.id)]
+    loser.overlaps["self"] = [_score10_hit(winner.id)]
+
     redundancy = AnnotationRedundancy(_DummyAnnotation([winner, loser]))
     redundancy.compete_within_alt_transcript_groups(source_priority=[])
 
@@ -81,7 +85,7 @@ def test_compete_within_alt_transcript_groups_keeps_highest_reliable_score():
     assert not loser.quality.rescue
 
 
-def test_print_changes_handles_missing_overlap_between_alt_transcript_group_members(capsys):
+def test_compete_within_alt_transcript_groups_ignores_members_without_direct_overlap():
     winner = _build_gene("keeper", cds_len=600, exon_len=600)
     winner.quality.potential_alt_transcript_group = 42
     winner.quality.reliable_score = 13
@@ -91,8 +95,20 @@ def test_print_changes_handles_missing_overlap_between_alt_transcript_group_memb
     loser.quality.reliable_score = 2
 
     redundancy = AnnotationRedundancy(_DummyAnnotation([winner, loser]))
-    snapshot = redundancy._take_snapshot()
     redundancy.compete_within_alt_transcript_groups(source_priority=[])
+
+    assert not winner.quality.remove
+    assert not loser.quality.remove
+
+
+def test_print_changes_handles_pairwise_decision_without_overlap(capsys):
+    winner = _build_gene("keeper", cds_len=600, exon_len=600)
+    loser = _build_gene("low_score_isoform", cds_len=600, exon_len=5000)
+
+    redundancy = AnnotationRedundancy(_DummyAnnotation([winner, loser]))
+    snapshot = redundancy._take_snapshot()
+    redundancy._record_pairwise_decision(loser.id, winner.id, winner.id, "test_reason", None)
+    loser.quality.remove = True
     redundancy._print_changes("compete_within_alt_transcript_groups", snapshot)
 
     captured = capsys.readouterr()

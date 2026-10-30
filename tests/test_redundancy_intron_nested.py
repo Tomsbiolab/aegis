@@ -62,6 +62,7 @@ def _build_gene(gene_id: str, cds_len: int, exon_len: int, remove: bool = False)
 
 class _DummyAnnotation:
     def __init__(self, genes):
+        self.id = "test_annotation"
         self.chrs = {"chr1": {gene.id: gene for gene in genes}}
         self.all_gene_ids = {gene.id: "chr1" for gene in genes}
 

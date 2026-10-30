@@ -467,7 +467,7 @@ class AnnotationRedundancy(AnnotationComponent):
             merge_genes = merge_genes | gene_set
             best_reliable = ""
             best_unreliable = ""
-            for g_id in gene_set:
+            for g_id in sorted(gene_set):
                 chrom = self._annot.all_gene_ids[g_id]
                 if not self._annot.chrs[chrom][g_id].quality.remove or self._annot.chrs[chrom][g_id].quality.rescue:
                     best_reliable = g_id
@@ -478,7 +478,7 @@ class AnnotationRedundancy(AnnotationComponent):
             if not best_reliable:
                 continue
 
-            for g_id in gene_set:
+            for g_id in sorted(gene_set):
                 chrom = self._annot.all_gene_ids[g_id]
                 if not self._annot.chrs[chrom][g_id].quality.remove or self._annot.chrs[chrom][g_id].quality.rescue:
                     query_best = self._annot.chrs[chrom][g_id].compare_protein_blast_hits(self._annot.chrs[chrom][best_reliable], source_priority)
@@ -492,7 +492,7 @@ class AnnotationRedundancy(AnnotationComponent):
                     else:
                         best_unreliable = g_id
 
-            for g_id in gene_set:
+            for g_id in sorted(gene_set):
                 chrom = self._annot.all_gene_ids[g_id]
 
                 if g_id == best_reliable:
