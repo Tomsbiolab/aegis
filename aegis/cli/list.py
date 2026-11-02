@@ -40,7 +40,7 @@ def genes(
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
     gene_symbols: Annotated[bool, typer.Option(
-        "--gene-symbols", help="Whether to include gene symbols in the output: Symbol values, else Names that are not the gene id (empty if none).",
+        "--gene-symbols", help="Whether to include gene symbols in the output: Names that are not the gene id, else Symbol values (empty if none).",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
 
@@ -176,7 +176,7 @@ def transcripts(
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
     gene_symbols: Annotated[bool, typer.Option(
-        "--gene-symbols", help="Whether to include gene symbols in the output: Symbol values, else Names that are not the gene id (empty if none).",
+        "--gene-symbols", help="Whether to include gene symbols in the output: Names that are not the gene id, else Symbol values (empty if none).",
         rich_help_panel=COLUMNS_PANEL,
     )] = False,
 

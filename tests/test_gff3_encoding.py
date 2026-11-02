@@ -126,6 +126,12 @@ class TestExportRoundTrip:
         out = _export(annot, tmp_path, symbols=False, symbols_as_description=True)
         assert _line(out, "gene") == "ID=g1;description=a%3Bb"
 
+    def test_description_from_name_unless_it_is_the_id(self, tmp_path):
+        annot = Annotation(_gff(tmp_path, "ID=g1;Name=g1;Note=n;symbol=S"), quiet=True)
+        assert _line(_export(annot, tmp_path, symbols=False, symbols_as_description=True), "gene") == "ID=g1;Name=g1;Note=n;description=S"
+        annot = Annotation(_gff(tmp_path, "ID=g1;Note=n;Name=PIP1;symbol=S", name="b.gff3"), quiet=True)
+        assert _line(_export(annot, tmp_path, symbols=False, symbols_as_description=True), "gene") == "ID=g1;Note=n;Name=PIP1;description=PIP1"
+
     def test_transcript_names_encoded(self, tmp_path):
         annot = Annotation(_gff(tmp_path, "ID=g1", mrna_attributes="ID=t1;Parent=g1;Name=t%3B1"), quiet=True)
         assert annot.chrs["chr1"]["g1"].transcripts["t1"].names == ["t;1"]
@@ -195,7 +201,7 @@ class TestRenameMovesStaleNames:
 
 def test_gtf_conversion_encodes_values():
     result = format_gff3_attributes({"gene_id": "g1", "gene_name": "PIP1;3", "note": "a=b,c"}, "gene")
-    assert result == "ID=g1;Symbol=PIP1%3B3;note=a%3Db%2Cc"
+    assert result == "ID=g1;Name=PIP1%3B3;note=a%3Db%2Cc"
 
 
 class TestGTFQuoting:
@@ -210,7 +216,31 @@ class TestGTFQuoting:
         line = _line(str(tmp_path / "out.gtf"), "gene")
         assert line == 'gene_id "g1"; gene_name "say \\"hi\\""'
 
+    def test_names_on_every_line(self, tmp_path):
+        annot = Annotation(_gff(tmp_path, "ID=g1;Name=PIP1", mrna_attributes="ID=t1;Parent=g1;Name=PIP1.a"), quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)
+        out = str(tmp_path / "out.gtf")
+        assert _line(out, "gene") == 'gene_id "g1"; gene_name "PIP1"'
+        assert _line(out, "transcript") == 'gene_id "g1"; transcript_id "t1"; gene_name "PIP1"; transcript_name "PIP1.a"'
+        assert _line(out, "exon") == 'gene_id "g1"; transcript_id "t1"; exon_number "1"; gene_name "PIP1"; transcript_name "PIP1.a"'
+        assert _line(out, "CDS") == 'gene_id "g1"; transcript_id "t1"; gene_name "PIP1"; transcript_name "PIP1.a"'
+
+    def test_gtf_round_trip_puts_names_on_their_own_level(self, tmp_path):
+        path = _gff(tmp_path, "ID=g1;Name=PIP1%3B3", mrna_attributes="ID=t1;Parent=g1;Name=PIP1.a")
+        Annotation(path, quiet=True).export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)
+        back = Annotation(str(tmp_path / "out.gtf"), quiet=True)
+        g = back.chrs["chr1"]["g1"]
+        t = g.transcripts["t1"]
+        assert (g.names, g.symbols, t.names, t.symbols) == (["PIP1;3"], None, ["PIP1.a"], None)
+        assert all(e.names is None and e.symbols is None for e in t.exons)
+
+    def test_transcript_name_kept_without_transcript_lines(self, tmp_path):
+        gtf = tmp_path / "in.gtf"
+        gtf.write_text('chr1\tsrc\texon\t1\t99\t.\t+\t.\tgene_id "g1"; transcript_id "t1"; gene_name "G"; transcript_name "G-201";\n', encoding="utf-8")
+        g = Annotation(str(gtf), quiet=True).chrs["chr1"]["g1"]
+        assert (g.names, g.transcripts["t1"].names, g.transcripts["t1"].exons[0].names) == (["G"], ["G-201"], None)
+
     def test_gtf_to_gff3_keeps_escaped_name(self, tmp_path):
         gtf = tmp_path / "in.gtf"
         gtf.write_text('chr1\tsrc\texon\t1\t99\t.\t+\t.\tgene_id "g1"; transcript_id "t1"; gene_name "say \\"hi\\"";\n', encoding="utf-8")
-        assert Annotation(str(gtf), quiet=True).chrs["chr1"]["g1"].symbols == ['say "hi"']
+        assert Annotation(str(gtf), quiet=True).chrs["chr1"]["g1"].names == ['say "hi"']

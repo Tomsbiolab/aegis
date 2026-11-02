@@ -155,8 +155,9 @@ def parse_gff_parts(parts) -> GffEntry:
 def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     """
     Parses a GFF3 attribute column. Name, Symbol and Alias (under any of their MAPPED_ATTRIBUTES
-    spellings) are split on ',' and percent-decoded; their spelling is recorded under SOURCE_KEYS when
-    it differs from DEFAULT_WRITE_KEYS so it can be written back as read. Nothing is dropped: repeated
+    spellings) are split on ',' and percent-decoded, and repeats of one are merged into its first
+    occurrence; their spelling is recorded under SOURCE_KEYS when it differs from DEFAULT_WRITE_KEYS
+    so it can be written back as read. Nothing is dropped: repeated
     keys, and gene_id/transcript_id-like keys not used as ID or Parent, are kept raw under numbered
     EXTRA_ATTRIBUTES keys. Dict order is column-9 order, so attributes can be written back in it.
     """
@@ -200,14 +201,19 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
         if lower_key in MAPPED_ATTRIBUTES:
             target_key = MAPPED_ATTRIBUTES[lower_key]
-            if target_key in parsed:
-                keep_extra(f"{key}={val}")
-                continue
             values = [x.strip() for x in val.split(",") if x.strip()]
             if target_key in DECODED_ATTRIBUTES:
                 values = [gff3_unescape(x) for x in values]
+                if target_key in parsed:
+                    # e.g. 'Name=a;Name=b' or 'gene_synonym=A1;Alias=A2': one attribute, so that
+                    # replacing or removing it leaves no stale copy; first key spelling and position
+                    parsed[target_key].extend(v for v in values if v not in parsed[target_key])
+                    continue
                 if key != DEFAULT_WRITE_KEYS[target_key]:
                     source_keys[target_key] = sys.intern(key)
+            elif target_key in parsed:
+                keep_extra(f"{key}={val}")
+                continue
             parsed[target_key] = values
             continue
             
@@ -306,14 +312,20 @@ def format_gff3_attributes(attrs, feature_type):
             elif feature_type in default_features["CDS"]:
                 gff3_attrs.append(f"ID={feature_id}_CDS1")
 
+    # gene_name names the gene and transcript_name the transcript, so each becomes the Name (what
+    # 'aegis symbols' sets and browsers label) of its own feature only; other lines repeat them
+    if feature_type in default_features["gene"]:
+        name = attrs.get('gene_name')
+    elif feature_type in default_features["transcript"]:
+        name = attrs.get('transcript_name')
+    else:
+        name = None
     # GTF values are unencoded (quoted), so everything but IDs is percent-encoded for GFF3
-    if 'gene_name' in attrs:
-        gff3_attrs.append(f"Symbol={gff3_escape(attrs['gene_name'])}")
-    elif 'transcript_name' in attrs:
-        gff3_attrs.append(f"Symbol={gff3_escape(attrs['transcript_name'])}")
+    if name:
+        gff3_attrs.append(f"Name={gff3_escape(name)}")
 
     for key, value in attrs.items():
-        if key not in special_keys and key not in ['gene_name', 'transcript_name']:
+        if key not in special_keys and key not in ('gene_name', 'transcript_name'):
             gff3_attrs.append(f"{key}={gff3_escape(value)}")
             
     return ";".join(gff3_attrs)
@@ -413,6 +425,7 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                         'gene_id': gene_id, 'seqname': seqname,
                         'source': source, 'strand': strand,
                         'start': start_int, 'end': end_int,
+                        'transcript_name': attributes.get('transcript_name', ''),
                     }
                 else:
                     t = inferred_transcripts[transcript_id]
@@ -473,6 +486,8 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
             tx_attrs = {'transcript_id': t_id}
             if t['gene_id']:
                 tx_attrs['gene_id'] = t['gene_id']
+            if t['transcript_name']:
+                tx_attrs['transcript_name'] = t['transcript_name']
             tx_attr_str = format_gff3_attributes(tx_attrs, 'mRNA')
             outfile.write("\t".join([t['seqname'], t['source'], 'mRNA',
                                      str(t['start']), str(t['end']), '.',
@@ -483,7 +498,6 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
 
         for parts, attributes, feature in subfeature_lines:
             transcript_id = attributes.get('transcript_id', '')
-            gene_name = attributes.get('gene_name', '')
 
             gff3_attrs = []
 
@@ -500,9 +514,6 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                                          parts[3], parts[4], parts[5], parts[6],
                                          parts[7], gff3_attr_string]) + '\n')
                 continue
-
-            if gene_name:
-                gff3_attrs.append(f"Symbol={gene_name}")
 
             gff3_attr_string = ";".join(gff3_attrs)
             outfile.write("\t".join([parts[0], parts[1], feature,

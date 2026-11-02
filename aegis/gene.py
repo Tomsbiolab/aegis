@@ -560,17 +560,8 @@ class Gene(Feature):
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 
         temp_attributes = [f"ID={self.id}"]
-        if print_empty_attributes:
-            if self.symbols is None:
-                self.symbols = []
-            if self.names is None:
-                self.names = []
-            if self.aliases is None:
-                self.aliases = []
-            if self.misc_attributes is None:
-                self.misc_attributes = []
 
-        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes, misc=(None if clean else self.misc_attributes), keep_order=not clean))
+        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes, misc=(None if clean else self.misc_attributes), keep_order=not clean, missing_as_empty=print_empty_attributes))
 
         # Only when neither the feature type nor a kept attribute already says so
         if self.pseudogene and "pseudo" not in self.feature and (clean or not self.has_misc_attribute({"pseudogene", "pseudo"})):

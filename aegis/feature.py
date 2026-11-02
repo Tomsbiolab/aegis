@@ -302,24 +302,32 @@ class Feature():
                 self.attribute_order = order[:i + 1] + ((attribute, n),) + order[i + 1:]
                 return
 
-    def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False, misc:list[str]|None=None, keep_order:bool=True) -> list[str]:
+    def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False, misc:list[str]|None=None, keep_order:bool=True, missing_as_empty:bool=False) -> list[str]:
         """
         Name, Alias and symbol attributes, percent-encoded and keyed as read (see gff_key), merged
         with the misc attribute strings given in the column-9 order they were read in. The flags
         only allow an attribute: it is written when the feature has values, or always with
-        print_empty_attributes. A symbols_as_description 'description=' goes where symbol was.
-        keep_order=False writes them first, in IDENTITY_ATTRIBUTES order.
+        print_empty_attributes. symbols_as_description adds 'description=' with symbol_values(), where
+        the attribute they come from was read.
+        keep_order=False writes them first, in IDENTITY_ATTRIBUTES order. missing_as_empty writes
+        attributes the feature does not have as empty too (with print_empty_attributes).
         """
         pairs = []
+        empty = [] if missing_as_empty else None
         for allowed, attribute, values in ((names, INT_NAME, self.names), (aliases, INT_ALIAS, self.aliases), (symbols, INT_SYMBOL, self.symbols)):
+            if values is None:
+                values = empty
             if allowed and values is not None:
                 value_string = format_gff3_values(values)
                 if value_string or print_empty_attributes:
                     pairs.append((attribute, f"{self.gff_key(attribute)}={value_string}"))
-        if symbols_as_description and self.symbols is not None:
-            value_string = format_gff3_values(self.symbols)
-            if value_string or print_empty_attributes:
-                pairs.append((INT_SYMBOL, f"description={value_string}"))
+        if symbols_as_description:
+            # What the feature is called (see symbol_values), placed where that attribute was read
+            label = self.non_id_names()
+            description, source = (label, INT_NAME) if label else (self.symbols or [], INT_SYMBOL)
+            value_string = format_gff3_values(description)
+            if value_string or (print_empty_attributes and missing_as_empty):
+                pairs.append((source, f"description={value_string}"))
         return merge_identity_and_misc(pairs, misc, self.attribute_order if keep_order else None)
 
     def non_id_names(self) -> list[str]:
@@ -327,9 +335,12 @@ class Feature():
         ids = {self.id.casefold(), self.original_id.casefold()}
         return [n for n in (self.names or ()) if n.casefold() not in ids]
 
-    def symbols_or_names(self) -> list[str]:
-        """The feature's symbols: its Symbol values, else non_id_names() ('aegis symbols' places symbols in Name)."""
-        return self.symbols or self.non_id_names()
+    def symbol_values(self) -> list[str]:
+        """
+        What the feature is called: its non_id_names() (Name is where 'aegis symbols' writes and what
+        genome browsers label), else its Symbol values. Empty if it only has an ID.
+        """
+        return self.non_id_names() or self.symbols or []
 
     def has_misc_attribute(self, keys:set[str]) -> bool:
         """Whether a kept attribute has one of these (lowercase) keys."""

@@ -20,7 +20,8 @@ from aegis.utils.gtf_gff import parse_gff_attributes, extra_attributes, SOURCE_K
 runner = CliRunner()
 
 RICH = "ID=g1;symbol=S1;gene_synonym=A1;Alias=A2;Dbxref=x:1;Dbxref=y:2;Note=keep%2Cme"
-RICH_OUT = RICH  # written back exactly as read, repeated keys included
+# Repeated Name/Alias/Symbol keys are one attribute (first spelling and position); other repeats are kept as read
+RICH_OUT = "ID=g1;symbol=S1;gene_synonym=A1,A2;Dbxref=x:1;Dbxref=y:2;Note=keep%2Cme"
 
 
 def _gene(gene_id, start, gene_attributes, feature="gene"):
@@ -55,10 +56,10 @@ def _attributes(path, gene_id):
 class TestParsePreservesEverything:
     def test_key_spelling_and_repeats(self):
         attrs = parse_gff_attributes(RICH, gene=True)
-        assert attrs["Alias"] == ["A1"]
+        assert attrs["Alias"] == ["A1", "A2"]
         assert attrs["Symbol"] == ["S1"]
         assert attrs[SOURCE_KEYS] == {"Alias": "gene_synonym"}  # 'symbol' is the default spelling
-        assert extra_attributes(attrs) == ["Alias=A2", "Dbxref=y:2"]
+        assert extra_attributes(attrs) == ["Dbxref=y:2"]
 
     def test_parent_wins_over_id_like_fallback(self):
         attrs = parse_gff_attributes("gene_id=g;Parent=t1;ID=e1")
@@ -105,7 +106,7 @@ class TestExportAsRead:
 
     def test_clean_attributes_still_available(self, tmp_path):
         annot = Annotation(_write(tmp_path, _gene("g1", 1, RICH)), quiet=True)
-        assert _attributes(_export(annot, tmp_path, clean_attributes=True), "g1") == "ID=g1;gene_synonym=A1;symbol=S1"
+        assert _attributes(_export(annot, tmp_path, clean_attributes=True), "g1") == "ID=g1;gene_synonym=A1,A2;symbol=S1"
 
     def test_standardise_attribute_keys(self, tmp_path):
         annot = Annotation(_write(tmp_path, _gene("g1", 1, "ID=g1;Symbol=S1;gene_synonym=A1;NAME=N1")), quiet=True)
@@ -305,7 +306,7 @@ class TestColumnOrder:
         assert a._attributes == b._attributes
 
 
-class TestSymbolsOrNames:
+class TestSymbolValues:
     """--has-symbol and --gene-symbols also see symbols placed in Name, but not a Name that is the ID."""
 
     def _annot(self, tmp_path):
@@ -315,9 +316,16 @@ class TestSymbolsOrNames:
             _gene("AT1G01030", 2001, "ID=AT1G01030;Name=AT1G01030;symbol=NGA3"),
         ), quiet=True)
 
-    def test_symbols_or_names(self, tmp_path):
+    def test_symbol_values(self, tmp_path):
         genes = self._annot(tmp_path).chrs["chr1"]
-        assert [g.symbols_or_names() for g in genes.values()] == [[], ["ARV1"], ["NGA3"]]
+        assert [g.symbol_values() for g in genes.values()] == [[], ["ARV1"], ["NGA3"]]
+
+    def test_name_set_by_symbols_wins_over_symbol_read(self, tmp_path):
+        annot = self._annot(tmp_path)
+        annot.set_gene_attribute({"AT1G01030": "NEW"})
+        assert annot.chrs["chr1"]["AT1G01030"].symbol_values() == ["NEW"]
+        annot.export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)
+        assert 'gene_id "AT1G01030"; gene_name "NEW"' in open(tmp_path / "out.gtf").read()
 
     def test_remove_genes_without_symbols(self, tmp_path):
         annot = self._annot(tmp_path)
@@ -329,7 +337,7 @@ class TestSymbolsOrNames:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             annot.rename_ids(prefix="TST", quiet=True, old_id_names="keep")
-        assert [g.symbols_or_names() for g in annot.chrs["chr1"].values()] == [[], ["ARV1"], ["NGA3"]]
+        assert [g.symbol_values() for g in annot.chrs["chr1"].values()] == [[], ["ARV1"], ["NGA3"]]
 
     def test_gene_list_symbol_column_is_never_missing(self, tmp_path):
         annot = self._annot(tmp_path)
@@ -407,3 +415,125 @@ class TestRenameCorrespondences:
             warnings.simplefilter("error", UserWarning)
             res = runner.invoke(rename_app, [path, "-f", "transcript", "-d", str(tmp_path / "out"), "-o", "out.gff3", "-q"])
         assert res.exit_code == 0, res.output
+
+
+class TestRepeatedIdentityKeys:
+    """A repeated Name/Alias/Symbol is one attribute, so changing or removing it leaves no stale copy."""
+
+    def test_replace_leaves_no_stale_copy(self, tmp_path):
+        annot = Annotation(_write(tmp_path, _gene("g1", 1, "ID=g1;Name=a;Note=n;Name=b,a")), quiet=True)
+        assert annot.chrs["chr1"]["g1"].names == ["a", "b"]
+        assert _attributes(_export(annot, tmp_path), "g1") == "ID=g1;Name=a,b;Note=n"
+        annot.set_gene_attribute({"g1": "X"})
+        assert _attributes(_export(annot, tmp_path), "g1") == "ID=g1;Name=X;Note=n"
+
+    def test_remove_aliases_removes_every_spelling(self, tmp_path):
+        annot = Annotation(_write(tmp_path, _gene("g1", 1, "ID=g1;gene_synonym=A1;Alias=A2")), quiet=True)
+        assert _attributes(_export(annot, tmp_path, aliases=False), "g1") == "ID=g1"
+
+
+class TestSymbolsTable:
+    def test_empty_symbol_cells_map_nothing(self, tmp_path):
+        annot = Annotation(_write(tmp_path, _gene("g1", 1, "ID=g1;Name=Keep"), _gene("g2", 1001, "ID=g2;Name=Old")), quiet=True)
+        tsv = tmp_path / "s.tsv"
+        tsv.write_text("g1\t\ng2\t\ng2\tNew\n", encoding="utf-8")
+        assert annot.add_gene_symbols(str(tsv)) == []
+        assert [g.names for g in annot.chrs["chr1"].values()] == [["Keep"], ["New"]]
+
+    def test_print_empty_attributes_does_not_change_genes(self, tmp_path):
+        annot = Annotation(_write(tmp_path, _gene("g1", 1, "ID=g1")), quiet=True)
+        assert _attributes(_export(annot, tmp_path, print_empty_attributes=True), "g1") == "ID=g1;Name=;Alias=;symbol="
+        g = annot.chrs["chr1"]["g1"]
+        assert (g.names, g.aliases, g.symbols, g.misc_attributes) == (None, None, None, None)
+
+
+class TestSymbolsTableLayouts:
+    def _annot(self, tmp_path):
+        return Annotation(_write(tmp_path, _gene("g1", 1, "ID=g1"), _gene("g2", 1001, "ID=g2;Name=Old2")), quiet=True)
+
+    def _table(self, tmp_path, text, name="s.tsv"):
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_columns_per_target_by_number_and_header(self, tmp_path):
+        table = self._table(tmp_path, "symbol\tgene\tsynonyms\nPIP1\tg1\tA;B\n")
+        annot = self._annot(tmp_path)
+        annot.add_gene_symbols(table, header=True, id_column="gene", targets=("Name:symbol", "Alias:3"), split=";")
+        g1 = annot.chrs["chr1"]["g1"]
+        assert (g1.names, g1.aliases) == (["PIP1"], ["A", "B"])
+        assert _attributes(_export(annot, tmp_path), "g1") == "ID=g1;Name=PIP1;Alias=A,B"
+
+    def test_csv_separator_and_literal_na(self, tmp_path):
+        table = self._table(tmp_path, "g1,NA\ng2,a;b\n", name="s.csv")
+        annot = self._annot(tmp_path)
+        annot.add_gene_symbols(table)
+        assert [g.names for g in annot.chrs["chr1"].values()] == [["NA"], ["a;b"]]  # no split by default
+
+    def test_bad_column(self, tmp_path):
+        table = self._table(tmp_path, "g1\tX\n")
+        with pytest.raises(ValueError, match="Column '3' not found"):
+            Annotation.read_symbols_table(table, targets="Alias:3")
+        with pytest.raises(ValueError, match="Column 'symbol' not found"):
+            Annotation.read_symbols_table(table, targets="Name:symbol")
+
+    def test_raise_changes_nothing(self, tmp_path):
+        table = self._table(tmp_path, "g1\tNEW\nnope\tX\n")
+        annot = self._annot(tmp_path)
+        with pytest.raises(KeyError):
+            annot.add_gene_symbols(table, on_missing="raise")
+        assert annot.chrs["chr1"]["g1"].names is None
+
+
+class TestMatchOn:
+    def _renamed(self, tmp_path):
+        annot = Annotation(_write(tmp_path, _gene("AT1", 1, "ID=AT1;Name=AT1"), _gene("AT2", 1001, "ID=AT2;Alias=shared"), _gene("AT3", 2001, "ID=AT3;Alias=shared")), quiet=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            annot.rename_ids(prefix="TST", quiet=True)
+        return annot
+
+    def test_old_ids_found_through_alias(self, tmp_path):
+        annot = self._renamed(tmp_path)
+        assert annot.set_gene_attribute({"AT1": "PIP1"}, on_missing="ignore") == ["AT1"]
+        assert annot.set_gene_attribute({"AT1": "PIP1"}, match_on=("id", "alias")) == []
+        assert [g.names for g in annot.chrs["chr1"].values()][0] == ["PIP1"]
+
+    def test_shared_alias_sets_all_with_warning(self, tmp_path):
+        annot = self._renamed(tmp_path)
+        with pytest.warns(UserWarning, match="1 ids matched several"):
+            annot.set_gene_attribute({"shared": "S"}, match_on="alias")
+        assert [g.names for g in annot.chrs["chr1"].values()][1:] == [["S"], ["S"]]
+
+    def test_bad_field(self, tmp_path):
+        with pytest.raises(ValueError):
+            self._renamed(tmp_path).set_gene_attribute({"x": "y"}, match_on="symbol")
+
+
+class TestSymbolsCLIOptions:
+    def test_columns_split_and_match_on(self, tmp_path):
+        gff = _write(tmp_path, _gene("TST1", 1, "ID=TST1;Alias=AT1"))
+        table = tmp_path / "s.tsv"
+        table.write_text("AT1\tPIP1\tA|B\n", encoding="utf-8")
+        out_dir = tmp_path / "out"
+        res = runner.invoke(symbols_app, [gff, str(table), "-d", str(out_dir), "-q", "--to", "Name:2,Alias:3", "--split", "|", "--match-on", "id,alias", "--append"])
+        assert res.exit_code == 0, res.output
+        assert _attributes(str(out_dir / "in_symbols.gff3"), "TST1") == "ID=TST1;Name=PIP1;Alias=AT1,A,B"
+
+    def test_bad_column_fails_before_loading(self, tmp_path):
+        table = tmp_path / "s.tsv"
+        table.write_text("g1\tX\n", encoding="utf-8")
+        res = runner.invoke(symbols_app, [str(tmp_path / "does_not_exist.gff3"), str(table), "--to", "Name:5"])
+        assert res.exit_code != 0 and "Column '5' not found" in res.output
+
+    def test_output_format_follows_input(self, tmp_path):
+        gtf = tmp_path / "in.gtf"
+        gtf.write_text('chr1\tsrc\texon\t1\t99\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n', encoding="utf-8")
+        table = tmp_path / "s.tsv"
+        table.write_text("g1\tPIP1\n", encoding="utf-8")
+        for flags, name in (([], "in_symbols.gtf"), (["--output-format", "gff3"], "in_symbols.gff3")):
+            out_dir = tmp_path / f"out{len(flags)}"
+            res = runner.invoke(symbols_app, [str(gtf), str(table), "-d", str(out_dir), "-q"] + flags)
+            assert res.exit_code == 0, res.output
+            assert (out_dir / name).exists()
+        assert 'gene_name "PIP1"' in (tmp_path / "out0" / "in_symbols.gtf").read_text()

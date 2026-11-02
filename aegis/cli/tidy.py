@@ -79,7 +79,7 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
     symbols_as_description: Annotated[bool, typer.Option(
-        "--symbols-as-description", help="Places gene symbols into 'description=' attributes (useful for JBrowse display). Lowercase, as GFF3 reserves capitalised attribute names.",
+        "--symbols-as-description", help="Also writes each feature's symbol (a Name that is not its ID, else its Symbol) as 'description=', which JBrowse shows under the label; useful when features are labelled by ID. Symbol attributes are then left out.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     remove_symbols: Annotated[bool, typer.Option(

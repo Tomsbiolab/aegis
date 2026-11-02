@@ -1235,7 +1235,7 @@ class AnnotationExport(AnnotationComponent):
                     if coding_info:
                         out.append(str(g.coding))
                     if gene_symbols:
-                        out.append("|".join(g.symbols_or_names()))
+                        out.append("|".join(g.symbol_values()))
                     f_out.write(sep.join(out) + "\n")
 
         if zero_length_genes:
@@ -1325,7 +1325,7 @@ class AnnotationExport(AnnotationComponent):
                         if coding_info:
                             out.append(str(t.coding))
                         if gene_symbols:
-                            out.append("|".join(g.symbols_or_names()))
+                            out.append("|".join(g.symbol_values()))
                         f_out.write(sep.join(out) + "\n")
 
 

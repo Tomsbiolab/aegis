@@ -138,13 +138,25 @@
       - `def remove_genes_without_symbols(self, quiet:bool=False):`
       - `def rename_chromosomes(self, equivalences, dap:bool=False):`
       - `def _attribute_values(raw) -> list[str]:`
-      - `def set_gene_attribute(self, mapping:dict, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False) -> list[str]:`
-      - `def find_gene(gene_id):`
-      - `def find_transcript(transcript_id):`
+      - `def _target_attributes(cls, targets) -> list[str]:`
+      - `def _match_fields(cls, match_on) -> tuple[str, ...]:`
+      - `def _check_choice(name, value, choices):`
+      - `def _gene_finder(self, match_on:tuple[str, ...], id_type:str):`
+      - `def find(key) -> list[Gene]:`
+      - `def _transcript_finder(self, id_type:str):`
+      - `def find(transcript_id):`
+      - `def _resolve_ids(self, mapping:dict, id_type:str, transcript_names:bool, match_on:tuple[str, ...]):`
+      - `def _report_ids(self, missing:list[str], shared:list[str], transcript_names:bool, on_missing:str, match_on:tuple[str, ...]):`
+      - `def examples(ids):`
+      - `def _apply_attribute_values(self, attributes:list[str], gene_values:dict, transcript_values:dict, mode:str, clear_unmapped:bool, transcript_names:bool):`
       - `def assign(feature, values, keys):`
       - `def clear(feature):`
+      - `def set_gene_attribute(self, mapping:dict, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False, match_on:str|tuple[str, ...]|list[str]=("id",)) -> list[str]:`
       - `def _most_used_gff_key(self, features, attribute) -> str | None:`
-      - `def add_gene_symbols(self, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, header:bool=False, sep:str="\t", id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False) -> list[str]:`
+      - `def read_symbols_table(cls, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), id_column:int|str=1, header:bool=False, sep:str|None=None, split:str|None=None) -> list[tuple[list[str], dict[str, list[str]]]]:`
+      - `def position(column) -> int:`
+      - `def set_symbol_columns(self, columns:list[tuple[list[str], dict[str, list[str]]]], mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False, match_on:str|tuple[str, ...]|list[str]=("id",)) -> list[str]:`
+      - `def add_gene_symbols(self, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, header:bool=False, sep:str|None=None, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False, id_column:int|str=1, split:str|None=None, match_on:str|tuple[str, ...]|list[str]=("id",)) -> list[str]:`
       - `def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):`
       - `def generate_introns(self):`
       - `def __str__(self):`
@@ -197,9 +209,9 @@
       - `def attribute_order(self) -> tuple | None:`
       - `def attribute_order(self, value: tuple | None):`
       - `def place_attribute_like(self, attribute: str, like: str):`
-      - `def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False, misc:list[str]|None=None, keep_order:bool=True) -> list[str]:`
+      - `def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False, misc:list[str]|None=None, keep_order:bool=True, missing_as_empty:bool=False) -> list[str]:`
       - `def non_id_names(self) -> list[str]:`
-      - `def symbols_or_names(self) -> list[str]:`
+      - `def symbol_values(self) -> list[str]:`
       - `def has_misc_attribute(self, keys:set[str]) -> bool:`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):`
       - `def print_gtf(self):`
@@ -1510,6 +1522,7 @@
       - `def test_values_set_in_memory_round_trip(self, tmp_path):`
       - `def test_file_read_export_read(self, tmp_path):`
       - `def test_description_from_symbols_encoded(self, tmp_path):`
+      - `def test_description_from_name_unless_it_is_the_id(self, tmp_path):`
       - `def test_transcript_names_encoded(self, tmp_path):`
       - `class TestNameExport:`
       - `def test_identity_attributes_written_by_default(self, tmp_path):`
@@ -1524,6 +1537,9 @@
       - `class TestGTFQuoting:`
       - `def test_quote_round_trip(self):`
       - `def test_gene_name_escaped_in_export(self, tmp_path):`
+      - `def test_names_on_every_line(self, tmp_path):`
+      - `def test_gtf_round_trip_puts_names_on_their_own_level(self, tmp_path):`
+      - `def test_transcript_name_kept_without_transcript_lines(self, tmp_path):`
       - `def test_gtf_to_gff3_keeps_escaped_name(self, tmp_path):`
     - test_gff_attributes.py
       - `def _gene(gene_id, start, gene_attributes, feature="gene"):`
@@ -1576,9 +1592,10 @@
       - `def test_rename_puts_alias_where_name_was(self, tmp_path):`
       - `def test_description_goes_where_symbol_was(self, tmp_path):`
       - `def test_order_is_not_part_of_equality(self, tmp_path):`
-      - `class TestSymbolsOrNames:`
+      - `class TestSymbolValues:`
       - `def _annot(self, tmp_path):`
-      - `def test_symbols_or_names(self, tmp_path):`
+      - `def test_symbol_values(self, tmp_path):`
+      - `def test_name_set_by_symbols_wins_over_symbol_read(self, tmp_path):`
       - `def test_remove_genes_without_symbols(self, tmp_path):`
       - `def test_old_id_kept_as_name_is_not_a_symbol(self, tmp_path):`
       - `def test_gene_list_symbol_column_is_never_missing(self, tmp_path):`
@@ -1594,6 +1611,28 @@
       - `class TestRenameCorrespondences:`
       - `def test_only_with_flag(self, tmp_path):`
       - `def test_no_warning_when_gene_ids_do_not_change(self, tmp_path):`
+      - `class TestRepeatedIdentityKeys:`
+      - `def test_replace_leaves_no_stale_copy(self, tmp_path):`
+      - `def test_remove_aliases_removes_every_spelling(self, tmp_path):`
+      - `class TestSymbolsTable:`
+      - `def test_empty_symbol_cells_map_nothing(self, tmp_path):`
+      - `def test_print_empty_attributes_does_not_change_genes(self, tmp_path):`
+      - `class TestSymbolsTableLayouts:`
+      - `def _annot(self, tmp_path):`
+      - `def _table(self, tmp_path, text, name="s.tsv"):`
+      - `def test_columns_per_target_by_number_and_header(self, tmp_path):`
+      - `def test_csv_separator_and_literal_na(self, tmp_path):`
+      - `def test_bad_column(self, tmp_path):`
+      - `def test_raise_changes_nothing(self, tmp_path):`
+      - `class TestMatchOn:`
+      - `def _renamed(self, tmp_path):`
+      - `def test_old_ids_found_through_alias(self, tmp_path):`
+      - `def test_shared_alias_sets_all_with_warning(self, tmp_path):`
+      - `def test_bad_field(self, tmp_path):`
+      - `class TestSymbolsCLIOptions:`
+      - `def test_columns_split_and_match_on(self, tmp_path):`
+      - `def test_bad_column_fails_before_loading(self, tmp_path):`
+      - `def test_output_format_follows_input(self, tmp_path):`
     - test_gz_support.py
       - `def test_gff3_gz_support(tmp_path):`
       - `def test_gtf_gz_support(tmp_path):`

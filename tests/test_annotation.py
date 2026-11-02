@@ -161,7 +161,7 @@ class TestFormatGff3Attributes:
         attrs = {"gene_id": "g1", "gene_name": "MyGene"}
         result = format_gff3_attributes(attrs, "gene")
         assert "ID=g1" in result
-        assert "Symbol=MyGene" in result
+        assert "Name=MyGene" in result
 
     def test_transcript_format(self):
         attrs = {"transcript_id": "t1", "gene_id": "g1"}
