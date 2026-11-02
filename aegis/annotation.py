@@ -4223,7 +4223,11 @@ class Annotation():
 
         lower = file_path.lower()
         if lower.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(file_path, header=0 if header else None, dtype=str, keep_default_na=False)
+            try:
+                df = pd.read_excel(file_path, header=0 if header else None, dtype=str, keep_default_na=False)
+            except ImportError as e:
+                package = "xlrd" if "xlrd" in str(e) else "openpyxl"
+                raise ValueError(f"Reading {os.path.basename(file_path)} needs the '{package}' package (pip install {package}), or save the table as TSV/CSV.") from None
         else:
             if sep is None:
                 sep = "," if lower.removesuffix(".gz").endswith(".csv") else "\t"

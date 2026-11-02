@@ -1623,6 +1623,8 @@
       - `def test_columns_per_target_by_number_and_header(self, tmp_path):`
       - `def test_csv_separator_and_literal_na(self, tmp_path):`
       - `def test_bad_column(self, tmp_path):`
+      - `def test_missing_excel_reader_is_a_clear_error(self, tmp_path, monkeypatch):`
+      - `def no_xlrd(*args, **kwargs):`
       - `def test_raise_changes_nothing(self, tmp_path):`
       - `class TestMatchOn:`
       - `def _renamed(self, tmp_path):`

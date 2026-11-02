@@ -477,6 +477,14 @@ class TestSymbolsTableLayouts:
         with pytest.raises(ValueError, match="Column 'symbol' not found"):
             Annotation.read_symbols_table(table, targets="Name:symbol")
 
+    def test_missing_excel_reader_is_a_clear_error(self, tmp_path, monkeypatch):
+        import pandas as pd
+        def no_xlrd(*args, **kwargs):
+            raise ImportError("Missing optional dependency 'xlrd'.")
+        monkeypatch.setattr(pd, "read_excel", no_xlrd)
+        with pytest.raises(ValueError, match="needs the 'xlrd' package"):
+            Annotation.read_symbols_table(str(tmp_path / "s.xls"))
+
     def test_raise_changes_nothing(self, tmp_path):
         table = self._table(tmp_path, "g1\tNEW\nnope\tX\n")
         annot = self._annot(tmp_path)
