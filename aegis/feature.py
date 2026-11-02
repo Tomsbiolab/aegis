@@ -9,6 +9,7 @@ import re
 import warnings
 
 from .utils.genefunctions import reverse_complement
+from .utils.gtf_gff import format_gff3_values, DEFAULT_WRITE_KEYS, SOURCE_KEYS, EXTRA_ATTRIBUTES, INT_NAME, INT_SYMBOL, INT_ALIAS
 from .other_components import FeatureQuality, FeatureAttributes
 from .conf import default_features
 
@@ -51,7 +52,7 @@ class Feature():
     ch:str
 
     # Structural keys and AEGIS's own processing state (written by AEGIS and recomputed rather than read back)
-    aegis_state_attributes:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "pseudogene", "transposable", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
+    aegis_state_attributes:set = {"id", "parent", "reliable_score", "remove", "rescue", "blasts", "gene_masked_fraction", "transcript_masked_fraction", "cds_masked_fraction", "gene_gc_content", "transcript_gc_content", "cds_gc_content", "intron_nested", "intron_nested_fully_contained", "intron_nested_single", "intron_utr_nested", "alternative_transcript_rescue", "cds_orientated_overlaps", "gene_id"}
     # Model status written by other tools (NCBI, Liftoff) that AEGIS derives from its own translation; kept, it would go stale once a model changes
     derived_state_attributes:set = {"partial", "start_range", "end_range", "missing_start_codon", "missing_stop_codon", "inframe_stop_codon", "valid_orf", "valid_orfs"}
     attributes_to_ignore_when_reading_gff:set = aegis_state_attributes | derived_state_attributes
@@ -108,6 +109,20 @@ class Feature():
                 if self._attributes is None:
                     self._attributes = FeatureAttributes()
                 self._attributes.symbols = value[:]
+
+            elif key == SOURCE_KEYS:
+                if self._attributes is None:
+                    self._attributes = FeatureAttributes()
+                self._attributes.keys = dict(value)
+
+            elif key == EXTRA_ATTRIBUTES:
+                kept = [a for a in value if a.partition("=")[0].lower() not in Feature.attributes_to_ignore_when_reading_gff]
+                if kept:
+                    if self._attributes is None:
+                        self._attributes = FeatureAttributes()
+                    if self._attributes.misc is None:
+                        self._attributes.misc = []
+                    self._attributes.misc.extend(kept)
 
             elif "extra_copy_number" in key:
                 value = int(value.strip())
@@ -189,14 +204,35 @@ class Feature():
         self._attributes.descriptors = value
 
     @property
-    def synonyms(self) -> list[str] | None:
-        return self._attributes.synonyms if self._attributes else None
+    def attribute_keys(self) -> dict[str, str] | None:
+        return self._attributes.keys if self._attributes else None
 
-    @synonyms.setter
-    def synonyms(self, value: list[str] | None):
+    @attribute_keys.setter
+    def attribute_keys(self, value: dict[str, str] | None):
         if self._attributes is None:
             self._attributes = FeatureAttributes()
-        self._attributes.synonyms = value
+        self._attributes.keys = value
+
+    def gff_key(self, attribute: str) -> str:
+        """GFF key written for attribute ("Name", "Alias" or "Symbol"): as read, else the default."""
+        keys = self._attributes.keys if self._attributes else None
+        if keys and attribute in keys:
+            return keys[attribute]
+        return DEFAULT_WRITE_KEYS[attribute]
+
+    def set_gff_key(self, attribute: str, key: str | None):
+        """Sets the GFF key spelling for attribute; None or the default spelling clears it."""
+        keys = self.attribute_keys
+        if key is None or key == DEFAULT_WRITE_KEYS[attribute]:
+            if keys:
+                keys.pop(attribute, None)
+                if not keys:
+                    self._attributes.keys = None # type: ignore
+            return
+        if keys is None:
+            keys = {}
+            self.attribute_keys = keys
+        keys[attribute] = key
 
     @property
     def misc_attributes(self) -> list[str] | None:
@@ -207,6 +243,28 @@ class Feature():
         if self._attributes is None:
             self._attributes = FeatureAttributes()
         self._attributes.misc = value
+
+    def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False) -> list[str]:
+        """
+        Name, Alias and symbol attributes, percent-encoded and keyed as read (see gff_key). The flags
+        only allow an attribute: it is written when the feature has values, or always with
+        print_empty_attributes.
+        """
+        out = []
+        for allowed, attribute, values in ((names, INT_NAME, self.names), (aliases, INT_ALIAS, self.aliases), (symbols, INT_SYMBOL, self.symbols)):
+            if allowed and values is not None:
+                value_string = format_gff3_values(values)
+                if value_string or print_empty_attributes:
+                    out.append(f"{self.gff_key(attribute)}={value_string}")
+        if symbols_as_description and self.symbols is not None:
+            value_string = format_gff3_values(self.symbols)
+            if value_string or print_empty_attributes:
+                out.append(f"Description={value_string}")
+        return out
+
+    def has_misc_attribute(self, keys:set[str]) -> bool:
+        """Whether a kept attribute has one of these (lowercase) keys."""
+        return any(a.partition("=")[0].lower() in keys for a in (self.misc_attributes or ()))
 
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):
 
@@ -220,25 +278,7 @@ class Feature():
         if featurecountsID and self.gene_id is not None:
             temp_attributes.append(f"Gene_id={self.gene_id}")
 
-        if symbols and self.symbols is not None:
-            symbol_string = ",".join(self.symbols)
-            if symbol_string or print_empty_attributes:
-                temp_attributes.append(f"Symbol={symbol_string}")
-
-        if symbols_as_description and self.symbols is not None:
-            symbol_string = ",".join(self.symbols)
-            if symbol_string or print_empty_attributes:
-                temp_attributes.append(f"Description={symbol_string}")
-
-        if names and self.names is not None:
-            name_string = ",".join(self.names)
-            if name_string or print_empty_attributes:
-                temp_attributes.append(f"Name={name_string}")
-
-        if aliases and self.aliases is not None:
-            alias_string = ",".join(self.aliases)
-            if alias_string or print_empty_attributes:
-                temp_attributes.append(f"Alias={alias_string}")
+        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
         if self.misc_attributes is not None:
             if not clean:

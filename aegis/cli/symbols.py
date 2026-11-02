@@ -1,10 +1,13 @@
 import typer
 import os
-from typing import Optional
+import warnings
+from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import IO_PANEL, EXEC_PANEL, SYMBOLS_PANEL
+from .utils import split_callback, IO_PANEL, EXEC_PANEL, SYMBOLS_PANEL
+
+VALID_TARGETS = ["Name", "Alias", "Symbol"]
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -30,10 +33,23 @@ def main(
         "--sep", "--separator", help="Column delimiter for input symbols file (default: tab).",
         rich_help_panel=SYMBOLS_PANEL,
     )] = "\t",
-    clear_existing: Annotated[bool, typer.Option(
-        "-c", "--clear-existing-symbols", "--clear", help="Clears existing names and symbols from annotation file. Otherwise additional symbols are appended.",
+    targets: Annotated[List[str], typer.Option(
+        "-t", "--to", "--targets", help=f"Attribute(s) to place the symbols in, separated by commas. Choose from: {VALID_TARGETS}. 'Name' is what genome browsers such as JBrowse label and index; 'Symbol' is written as 'symbol=' unless the annotation already spells it otherwise.",
+        callback=split_callback,
+        rich_help_panel=SYMBOLS_PANEL,
+    )] = ["Name"],
+    append: Annotated[bool, typer.Option(
+        "--append", help="Add the symbols to the values a gene already has in the target attribute(s) instead of replacing them.",
         rich_help_panel=SYMBOLS_PANEL,
     )] = False,
+    clear_unmapped: Annotated[bool, typer.Option(
+        "-c", "--clear", help="Also empty the target attribute(s) of genes not in the symbols file. By default they are left as read.",
+        rich_help_panel=SYMBOLS_PANEL,
+    )] = False,
+    on_missing: Annotated[str, typer.Option(
+        "--on-missing", help="What to do with gene ids in the symbols file that are not in the annotation: 'warn', 'raise' (stop with an error) or 'ignore'.",
+        rich_help_panel=SYMBOLS_PANEL,
+    )] = "warn",
 
     # 2. Input / Output Options
     annotation_file_opt: Annotated[str, typer.Option(
@@ -77,6 +93,12 @@ def main(
     if not symbols_in:
         raise typer.BadParameter("Missing required symbols mapping file. Provide as positional argument or via --symbols-file.")
 
+    invalid = [t for t in targets if t.lower() not in {v.lower() for v in VALID_TARGETS}]
+    if invalid or not targets:
+        raise typer.BadParameter(f"Invalid --to {invalid}. Choose from: {VALID_TARGETS}.")
+    if on_missing not in ("warn", "raise", "ignore"):
+        raise typer.BadParameter(f"Invalid --on-missing '{on_missing}'. Choose from: warn, raise, ignore.")
+
     annotation_file = annot_in
     symbols_file = symbols_in
 
@@ -91,9 +113,20 @@ def main(
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)
 
-    annotation.add_gene_symbols(clear=clear_existing, header=header, sep=sep, file_path=symbols_file)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        try:
+            missing = annotation.add_gene_symbols(file_path=symbols_file, targets=targets, mode=("append" if append else "replace"), clear_unmapped=clear_unmapped, header=header, sep=sep, on_missing=on_missing)
+        except KeyError as e:
+            raise typer.BadParameter(str(e).strip("'\""))
+    for w in caught:
+        if not quiet:
+            print(f"Warning: {w.message}")
 
-    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, symbols=True)
+    if not quiet:
+        print(f"Placed symbols in {', '.join(targets)} ({'appended' if append else 'replaced'}); {len(missing)} gene ids in {symbols_file} were not found.")
+
+    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
     
 if __name__ == "__main__":
     app()

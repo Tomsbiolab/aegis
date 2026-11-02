@@ -1702,12 +1702,10 @@ class TestAnnotationClearGeneNamesAndSymbols:
         gene = annot.chrs["chr1"]["geneA"]
         gene.names = ["MyName"]
         gene.symbols = ["SYM"]
-        gene.synonyms = ["Syn1"]
 
-        annot.clear_gene_names_and_symbols(quiet=True)
+        annot.clear_gene_names_and_symbols()
         assert gene.names is None
         assert gene.symbols is None
-        assert gene.synonyms is None
 
         assert gene.aliases == ["TF1", "TF2"]
 
@@ -3559,7 +3557,7 @@ class TestReworkCDS:
         # Renaming as aegis tidy does by default
         annot = Annotation(annot_file_path=arabidopsis_araport11_no_CDS_gff3_file, name="araport11_no_CDS", rework_all_CDSs=True, genome=genome, quiet=True, coding_ratio_threshold=0.4, rename_features=("CDS", "exon", "UTR"))
 
-        annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True)
+        annot.export.gff(output_dir=tmp_path, subfolder=False, quiet=True, clean_attributes=True)
 
         # Compare contents
         with open(arabidopsis_araport11_with_CDS_gff3_file, "r") as f:

@@ -3028,7 +3028,7 @@ class Annotation():
             for o in self.orphaned_features:
                 o.source = new_source
         
-    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, quiet:bool=False,
+    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, old_id_names:Literal["alias", "keep"]="alias", quiet:bool=False,
     #deprecated arguments
     custom_path:str=""):
         """
@@ -3044,7 +3044,12 @@ class Annotation():
             group (transcripts or exons/UTRs of a gene) has one and no number is shared by
             different features; otherwise the group is numbered sequentially.
         cds_segment_ids: give each CDS row its own id (<CDS id>_<n>) instead of the CDS id.
+        old_id_names: 'alias' moves a Name that is the feature's old ID (e.g. Araport 'ID=AT4G00005;Name=AT4G00005')
+            to Alias, so renamed features are not labelled with an ID they no longer have; 'keep' leaves Names as read.
         """
+
+        if old_id_names not in ("alias", "keep"):
+            raise ValueError(f"old_id_names must be 'alias' or 'keep', not '{old_id_names}'.")
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'correspondences_output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -3248,6 +3253,8 @@ class Annotation():
         self.homogenise_shared_exons_utrs()
         self.update_keys()
         self.update_gene_and_transcript_list(quiet=quiet)
+        if old_id_names == "alias":
+            self._move_stale_names_to_aliases()
 
         self.renamed_features = changed_features
 
@@ -3274,6 +3281,44 @@ class Annotation():
         lapse = now - start_time
         if not quiet:
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
+
+    def _move_stale_names_to_aliases(self):
+        """
+        A renamed feature whose Name is its old ID (e.g. Araport 'ID=AT4G00005;Name=AT4G00005') would
+        be labelled with an ID it no longer has: that Name is moved to Alias, the GFF3 attribute for
+        secondary identifiers.
+        """
+        def move(f):
+            if f.names and f.id != f.original_id and f.original_id in f.names:
+                f.names = [n for n in f.names if n != f.original_id] or None
+                if f.aliases is None:
+                    f.aliases = []
+                if f.original_id not in f.aliases:
+                    f.aliases.append(f.original_id)
+
+        for f in self._iter_all_features():
+            move(f)
+
+    def standardise_attribute_keys(self):
+        """Writes Name, Alias and symbol under their default keys instead of the spelling read (e.g. 'gene_synonym', 'Symbol')."""
+        for f in self._iter_all_features():
+            if f.attribute_keys:
+                f.attribute_keys = None
+
+    def _iter_all_features(self):
+        for genes in self.chrs.values():
+            for g in genes.values():
+                yield g
+                for t in g.transcripts.values():
+                    yield t
+                    yield from t.exons
+                    yield from t.miRNAs
+                    for c in t.CDSs.values():
+                        yield c
+                        yield from c.CDS_segments
+                        yield from c.UTRs
+        yield from self.atypical_features
+        yield from self.orphaned_features
 
     def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):
 
@@ -3847,13 +3892,11 @@ class Annotation():
 
         return removed_any
 
-    def clear_gene_names_and_symbols(self, quiet:bool=False):
+    def clear_gene_names_and_symbols(self):
         for genes in self.chrs.values():
             for g in genes.values():
                 g.names = None
                 g.symbols = None
-                g.synonyms = None
-        self.update(quiet=quiet)
         self.tags.discard("plus_symbols")
 
     def remove_genes_without_symbols(self, quiet:bool=False):
@@ -3909,81 +3952,148 @@ class Annotation():
         elif renamed_scaffolds:
             self.tags.add("confrenamed")
 
-    def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
-        if clear:
-            self.clear_gene_names_and_symbols()
+    _GENE_ATTRIBUTE_TARGETS = {"name": "Name", "alias": "Alias", "symbol": "Symbol"}
+    _GENE_ATTRIBUTE_PROPERTIES = {"Name": "names", "Alias": "aliases", "Symbol": "symbols"}
 
-        if header:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, skiprows=1, dtype=str)
-            else:
-                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
+    @staticmethod
+    def _attribute_values(raw) -> list[str]:
+        """A string is one value (never split on ','); empty and NaN values are dropped; order is kept."""
+        if raw is None:
+            return []
+        items = [raw] if isinstance(raw, str) else list(raw)
+        values = []
+        for v in items:
+            if v is None or (isinstance(v, float) and math.isnan(v)):
+                continue
+            v = str(v).strip()
+            if v and v not in values:
+                values.append(v)
+        return values
+
+    def set_gene_attribute(self, mapping:dict, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn") -> list[str]:
+        """
+        Sets gene names, aliases and/or symbols from a {gene id: value(s)} mapping.
+
+        mapping: values are a string (one value, never split on ',') or a list of strings.
+        targets: "Name" (labelled and indexed by genome browsers such as JBrowse), "Alias" and/or "Symbol",
+            case-insensitive; every target gets the same values.
+        mode: 'replace' the target values of mapped genes, or 'append' the new ones to them.
+        clear_unmapped: also empty the targets of genes not in the mapping. By default they keep their values.
+        id_type: mapping keys are 'current' gene ids, or 'original' ids as read (before rename_ids).
+        on_missing: what to do with ids not in the annotation: 'warn', 'raise' a KeyError or 'ignore'.
+
+        Values a gene did not have before are written with the key spelling most used in the
+        annotation for that attribute (e.g. 'gene_synonym' for aliases), else Name, Alias or symbol.
+        Returns the mapping ids not found.
+        """
+        if isinstance(targets, str):
+            targets = (targets,)
+        attributes = []
+        for t in targets:
+            attribute = self._GENE_ATTRIBUTE_TARGETS.get(str(t).strip().lower())
+            if attribute is None:
+                raise ValueError(f"Unknown target '{t}'. Choose from: Name, Alias, Symbol.")
+            if attribute not in attributes:
+                attributes.append(attribute)
+        if not attributes:
+            raise ValueError("No targets chosen. Choose from: Name, Alias, Symbol.")
+        if mode not in ("replace", "append"):
+            raise ValueError(f"mode must be 'replace' or 'append', not '{mode}'.")
+        if id_type not in ("current", "original"):
+            raise ValueError(f"id_type must be 'current' or 'original', not '{id_type}'.")
+        if on_missing not in ("warn", "raise", "ignore"):
+            raise ValueError(f"on_missing must be 'warn', 'raise' or 'ignore', not '{on_missing}'.")
+
+        if id_type == "original":
+            by_original: dict[str, Gene] = {}
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    by_original.setdefault(g.original_id, g)
+            find = by_original.get
         else:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, dtype=str)
-            else:
-                df = pd.read_csv(file_path, sep=sep, dtype=str)
+            def find(gene_id):
+                ch = self.all_gene_ids.get(gene_id)
+                return self.chrs[ch].get(gene_id) if ch is not None else None
+
+        new_values: dict[int, tuple[Gene, list[str]]] = {}
+        missing = []
+        for gene_id, raw in mapping.items():
+            gene_id = str(gene_id).strip()
+            g = find(gene_id)
+            if g is None:
+                missing.append(gene_id)
+                continue
+            values = new_values.setdefault(id(g), (g, []))[1]
+            for v in self._attribute_values(raw):
+                if v not in values:
+                    values.append(v)
+
+        if missing:
+            message = f"{len(missing)} gene ids not found in {self.id} annotation: {', '.join(missing[:5])}{', ...' if len(missing) > 5 else ''}"
+            if on_missing == "raise":
+                raise KeyError(message)
+            if on_missing == "warn":
+                warnings.warn(message, category=UserWarning)
+
+        file_keys = {}
+        for attribute in attributes:
+            prop = self._GENE_ATTRIBUTE_PROPERTIES[attribute]
+            counts: dict[str, int] = {}
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    if getattr(g, prop):
+                        key = g.gff_key(attribute)
+                        counts[key] = counts.get(key, 0) + 1
+            file_keys[attribute] = max(counts, key=lambda k: counts[k]) if counts else None
+
+        for g, values in new_values.values():
+            for attribute in attributes:
+                prop = self._GENE_ATTRIBUTE_PROPERTIES[attribute]
+                current = getattr(g, prop) or []
+                if mode == "replace":
+                    updated = values[:]
+                else:
+                    updated = current + [v for v in values if v not in current]
+                if not current and updated:
+                    g.set_gff_key(attribute, file_keys[attribute])
+                setattr(g, prop, updated or None)
+
+        if clear_unmapped:
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    if id(g) not in new_values:
+                        for attribute in attributes:
+                            setattr(g, self._GENE_ATTRIBUTE_PROPERTIES[attribute], None)
+
+        return missing
+
+    def add_gene_symbols(self, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, header:bool=False, sep:str="\t", id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn") -> list[str]:
+        """
+        Reads a TSV/CSV/XLSX table of gene id (first column) and symbol (second column) and sets them
+        with set_gene_attribute (see it for the other arguments). Repeated ids give a gene several values.
+        Returns the ids not found.
+        """
+        if file_path.endswith(".xlsx"):
+            df = pd.read_excel(file_path, header=0 if header else None, dtype=str)
+        else:
+            df = pd.read_csv(file_path, header=0 if header else None, sep=sep, dtype=str)
+
+        if df.shape[1] < 2:
+            raise ValueError(f"{file_path} needs a gene id column and a symbol column (sep={sep!r}).")
 
         df = df.fillna("")
 
-        pseudogene_col_exists = False
-        synonym_col_exists = False
+        mapping: dict[str, list[str]] = {}
+        for gene_id, symbol in zip(df.iloc[:, 0], df.iloc[:, 1]):
+            gene_id = str(gene_id).strip()
+            if gene_id:
+                mapping.setdefault(gene_id, []).append(symbol)
 
-        if "pseudogene" in df.columns:
-            pseudogene_col_exists = True
-        
-        if "gene name synonym(s)" in df.columns:
-            synonym_col_exists = True
-
-        for _, row in df.iterrows():
-            gene_name = str(row.iloc[0])
-            gene_id = str(row.iloc[1])
-            if pseudogene_col_exists:
-                pseudogene = str(row["pseudogene"])
-            if synonym_col_exists:
-                gene_synonyms = str(row["gene name synonym(s)"]).split("; ")
-            ch = self.all_gene_ids[gene_id]
-            if self.chrs[ch][gene_id].symbols is None:
-                self.chrs[ch][gene_id].symbols = []
-            self.chrs[ch][gene_id].symbols.append(gene_name)
-            if not just_gene_names:
-                if synonym_col_exists:
-                    self.chrs[ch][gene_id].synonyms += gene_synonyms #type: ignore
-                if pseudogene_col_exists:
-                    if pseudogene == "pseudogene" or pseudogene == "Pseudogene":
-                        self.chrs[ch][gene_id].pseudogene = True
-                    elif pseudogene == "gene" or pseudogene == "Gene":
-                        self.chrs[ch][gene_id].pseudogene = False
+        missing = self.set_gene_attribute(mapping, targets=targets, mode=mode, clear_unmapped=clear_unmapped, id_type=id_type, on_missing=on_missing)
 
         self.tags.add("plus_symbols")
 
-    def add_gene_symbols(self, file_path:str, clear:bool=True, header:bool=False, sep:str="\t"):
-
-        if clear:
-            self.clear_gene_names_and_symbols()
-
-        if header:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, dtype=str)
-            else:
-                df = pd.read_csv(file_path, sep=sep, dtype=str)
-        else:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, header=None, dtype=str)
-            else:
-                df = pd.read_csv(file_path, header=None, sep=sep, dtype=str)
-
-        df = df.fillna("")
-
-        for i in range(len(df)):
-            gene_name = str(df.iat[i, 1])
-            gene_id = str(df.iat[i, 0])
-            ch = self.all_gene_ids[gene_id]
-            if self.chrs[ch][gene_id].symbols is None:
-                self.chrs[ch][gene_id].symbols = []
-            self.chrs[ch][gene_id].symbols.append(gene_name)
-
-        self.tags.add("plus_symbols")
+        return missing
 
     def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):
         if clear_aliases:
@@ -4007,7 +4117,7 @@ class Annotation():
         self.update(quiet=quiet)
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.update(quiet=quiet)
-        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
+        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet, clean_attributes=True)
 
     def generate_introns(self):
         for genes in self.chrs.values():

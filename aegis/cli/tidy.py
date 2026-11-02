@@ -86,6 +86,14 @@ def main(
         "--remove-symbols", help="Removes symbol attributes from GFF output.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
+    standardise_attribute_keys: Annotated[bool, typer.Option(
+        "--standardise-attribute-keys", help="Write names, aliases and symbols as 'Name=', 'Alias=' and 'symbol=' whatever their spelling in the input (e.g. 'gene_synonym=', 'Symbol=').",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
+    remove_names: Annotated[bool, typer.Option(
+        "--remove-names", help="Removes name attributes from GFF output.",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
     remove_aliases: Annotated[bool, typer.Option(
         "--remove-aliases", help="Removes alias attributes from GFF output.",
         rich_help_panel=ATTR_PANEL,
@@ -366,11 +374,14 @@ def main(
     if symbols_as_description:
         remove_symbols = True
 
+    if standardise_attribute_keys:
+        annotation.standardise_attribute_keys()
+
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
         clean_features = True
 
-    annotation.export.gff(output_dir=output_dir, filename=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, names=(not remove_names), aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()

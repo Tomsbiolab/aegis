@@ -13,21 +13,22 @@ import copy
 from .utils.misc import count_occurrences
 
 class FeatureAttributes():
-    __slots__ = ('names', 'symbols', 'aliases', 'descriptors', 'synonyms', 'misc')
+    __slots__ = ('names', 'symbols', 'aliases', 'descriptors', 'keys', 'misc')
 
     names: list[str] | None
     symbols: list[str] | None
     aliases: list[str] | None
     descriptors: list[str] | None
-    synonyms: list[str] | None
+    # GFF key spelling per attribute ("Name", "Alias", "Symbol") when it differs from DEFAULT_WRITE_KEYS
+    keys: dict[str, str] | None
     misc: list[str] | None
 
-    def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, synonyms=None, misc=None):
+    def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, keys=None, misc=None):
         self.names = names
         self.symbols = symbols
         self.aliases = aliases
         self.descriptors = descriptors
-        self.synonyms = synonyms
+        self.keys = keys
         self.misc = misc
 
     def __eq__(self, other):

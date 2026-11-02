@@ -810,13 +810,13 @@ def main(
         gff_file2 = gff_path / f"{mcscan_name}.gff3"
 
         if not gff_file1.exists():
-            a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet)
+            a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
         else:
             print(f"\n\tExisting GFF file for {a.name}. Skipping.")
 
         if gff_file1 != gff_file2:
             if not gff_file2.exists():
-                a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet)
+                a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
             else:
                 print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
             
@@ -825,7 +825,7 @@ def main(
             if not lifton_prep_file.exists():
                 a_lifton = a.copy()
                 a_lifton.CDS_to_CDS_segment_ids(override=True)
-                a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet)
+                a_lifton.export.gff(output_dir=str(gff_path), filename=f"{a_lifton.name}__for__lifton.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
                 del a_lifton
             else:
                 print(f"\n\tExisting lifton prep file for {a.name}. Skipping.")

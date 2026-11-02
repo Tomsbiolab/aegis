@@ -505,7 +505,6 @@ class AnnotationRedundancy(AnnotationComponent):
                             t_copy.parents = [g_id]
                             t_copy.symbols = []
                             t_copy.names = []
-                            t_copy.synonyms = []
                     self._annot.chrs[chrom][best_reliable].transcripts["alternative_transcript"] = t_copy.copy()
                     del t_copy
                 else:
@@ -531,7 +530,6 @@ class AnnotationRedundancy(AnnotationComponent):
                             t_copy.parents = [g.id]
                             t_copy.symbols = []
                             t_copy.names = []
-                            t_copy.synonyms = []
                     g.transcripts[t_copy.id] = t_copy.copy()
                     del t_copy
         progress_bar.close()

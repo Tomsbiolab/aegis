@@ -570,32 +570,15 @@ class Gene(Feature):
             if self.misc_attributes is None:
                 self.misc_attributes = []
 
-        if symbols and self.symbols is not None:
-            symbol_string = ",".join(self.symbols)
-            if symbol_string or print_empty_attributes:
-                temp_attributes.append(f"Symbol={symbol_string}")
-
-        if symbols_as_description and self.symbols is not None:
-            symbol_string = ",".join(self.symbols)
-            if symbol_string or print_empty_attributes:
-                temp_attributes.append(f"Description={symbol_string}")
-
-        if names and self.names is not None:
-            name_string = ",".join(self.names)
-            if name_string or print_empty_attributes:
-                temp_attributes.append(f"Name={name_string}")
-
-        if aliases and self.aliases is not None:
-            alias_string = ",".join(self.aliases)
-            if alias_string or print_empty_attributes:
-                temp_attributes.append(f"Alias={alias_string}")
+        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
         if not clean and self.misc_attributes is not None:
             temp_attributes.extend(self.misc_attributes)
 
-        if self.pseudogene:
+        # Only when neither the feature type nor a kept attribute already says so
+        if self.pseudogene and "pseudo" not in self.feature and (clean or not self.has_misc_attribute({"pseudogene", "pseudo"})):
             temp_attributes.append(f"Pseudogene={self.pseudogene}")
-        if self.transposable:
+        if self.transposable and "transpos" not in self.feature and (clean or not self.has_misc_attribute({"transposable", "transposon"})):
             temp_attributes.append(f"Transposable={self.transposable}")
 
         if extra_attributes:

@@ -5,6 +5,7 @@ import re
 from ..conf import default_features, default_subfeatures
 from collections import OrderedDict
 from dataclasses import dataclass
+from urllib.parse import unquote
 from .misc import open_file
 
 ALT_ID_gene = {"gene_id", "geneid"}
@@ -28,6 +29,34 @@ MAPPED_ATTRIBUTES = {
     "name": INT_NAME,
     "symbol": INT_SYMBOL,
 }
+
+# Free-text values read percent-decoded and written percent-encoded (GFF3 column 9).
+# ID and Parent are kept as opaque tokens, exactly as read.
+DECODED_ATTRIBUTES = {INT_NAME, INT_SYMBOL, INT_ALIAS}
+
+# Keys written for these attributes unless the input spelt them differently (e.g. 'gene_synonym', 'Symbol').
+# Lowercase 'symbol': GFF3 reserves capitalised attribute names and Symbol is not one of them.
+DEFAULT_WRITE_KEYS = {INT_NAME: "Name", INT_ALIAS: "Alias", INT_SYMBOL: "symbol"}
+
+# Entries of parse_gff_attributes() that are not attributes ('\x00' cannot start a GFF key)
+SOURCE_KEYS = "\x00source_keys"    # {INT_NAME/INT_ALIAS/INT_SYMBOL: key as spelt in the input}
+EXTRA_ATTRIBUTES = "\x00extra"     # raw 'key=value' strings for repeated or unused keys
+
+# GFF3 reserved characters plus control characters; one translate pass, so '%' needs no special ordering
+_GFF3_ESCAPES = {i: f"%{i:02X}" for i in range(0x20)}
+_GFF3_ESCAPES.update({ord(c): f"%{ord(c):02X}" for c in "%;=&,\x7f"})
+
+def gff3_escape(value: str) -> str:
+    """Percent-encodes one GFF3 attribute value."""
+    return value.translate(_GFF3_ESCAPES)
+
+def gff3_unescape(value: str) -> str:
+    """Percent-decodes one GFF3 attribute value ('+' is left as is)."""
+    return unquote(value) if "%" in value else value
+
+def format_gff3_values(values) -> str:
+    """Encodes each value and joins them as a multi-value GFF3 attribute."""
+    return ",".join(gff3_escape(v) for v in values)
 
 @dataclass(slots=True)
 class GffEntry:
@@ -108,12 +137,23 @@ def parse_gff_parts(parts) -> GffEntry:
     )
 
 def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
+    """
+    Parses a GFF3 attribute column. Name, Symbol and Alias (under any of their MAPPED_ATTRIBUTES
+    spellings) are split on ',' and percent-decoded; their spelling is recorded under SOURCE_KEYS when
+    it differs from DEFAULT_WRITE_KEYS so it can be written back as read. Nothing is dropped: repeated
+    keys, and gene_id/transcript_id-like keys not used as ID or Parent, are kept raw under
+    EXTRA_ATTRIBUTES.
+    """
 
     if not attributes or attributes == ".":
         return {}
 
     parsed = {}
-    
+    source_keys = {}
+    extra = []
+    fallback_id = None
+    fallback_parent = None
+
     for p in attributes.split(";"):
 
         key, sep, val = p.partition("=")
@@ -130,27 +170,56 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
                 parsed[INT_ID] = val
             continue
             
-        # Promote gene_id/transcript_id ONLY if correct feature type and ID is missing
+        # gene_id/transcript_id only stand in for a missing ID on the right feature type
         if (gene and lower_key in ALT_ID_gene) or (transcript and lower_key in ALT_ID_transcript):
-            if INT_ID not in parsed:
-                parsed[INT_ID] = val
+            if fallback_id is None:
+                fallback_id = (key, val)
+            else:
+                extra.append(f"{key}={val}")
             continue
 
-        # --- Priority 2: Mapped logic (Parents, Names, Symbols, etc.) ---
         if lower_key in MAPPED_ATTRIBUTES:
             target_key = MAPPED_ATTRIBUTES[lower_key]
-            if target_key not in parsed:
-                parsed[target_key] = [x.strip() for x in val.split(",") if x.strip()]
+            if target_key in parsed:
+                extra.append(f"{key}={val}")
+                continue
+            values = [x.strip() for x in val.split(",") if x.strip()]
+            if target_key in DECODED_ATTRIBUTES:
+                values = [gff3_unescape(x) for x in values]
+                if key != DEFAULT_WRITE_KEYS[target_key]:
+                    source_keys[target_key] = sys.intern(key)
+            parsed[target_key] = values
             continue
             
-        # Handle the "ID_OR_PARENT" fallback logic (e.g. gene_id as Parent)
+        # e.g. gene_id as Parent, used only when there is no Parent attribute
         if lower_key in ID_OR_PARENT_KEYS:
-            if INT_PARENT not in parsed:
-                parsed[INT_PARENT] = [x.strip() for x in val.split(",") if x.strip()]
+            if fallback_parent is None:
+                fallback_parent = (key, val)
+            else:
+                extra.append(f"{key}={val}")
             continue
 
-        # Otherwise, it's a normal attribute
-        parsed[sys.intern(key)] = val
+        if key in parsed:
+            extra.append(f"{key}={val}")
+        else:
+            parsed[sys.intern(key)] = val
+
+    if fallback_id is not None:
+        if INT_ID not in parsed:
+            parsed[INT_ID] = fallback_id[1]
+        else:
+            extra.append(f"{fallback_id[0]}={fallback_id[1]}")
+
+    if fallback_parent is not None:
+        if INT_PARENT not in parsed:
+            parsed[INT_PARENT] = [x.strip() for x in fallback_parent[1].split(",") if x.strip()]
+        else:
+            extra.append(f"{fallback_parent[0]}={fallback_parent[1]}")
+
+    if source_keys:
+        parsed[SOURCE_KEYS] = source_keys
+    if extra:
+        parsed[EXTRA_ATTRIBUTES] = extra
 
     return parsed
 
@@ -214,14 +283,15 @@ def format_gff3_attributes(attrs, feature_type):
             elif feature_type in default_features["CDS"]:
                 gff3_attrs.append(f"ID={feature_id}_CDS1")
 
+    # GTF values are unencoded (quoted), so everything but IDs is percent-encoded for GFF3
     if 'gene_name' in attrs:
-        gff3_attrs.append(f"Symbol={attrs['gene_name']}")
+        gff3_attrs.append(f"Symbol={gff3_escape(attrs['gene_name'])}")
     elif 'transcript_name' in attrs:
-        gff3_attrs.append(f"Symbol={attrs['transcript_name']}")
+        gff3_attrs.append(f"Symbol={gff3_escape(attrs['transcript_name'])}")
 
     for key, value in attrs.items():
         if key not in special_keys and key not in ['gene_name', 'transcript_name']:
-            gff3_attrs.append(f"{key}={value}")
+            gff3_attrs.append(f"{key}={gff3_escape(value)}")
             
     return ";".join(gff3_attrs)
 
