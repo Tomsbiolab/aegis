@@ -124,7 +124,7 @@ class TestExportRoundTrip:
     def test_description_from_symbols_encoded(self, tmp_path):
         annot = Annotation(_gff(tmp_path, "ID=g1;Symbol=a%3Bb"), quiet=True)
         out = _export(annot, tmp_path, symbols=False, symbols_as_description=True)
-        assert _line(out, "gene") == "ID=g1;Description=a%3Bb"
+        assert _line(out, "gene") == "ID=g1;description=a%3Bb"
 
     def test_transcript_names_encoded(self, tmp_path):
         annot = Annotation(_gff(tmp_path, "ID=g1", mrna_attributes="ID=t1;Parent=g1;Name=t%3B1"), quiet=True)
@@ -135,7 +135,7 @@ class TestExportRoundTrip:
 class TestNameExport:
     def test_identity_attributes_written_by_default(self, tmp_path):
         annot = Annotation(_gff(tmp_path, "ID=g1;Name=N1;Symbol=S1;Alias=A1"), quiet=True)
-        assert _line(_export(annot, tmp_path), "gene") == "ID=g1;Name=N1;Alias=A1;Symbol=S1"
+        assert _line(_export(annot, tmp_path), "gene") == "ID=g1;Name=N1;Symbol=S1;Alias=A1"
 
     def test_attributes_can_be_left_out(self, tmp_path):
         annot = Annotation(_gff(tmp_path, "ID=g1;Name=N1;Symbol=S1;Alias=A1"), quiet=True)
@@ -148,7 +148,7 @@ class TestNameExport:
         g, gc = annot.chrs["chr1"]["g1"], copied.chrs["chr1"]["g1"]
         assert (gc.names, gc.symbols, gc.aliases) == (["PIP1;3"], ["S1"], ["A1"])
         assert gc.names is not g.names
-        assert _line(_export(copied, tmp_path), "gene") == "ID=g1;Name=PIP1%3B3;Alias=A1;Symbol=S1"
+        assert _line(_export(copied, tmp_path), "gene") == "ID=g1;Name=PIP1%3B3;Symbol=S1;Alias=A1"
 
     def test_tidy_remove_names(self, tmp_path):
         gff = _gff(tmp_path, "ID=g1;Name=N1;Symbol=S1")
@@ -196,3 +196,21 @@ class TestRenameMovesStaleNames:
 def test_gtf_conversion_encodes_values():
     result = format_gff3_attributes({"gene_id": "g1", "gene_name": "PIP1;3", "note": "a=b,c"}, "gene")
     assert result == "ID=g1;Symbol=PIP1%3B3;note=a%3Db%2Cc"
+
+
+class TestGTFQuoting:
+    def test_quote_round_trip(self):
+        from aegis.utils.gtf_gff import gtf_quote, parse_gtf_attributes
+        for value in ['plain', 'say "hi"', 'back\\slash', 'a;b', '']:
+            assert parse_gtf_attributes(f'gene_id "g1"; gene_name {gtf_quote(value)};')["gene_name"] == value
+
+    def test_gene_name_escaped_in_export(self, tmp_path):
+        annot = Annotation(_gff(tmp_path, 'ID=g1;Name=say "hi"'), quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)
+        line = _line(str(tmp_path / "out.gtf"), "gene")
+        assert line == 'gene_id "g1"; gene_name "say \\"hi\\""'
+
+    def test_gtf_to_gff3_keeps_escaped_name(self, tmp_path):
+        gtf = tmp_path / "in.gtf"
+        gtf.write_text('chr1\tsrc\texon\t1\t99\t.\t+\t.\tgene_id "g1"; transcript_id "t1"; gene_name "say \\"hi\\"";\n', encoding="utf-8")
+        assert Annotation(str(gtf), quiet=True).chrs["chr1"]["g1"].symbols == ['say "hi"']

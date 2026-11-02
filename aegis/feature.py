@@ -15,6 +15,38 @@ from .conf import default_features
 
 from functools import total_ordering
 
+# Name, Alias and symbol, in the order they are written unless the input had them elsewhere
+IDENTITY_ATTRIBUTES = (INT_NAME, INT_ALIAS, INT_SYMBOL)
+_IDENTITY_RANK = {a: r for r, a in enumerate(IDENTITY_ATTRIBUTES)}
+
+# Shared copies of FeatureAttributes.order tuples: a file tends to repeat a few layouts on every row
+_ORDER_CACHE: dict[tuple, tuple] = {}
+
+def _is_default_identity_order(order) -> bool:
+    """Whether identity attributes were read before every misc attribute and in IDENTITY_ATTRIBUTES order."""
+    return all(n == 0 for _, n in order) and [a for a, _ in order] == sorted((a for a, _ in order), key=_IDENTITY_RANK.__getitem__)
+
+def merge_identity_and_misc(identity: list[tuple[str, str]], misc: list[str] | None, order: tuple | None) -> list[str]:
+    """
+    Interleaves identity attribute strings ((attribute, 'key=value') pairs, in default order) with
+    misc attribute strings as read (see FeatureAttributes.order). Identity attributes the input did
+    not have go first; positions past the end of misc (e.g. misc changed since) go last.
+    """
+    misc = misc or []
+    if not order:
+        return [s for _, s in identity] + misc
+    position = {a: (n, r) for r, (a, n) in enumerate(order)}
+    out = [s for a, s in identity if a not in position]
+    placed = sorted(((position[a], s) for a, s in identity if a in position), key=lambda x: x[0])
+    j = 0
+    for i, m in enumerate(misc):
+        while j < len(placed) and placed[j][0][0] <= i:
+            out.append(placed[j][1])
+            j += 1
+        out.append(m)
+    out.extend(s for _, s in placed[j:])
+    return out
+
 @total_ordering
 class Feature():
     """
@@ -93,36 +125,34 @@ class Feature():
 
         self._quality = None
 
+        # (identity attribute, number of misc attributes read before it), in column-9 order
+        identity_order = []
+
         for key, value in attributes.items():
 
-            if key == "Alias":
+            if key in IDENTITY_ATTRIBUTES:
                 if self._attributes is None:
                     self._attributes = FeatureAttributes()
-                self._attributes.aliases = value[:]
-
-            elif key == "Name":
-                if self._attributes is None:
-                    self._attributes = FeatureAttributes()
-                self._attributes.names = value[:]
-        
-            elif key == "Symbol":
-                if self._attributes is None:
-                    self._attributes = FeatureAttributes()
-                self._attributes.symbols = value[:]
+                if key == INT_NAME:
+                    self._attributes.names = value[:]
+                elif key == INT_ALIAS:
+                    self._attributes.aliases = value[:]
+                else:
+                    self._attributes.symbols = value[:]
+                identity_order.append((key, len(self._attributes.misc or ())))
 
             elif key == SOURCE_KEYS:
                 if self._attributes is None:
                     self._attributes = FeatureAttributes()
                 self._attributes.keys = dict(value)
 
-            elif key == EXTRA_ATTRIBUTES:
-                kept = [a for a in value if a.partition("=")[0].lower() not in Feature.attributes_to_ignore_when_reading_gff]
-                if kept:
+            elif key.startswith(EXTRA_ATTRIBUTES):
+                if value.partition("=")[0].lower() not in Feature.attributes_to_ignore_when_reading_gff:
                     if self._attributes is None:
                         self._attributes = FeatureAttributes()
                     if self._attributes.misc is None:
                         self._attributes.misc = []
-                    self._attributes.misc.extend(kept)
+                    self._attributes.misc.append(value)
 
             elif "extra_copy_number" in key:
                 value = int(value.strip())
@@ -143,6 +173,10 @@ class Feature():
                 elif self._attributes.misc is None:
                     self._attributes.misc = []
                 self._attributes.misc.append(f"{key}={value}")
+
+        # Only kept when it is not the order identity attributes are written in anyway
+        if identity_order and not _is_default_identity_order(identity_order):
+            self.attribute_order = tuple(identity_order)
 
         self.update_numbering(original=True)
 
@@ -244,23 +278,58 @@ class Feature():
             self._attributes = FeatureAttributes()
         self._attributes.misc = value
 
-    def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False) -> list[str]:
+    @property
+    def attribute_order(self) -> tuple | None:
+        return self._attributes.order if self._attributes else None
+
+    @attribute_order.setter
+    def attribute_order(self, value: tuple | None):
+        if self._attributes is None:
+            self._attributes = FeatureAttributes()
+        self._attributes.order = _ORDER_CACHE.setdefault(value, value) if value else None
+
+    def place_attribute_like(self, attribute: str, like: str):
         """
-        Name, Alias and symbol attributes, percent-encoded and keyed as read (see gff_key). The flags
+        Writes attribute (one the input did not have) right after like, where like was read in
+        column 9, e.g. an Alias made from a Name. Without a recorded position for like (default
+        layout) nothing changes: attribute is written in default order.
+        """
+        order = self.attribute_order
+        if not order or any(a == attribute for a, _ in order):
+            return
+        for i, (a, n) in enumerate(order):
+            if a == like:
+                self.attribute_order = order[:i + 1] + ((attribute, n),) + order[i + 1:]
+                return
+
+    def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False, misc:list[str]|None=None, keep_order:bool=True) -> list[str]:
+        """
+        Name, Alias and symbol attributes, percent-encoded and keyed as read (see gff_key), merged
+        with the misc attribute strings given in the column-9 order they were read in. The flags
         only allow an attribute: it is written when the feature has values, or always with
-        print_empty_attributes.
+        print_empty_attributes. A symbols_as_description 'description=' goes where symbol was.
+        keep_order=False writes them first, in IDENTITY_ATTRIBUTES order.
         """
-        out = []
+        pairs = []
         for allowed, attribute, values in ((names, INT_NAME, self.names), (aliases, INT_ALIAS, self.aliases), (symbols, INT_SYMBOL, self.symbols)):
             if allowed and values is not None:
                 value_string = format_gff3_values(values)
                 if value_string or print_empty_attributes:
-                    out.append(f"{self.gff_key(attribute)}={value_string}")
+                    pairs.append((attribute, f"{self.gff_key(attribute)}={value_string}"))
         if symbols_as_description and self.symbols is not None:
             value_string = format_gff3_values(self.symbols)
             if value_string or print_empty_attributes:
-                out.append(f"Description={value_string}")
-        return out
+                pairs.append((INT_SYMBOL, f"description={value_string}"))
+        return merge_identity_and_misc(pairs, misc, self.attribute_order if keep_order else None)
+
+    def non_id_names(self) -> list[str]:
+        """Names that are not, ignoring case, an ID the feature has or had (e.g. Araport 'ID=AT4G00005;Name=AT4G00005')."""
+        ids = {self.id.casefold(), self.original_id.casefold()}
+        return [n for n in (self.names or ()) if n.casefold() not in ids]
+
+    def symbols_or_names(self) -> list[str]:
+        """The feature's symbols: its Symbol values, else non_id_names() ('aegis symbols' places symbols in Name)."""
+        return self.symbols or self.non_id_names()
 
     def has_misc_attribute(self, keys:set[str]) -> bool:
         """Whether a kept attribute has one of these (lowercase) keys."""
@@ -278,13 +347,11 @@ class Feature():
         if featurecountsID and self.gene_id is not None:
             temp_attributes.append(f"Gene_id={self.gene_id}")
 
-        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+        misc = self.misc_attributes
+        if misc is not None and clean:
+            misc = [a for a in misc if a.partition("=")[0] in Feature.translation_attributes] if self.feature in default_features["CDS"] else None
 
-        if self.misc_attributes is not None:
-            if not clean:
-                temp_attributes.extend(self.misc_attributes)
-            elif self.feature in default_features["CDS"]:
-                temp_attributes.extend(a for a in self.misc_attributes if a.partition("=")[0] in Feature.translation_attributes)
+        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes, misc=misc, keep_order=not clean))
 
         attribute_string = ";".join(temp_attributes)
         phase = self.phase if (self.feature in default_features["CDS"] and self.phase is not None) else "."

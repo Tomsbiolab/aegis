@@ -4,6 +4,12 @@
 
 - **aegis/**
   - auto_repo_map.md
+  - auto_sync.py
+    - `def get_rsync_command(dry_run=False, delete=False):`
+    - `def describe_change(line):`
+    - `def run_sync(dry_run=False, delete=False):`
+    - `def get_watched_file_mtimes():`
+    - `def watch_loop(dry_run=False, delete=False):`
   - LICENSE.md
   - pyproject.toml
   - README.md
@@ -105,6 +111,7 @@
       - `def _move_stale_names_to_aliases(self):`
       - `def move(f):`
       - `def standardise_attribute_keys(self):`
+      - `def reorder_attributes(self):`
       - `def _iter_all_features(self):`
       - `def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):`
       - `def create_featurecounts_ids(self):`
@@ -131,9 +138,13 @@
       - `def remove_genes_without_symbols(self, quiet:bool=False):`
       - `def rename_chromosomes(self, equivalences, dap:bool=False):`
       - `def _attribute_values(raw) -> list[str]:`
-      - `def set_gene_attribute(self, mapping:dict, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn") -> list[str]:`
-      - `def find(gene_id):`
-      - `def add_gene_symbols(self, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, header:bool=False, sep:str="\t", id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn") -> list[str]:`
+      - `def set_gene_attribute(self, mapping:dict, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False) -> list[str]:`
+      - `def find_gene(gene_id):`
+      - `def find_transcript(transcript_id):`
+      - `def assign(feature, values, keys):`
+      - `def clear(feature):`
+      - `def _most_used_gff_key(self, features, attribute) -> str | None:`
+      - `def add_gene_symbols(self, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, header:bool=False, sep:str="\t", id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False) -> list[str]:`
       - `def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):`
       - `def generate_introns(self):`
       - `def __str__(self):`
@@ -162,6 +173,8 @@
       - `def add_liftless_overlap_equivalences(self, folder, query_tag, target_tag, species, quiet:bool=False):`
       - `def filter_equivalences(self, simple_rbh_blasts:bool=True, unidirectional_blasts:bool=True, replace:bool=True, identity_threshold=0, coverage_threshold=0, evalue_threshold=float("inf")):`
     - feature.py
+      - `def _is_default_identity_order(order) -> bool:`
+      - `def merge_identity_and_misc(identity: list[tuple[str, str]], misc: list[str] | None, order: tuple | None) -> list[str]:`
       - `class Feature():`
       - `def __init__(self, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
       - `def update_numbering(self, original:bool=False):`
@@ -181,7 +194,12 @@
       - `def set_gff_key(self, attribute: str, key: str | None):`
       - `def misc_attributes(self) -> list[str] | None:`
       - `def misc_attributes(self, value: list[str] | None):`
-      - `def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False) -> list[str]:`
+      - `def attribute_order(self) -> tuple | None:`
+      - `def attribute_order(self, value: tuple | None):`
+      - `def place_attribute_like(self, attribute: str, like: str):`
+      - `def identity_gff_attributes(self, names:bool=True, symbols:bool=True, aliases:bool=True, symbols_as_description:bool=False, print_empty_attributes:bool=False, misc:list[str]|None=None, keep_order:bool=True) -> list[str]:`
+      - `def non_id_names(self) -> list[str]:`
+      - `def symbols_or_names(self) -> list[str]:`
       - `def has_misc_attribute(self, keys:set[str]) -> bool:`
       - `def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, featurecountsID:bool=False, print_empty_attributes:bool=False):`
       - `def print_gtf(self):`
@@ -302,7 +320,7 @@
       - `def __init__(self, promoter_type, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
     - other_components.py
       - `class FeatureAttributes():`
-      - `def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, keys=None, misc=None):`
+      - `def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, keys=None, misc=None, order=None):`
       - `def __eq__(self, other):`
       - `def copy(self):`
       - `class GeneSynteny():`
@@ -587,12 +605,16 @@
         - `def sort_and_update_genes(chrom:str, genes_dict:dict[str, Gene]) -> tuple[str, dict[str, Gene]]:`
         - `def export_group_equivalences(annotations:list[Annotation], output_folder:str|Path, group_tag:str="", synteny:bool=False, overlap_threshold:int=6, verbose:bool=True, clear_overlaps:bool=False, include_NAs:bool=False, output_also_single_files:bool=False, quiet:bool=False):`
       - gtf_gff.py
+        - `def extra_attributes(parsed: dict) -> list[str]:`
         - `def gff3_escape(value: str) -> str:`
         - `def gff3_unescape(value: str) -> str:`
+        - `def gtf_quote(value: str) -> str:`
+        - `def gtf_unquote(value: str) -> str:`
         - `def format_gff3_values(values) -> str:`
         - `class GffEntry:`
         - `def parse_gff_parts(parts) -> GffEntry:`
         - `def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):`
+        - `def keep_extra(raw):`
         - `def parse_gtf_attributes(attr_string, default_key="id"):`
         - `def format_gff3_attributes(attrs, feature_type):`
         - `def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):`
@@ -1499,6 +1521,10 @@
       - `def test_real_names_kept(self, tmp_path):`
       - `def test_unrenamed_names_untouched(self, tmp_path):`
       - `def test_gtf_conversion_encodes_values():`
+      - `class TestGTFQuoting:`
+      - `def test_quote_round_trip(self):`
+      - `def test_gene_name_escaped_in_export(self, tmp_path):`
+      - `def test_gtf_to_gff3_keeps_escaped_name(self, tmp_path):`
     - test_gff_attributes.py
       - `def _gene(gene_id, start, gene_attributes, feature="gene"):`
       - `def _write(tmp_path, *genes, name="in.gff3"):`
@@ -1541,6 +1567,33 @@
       - `def test_append(self, tmp_path):`
       - `def test_on_missing_raise(self, tmp_path):`
       - `def test_bad_target(self, tmp_path):`
+      - `class TestColumnOrder:`
+      - `def test_interleaved_order_kept(self, tmp_path):`
+      - `def test_default_layout_stores_no_order(self, tmp_path):`
+      - `def test_attributes_the_input_lacked_go_first(self, tmp_path):`
+      - `def test_clean_and_reorder_use_default_order(self, tmp_path):`
+      - `def test_tidy_reorders_unless_asked_not_to(self, tmp_path):`
+      - `def test_rename_puts_alias_where_name_was(self, tmp_path):`
+      - `def test_description_goes_where_symbol_was(self, tmp_path):`
+      - `def test_order_is_not_part_of_equality(self, tmp_path):`
+      - `class TestSymbolsOrNames:`
+      - `def _annot(self, tmp_path):`
+      - `def test_symbols_or_names(self, tmp_path):`
+      - `def test_remove_genes_without_symbols(self, tmp_path):`
+      - `def test_old_id_kept_as_name_is_not_a_symbol(self, tmp_path):`
+      - `def test_gene_list_symbol_column_is_never_missing(self, tmp_path):`
+      - `class TestTranscripts:`
+      - `def _gff(self, tmp_path):`
+      - `def _names(self, annot):`
+      - `def test_replace_empties_transcripts_of_mapped_genes(self, tmp_path):`
+      - `def test_append_leaves_transcripts(self, tmp_path):`
+      - `def test_clear_unmapped_empties_their_transcripts(self, tmp_path):`
+      - `def test_transcript_names_take_gene_values_or_their_own(self, tmp_path):`
+      - `def test_transcript_ids_need_the_flag(self, tmp_path):`
+      - `def test_cli(self, tmp_path):`
+      - `class TestRenameCorrespondences:`
+      - `def test_only_with_flag(self, tmp_path):`
+      - `def test_no_warning_when_gene_ids_do_not_change(self, tmp_path):`
     - test_gz_support.py
       - `def test_gff3_gz_support(tmp_path):`
       - `def test_gtf_gz_support(tmp_path):`

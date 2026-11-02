@@ -570,10 +570,7 @@ class Gene(Feature):
             if self.misc_attributes is None:
                 self.misc_attributes = []
 
-        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
-
-        if not clean and self.misc_attributes is not None:
-            temp_attributes.extend(self.misc_attributes)
+        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes, misc=(None if clean else self.misc_attributes), keep_order=not clean))
 
         # Only when neither the feature type nor a kept attribute already says so
         if self.pseudogene and "pseudo" not in self.feature and (clean or not self.has_misc_attribute({"pseudogene", "pseudo"})):

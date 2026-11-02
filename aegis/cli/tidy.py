@@ -79,7 +79,7 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
     symbols_as_description: Annotated[bool, typer.Option(
-        "--symbols-as-description", help="Places gene symbols into 'Description=' attributes (useful for JBrowse display).",
+        "--symbols-as-description", help="Places gene symbols into 'description=' attributes (useful for JBrowse display). Lowercase, as GFF3 reserves capitalised attribute names.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     remove_symbols: Annotated[bool, typer.Option(
@@ -90,6 +90,10 @@ def main(
         "--standardise-attribute-keys", help="Write names, aliases and symbols as 'Name=', 'Alias=' and 'symbol=' whatever their spelling in the input (e.g. 'gene_synonym=', 'Symbol=').",
         rich_help_panel=ATTR_PANEL,
     )] = False,
+    reorder_attributes: Annotated[bool, typer.Option(
+        "--reorder-attributes/--keep-attribute-order", help="Write names, aliases and symbols right after ID and Parent, in that order (AEGIS's default), or keep them where they were in the input column 9 (default: reorder).",
+        rich_help_panel=ATTR_PANEL,
+    )] = True,
     remove_names: Annotated[bool, typer.Option(
         "--remove-names", help="Removes name attributes from GFF output.",
         rich_help_panel=ATTR_PANEL,
@@ -376,6 +380,9 @@ def main(
 
     if standardise_attribute_keys:
         annotation.standardise_attribute_keys()
+
+    if reorder_attributes:
+        annotation.reorder_attributes()
 
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)

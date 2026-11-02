@@ -51,7 +51,7 @@ def main(
         rich_help_panel=FILTER_PANEL,
     )] = None,
     has_symbol: Annotated[bool, typer.Option(
-        "--has-symbol", help="Keep only genes that have an assigned gene symbol.",
+        "--has-symbol", help="Keep only genes that have a gene symbol: a Symbol, or a Name that is not the gene id (where 'aegis symbols' places symbols by default).",
         rich_help_panel=FILTER_PANEL,
     )] = False,
     main_only: Annotated[bool, typer.Option(

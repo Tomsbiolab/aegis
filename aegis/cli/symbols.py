@@ -17,7 +17,7 @@ def main(
         help="Path to the input annotation GFF/GTF file (or provide via -a/--annotation)."
     )] = None,
     symbols_file: Annotated[Optional[str], typer.Argument(
-        help="Input TSV/XLSX file with 'gene-id\tgene-symbol' mapping (or provide via --symbols-file)."
+        help="Input TSV/XLSX file with 'gene-id\tgene-symbol' mapping; with --transcript-names ids may also be transcript ids (or provide via --symbols-file)."
     )] = None,
 
     # 1. Gene Symbol Options
@@ -39,15 +39,19 @@ def main(
         rich_help_panel=SYMBOLS_PANEL,
     )] = ["Name"],
     append: Annotated[bool, typer.Option(
-        "--append", help="Add the symbols to the values a gene already has in the target attribute(s) instead of replacing them.",
+        "--append", help="Add the symbols to the values a gene already has in the target attribute(s) instead of replacing them. Transcripts then keep theirs (unless --transcript-names).",
         rich_help_panel=SYMBOLS_PANEL,
     )] = False,
     clear_unmapped: Annotated[bool, typer.Option(
-        "-c", "--clear", help="Also empty the target attribute(s) of genes not in the symbols file. By default they are left as read.",
+        "-c", "--clear", help="Also empty the target attribute(s) of genes not in the symbols file, and of their transcripts. By default they are left as read.",
+        rich_help_panel=SYMBOLS_PANEL,
+    )] = False,
+    transcript_names: Annotated[bool, typer.Option(
+        "--transcript-names", help="Also set the target attribute(s) of transcripts: ids in the symbols file may be transcript ids, which name that transcript; the other transcripts of a mapped gene get the gene's symbols. Without it, transcripts of mapped genes have the target attribute(s) emptied (as their gene's are replaced), so they do not keep a stale name.",
         rich_help_panel=SYMBOLS_PANEL,
     )] = False,
     on_missing: Annotated[str, typer.Option(
-        "--on-missing", help="What to do with gene ids in the symbols file that are not in the annotation: 'warn', 'raise' (stop with an error) or 'ignore'.",
+        "--on-missing", help="What to do with ids in the symbols file that are not in the annotation: 'warn', 'raise' (stop with an error) or 'ignore'.",
         rich_help_panel=SYMBOLS_PANEL,
     )] = "warn",
 
@@ -80,7 +84,7 @@ def main(
     )] = False,
 ):
     """
-    Add gene symbols to an annotation GFF based on an input TSV/Excel mapping of gene IDs to symbols.
+    Add gene symbols to an annotation GFF based on an input TSV/Excel mapping of gene (and, with --transcript-names, transcript) IDs to symbols.
     """
     if verbose:
         quiet = False
@@ -116,7 +120,7 @@ def main(
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", UserWarning)
         try:
-            missing = annotation.add_gene_symbols(file_path=symbols_file, targets=targets, mode=("append" if append else "replace"), clear_unmapped=clear_unmapped, header=header, sep=sep, on_missing=on_missing)
+            missing = annotation.add_gene_symbols(file_path=symbols_file, targets=targets, mode=("append" if append else "replace"), clear_unmapped=clear_unmapped, header=header, sep=sep, on_missing=on_missing, transcript_names=transcript_names)
         except KeyError as e:
             raise typer.BadParameter(str(e).strip("'\""))
     for w in caught:
@@ -124,7 +128,7 @@ def main(
             print(f"Warning: {w.message}")
 
     if not quiet:
-        print(f"Placed symbols in {', '.join(targets)} ({'appended' if append else 'replaced'}); {len(missing)} gene ids in {symbols_file} were not found.")
+        print(f"Placed symbols in {', '.join(targets)} ({'appended' if append else 'replaced'}); {len(missing)} ids in {symbols_file} were not found.")
 
     annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
     

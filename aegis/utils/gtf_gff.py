@@ -40,7 +40,11 @@ DEFAULT_WRITE_KEYS = {INT_NAME: "Name", INT_ALIAS: "Alias", INT_SYMBOL: "symbol"
 
 # Entries of parse_gff_attributes() that are not attributes ('\x00' cannot start a GFF key)
 SOURCE_KEYS = "\x00source_keys"    # {INT_NAME/INT_ALIAS/INT_SYMBOL: key as spelt in the input}
-EXTRA_ATTRIBUTES = "\x00extra"     # raw 'key=value' strings for repeated or unused keys
+EXTRA_ATTRIBUTES = "\x00extra"     # prefix of numbered keys holding one raw 'key=value' (repeated or unused key) each, at its column-9 position
+
+def extra_attributes(parsed: dict) -> list[str]:
+    """Raw 'key=value' strings kept under EXTRA_ATTRIBUTES keys, in column-9 order."""
+    return [v for k, v in parsed.items() if k.startswith(EXTRA_ATTRIBUTES)]
 
 # GFF3 reserved characters plus control characters; one translate pass, so '%' needs no special ordering
 _GFF3_ESCAPES = {i: f"%{i:02X}" for i in range(0x20)}
@@ -53,6 +57,18 @@ def gff3_escape(value: str) -> str:
 def gff3_unescape(value: str) -> str:
     """Percent-decodes one GFF3 attribute value ('+' is left as is)."""
     return unquote(value) if "%" in value else value
+
+_GTF_UNESCAPE = re.compile(r'\\(["\\])')
+
+def gtf_quote(value: str) -> str:
+    """Quotes one GTF attribute value, backslash-escaping '"' and '\\' so the value cannot end early."""
+    if '"' in value or "\\" in value:
+        value = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{value}"'
+
+def gtf_unquote(value: str) -> str:
+    """Undoes gtf_quote escaping on the text between the quotes."""
+    return _GTF_UNESCAPE.sub(r"\1", value) if "\\" in value else value
 
 def format_gff3_values(values) -> str:
     """Encodes each value and joins them as a multi-value GFF3 attribute."""
@@ -141,8 +157,8 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     Parses a GFF3 attribute column. Name, Symbol and Alias (under any of their MAPPED_ATTRIBUTES
     spellings) are split on ',' and percent-decoded; their spelling is recorded under SOURCE_KEYS when
     it differs from DEFAULT_WRITE_KEYS so it can be written back as read. Nothing is dropped: repeated
-    keys, and gene_id/transcript_id-like keys not used as ID or Parent, are kept raw under
-    EXTRA_ATTRIBUTES.
+    keys, and gene_id/transcript_id-like keys not used as ID or Parent, are kept raw under numbered
+    EXTRA_ATTRIBUTES keys. Dict order is column-9 order, so attributes can be written back in it.
     """
 
     if not attributes or attributes == ".":
@@ -150,9 +166,13 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
     parsed = {}
     source_keys = {}
-    extra = []
     fallback_id = None
     fallback_parent = None
+
+    def keep_extra(raw):
+        slot = f"{EXTRA_ATTRIBUTES}{len(parsed)}"
+        parsed[slot] = raw
+        return slot
 
     for p in attributes.split(";"):
 
@@ -173,15 +193,15 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
         # gene_id/transcript_id only stand in for a missing ID on the right feature type
         if (gene and lower_key in ALT_ID_gene) or (transcript and lower_key in ALT_ID_transcript):
             if fallback_id is None:
-                fallback_id = (key, val)
+                fallback_id = (key, val, keep_extra(None)) # slot filled in below if not used as ID
             else:
-                extra.append(f"{key}={val}")
+                keep_extra(f"{key}={val}")
             continue
 
         if lower_key in MAPPED_ATTRIBUTES:
             target_key = MAPPED_ATTRIBUTES[lower_key]
             if target_key in parsed:
-                extra.append(f"{key}={val}")
+                keep_extra(f"{key}={val}")
                 continue
             values = [x.strip() for x in val.split(",") if x.strip()]
             if target_key in DECODED_ATTRIBUTES:
@@ -194,32 +214,34 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
         # e.g. gene_id as Parent, used only when there is no Parent attribute
         if lower_key in ID_OR_PARENT_KEYS:
             if fallback_parent is None:
-                fallback_parent = (key, val)
+                fallback_parent = (key, val, keep_extra(None))
             else:
-                extra.append(f"{key}={val}")
+                keep_extra(f"{key}={val}")
             continue
 
         if key in parsed:
-            extra.append(f"{key}={val}")
+            keep_extra(f"{key}={val}")
         else:
             parsed[sys.intern(key)] = val
 
     if fallback_id is not None:
+        key, val, slot = fallback_id
         if INT_ID not in parsed:
-            parsed[INT_ID] = fallback_id[1]
+            del parsed[slot]
+            parsed[INT_ID] = val
         else:
-            extra.append(f"{fallback_id[0]}={fallback_id[1]}")
+            parsed[slot] = f"{key}={val}"
 
     if fallback_parent is not None:
+        key, val, slot = fallback_parent
         if INT_PARENT not in parsed:
-            parsed[INT_PARENT] = [x.strip() for x in fallback_parent[1].split(",") if x.strip()]
+            del parsed[slot]
+            parsed[INT_PARENT] = [x.strip() for x in val.split(",") if x.strip()]
         else:
-            extra.append(f"{fallback_parent[0]}={fallback_parent[1]}")
+            parsed[slot] = f"{key}={val}"
 
     if source_keys:
         parsed[SOURCE_KEYS] = source_keys
-    if extra:
-        parsed[EXTRA_ATTRIBUTES] = extra
 
     return parsed
 
@@ -237,17 +259,18 @@ def parse_gtf_attributes(attr_string, default_key="id"):
 
     attributes = {}
 
-    pattern = r'(?:(\w+)\s+"([^"]+)")|(?:(\w+)\s+([^\s;]+))|(?:"([^"]+)"|([^\s;]+))'
+    # Quoted values may hold backslash-escaped quotes (see gtf_quote)
+    pattern = r'(?:(\w+)\s+"((?:[^"\\]|\\.)*)")|(?:(\w+)\s+([^\s;]+))|(?:"((?:[^"\\]|\\.)*)"|([^\s;]+))'
 
     for match in re.finditer(pattern, attr_string):
         k1, v1, k2, v2, v3_quoted, v3_unquoted = match.groups()
 
         if k1 is not None:
-            attributes[k1] = v1
+            attributes[k1] = gtf_unquote(v1)
         elif k2 is not None:
             attributes[k2] = v2
         else:
-            bare_val = v3_quoted if v3_quoted is not None else v3_unquoted
+            bare_val = gtf_unquote(v3_quoted) if v3_quoted is not None else v3_unquoted
             attributes[default_key] = bare_val
 
     return attributes
