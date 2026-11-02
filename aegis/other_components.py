@@ -13,28 +13,34 @@ import copy
 from .utils.misc import count_occurrences
 
 class FeatureAttributes():
-    __slots__ = ('names', 'symbols', 'aliases', 'descriptors', 'synonyms', 'misc')
+    __slots__ = ('names', 'symbols', 'aliases', 'descriptors', 'keys', 'misc', 'order')
 
     names: list[str] | None
     symbols: list[str] | None
     aliases: list[str] | None
     descriptors: list[str] | None
-    synonyms: list[str] | None
+    # GFF key spelling per attribute ("Name", "Alias", "Symbol") when it differs from DEFAULT_WRITE_KEYS
+    keys: dict[str, str] | None
     misc: list[str] | None
+    # ((attribute, number of misc attributes read before it), ...) in column-9 order; None when the
+    # input had Name, Alias, Symbol first and in that order (how they are written by default)
+    order: tuple | None
 
-    def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, synonyms=None, misc=None):
+    def __init__(self, names=None, symbols=None, aliases=None, descriptors=None, keys=None, misc=None, order=None):
         self.names = names
         self.symbols = symbols
         self.aliases = aliases
         self.descriptors = descriptors
-        self.synonyms = synonyms
+        self.keys = keys
         self.misc = misc
+        self.order = order
 
     def __eq__(self, other):
         if not isinstance(other, FeatureAttributes):
             return False
+        # order is how the attributes were laid out, not what they are
         for slot in self.__slots__:
-            if getattr(self, slot) != getattr(other, slot):
+            if slot != "order" and getattr(self, slot) != getattr(other, slot):
                 return False
         return True
 

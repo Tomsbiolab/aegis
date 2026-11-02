@@ -560,42 +560,13 @@ class Gene(Feature):
     def print_gff(self, clean:bool=False, names:bool=False, symbols:bool=False, aliases:bool=False, symbols_as_description:bool=False, extra_attributes:bool=False, print_empty_attributes:bool=False):
 
         temp_attributes = [f"ID={self.id}"]
-        if print_empty_attributes:
-            if self.symbols is None:
-                self.symbols = []
-            if self.names is None:
-                self.names = []
-            if self.aliases is None:
-                self.aliases = []
-            if self.misc_attributes is None:
-                self.misc_attributes = []
 
-        if symbols and self.symbols is not None:
-            symbol_string = ",".join(self.symbols)
-            if symbol_string or print_empty_attributes:
-                temp_attributes.append(f"Symbol={symbol_string}")
+        temp_attributes.extend(self.identity_gff_attributes(names=names, symbols=symbols, aliases=aliases, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes, misc=(None if clean else self.misc_attributes), keep_order=not clean, missing_as_empty=print_empty_attributes))
 
-        if symbols_as_description and self.symbols is not None:
-            symbol_string = ",".join(self.symbols)
-            if symbol_string or print_empty_attributes:
-                temp_attributes.append(f"Description={symbol_string}")
-
-        if names and self.names is not None:
-            name_string = ",".join(self.names)
-            if name_string or print_empty_attributes:
-                temp_attributes.append(f"Name={name_string}")
-
-        if aliases and self.aliases is not None:
-            alias_string = ",".join(self.aliases)
-            if alias_string or print_empty_attributes:
-                temp_attributes.append(f"Alias={alias_string}")
-
-        if not clean and self.misc_attributes is not None:
-            temp_attributes.extend(self.misc_attributes)
-
-        if self.pseudogene:
+        # Only when neither the feature type nor a kept attribute already says so
+        if self.pseudogene and "pseudo" not in self.feature and (clean or not self.has_misc_attribute({"pseudogene", "pseudo"})):
             temp_attributes.append(f"Pseudogene={self.pseudogene}")
-        if self.transposable:
+        if self.transposable and "transpos" not in self.feature and (clean or not self.has_misc_attribute({"transposable", "transposon"})):
             temp_attributes.append(f"Transposable={self.transposable}")
 
         if extra_attributes:

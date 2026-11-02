@@ -56,7 +56,7 @@ def main(
         rich_help_panel=RENAME_PANEL,
     )] = False,
     gene_id_correspondences: Annotated[bool, typer.Option(
-        "--gene-id-correspondences", help="Whether to produce a TSV file with correspondences between old and renamed gene ids '{annotation-name}_renamed_correspondences.tsv'.",
+        "--gene-id-correspondences", help="Whether to produce a TSV file with correspondences between old and renamed gene ids, named after the output file: '{output-file name}_correspondences.tsv'.",
         rich_help_panel=RENAME_PANEL,
     )] = False,
 
@@ -68,6 +68,10 @@ def main(
     keep_numbering: Annotated[bool, typer.Option(
         "--keep-numbering", help="Try to retain original gene subfeature id numbering. I.e. rename a transcript id from 'gene_id_t004' to 'gene_id_T.4' without losing the original transcript number.",
         rich_help_panel=SUBFEATURE_PANEL,
+    )] = False,
+    keep_old_names: Annotated[bool, typer.Option(
+        "--keep-old-names", help="Keep a Name that is a renamed feature's old ID (e.g. 'ID=AT4G00005;Name=AT4G00005'). By default it is moved to Alias, so features are not labelled with an ID they no longer have.",
+        rich_help_panel=RENAME_PANEL,
     )] = False,
     unique_cds_entry_ids: Annotated[bool, typer.Option(
         "--unique-cds-entry-ids", help="CDS entries corresponding to a same protein in a gff by default share the same id. However since the default format is incompatible with some external tools, this flag will ensure each CDS entry (line) has a unique id.",
@@ -169,7 +173,10 @@ def main(
     name_only = os.path.splitext(output_file)[0]
     output_file_correspondences = f"{name_only}_correspondences.tsv"
 
-    annotation.rename_ids(correspondences_output_dir=output_dir, correspondences_filename=output_file_correspondences, features=tuple(rename_features), keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, quiet=quiet)
+    # Passing an output location to rename_ids requests the correspondences file, so only with the flag
+    correspondences_kwargs = dict(correspondences_output_dir=output_dir, correspondences_filename=output_file_correspondences) if gene_id_correspondences else {}
+
+    annotation.rename_ids(**correspondences_kwargs, features=tuple(rename_features), keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, old_id_names=("keep" if keep_old_names else "alias"), quiet=quiet)
     annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
 
 if __name__ == "__main__":

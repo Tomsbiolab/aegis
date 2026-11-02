@@ -141,7 +141,7 @@ All of the commands are called with aegis {subcommand} in a terminal:
     - Merge
         - Custom merge of any number of gffs, prevent id clashes and control redundancy in same loci.
     - Symbols
-        - Allows to add gene symbols into an annotation file based on tabular input
+        - Adds gene (and transcript) symbols to an annotation from a TSV/CSV/Excel table, as Name (default), Alias and/or Symbol attributes, with one column per attribute if needed; genes can be found by id, Name or Alias (e.g. old ids after renaming). Output keeps the input format (GFF3 or GTF).
     - Motifs
         - Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
     - Subset

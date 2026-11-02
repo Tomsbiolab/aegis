@@ -33,7 +33,7 @@ from .subfeatures import Exon, UTR, CDS
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils.misc import read_file_with_fallback, open_file, start_progress_bar, unambiguous_numbers
-from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format
+from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format, gtf_quote, INT_NAME, INT_ALIAS
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
@@ -224,6 +224,7 @@ class Annotation():
         
         encoding = read_file_with_fallback(self.file)
         file_format = detect_file_format(self.file, encoding)
+        self.input_format = file_format # 'gff3' or 'gtf'
         if not quiet:
             print(f"{file_format} file format detected for file='{self.file}'")
 
@@ -3028,7 +3029,7 @@ class Annotation():
             for o in self.orphaned_features:
                 o.source = new_source
         
-    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, quiet:bool=False,
+    def rename_ids(self, features:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), keep_existing_ids_if_derived_from_base_id:bool=False, remove_point_suffix:bool=False, strip_gene_tag:bool=False, keep_subfeature_numbers:bool=False, cds_segment_ids:bool=False, prefix:str="", suffix:str="", spacer:int=100, sep:str="_", g_id_digits:int=5, t_id_digits:int=3, correspondences:bool=False, correspondences_output_dir:str | None = None, correspondences_extension=".tsv", correspondences_filename:str | None = None, correspondences_use_annot_dir:bool=False, correspondences_subfolder:bool=False, correspondences_subfolder_name:str="out_gffs", correspondences_filepath:str | None = None, old_id_names:Literal["alias", "keep"]="alias", quiet:bool=False,
     #deprecated arguments
     custom_path:str=""):
         """
@@ -3044,7 +3045,12 @@ class Annotation():
             group (transcripts or exons/UTRs of a gene) has one and no number is shared by
             different features; otherwise the group is numbered sequentially.
         cds_segment_ids: give each CDS row its own id (<CDS id>_<n>) instead of the CDS id.
+        old_id_names: 'alias' moves a Name that is the feature's old ID (e.g. Araport 'ID=AT4G00005;Name=AT4G00005')
+            to Alias, so renamed features are not labelled with an ID they no longer have; 'keep' leaves Names as read.
         """
+
+        if old_id_names not in ("alias", "keep"):
+            raise ValueError(f"old_id_names must be 'alias' or 'keep', not '{old_id_names}'.")
 
         if custom_path != "":
             warnings.warn("'custom_path' is deprecated. Please use 'correspondences_output_dir' instead.", DeprecationWarning, stacklevel=2)
@@ -3248,6 +3254,8 @@ class Annotation():
         self.homogenise_shared_exons_utrs()
         self.update_keys()
         self.update_gene_and_transcript_list(quiet=quiet)
+        if old_id_names == "alias":
+            self._move_stale_names_to_aliases()
 
         self.renamed_features = changed_features
 
@@ -3274,6 +3282,51 @@ class Annotation():
         lapse = now - start_time
         if not quiet:
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
+
+    def _move_stale_names_to_aliases(self):
+        """
+        A renamed feature whose Name is its old ID (e.g. Araport 'ID=AT4G00005;Name=AT4G00005') would
+        be labelled with an ID it no longer has: that Name is moved to Alias, the GFF3 attribute for
+        secondary identifiers.
+        """
+        def move(f):
+            if f.names and f.id != f.original_id and f.original_id in f.names:
+                f.names = [n for n in f.names if n != f.original_id] or None
+                if f.aliases is None:
+                    f.aliases = []
+                    f.place_attribute_like(INT_ALIAS, INT_NAME)
+                if f.original_id not in f.aliases:
+                    f.aliases.append(f.original_id)
+
+        for f in self._iter_all_features():
+            move(f)
+
+    def standardise_attribute_keys(self):
+        """Writes Name, Alias and symbol under their default keys instead of the spelling read (e.g. 'gene_synonym', 'Symbol')."""
+        for f in self._iter_all_features():
+            if f.attribute_keys:
+                f.attribute_keys = None
+
+    def reorder_attributes(self):
+        """Writes Name, Alias and symbol first and in that order (AEGIS's default), instead of where they were in column 9."""
+        for f in self._iter_all_features():
+            if f.attribute_order:
+                f.attribute_order = None
+
+    def _iter_all_features(self):
+        for genes in self.chrs.values():
+            for g in genes.values():
+                yield g
+                for t in g.transcripts.values():
+                    yield t
+                    yield from t.exons
+                    yield from t.miRNAs
+                    for c in t.CDSs.values():
+                        yield c
+                        yield from c.CDS_segments
+                        yield from c.UTRs
+        yield from self.atypical_features
+        yield from self.orphaned_features
 
     def update_keys(self, gene_keys:bool=True, transcript_keys:bool=True, CDS_keys:bool=True):
 
@@ -3312,32 +3365,37 @@ class Annotation():
                         e.gene_id = g.id
 
     def create_gtf_attributes(self):
-
+        """
+        GTF attributes for every gene and subfeature; values are quoted with gtf_quote. As in Ensembl
+        GTFs, gene_name is on every line of a gene and transcript_name on every line of a transcript,
+        as tools that read names from exon lines (e.g. Cell Ranger) expect. Names are symbol_values(),
+        else the Names as read.
+        """
         for genes in self.chrs.values():
             for g in genes.values():
 
-                g.gtf_attributes = [f'gene_id "{g.id}"']
-            
-                if g.symbols:
-                    name_string = ",".join(g.symbols)
-                    g.gtf_attributes.append(f'gene_name "{name_string}"')
-                elif g.names:
-                    name_string = ",".join(g.names)
-                    g.gtf_attributes.append(f'gene_name "{name_string}"')
+                gene_id = f'gene_id {gtf_quote(g.id)}'
+                gene_names = g.symbol_values() or g.names
+                gene_name = [f'gene_name {gtf_quote(",".join(gene_names))}'] if gene_names else []
+                g.gtf_attributes = [gene_id] + gene_name
 
                 for t in g.transcripts.values():
-                    t.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
+                    transcript_names = t.symbol_values() or t.names
+                    transcript_name = [f'transcript_name {gtf_quote(",".join(transcript_names))}'] if transcript_names else []
+                    ids = [gene_id, f'transcript_id {gtf_quote(t.id)}']
+                    names = gene_name + transcript_name
+                    t.gtf_attributes = ids + names
                     num_exons = len(t.exons)
                     for x, e in enumerate(t.exons):
                         exon_num = (num_exons - x) if t.strand == "-" else (x + 1)
-                        e.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"', f'exon_number "{exon_num}"']
+                        e.gtf_attributes = ids + [f'exon_number "{exon_num}"'] + names
 
                     for c in t.CDSs.values():
-                        c.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
+                        c.gtf_attributes = ids + names
                         for cs in c.CDS_segments:
-                            cs.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
+                            cs.gtf_attributes = ids + names
                         for u in c.UTRs:
-                            u.gtf_attributes = [f'gene_id "{g.id}"', f'transcript_id "{t.id}"']
+                            u.gtf_attributes = ids + names
 
     def add_blast_hits(self, source, blastfile, mode:str="protein"):
         """
@@ -3847,19 +3905,18 @@ class Annotation():
 
         return removed_any
 
-    def clear_gene_names_and_symbols(self, quiet:bool=False):
+    def clear_gene_names_and_symbols(self):
         for genes in self.chrs.values():
             for g in genes.values():
                 g.names = None
                 g.symbols = None
-                g.synonyms = None
-        self.update(quiet=quiet)
         self.tags.discard("plus_symbols")
 
     def remove_genes_without_symbols(self, quiet:bool=False):
+        """Removes genes with no symbol: no Name other than an ID and no Symbol (see Feature.symbol_values)."""
         for genes in self.chrs.values():
             for g in genes.values():
-                if g.symbols == None or g.symbols == []:
+                if not g.symbol_values():
                     g.quality.remove = True
         self.remove_genes(quiet=quiet)
         self.update(quiet=quiet)
@@ -3909,81 +3966,329 @@ class Annotation():
         elif renamed_scaffolds:
             self.tags.add("confrenamed")
 
-    def add_gene_symbols_pseudogenes(self, file_path:str, just_gene_names:bool=True, clear:bool=True, header:bool=False, sep:str="\t"):
-        if clear:
-            self.clear_gene_names_and_symbols()
+    _GENE_ATTRIBUTE_TARGETS = {"name": "Name", "alias": "Alias", "symbol": "Symbol"}
+    _GENE_ATTRIBUTE_PROPERTIES = {"Name": "names", "Alias": "aliases", "Symbol": "symbols"}
 
-        if header:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, skiprows=1, dtype=str)
+    @staticmethod
+    def _attribute_values(raw) -> list[str]:
+        """A string is one value (never split on ','); empty and NaN values are dropped; order is kept."""
+        if raw is None:
+            return []
+        items = [raw] if isinstance(raw, str) else list(raw)
+        values = []
+        for v in items:
+            if v is None or (isinstance(v, float) and math.isnan(v)):
+                continue
+            v = str(v).strip()
+            if v and v not in values:
+                values.append(v)
+        return values
+
+    _MATCH_FIELDS = ("id", "name", "alias")
+
+    @classmethod
+    def _target_attributes(cls, targets) -> list[str]:
+        """'Name', 'Alias' and/or 'Symbol' (case-insensitive) as attribute names, without repeats."""
+        if isinstance(targets, str):
+            targets = (targets,)
+        attributes = []
+        for t in targets:
+            attribute = cls._GENE_ATTRIBUTE_TARGETS.get(str(t).strip().lower())
+            if attribute is None:
+                raise ValueError(f"Unknown target '{t}'. Choose from: Name, Alias, Symbol.")
+            if attribute not in attributes:
+                attributes.append(attribute)
+        if not attributes:
+            raise ValueError("No targets chosen. Choose from: Name, Alias, Symbol.")
+        return attributes
+
+    @classmethod
+    def _match_fields(cls, match_on) -> tuple[str, ...]:
+        if isinstance(match_on, str):
+            match_on = (match_on,)
+        fields = tuple(str(m).strip().lower() for m in match_on)
+        invalid = [m for m in fields if m not in cls._MATCH_FIELDS]
+        if invalid or not fields:
+            raise ValueError(f"Invalid match_on {invalid or list(fields)}. Choose from: {', '.join(cls._MATCH_FIELDS)}.")
+        return fields
+
+    @staticmethod
+    def _check_choice(name, value, choices):
+        if value not in choices:
+            raise ValueError(f"{name} must be one of {', '.join(repr(c) for c in choices)}, not '{value}'.")
+
+    def _gene_finder(self, match_on:tuple[str, ...], id_type:str):
+        """Function from a key to the genes it matches: by the first of match_on fields that matches any."""
+        indexes = []
+        for field in match_on:
+            index: dict[str, list[Gene]] = {}
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    if field == "id":
+                        keys = (g.original_id if id_type == "original" else g.id,)
+                    else:
+                        keys = (g.names if field == "name" else g.aliases) or ()
+                    for k in keys:
+                        bucket = index.setdefault(k, [])
+                        if not bucket or bucket[-1] is not g:
+                            bucket.append(g)
+            indexes.append(index)
+
+        def find(key) -> list[Gene]:
+            for index in indexes:
+                genes = index.get(key)
+                if genes:
+                    return genes
+            return []
+        return find
+
+    def _transcript_finder(self, id_type:str):
+        if id_type == "original":
+            by_original: dict = {}
+            for genes in self.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        by_original.setdefault(t.original_id, t)
+            return by_original.get
+
+        def find(transcript_id):
+            location = self.all_transcript_ids.get(transcript_id)
+            if location is None:
+                return None
+            g = self.chrs.get(location[0], {}).get(location[1])
+            return g.transcripts.get(transcript_id) if g is not None else None
+        return find
+
+    def _resolve_ids(self, mapping:dict, id_type:str, transcript_names:bool, match_on:tuple[str, ...]):
+        """
+        Mapping keys to features: ({id(gene): (gene, values)}, {id(transcript): (transcript, values)},
+        ids not found, ids that matched several genes).
+        """
+        find_genes = self._gene_finder(match_on, id_type)
+        find_transcript = self._transcript_finder(id_type) if transcript_names else None
+
+        gene_values: dict[int, tuple[Gene, list[str]]] = {}
+        transcript_values: dict[int, tuple[Transcript, list[str]]] = {}
+        missing, shared = [], []
+        for key, raw in mapping.items():
+            key = str(key).strip()
+            values = self._attribute_values(raw)
+            genes = find_genes(key)
+            if genes:
+                if len(genes) > 1:
+                    shared.append(key)
+                found = [(gene_values, g) for g in genes]
             else:
-                df = pd.read_csv(file_path, skiprows=1, sep=sep, dtype=str)
+                t = find_transcript(key) if find_transcript is not None else None
+                if t is None:
+                    missing.append(key)
+                    continue
+                found = [(transcript_values, t)]
+            for store, feature in found:
+                current = store.setdefault(id(feature), (feature, []))[1]
+                for v in values:
+                    if v not in current:
+                        current.append(v)
+        return gene_values, transcript_values, missing, shared
+
+    def _report_ids(self, missing:list[str], shared:list[str], transcript_names:bool, on_missing:str, match_on:tuple[str, ...]):
+        def examples(ids):
+            return f"{', '.join(ids[:5])}{', ...' if len(ids) > 5 else ''}"
+        if shared:
+            warnings.warn(f"{len(shared)} ids matched several {self.id} genes by {'/'.join(f for f in match_on if f != 'id')} and were set on all of them: {examples(shared)}", category=UserWarning)
+        if not missing or on_missing == "ignore":
+            return
+        message = f"{len(missing)} {'gene or transcript' if transcript_names else 'gene'} ids not found in {self.id} annotation: {examples(missing)}"
+        if not transcript_names:
+            transcript_ids = sum(1 for m in missing if m in self.all_transcript_ids)
+            if transcript_ids:
+                message += f" ({transcript_ids} of them are transcript ids, which are only used with transcript_names / --transcript-names)"
+        if on_missing == "raise":
+            raise KeyError(message)
+        warnings.warn(message, category=UserWarning)
+
+    def _apply_attribute_values(self, attributes:list[str], gene_values:dict, transcript_values:dict, mode:str, clear_unmapped:bool, transcript_names:bool):
+        all_genes = [g for genes in self.chrs.values() for g in genes.values()]
+        all_transcripts = [t for g in all_genes for t in g.transcripts.values()]
+        gene_keys = {a: self._most_used_gff_key(all_genes, a) for a in attributes}
+        transcript_keys = {a: self._most_used_gff_key(all_transcripts, a) or gene_keys[a] for a in attributes}
+
+        def assign(feature, values, keys):
+            for attribute in attributes:
+                prop = self._GENE_ATTRIBUTE_PROPERTIES[attribute]
+                current = getattr(feature, prop) or []
+                updated = values[:] if mode == "replace" else current + [v for v in values if v not in current]
+                if not current and updated:
+                    feature.set_gff_key(attribute, keys[attribute])
+                setattr(feature, prop, updated or None)
+
+        def clear(feature):
+            for attribute in attributes:
+                setattr(feature, self._GENE_ATTRIBUTE_PROPERTIES[attribute], None)
+
+        for g in all_genes:
+            gene_entry = gene_values.get(id(g))
+            if gene_entry is not None:
+                assign(g, gene_entry[1], gene_keys)
+            elif clear_unmapped:
+                clear(g)
+            for t in g.transcripts.values():
+                transcript_entry = transcript_values.get(id(t))
+                if transcript_entry is not None:
+                    assign(t, transcript_entry[1], transcript_keys)
+                elif gene_entry is not None:
+                    if transcript_names:
+                        assign(t, gene_entry[1], transcript_keys)
+                    elif mode == "replace":
+                        clear(t)
+                elif clear_unmapped:
+                    clear(t)
+
+    def set_gene_attribute(self, mapping:dict, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False, match_on:str|tuple[str, ...]|list[str]=("id",)) -> list[str]:
+        """
+        Sets gene names, aliases and/or symbols from a {gene id: value(s)} mapping.
+
+        mapping: values are a string (one value, never split on ',') or a list of strings.
+        targets: "Name" (labelled and indexed by genome browsers such as JBrowse), "Alias" and/or "Symbol",
+            case-insensitive; every target gets the same values.
+        mode: 'replace' the target values of mapped genes, or 'append' the new ones to them.
+        clear_unmapped: also empty the targets of genes not in the mapping. By default they keep their values.
+        id_type: mapping keys are 'current' ids, or 'original' ids as read (before rename_ids).
+        on_missing: what to do with ids not in the annotation: 'warn', 'raise' a KeyError (before
+            anything is changed) or 'ignore'.
+        transcript_names: transcripts of mapped genes get their gene's values, and mapping keys may
+            also be transcript ids, which set that transcript's values instead (not its gene's).
+        match_on: what mapping keys are compared with to find genes, tried in order: 'id' (see
+            id_type), 'name' and/or 'alias' (e.g. old ids moved to Alias by rename_ids). A key that
+            matches several genes by name or alias sets all of them, with a warning.
+
+        Transcripts follow their gene: without transcript_names, 'replace' empties the targets of the
+        transcripts of mapped genes (they would still describe the gene's old values), and
+        clear_unmapped those of the transcripts of unmapped genes too; 'append' leaves them as read.
+
+        Values a feature did not have before are written with the key spelling most used in the
+        annotation for that attribute (e.g. 'gene_synonym' for aliases), else Name, Alias or symbol.
+        Returns the mapping ids not found.
+        """
+        attributes = self._target_attributes(targets)
+        self._check_choice("mode", mode, ("replace", "append"))
+        self._check_choice("id_type", id_type, ("current", "original"))
+        self._check_choice("on_missing", on_missing, ("warn", "raise", "ignore"))
+        match_on = self._match_fields(match_on)
+
+        gene_values, transcript_values, missing, shared = self._resolve_ids(mapping, id_type, transcript_names, match_on)
+        self._report_ids(missing, shared, transcript_names, on_missing, match_on)
+        self._apply_attribute_values(attributes, gene_values, transcript_values, mode, clear_unmapped, transcript_names)
+        return missing
+
+    def _most_used_gff_key(self, features, attribute) -> str | None:
+        """Key spelling most used for attribute among features that have values for it (None if none do)."""
+        prop = self._GENE_ATTRIBUTE_PROPERTIES[attribute]
+        counts: dict[str, int] = {}
+        for f in features:
+            if getattr(f, prop):
+                key = f.gff_key(attribute)
+                counts[key] = counts.get(key, 0) + 1
+        return max(counts, key=lambda k: counts[k]) if counts else None
+
+    @classmethod
+    def read_symbols_table(cls, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), id_column:int|str=1, header:bool=False, sep:str|None=None, split:str|None=None) -> list[tuple[list[str], dict[str, list[str]]]]:
+        """
+        Reads a TSV/CSV/XLSX table of ids and symbols for set_symbol_columns: one
+        (attributes, {id: values}) pair per value column.
+
+        targets: "Name", "Alias" and/or "Symbol", each optionally followed by ':column' naming the
+            column with its values (default 2), e.g. ("Name:2", "Alias:3"). Targets sharing a column
+            get the same values.
+        id_column: column with the ids (default 1).
+            Columns are 1-based numbers or, with header, column names.
+        sep: column separator; None uses ',' for .csv files and tab otherwise (ignored for .xlsx/.xls).
+        split: also split each cell on this separator (e.g. ';'); by default a cell is one value
+            (never split on ',').
+        Cells are read as text (e.g. 'NA' is a symbol, not a missing value). Rows with an empty id or
+        value map nothing, so an empty cell does not clear a gene (see clear_unmapped). Repeated ids
+        give a feature several values.
+        """
+        if isinstance(targets, str):
+            targets = (targets,)
+        columns: dict[str, list[str]] = {}
+        for t in targets:
+            target, _, column = str(t).partition(":")
+            attribute = cls._target_attributes(target)[0]
+            column = column.strip() or "2"
+            if attribute not in columns.setdefault(column, []):
+                columns[column].append(attribute)
+        if not columns:
+            raise ValueError("No targets chosen. Choose from: Name, Alias, Symbol.")
+
+        lower = file_path.lower()
+        if lower.endswith((".xlsx", ".xls")):
+            try:
+                df = pd.read_excel(file_path, header=0 if header else None, dtype=str, keep_default_na=False)
+            except ImportError as e:
+                package = "xlrd" if "xlrd" in str(e) else "openpyxl"
+                raise ValueError(f"Reading {os.path.basename(file_path)} needs the '{package}' package (pip install {package}), or save the table as TSV/CSV.") from None
         else:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, dtype=str)
-            else:
-                df = pd.read_csv(file_path, sep=sep, dtype=str)
-
+            if sep is None:
+                sep = "," if lower.removesuffix(".gz").endswith(".csv") else "\t"
+            df = pd.read_csv(file_path, header=0 if header else None, sep=sep, dtype=str, keep_default_na=False)
         df = df.fillna("")
 
-        pseudogene_col_exists = False
-        synonym_col_exists = False
+        def position(column) -> int:
+            column = str(column).strip()
+            if column.isdigit() and 1 <= int(column) <= df.shape[1]:
+                return int(column) - 1
+            if header and column in [str(c) for c in df.columns]:
+                return [str(c) for c in df.columns].index(column)
+            available = ", ".join(str(c) for c in df.columns) if header else f"1-{df.shape[1]}"
+            raise ValueError(f"Column '{column}' not found in {file_path} (columns: {available}; separator {sep!r}).")
 
-        if "pseudogene" in df.columns:
-            pseudogene_col_exists = True
-        
-        if "gene name synonym(s)" in df.columns:
-            synonym_col_exists = True
+        ids = df.iloc[:, position(id_column)]
+        result = []
+        for column, attributes in columns.items():
+            mapping: dict[str, list[str]] = {}
+            for feature_id, cell in zip(ids, df.iloc[:, position(column)]):
+                feature_id = str(feature_id).strip()
+                values = [v.strip() for v in (str(cell).split(split) if split else [str(cell)])]
+                values = [v for v in values if v]
+                if feature_id and values:
+                    mapping.setdefault(feature_id, []).extend(values)
+            result.append((attributes, mapping))
+        return result
 
-        for _, row in df.iterrows():
-            gene_name = str(row.iloc[0])
-            gene_id = str(row.iloc[1])
-            if pseudogene_col_exists:
-                pseudogene = str(row["pseudogene"])
-            if synonym_col_exists:
-                gene_synonyms = str(row["gene name synonym(s)"]).split("; ")
-            ch = self.all_gene_ids[gene_id]
-            if self.chrs[ch][gene_id].symbols is None:
-                self.chrs[ch][gene_id].symbols = []
-            self.chrs[ch][gene_id].symbols.append(gene_name)
-            if not just_gene_names:
-                if synonym_col_exists:
-                    self.chrs[ch][gene_id].synonyms += gene_synonyms #type: ignore
-                if pseudogene_col_exists:
-                    if pseudogene == "pseudogene" or pseudogene == "Pseudogene":
-                        self.chrs[ch][gene_id].pseudogene = True
-                    elif pseudogene == "gene" or pseudogene == "Gene":
-                        self.chrs[ch][gene_id].pseudogene = False
+    def set_symbol_columns(self, columns:list[tuple[list[str], dict[str, list[str]]]], mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False, match_on:str|tuple[str, ...]|list[str]=("id",)) -> list[str]:
+        """
+        Sets each (attributes, {id: values}) pair from read_symbols_table with set_gene_attribute (see
+        it for the other arguments). Ids are checked for all columns first, so on_missing='raise'
+        changes nothing. Returns the ids not found.
+        """
+        self._check_choice("mode", mode, ("replace", "append"))
+        self._check_choice("id_type", id_type, ("current", "original"))
+        self._check_choice("on_missing", on_missing, ("warn", "raise", "ignore"))
+        match_on = self._match_fields(match_on)
 
+        resolved = []
+        missing, shared = [], []
+        for attributes, mapping in columns:
+            gene_values, transcript_values, column_missing, column_shared = self._resolve_ids(mapping, id_type, transcript_names, match_on)
+            resolved.append((self._target_attributes(attributes), gene_values, transcript_values))
+            missing.extend(m for m in column_missing if m not in missing)
+            shared.extend(m for m in column_shared if m not in shared)
+        self._report_ids(missing, shared, transcript_names, on_missing, match_on)
+
+        for attributes, gene_values, transcript_values in resolved:
+            self._apply_attribute_values(attributes, gene_values, transcript_values, mode, clear_unmapped, transcript_names)
         self.tags.add("plus_symbols")
+        return missing
 
-    def add_gene_symbols(self, file_path:str, clear:bool=True, header:bool=False, sep:str="\t"):
-
-        if clear:
-            self.clear_gene_names_and_symbols()
-
-        if header:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, dtype=str)
-            else:
-                df = pd.read_csv(file_path, sep=sep, dtype=str)
-        else:
-            if file_path.endswith(".xlsx"):
-                df = pd.read_excel(file_path, header=None, dtype=str)
-            else:
-                df = pd.read_csv(file_path, header=None, sep=sep, dtype=str)
-
-        df = df.fillna("")
-
-        for i in range(len(df)):
-            gene_name = str(df.iat[i, 1])
-            gene_id = str(df.iat[i, 0])
-            ch = self.all_gene_ids[gene_id]
-            if self.chrs[ch][gene_id].symbols is None:
-                self.chrs[ch][gene_id].symbols = []
-            self.chrs[ch][gene_id].symbols.append(gene_name)
-
-        self.tags.add("plus_symbols")
+    def add_gene_symbols(self, file_path:str, targets:str|tuple[str, ...]|list[str]=("Name",), mode:Literal["replace", "append"]="replace", clear_unmapped:bool=False, header:bool=False, sep:str|None=None, id_type:Literal["current", "original"]="current", on_missing:Literal["warn", "raise", "ignore"]="warn", transcript_names:bool=False, id_column:int|str=1, split:str|None=None, match_on:str|tuple[str, ...]|list[str]=("id",)) -> list[str]:
+        """
+        Reads a table of ids and symbols (read_symbols_table: targets, id_column, header, sep, split)
+        and sets them (set_symbol_columns / set_gene_attribute: the other arguments). Returns the ids
+        not found.
+        """
+        columns = self.read_symbols_table(file_path, targets=targets, id_column=id_column, header=header, sep=sep, split=split)
+        return self.set_symbol_columns(columns, mode=mode, clear_unmapped=clear_unmapped, id_type=id_type, on_missing=on_missing, transcript_names=transcript_names, match_on=match_on)
 
     def release(self, name, id, source_name, id_prefix, spacer:int=10, suffix:str="", custom_path:str="", tag:str=".gff3", skip_atypical_fts:bool=True, main_only:bool=False, UTRs:bool=True, clear_aliases=True, extra_attributes=False, quiet:bool=False):
         if clear_aliases:
@@ -4007,7 +4312,7 @@ class Annotation():
         self.update(quiet=quiet)
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.update(quiet=quiet)
-        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet)
+        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet, clean_attributes=True)
 
     def generate_introns(self):
         for genes in self.chrs.values():

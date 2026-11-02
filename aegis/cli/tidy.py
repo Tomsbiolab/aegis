@@ -79,11 +79,23 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
     symbols_as_description: Annotated[bool, typer.Option(
-        "--symbols-as-description", help="Places gene symbols into 'Description=' attributes (useful for JBrowse display).",
+        "--symbols-as-description", help="Also writes each feature's symbol (a Name that is not its ID, else its Symbol) as 'description=', which JBrowse shows under the label; useful when features are labelled by ID. Symbol attributes are then left out.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     remove_symbols: Annotated[bool, typer.Option(
         "--remove-symbols", help="Removes symbol attributes from GFF output.",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
+    standardise_attribute_keys: Annotated[bool, typer.Option(
+        "--standardise-attribute-keys", help="Write names, aliases and symbols as 'Name=', 'Alias=' and 'symbol=' whatever their spelling in the input (e.g. 'gene_synonym=', 'Symbol=').",
+        rich_help_panel=ATTR_PANEL,
+    )] = False,
+    reorder_attributes: Annotated[bool, typer.Option(
+        "--reorder-attributes/--keep-attribute-order", help="Write names, aliases and symbols right after ID and Parent, in that order (AEGIS's default), or keep them where they were in the input column 9 (default: reorder).",
+        rich_help_panel=ATTR_PANEL,
+    )] = True,
+    remove_names: Annotated[bool, typer.Option(
+        "--remove-names", help="Removes name attributes from GFF output.",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     remove_aliases: Annotated[bool, typer.Option(
@@ -366,11 +378,17 @@ def main(
     if symbols_as_description:
         remove_symbols = True
 
+    if standardise_attribute_keys:
+        annotation.standardise_attribute_keys()
+
+    if reorder_attributes:
+        annotation.reorder_attributes()
+
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
         clean_features = True
 
-    annotation.export.gff(output_dir=output_dir, filename=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, names=(not remove_names), aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)
 
 if __name__ == "__main__":
     app()
