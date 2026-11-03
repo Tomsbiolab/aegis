@@ -144,6 +144,8 @@ All of the commands are called with aegis {subcommand} in a terminal:
         - Allows to add gene symbols into an annotation file based on tabular input
     - Motifs
         - Plots frequency of a particular DNA motif (allowing regular expressions) in promoter regions of chosen gene lists, all genome’s genes, and random gene lists.
+    - Peaks
+        - Links ChIP-seq/DAP-seq peaks (GEM events table, narrowPeak or BED) to their closest gene(s), by distance to the gene body or to the TSS, or to every gene within a window around the TSS/TES. Writes a peak-gene table (distances, summit location) and a target gene table. The command stops with an error if the sequence names of the peak file are not in the annotation, e.g. `aegis peaks TF.GEM_events.txt annotation.gff3 -r tss -md 5000`.
     - Subset
         - Make all sorts of subsets of an annotation file, select by desired features (coding/non-coding) or even create lite versions for debugging/testing.
     - Split
