@@ -259,6 +259,7 @@
       - `def get_main_CDS_range(self):`
       - `def rename_exons(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
       - `def name_new_UTRs(self, new_UTRs:list[UTR], sep:str="_", digits:int=3):`
+      - `def name_new_exons(self, new_exons:list[Exon], sep:str="_", digits:int=3):`
       - `def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):`
       - `def collapse_subfeatures(self, exons:bool=True, CDSs:bool=True, quiet:bool=False):`
       - `def resolve_exon_id_clashes(self, changed:list[Exon]):`
@@ -445,6 +446,8 @@
       - `def generate_UTRs(self):`
       - `def update_UTRs(self):`
       - `def generate_exons(self):`
+      - `def cover_CDS_segments_beyond_exons(self, c:CDS) -> tuple[list[Exon], list[Exon]]:`
+      - `def new_exon(cs):`
       - `def generate_introns(self):`
       - `def clear_promoter(self):`
       - `def seq(self) -> str:`
@@ -1160,6 +1163,15 @@
       - `def test_row_reaching_the_next_exon_is_only_reported(self, tmp_path):`
       - `def test_extended_shared_exon_keeps_only_its_own_transcript_as_parent(self, tmp_path):`
       - `def test_extended_exon_renamed_when_its_id_would_clash(self, tmp_path):`
+      - `class TestCDSSegmentsBeyondExons:`
+      - `def _annotation(tmp_path, exons, cds_rows, mode="contain", strand="+", extra=""):`
+      - `def _exons(annot, t_id="t1"):`
+      - `def test_segment_beyond_an_intron_gets_its_own_exon(self, tmp_path, mode):`
+      - `def test_segment_before_an_intron_on_minus_strand_gets_its_own_exon(self, tmp_path):`
+      - `def test_several_segments_beyond_introns_each_get_an_exon(self, tmp_path):`
+      - `def test_segments_next_to_the_outermost_exon_extend_it(self, tmp_path, cds_rows, exons):`
+      - `def test_no_correction_leaves_exons_untouched(self, tmp_path):`
+      - `def test_new_exon_takes_the_id_of_an_identical_exon_in_the_gene(self, tmp_path):`
       - `class TestAnnotationCollapsing:`
       - `def _annotation(tmp_path, body):`
       - `def test_collapsing_exons_keeps_ids_and_records_warnings(self, tmp_path):`

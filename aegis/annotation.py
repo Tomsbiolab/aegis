@@ -2103,7 +2103,9 @@ class Annotation():
             "none": coordinates are left untouched; inconsistencies are recorded into record_to.
             "contain": CDSs and UTRs are kept within their transcript's exons (by extending
                 the first/last exon, or the one exon a CDS row reaching into an intron overlaps;
-                rows within an intron or spanning one are only reported), transcripts span exactly
+                rows within an intron or spanning one are only reported; CDS rows beyond the
+                first/last exon and separated from it by a gap, which the CDS defines as an intron,
+                are given their own exon instead), transcripts span exactly
                 their exons and genes are
                 extended to cover all their transcripts. Gene regions extending beyond
                 their transcripts (e.g. polyA sites or TF binding sites) are kept.
@@ -2143,6 +2145,7 @@ class Annotation():
                 latest_end = None
                 transcripts_moved = False
                 extended_exons = []
+                new_exons = []
                 for t in g.transcripts.values():
 
                     for c in t.CDSs.values():
@@ -2202,22 +2205,26 @@ class Annotation():
                         first_exon = t.exons[0]
                         last_exon = max(t.exons, key=lambda e: e.end)
                         for c in t.CDSs.values():
-                            if c.start < first_exon.start:
-                                if skip_correction:
+                            if skip_correction:
+                                if c.start < first_exon.start:
                                     record_to["cds_exceeds_exon"].add(c.id)
                                     note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} start is earlier than for first {t.id} exon ({self.id})")
-                                else:
-                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} start should not be earlier than for first {t.id} exon, proceeding to fix {self.id}")
-                                    first_exon.start = c.start
-                                    extended_exons.append(first_exon)
-                            if c.end > last_exon.end:
-                                if skip_correction:
+                                if c.end > last_exon.end:
                                     record_to["cds_exceeds_exon"].add(c.id)
                                     note("CDSs extend beyond the first or last exon of their transcript", "cds_exceeds_exon", c.id, f"Warning: {c.id} end extends beyond the last {t.id} exon ({self.id})")
-                                else:
-                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} end should not extend beyond the last {t.id} exon, proceeding to fix {self.id}")
-                                    last_exon.end = c.end
-                                    extended_exons.append(last_exon)
+                            elif c.start < first_exon.start or c.end > last_exon.end:
+                                # Segments next to the outermost exon extend it; segments beyond an intron (a gap
+                                # between CDS segments) get their own exon, as extending would absorb the intron
+                                extended, added = t.cover_CDS_segments_beyond_exons(c)
+                                if extended:
+                                    note("CDSs extended beyond the first or last exon of their transcript, which was extended to cover them", "cds_exceeds_exon", c.id, f"Warning: {c.id} should not extend beyond the first or last {t.id} exon, proceeding to extend it {self.id}")
+                                    extended_exons.extend(extended)
+                                if added:
+                                    segments = ", ".join(f"{e.start}..{e.end}" for e in added)
+                                    note("CDSs had segments beyond an intron past the first or last exon of their transcript, which were given their own exon", "cds_exceeds_exon", c.id, f"Warning: {c.id} segments {segments} lie beyond an intron past the first or last {t.id} exon, proceeding to add an exon for each {self.id}")
+                                    new_exons.extend(added)
+                                first_exon = t.exons[0]
+                                last_exon = max(t.exons, key=lambda e: e.end)
 
                             for u in c.UTRs:
                                 if u.start < first_exon.start:
@@ -2283,6 +2290,9 @@ class Annotation():
                 if transcripts_moved and len(g.transcripts) > 1:
                     g.sort_transcripts()
 
+                # Named first, so that extended exons given a new id below avoid the new exons' ids
+                if new_exons:
+                    g.name_new_exons(new_exons)
                 # An extended exon may now differ from a copy shared with another transcript under the same id
                 if extended_exons:
                     g.resolve_exon_id_clashes(extended_exons)

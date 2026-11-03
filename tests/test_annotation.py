@@ -3967,6 +3967,83 @@ class TestCDSSegmentsInIntrons:
         assert exons == {"t1": [("e1", 1, 100), ("e2_2", 200, 320), ("e3", 400, 500)], "t2": [("e2", 200, 300)]}
 
 
+class TestCDSSegmentsBeyondExons:
+    """CDS segments beyond the first/last exon: next to it they extend it, beyond a gap (an intron) they get their own exon."""
+
+    @staticmethod
+    def _annotation(tmp_path, exons, cds_rows, mode="contain", strand="+", extra=""):
+        start = min(a for a, _ in exons + cds_rows)
+        end = max(b for _, b in exons + cds_rows)
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            f"chr1\ttest\tgene\t{start}\t{end}\t.\t{strand}\t.\tID=g1\n"
+            f"chr1\ttest\tmRNA\t{start}\t{end}\t.\t{strand}\t.\tID=t1;Parent=g1\n"
+            + "".join(f"chr1\ttest\texon\t{a}\t{b}\t.\t{strand}\t.\tID=e{n};Parent=t1\n" for n, (a, b) in enumerate(exons, 1))
+            + "".join(f"chr1\ttest\tCDS\t{a}\t{b}\t.\t{strand}\t.\tID=c1;Parent=t1\n" for a, b in cds_rows)
+            + extra
+        )
+        return Annotation(str(gff_file), quiet=True, coordinate_polishing=mode)
+
+    @staticmethod
+    def _exons(annot, t_id="t1"):
+        return [(e.id, e.start, e.end) for e in annot.chrs["chr1"]["g1"].transcripts[t_id].exons]
+
+    @pytest.mark.parametrize("mode", ["contain", "trim"])
+    def test_segment_beyond_an_intron_gets_its_own_exon(self, tmp_path, mode):
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(50, 100), (200, 300), (400, 450)], mode=mode)
+        assert self._exons(annot) == [("e1", 1, 100), ("e2", 200, 300), ("g1_e001", 400, 450)]
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert (t.start, t.end) == (1, 450)
+        assert t.exons[-1].coding
+        c = next(iter(t.CDSs.values()))
+        assert [(u.start, u.end) for u in c.UTRs] == [(1, 49)]
+        assert c.full_UTR_exons == 0
+        assert annot.warnings["cds_exceeds_exon"] == {"c1"}
+        assert annot.recheck_warnings()["cds_exceeds_exon"] == set()
+
+    def test_segment_before_an_intron_on_minus_strand_gets_its_own_exon(self, tmp_path):
+        # As in AGAT's 36_test: the 5' CDS segment of a minus-strand transcript has no exon row
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(1, 100), (200, 300), (400, 450)], strand="-")
+        assert self._exons(annot) == [("e1", 1, 100), ("e2", 200, 300), ("g1_e001", 400, 450)]
+        annot = self._annotation(tmp_path, [(200, 300), (400, 500)], [(10, 50), (200, 300), (400, 500)], strand="-")
+        assert self._exons(annot) == [("g1_e001", 10, 50), ("e1", 200, 300), ("e2", 400, 500)]
+
+    def test_several_segments_beyond_introns_each_get_an_exon(self, tmp_path):
+        annot = self._annotation(tmp_path, [(200, 300)], [(10, 30), (60, 90), (200, 300), (400, 420), (500, 520)])
+        assert [(a, b) for _, a, b in self._exons(annot)] == [(10, 30), (60, 90), (200, 300), (400, 420), (500, 520)]
+        assert len({e_id for e_id, _, _ in self._exons(annot)}) == 5
+
+    @pytest.mark.parametrize("cds_rows, exons", [
+        ([(50, 100), (200, 320)], [("e1", 20, 100), ("e2", 200, 320)]),  # overhang past the last exon
+        ([(50, 100), (200, 290), (301, 330)], [("e1", 20, 100), ("e2", 200, 330)]),  # segment abutting it
+        ([(10, 100), (200, 300)], [("e1", 10, 100), ("e2", 200, 300)]),  # overhang before the first exon
+        ([(10, 19), (20, 100), (200, 300)], [("e1", 10, 100), ("e2", 200, 300)]),  # segment abutting it
+    ])
+    def test_segments_next_to_the_outermost_exon_extend_it(self, tmp_path, cds_rows, exons):
+        annot = self._annotation(tmp_path, [(20, 100), (200, 300)], cds_rows)
+        assert self._exons(annot) == exons
+
+    def test_no_correction_leaves_exons_untouched(self, tmp_path):
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(50, 100), (200, 300), (400, 450)], mode="none")
+        assert self._exons(annot) == [("e1", 1, 100), ("e2", 200, 300)]
+        assert annot.warnings["cds_exceeds_exon"] == {"c1"}
+        assert annot.recheck_warnings()["cds_exceeds_exon"] == {"c1"}
+
+    def test_new_exon_takes_the_id_of_an_identical_exon_in_the_gene(self, tmp_path):
+        t2 = (
+            "chr1\ttest\tmRNA\t200\t450\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t200\t300\t.\t+\t.\tID=t2_e1;Parent=t2\n"
+            "chr1\ttest\texon\t400\t450\t.\t+\t.\tID=t2_e2;Parent=t2\n"
+            "chr1\ttest\tCDS\t200\t300\t.\t+\t0\tID=c2;Parent=t2\n"
+            "chr1\ttest\tCDS\t400\t450\t.\t+\t2\tID=c2;Parent=t2\n"
+        )
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(50, 100), (200, 300), (400, 450)], extra=t2)
+        new = next(e for e in annot.chrs["chr1"]["g1"].transcripts["t1"].exons if e.start == 400)
+        assert new.id == "t2_e2"
+        assert new.parents == ["t1", "t2"]
+
+
 class TestAnnotationCollapsing:
     @staticmethod
     def _annotation(tmp_path, body):
