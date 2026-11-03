@@ -33,7 +33,7 @@ from .subfeatures import Exon, UTR, CDS
 from .hits import BlastHit
 from .utils.genefunctions import sort_and_update_genes, TAXONOMY_ORGANELLE_CODES, resolve_taxonomy_tables, NCBI_GENETIC_CODES
 from .utils.misc import read_file_with_fallback, open_file, start_progress_bar, unambiguous_numbers
-from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format, gtf_quote, INT_NAME, INT_ALIAS
+from .utils.gtf_gff import parse_gff_parts, convert_gtf_to_gff3, detect_file_format, gtf_quote, INT_NAME, INT_ALIAS, MAPPED_ATTRIBUTES, GffEntry
 from .annotation_components.stats import AnnotationStats
 from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
@@ -57,7 +57,9 @@ class Annotation():
         "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
         "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived",
         "repeated_subfeature_ids", "self_parented_transcript",
-        "codon_added_to_CDS", "codon_not_incorporated"
+        "codon_added_to_CDS", "codon_not_incorporated",
+        "linked_by_shared_attribute", "shared_attribute_not_linked", "repeated_feature_line",
+        "pseudogene_line_read_as_transcript", "linked_by_file_order", "linkable_by_file_order"
     )
 
     # Warnings that describe the state of the annotation object and can therefore be rechecked
@@ -107,7 +109,7 @@ class Annotation():
     # Tags of renamed chromosomes only change exports that list chromosome names
     chromosome_tags:set[str] = {"confrenamed", "dapmod"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False, link_by:tuple[str, ...]|list[str]|str|None=("locus_tag",), link_by_file_order:bool=False):
         
         start_time = time.time()
 
@@ -236,6 +238,20 @@ class Annotation():
             gff_file = self.file
 
         staging = self.load_data(gff_file, encoding=encoding, chosen_chromosomes=chosen_chromosomes, chosen_coordinates=chosen_coordinates, skip_atypical_features=skip_atypical_features, quiet=quiet)
+
+        if isinstance(link_by, str):
+            link_by = tuple(k.strip() for k in link_by.split(",") if k.strip())
+        self._link_by_shared_attribute(staging, tuple(link_by or ()), create_features=infer_genes_from_subfeatures, quiet=quiet)
+
+        # Gene and transcript lines with neither ID nor Parent (e.g. MITOS: one 'Name=' line per record) are
+        # named after their location, so they do not all share the ID '' and overwrite each other
+        for stage in ("gene", "transcript"):
+            for entry in staging[stage]:
+                if not entry.id:
+                    entry.id = f"{entry.feature}_{entry.ch}_{entry.start}_{entry.end}"
+
+        # Last resort, opt-in: lines still without Parent join the gene/transcript they follow in the file
+        self._link_by_file_order(staging, apply=link_by_file_order, quiet=quiet)
 
         # Features crossing the origin of circular sequences are read across it (Feature.seq)
         if self.genome is not None:
@@ -766,13 +782,19 @@ class Annotation():
         self._codon_entries = []
 
         chromosomes_t = set()
+        # gene and transcript lines by ID, to skip exact repeats (e.g. a whole gene block written twice)
+        seen_lines = {}
 
         with open_file(gff_file, encoding=encoding) as f:
-            for line in f:
-                line = line.strip()
+            for line_number, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
 
                 if not line:
                     continue
+
+                # sequences appended after the features end the annotation (GFF3 spec)
+                if line.startswith("##FASTA") or line[0] == ">":
+                    break
 
                 if line[0] == "#":
                     if line == "###" or line == "#":
@@ -785,10 +807,20 @@ class Annotation():
                     self.gff_header.append(line)
                     continue
 
+                # strip() also took the tab before an empty attribute column, or after an empty seqid
+                if len(parts) == 8:
+                    raw_parts = raw_line.rstrip("\r\n").split("\t")
+                    if len(raw_parts) >= 9 and not raw_parts[0].strip():
+                        if not quiet:
+                            print(f"{self.id} Warning: line {line_number} has no seqid and was skipped: {line}")
+                        continue
+                    parts.append("")
+
                 if len(parts) < 9:
                     continue
 
                 entry = parse_gff_parts(parts)
+                entry.line = line_number
 
                 ID = entry.id
                 ft = entry.feature
@@ -797,6 +829,13 @@ class Annotation():
                     self.circular_chromosomes.add(entry.ch)
 
                 cat = "codon" if ft in default_codons else default_features_r.get(ft, "atypical")
+
+                # Ensembl (GRCh37) writes the transcripts of pseudogenes as 'pseudogene' lines with a Parent gene
+                if ft == "pseudogene" and entry.parents:
+                    self._note("'pseudogene' lines with a Parent were read as pseudogenic_transcript", f"pseudogene line {entry.id} has Parent {','.join(entry.parents)} and was read as a pseudogenic_transcript", "pseudogene_line_read_as_transcript", quiet)
+                    self.warnings["pseudogene_line_read_as_transcript"].add(entry.id)
+                    ft = entry.feature = "pseudogenic_transcript"
+                    cat = "transcript"
 
                 if skip_atypical_features and cat == "atypical":
                     continue
@@ -846,6 +885,14 @@ class Annotation():
                     else:
                         self.features[ft] += 1
                     chromosomes_t.add(ch)
+                    if cat in ("gene", "transcript") and ID:
+                        line_hash = hash(line)
+                        if seen_lines.get((cat, ID)) == line_hash:
+                            self.warnings["repeated_feature_line"].add(ID)
+                            self.features[ft] -= 1
+                            self._note("exact repeats of gene or transcript lines were skipped", f"{ft} line of {ID} repeats an earlier line exactly and was skipped", "repeated_feature_line", quiet)
+                            continue
+                        seen_lines.setdefault((cat, ID), line_hash)
                     if cat == "codon":
                         self._codon_entries.append(entry)
                     else:
@@ -856,6 +903,298 @@ class Annotation():
             self.chrs[ch] = {}
 
         return staging
+
+    @staticmethod
+    def _shared_attribute(entry, link_by:tuple[str, ...]) -> tuple[str, str] | None:
+        """(attribute, value) of the first link_by attribute the entry carries as a single value, else None."""
+        attrs = entry.attributes
+        for key in link_by:
+            value = attrs.get(key)
+            if value is None:
+                mapped = MAPPED_ATTRIBUTES.get(key.lower())
+                if mapped is not None:
+                    value = attrs.get(mapped)
+            if isinstance(value, list):
+                value = value[0] if len(value) == 1 else None
+            if value:
+                return key, value
+        return None
+
+    def _link_by_shared_attribute(self, staging:dict, link_by:tuple[str, ...], create_features:bool=True, quiet:bool=False):
+        """
+        Links transcripts and subfeatures that have no Parent attribute through an attribute they share
+        with their gene (e.g. locus_tag in Prokka, NCBI and GenBank-derived files), before the features are
+        added. Only lines without Parent are changed, so files with Parent attributes load as before.
+
+        Features are grouped by (seqid, attribute, value). A group is linked only if it holds at most one
+        gene and all its features are on one strand; otherwise nothing in it is changed and the IDs are
+        listed under 'shared_attribute_not_linked'. In a linked group:
+          * transcripts without Parent get the gene as Parent (a gene is created if there is none),
+          * subfeatures without Parent get the group's transcript if it has exactly one; with several, the
+            transcript whose ID appears in the subfeature ID, else the only one spanning it; with none,
+            transcripts are created, a new one starting whenever a subfeature overlaps one of the same type
+            already taken (an isoform repeating an exon), in file order.
+        Features are created only if create_features (infer_genes_from_subfeatures) is True. Every linked
+        feature is listed under 'linked_by_shared_attribute'.
+        """
+        # GFF3: rows sharing an ID are one feature, so a row without Parent takes the Parent of its
+        # siblings (e.g. one CDS row of a multi-row CDS whose Parent was mistyped)
+        for stage in ("miRNA", "exon", "CDS", "UTR"):
+            orphan_ids = {e.id for e in staging[stage] if not e.parents and e.id}
+            if not orphan_ids:
+                continue
+            sibling_parents = {}
+            for e in staging[stage]:
+                if e.parents and e.id in orphan_ids:
+                    sibling_parents.setdefault((e.ch, e.feature, e.id), e.parents)
+            n = 0
+            for e in staging[stage]:
+                if not e.parents and (e.ch, e.feature, e.id) in sibling_parents:
+                    e.parents = list(sibling_parents[(e.ch, e.feature, e.id)])
+                    self.warnings["linked_by_shared_attribute"].add(e.id)
+                    n += 1
+            if n and not quiet:
+                print(f"{self.id} Warning: {n} {stage} rows without Parent took the Parent of rows sharing their ID" + ("" if self.list_load_warnings else self._warning_ids_hint("linked_by_shared_attribute")))
+
+        if not link_by:
+            return
+
+        subfeature_entries = [e for stage in ("miRNA", "exon", "CDS", "UTR") for e in staging[stage] if not e.parents]
+        subfeature_entries += [e for e in self._codon_entries if not e.parents]
+        unparented_transcripts = [e for e in staging["transcript"] if not e.parents]
+        if not subfeature_entries and not unparented_transcripts:
+            return
+
+        groups = {}
+        def group(entry):
+            shared = self._shared_attribute(entry, link_by)
+            if shared is None:
+                return None
+            key = (entry.ch,) + shared
+            if key not in groups:
+                groups[key] = {"genes": [], "transcripts": [], "subfeatures": []}
+            return groups[key]
+
+        for e in unparented_transcripts:
+            g = group(e)
+            if g is not None:
+                g["transcripts"].append(e)
+        for e in subfeature_entries:
+            g = group(e)
+            if g is not None:
+                g["subfeatures"].append(e)
+        if not groups:
+            return
+
+        # genes and transcripts with Parent only matter for the groups found above
+        for e in staging["gene"]:
+            shared = self._shared_attribute(e, link_by)
+            if shared is not None and (e.ch,) + shared in groups:
+                groups[(e.ch,) + shared]["genes"].append(e)
+
+        gene_ids = {e.id for e in staging["gene"] if e.id}
+        transcript_ids = {e.id for e in staging["transcript"] if e.id}
+        transcripts_by_gene = {}
+        for e in staging["transcript"]:
+            for p in e.parents:
+                transcripts_by_gene.setdefault(p, []).append(e)
+            if e.parents:
+                shared = self._shared_attribute(e, link_by)
+                if shared is not None and (e.ch,) + shared in groups:
+                    groups[(e.ch,) + shared]["transcripts"].append(e)
+
+        def unique_id(base, taken):
+            new_id, n = base, 1
+            while new_id in taken:
+                n += 1
+                new_id = f"{base}_{n}"
+            taken.add(new_id)
+            return new_id
+
+        def new_entry(template, ID, feature, members, parents):
+            return GffEntry(ch=template.ch, source=template.source, feature=feature,
+                            start=min(m.start for m in members), end=max(m.end for m in members),
+                            score=".", strand=template.strand, attributes={}, id=ID, parents=parents,
+                            pseudogene=False, transposable=False, decreasing_coordinates=False,
+                            line=0) # created, not read: no place in the file order
+
+        linked, not_linked = [], []
+
+        def link(entry, parent_id):
+            entry.parents = [parent_id]
+            if not entry.id:
+                # as parse_gff_parts names lines that have a Parent but no ID
+                entry.id = f"{parent_id}_{entry.feature}_{entry.start}_{entry.end}"
+            linked.append(entry.id)
+
+        for (ch, key, value), g in groups.items():
+            members = g["genes"] + g["transcripts"] + g["subfeatures"]
+            strands = {m.strand for m in members if m.strand in ("+", "-")}
+            if len(g["genes"]) > 1 or len(strands) > 1:
+                reason = f"{len(g['genes'])} genes share it" if len(g["genes"]) > 1 else "its features are on both strands"
+                not_linked.extend(m.id or f"{m.feature}_{m.ch}_{m.start}_{m.end}" for m in g["transcripts"] + g["subfeatures"] if not m.parents)
+                if not quiet and self.list_load_warnings:
+                    print(f"{self.id} Warning: features with {key}={value} on {ch} were not linked through it, as {reason}")
+                continue
+
+            gene = g["genes"][0] if g["genes"] else None
+            if gene is not None and not gene.id:
+                gene.id = unique_id(value, gene_ids)
+
+            def ensure_gene(template):
+                nonlocal gene
+                if gene is None and create_features:
+                    gene = new_entry(template, unique_id(value, gene_ids), "gene", members, [])
+                    gene.attributes = {key: value}
+                    staging["gene"].append(gene)
+                return gene
+
+            transcripts = list(g["transcripts"])
+            if gene is not None:
+                transcripts += [t for t in transcripts_by_gene.get(gene.id, []) if t not in transcripts]
+
+            for t in g["transcripts"]:
+                if t.parents:
+                    continue
+                if ensure_gene(t) is not None:
+                    link(t, gene.id)
+
+            subfeatures = sorted(g["subfeatures"], key=lambda e: e.line)
+            if not subfeatures:
+                continue
+
+            if len(transcripts) == 1:
+                for sf in subfeatures:
+                    link(sf, transcripts[0].id)
+
+            elif transcripts:
+                for sf in subfeatures:
+                    named = [t for t in transcripts if t.id and re.search(rf"(?<![A-Za-z0-9]){re.escape(t.id)}(?![A-Za-z0-9])", sf.id)]
+                    spanning = [t for t in transcripts if t.start <= sf.start and sf.end <= t.end]
+                    chosen = named if len(named) == 1 else spanning
+                    if len(chosen) == 1:
+                        link(sf, chosen[0].id)
+                    else:
+                        not_linked.append(sf.id or f"{sf.feature}_{sf.ch}_{sf.start}_{sf.end}")
+
+            elif ensure_gene(subfeatures[0]) is not None:
+                isoforms = [[]]
+                for sf in subfeatures:
+                    if any(o.feature == sf.feature and o.start <= sf.end and sf.start <= o.end for o in isoforms[-1]):
+                        isoforms.append([])
+                    isoforms[-1].append(sf)
+                for isoform in isoforms:
+                    coding = any(sf.feature in default_features["CDS"] for sf in isoform)
+                    t = new_entry(isoform[0], unique_id(f"{gene.id}_t1", transcript_ids), "mRNA" if coding else "transcript", isoform, [gene.id])
+                    t.attributes = {key: value}
+                    staging["transcript"].append(t)
+                    for sf in isoform:
+                        link(sf, t.id)
+
+            else:
+                not_linked.extend(sf.id or f"{sf.feature}_{sf.ch}_{sf.start}_{sf.end}" for sf in subfeatures)
+
+        for ID in linked:
+            self.warnings["linked_by_shared_attribute"].add(ID)
+        for ID in not_linked:
+            self.warnings["shared_attribute_not_linked"].add(ID)
+
+        if not quiet:
+            if linked:
+                print(f"{self.id} Warning: {len(linked)} features without Parent were linked to their gene or transcript by a shared attribute ({', '.join(link_by)})" + ("" if self.list_load_warnings else self._warning_ids_hint("linked_by_shared_attribute")))
+            if not_linked:
+                print(f"{self.id} Warning: {len(not_linked)} features without Parent share a {'/'.join(link_by)} value but could not be linked unambiguously (several genes share it, mixed strands or several candidate transcripts)" + ("" if self.list_load_warnings else self._warning_ids_hint("shared_attribute_not_linked")))
+
+
+    def _link_by_file_order(self, staging:dict, apply:bool=False, quiet:bool=False):
+        """
+        Last resort for lines that are still without Parent after Parent attributes, shared IDs and
+        shared attributes (link_by): each joins the transcript, or else the gene, that it follows in the
+        file. Only with apply (link_by_file_order=True); otherwise the lines it would link are listed
+        under 'linkable_by_file_order' and a hint to opt in is printed.
+
+        A line joins only if it lies within that transcript/gene on the same seqid and strand. A
+        subfeature that overlaps one of the same type already in the transcript (an isoform, or a
+        repeat) ends the chain: it and the lines after it stay unlinked until the next gene or
+        transcript line. Lines whose shared attribute was ambiguous ('shared_attribute_not_linked') and
+        features created while linking are never used. Lines not linked fall back to the usual handling
+        of features without Parent.
+        """
+        subfeatures = [e for stage in ("miRNA", "exon", "CDS", "UTR") for e in staging[stage]] + self._codon_entries
+        if not any(not e.parents for e in subfeatures) and not any(not e.parents for e in staging["transcript"]):
+            return
+
+        def name(e):
+            return e.id or f"{e.feature}_{e.ch}_{e.start}_{e.end}"
+
+        ambiguous = self.warnings["shared_attribute_not_linked"]
+        genes_by_id = {e.id: e for e in staging["gene"]}
+        transcripts_by_id = {e.id: e for e in staging["transcript"]}
+
+        lines = [(e.line, 0, e) for e in staging["gene"] if e.line]
+        lines += [(e.line, 1, e) for e in staging["transcript"] if e.line]
+        lines += [(e.line, 2, e) for e in subfeatures if e.line]
+        lines.sort(key=lambda x: x[0])
+
+        def fits(e, container):
+            if container is None or e.ch != container.ch:
+                return False
+            if e.strand in ("+", "-") and container.strand in ("+", "-") and e.strand != container.strand:
+                return False
+            return container.start <= e.start and e.end <= container.end
+
+        candidates = []
+        gene = transcript = None
+        taken = []  # subfeatures already in the current transcript (or gene), to spot isoforms
+        for _, kind, e in lines:
+            if kind == 0:
+                gene, transcript, taken = e, None, []
+            elif kind == 1:
+                if e.parents:
+                    gene = genes_by_id.get(e.parents[0])
+                elif name(e) not in ambiguous and fits(e, gene):
+                    candidates.append((e, gene))
+                else:
+                    gene = None
+                transcript, taken = e, []
+            else:
+                if e.parents:
+                    parent = transcripts_by_id.get(e.parents[0])
+                    if parent is not None and parent is not transcript:
+                        transcript, taken = parent, []
+                        gene = genes_by_id.get(parent.parents[0]) if parent.parents else None
+                    taken.append(e)
+                    continue
+                if name(e) in ambiguous:
+                    continue
+                container = transcript if transcript is not None else gene
+                if not fits(e, container):
+                    continue
+                if any(o.feature == e.feature and o.start <= e.end and e.start <= o.end for o in taken):
+                    # an isoform or a repeat: file order cannot tell which transcript it belongs to
+                    gene = transcript = None
+                    taken = []
+                    continue
+                candidates.append((e, container))
+                taken.append(e)
+
+        if not candidates:
+            return
+
+        if apply:
+            for e, container in candidates:
+                e.parents = [container.id]
+                if not e.id:
+                    e.id = f"{container.id}_{e.feature}_{e.start}_{e.end}"
+                self.warnings["linked_by_file_order"].add(e.id)
+            if not quiet:
+                print(f"{self.id} Warning: {len(candidates)} features without Parent were linked to the gene or transcript they follow in the file (link_by_file_order)" + ("" if self.list_load_warnings else self._warning_ids_hint("linked_by_file_order")))
+        else:
+            for e, _ in candidates:
+                self.warnings["linkable_by_file_order"].add(name(e))
+            if not quiet:
+                print(f"{self.id} Warning: {len(candidates)} features without Parent lie within the gene or transcript they follow in the file, but were not linked to it; if the file lists each gene's features after it, try loading it with --link-by-file-order (link_by_file_order=True). Without it they are kept as features without Parent" + ("" if self.list_load_warnings else self._warning_ids_hint("linkable_by_file_order")))
+
 
     def _add_gene(self, entry, rename_repeated_id:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):
         ID = entry.id
@@ -1200,7 +1539,7 @@ class Annotation():
         if not parents:
             self.warnings["subfeature_with_no_parent"].add(ID)
 
-            if ft_level != "CDS":
+            if ft_level not in ("CDS", "exon"):
 
                 if not quiet:
                     print(f"{self.id} Warning: No parent provided so the following {ft} subfeature {ID} could not be assigned to any transcript")
@@ -1210,8 +1549,13 @@ class Annotation():
             
             elif infer_gene_and_transcript_from_subfeatures:
 
-                created_gene = f"{ID}_gene"
-                created_transcript = f"{ID}_transcript"
+                # Lines with neither ID nor Parent are named after their location, so that they do not all
+                # end up in one '_gene' (CDS lines sharing an ID still form one transcript)
+                base_id = ID or f"{ft}_{ch}_{start}_{end}"
+                if not ID:
+                    ID = base_id
+                created_gene = f"{base_id}_gene"
+                created_transcript = f"{base_id}_transcript"
 
                 if created_gene not in self.all_gene_ids:
                     if not quiet and ft != "nucleotide_to_protein_match":
@@ -1226,7 +1570,10 @@ class Annotation():
                     entry.parents = [created_gene]
                     self._add_transcript(entry, quiet=quiet, skip_orphaned_features=skip_orphaned_features)
 
-                self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes, phase=phase))
+                if ft_level == "CDS":
+                    self.chrs[ch][created_gene].transcripts[created_transcript].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [created_transcript], attributes, phase=phase))
+                else:
+                    self.chrs[ch][created_gene].transcripts[created_transcript].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [created_transcript], attributes))
 
             else:
 
@@ -2860,7 +3207,7 @@ class Annotation():
                         if e.parents:
                             for p in e.parents:
                                 if p in self.all_transcript_ids:
-                                    if g.transcripts[p].strand == e.strand:
+                                    if p not in g.transcripts or g.transcripts[p].strand == e.strand:
                                         new_parents.append(p)
                                 elif not quiet:
                                     print(f"Transcript level id {p} parent reference for {e.id} is not present in annotation {self.id}")
@@ -2876,7 +3223,7 @@ class Annotation():
                             c.parents.sort()
                             for cs in c.CDS_segments:
                                 new_parents = []
-                                for p in cs.parents:
+                                for p in (cs.parents or []):
                                     if p in self.all_transcript_ids:
                                         new_parents.append(p)
                                     elif not quiet:

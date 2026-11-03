@@ -60,6 +60,14 @@ def main(
         "--keep-missing-transcript-parent-references", help="Keep parental references to missing transcripts (removed by default).",
         rich_help_panel=MODEL_PANEL,
     )] = False,
+    link_by: Annotated[str, typer.Option(
+        "--link-by", help="Comma-separated attributes that link transcripts and subfeatures without a Parent attribute to their gene, e.g. 'locus_tag' (Prokka, NCBI) or 'locus_tag,Name' (one record per Name, as in MITOS). Only lines without Parent are linked; features sharing a value with several genes are left as they are. Every linked feature is reported. Use 'none' to turn linking off.",
+        rich_help_panel=MODEL_PANEL,
+    )] = "locus_tag",
+    link_by_file_order: Annotated[bool, typer.Option(
+        "--link-by-file-order", help="Last resort for lines that are still without Parent after Parent attributes, shared IDs and --link-by: link each to the transcript (or gene) it follows in the file, if it lies within it on the same seqid and strand. A subfeature overlapping one of the same type already in that transcript ends the chain (file order cannot separate isoforms). Every linked feature is reported. Off by default; AEGIS suggests it when a file looks like it needs it.",
+        rich_help_panel=MODEL_PANEL,
+    )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=MODEL_PANEL,
@@ -362,6 +370,8 @@ def main(
         min_codon_len=min_codon_len,
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
+        link_by=() if link_by.strip().lower() in ("", "none") else link_by,
+        link_by_file_order=link_by_file_order,
     )
 
     if rework_all_cds or infer_missing_cds:

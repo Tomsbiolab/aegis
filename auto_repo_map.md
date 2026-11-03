@@ -24,7 +24,7 @@
       - `class Annotation():`
       - `def _warning_ids_hint(warning_key:str) -> str:`
       - `def _new_warnings_dict(cls, keys:tuple[str, ...]|None=None) -> dict[str, set[str]]:`
-      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False):`
+      - `def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False, link_by:tuple[str, ...]|list[str]|str|None=("locus_tag",), link_by_file_order:bool=False):`
       - `def _check_genome_compatibility(self, quiet: bool = False):`
       - `def motifs(self) -> AnnotationMotifs:`
       - `def overlaps(self) -> AnnotationOverlaps:`
@@ -53,6 +53,16 @@
       - `def _resolve_output_path(self, filepath: str | None=None, output_dir: str | None=None, filename: str | None=None,`
       - `def _resolve_output_dir(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder_name: str = "features", subfolder: bool = False, create_dir:bool=True) -> Path:`
       - `def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):`
+      - `def _shared_attribute(entry, link_by:tuple[str, ...]) -> tuple[str, str] | None:`
+      - `def _link_by_shared_attribute(self, staging:dict, link_by:tuple[str, ...], create_features:bool=True, quiet:bool=False):`
+      - `def group(entry):`
+      - `def unique_id(base, taken):`
+      - `def new_entry(template, ID, feature, members, parents):`
+      - `def link(entry, parent_id):`
+      - `def ensure_gene(template):`
+      - `def _link_by_file_order(self, staging:dict, apply:bool=False, quiet:bool=False):`
+      - `def name(e):`
+      - `def fits(e, container):`
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _note(self, summary:str, message:str, warning_key:str, quiet:bool=False):`
@@ -663,6 +673,7 @@
         - `def parse_gtf_attributes(attr_string, default_key="id"):`
         - `def format_gff3_attributes(attrs, feature_type):`
         - `def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):`
+        - `def write_unnamed(key):`
         - `def detect_file_format(file_path, encoding, lines_to_check=20):`
       - misc.py
         - `def pickle_load(file):`
@@ -1828,6 +1839,50 @@
       - `class TestPromoter:`
       - `def test_init(self):`
       - `def test_promoter_atg_type(self):`
+    - test_parent_linking.py
+      - `def write(tmp_path, name, rows, header=HEADER):`
+      - `def models(annot):`
+      - `class TestCrashFixes:`
+      - `def test_cds_without_parent_with_parent_reference_cleanup(self, tmp_path):`
+      - `def test_exon_parent_in_another_gene_with_parent_reference_cleanup(self, tmp_path):`
+      - `class TestParsing:`
+      - `def test_fasta_section_ends_the_annotation(self, tmp_path):`
+      - `def test_augustus_bare_gene_id_gff3(self, tmp_path):`
+      - `def test_augustus_bare_transcript_id_gtf(self, tmp_path):`
+      - `def test_gtf_subfeature_with_only_gene_id_joins_the_single_transcript(self, tmp_path):`
+      - `def test_processed_transcript_is_a_transcript(self, tmp_path):`
+      - `def test_exact_repeat_of_a_gene_block_is_skipped(self, tmp_path):`
+      - `def test_repeated_gene_id_with_different_line_is_still_kept(self, tmp_path):`
+      - `def test_ensembl_pseudogene_line_with_parent_is_a_transcript(self, tmp_path):`
+      - `def test_records_without_id_or_parent_do_not_collide(self, tmp_path):`
+      - `def test_orphan_exon_gets_its_own_gene(self, tmp_path):`
+      - `class TestLinkByAttribute:`
+      - `def test_locus_tag_links_transcript_and_subfeatures(self, tmp_path):`
+      - `def test_spread_lines_are_linked(self, tmp_path):`
+      - `def test_linking_can_be_turned_off(self, tmp_path):`
+      - `def test_prokka_cds_gets_a_gene_named_after_its_locus_tag(self, tmp_path):`
+      - `def test_refseq_gene_without_id_and_without_transcripts(self, tmp_path):`
+      - `def test_isoforms_without_transcript_lines_are_split(self, tmp_path):`
+      - `def test_subfeature_picks_the_transcript_named_in_its_id(self, tmp_path):`
+      - `def test_value_shared_by_several_genes_is_not_used(self, tmp_path):`
+      - `def test_mixed_strands_are_not_linked(self, tmp_path):`
+      - `def test_link_by_name(self, tmp_path):`
+      - `def test_link_by_accepts_a_comma_separated_string(self, tmp_path):`
+      - `def test_row_without_parent_takes_the_parent_of_rows_sharing_its_id(self, tmp_path):`
+      - `def test_files_with_parent_attributes_are_not_changed(self, tmp_path):`
+      - `class TestLinkByFileOrder:`
+      - `def test_off_by_default_with_a_hint(self, tmp_path, capsys):`
+      - `def test_opt_in_links_sorted_records(self, tmp_path):`
+      - `def test_no_hint_when_everything_has_a_parent(self, tmp_path):`
+      - `def test_feature_outside_the_preceding_transcript_is_not_linked(self, tmp_path):`
+      - `def test_feature_on_the_other_strand_is_not_linked(self, tmp_path):`
+      - `def test_overlapping_subfeature_of_the_same_type_ends_the_chain(self, tmp_path):`
+      - `def test_shared_attribute_comes_before_file_order(self, tmp_path):`
+      - `def test_ambiguous_shared_attribute_is_not_linked_by_file_order(self, tmp_path):`
+      - `def test_gtf_lines_naming_nothing_keep_their_file_order(self, tmp_path):`
+      - `class TestColumnEdgeCases:`
+      - `def test_empty_attribute_column_is_kept(self, tmp_path):`
+      - `def test_line_without_seqid_is_skipped(self, tmp_path):`
     - test_peaks.py
       - `def _gff_text():`
       - `def gff_file(tmp_path):`
