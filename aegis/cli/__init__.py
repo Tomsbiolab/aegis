@@ -6,6 +6,7 @@ from .merge import main as merge_main
 from .motif_search import main as motifs_main
 from .orthology import main as orthology_main
 from .overlap import main as overlap_main
+from .peaks import main as peaks_main
 from .prune import main as prune_main
 from .reformat import main as reformat_main
 from .rename import main as rename_main
@@ -33,6 +34,7 @@ app.command(name="motifs", help="Search for DNA motifs in promoter regions.")(mo
 app.command(name="motif-search", help="Search for DNA motifs in promoter regions.")(motifs_main)
 app.command(name="orthology", help="Pairwise orthology analysis between two annotations from different genome assembly.")(orthology_main)
 app.command(name="overlap", help="Detect overlaps between annotations associated to the same genome assembly.")(overlap_main)
+app.command(name="peaks", help="Link ChIP-seq/DAP-seq peaks (GEM output, narrowPeak or BED) to their closest genes.")(peaks_main)
 app.command(name="prune", help="Remove chosen gene or transcript models from an annotation.")(prune_main)
 app.command(name="reformat", help="Reformat an annotation file between GFF and GTF formats.")(reformat_main)
 app.command(name="rename", help="Rename gene/transcript/subfeature IDs in an annotation.")(rename_main)
