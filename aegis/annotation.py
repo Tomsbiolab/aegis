@@ -39,7 +39,7 @@ from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
 from .annotation_components.overlaps import AnnotationOverlaps
 from .annotation_components.redundancy import AnnotationRedundancy
-from .conf import default_noncoding_transcripts, default_features_r, default_features
+from .conf import default_noncoding_transcripts, default_features_r, default_features, default_codons
 
 class Annotation():
 
@@ -56,7 +56,8 @@ class Annotation():
         "cds_segment_coordinate_mismatch", "cds_exceeds_exon", "cds_segment_in_intron",
         "utr_exceeds_exon", "exon_transcript_boundary_mismatch", "transcript_exceeds_gene",
         "gene_exceeds_transcripts", "read_utrs_inconsistent", "read_utrs_differ_from_derived",
-        "repeated_subfeature_ids", "self_parented_transcript"
+        "repeated_subfeature_ids", "self_parented_transcript",
+        "codon_added_to_CDS", "codon_not_incorporated"
     )
 
     # Warnings that describe the state of the annotation object and can therefore be rechecked
@@ -283,6 +284,8 @@ class Annotation():
 
             if stage == "transcript":
                 self._add_self_parented_transcripts(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
+
+        self._incorporate_codons(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
 
         del self._gene_info
         del self._transcript_info
@@ -759,6 +762,8 @@ class Annotation():
     def load_data(self, gff_file, encoding, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, skip_atypical_features:bool=False, quiet:bool=False):
         
         staging = {"gene": [], "transcript": [], "miRNA": [],"exon": [], "CDS": [], "UTR": []}
+        # start_codon/stop_codon rows are folded into the CDS rows once all subfeatures are added (see _incorporate_codons)
+        self._codon_entries = []
 
         chromosomes_t = set()
 
@@ -791,7 +796,7 @@ class Annotation():
                 if ft == "region" and entry.attributes.get("Is_circular", "").lower() == "true":
                     self.circular_chromosomes.add(entry.ch)
 
-                cat = default_features_r.get(ft, "atypical")
+                cat = "codon" if ft in default_codons else default_features_r.get(ft, "atypical")
 
                 if skip_atypical_features and cat == "atypical":
                     continue
@@ -841,7 +846,10 @@ class Annotation():
                     else:
                         self.features[ft] += 1
                     chromosomes_t.add(ch)
-                    staging[cat].append(entry)
+                    if cat == "codon":
+                        self._codon_entries.append(entry)
+                    else:
+                        staging[cat].append(entry)
 
         chromosomes_t = sorted(list(chromosomes_t))
         for ch in chromosomes_t:
@@ -1089,6 +1097,61 @@ class Annotation():
                 print(f"{self.id} Warning: {message}")
         elif not quiet:
             print(f"{self.id} Warning: {message}")
+
+    def _incorporate_codons(self, skip_orphaned_features:bool=False, quiet:bool=False):
+        """
+        Folds the start_codon/stop_codon rows read by load_data into the CDS rows of their transcripts
+        (see Transcript.incorporate_codons), so CDSs annotated without their stop (or start) codon, as in
+        GTF 2.2, cover it. Codon rows within the CDS rows change nothing. Run once all subfeatures are added,
+        while repeated transcript ids can still be resolved.
+        """
+        codons_by_transcript = {}
+        for entry in self._codon_entries:
+            transcripts = []
+            for parent in entry.parents:
+                if parent in self._transcript_info:
+                    candidates = self._transcript_info[parent]
+                elif parent in self.all_transcript_ids:
+                    candidates = (parent,)
+                elif parent in self.all_gene_ids and parent in self.chrs.get(entry.ch, {}) and len(self.chrs[entry.ch][parent].transcripts) == 1:
+                    candidates = tuple(self.chrs[entry.ch][parent].transcripts)
+                else:
+                    candidates = ()
+                for t_id in candidates:
+                    ch, g_id = self.all_transcript_ids[t_id]
+                    if ch != entry.ch:
+                        continue
+                    t = self.chrs[ch][g_id].transcripts[t_id]
+                    if len(candidates) > 1 and (t.end < entry.start or t.start > entry.end):
+                        continue
+                    transcripts.append(t)
+
+            if not transcripts:
+                self.warnings["missing_subfeature_parent"].add(entry.id)
+                self._note("start/stop codon rows could not be assigned to a transcript", f"{entry.feature} {entry.id} could not be assigned to a transcript (parents: {entry.parents})", "missing_subfeature_parent", quiet)
+                if not skip_orphaned_features:
+                    self.orphaned_features.append(Feature(entry.id, entry.ch, entry.source, entry.feature, entry.strand, entry.start, entry.end, entry.score, entry.parents, entry.attributes))
+                continue
+
+            for t in transcripts:
+                if t.id not in codons_by_transcript:
+                    codons_by_transcript[t.id] = (t, [])
+                codons_by_transcript[t.id][1].append((entry.start, entry.end))
+
+        for t, codons in codons_by_transcript.values():
+            changed, not_placed = t.incorporate_codons(codons)
+            if changed:
+                self.warnings["codon_added_to_CDS"].add(t.id)
+                self._note("transcripts had start/stop codon rows outside their CDS rows, which now cover them", f"Transcript {t.id} CDS rows were extended to cover its start/stop codon rows", "codon_added_to_CDS", quiet)
+            if not_placed:
+                self.warnings["codon_not_incorporated"].add(t.id)
+                if not t.temp_CDSs:
+                    message = f"Transcript {t.id} has start/stop codon rows but no CDS rows, so they were ignored"
+                else:
+                    message = f"Transcript {t.id} start/stop codon rows {not_placed} neither lie within nor continue its CDS rows, so they were ignored"
+                self._note("transcripts had start/stop codon rows that could not be added to their CDS", message, "codon_not_incorporated", quiet)
+
+        del self._codon_entries
 
     def _add_self_parented_transcripts(self, skip_orphaned_features:bool=False, quiet:bool=False):
         """

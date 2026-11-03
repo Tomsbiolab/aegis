@@ -56,6 +56,7 @@
       - `def _add_gene(self, entry, rename_repeated_id:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_transcript(self, entry, rename_repeated_id:bool=False, infer_gene_from_transcript:bool=False, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _note(self, summary:str, message:str, warning_key:str, quiet:bool=False):`
+      - `def _incorporate_codons(self, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_self_parented_transcripts(self, skip_orphaned_features:bool=False, quiet:bool=False):`
       - `def _add_subfeature(self, entry, ft_level, infer_gene_and_transcript_from_subfeatures:bool=False, only_infer_if_none_of_the_parents_exist:bool=True, skip_orphaned_features:bool=False, liftover_exception:bool=True, quiet:bool=False):`
       - `def _get_unique_transcript_id(self, t_id):`
@@ -344,6 +345,32 @@
       - `def get_attributes(self) -> list[str]:`
       - `def blast_hits(self):`
       - `def alternative_transcript_rescue(self):`
+    - peaks.py
+      - `class Peak:`
+      - `class _GeneRecord:`
+      - `def __post_init__(self):`
+      - `def _open(path:str):`
+      - `def _to_float(value:str) -> float:`
+      - `def _is_int(value:str) -> bool:`
+      - `def _data_lines(path:str):`
+      - `def detect_peak_format(path:str) -> str:`
+      - `def _read_gem(path:str, event_width:int) -> list[Peak]:`
+      - `def col(name, default_index):`
+      - `def _read_bed_like(path:str, narrowpeak:bool) -> list[Peak]:`
+      - `def read_peaks(path:str, peak_format:str="auto", event_width:int=200) -> list[Peak]:`
+      - `class ChromosomeMismatchError(ValueError):`
+      - `def annotation_sequences(annotation:Annotation) -> set[str]:`
+      - `def check_chromosomes(peak_chroms:Iterable[str], annotation_chroms:Iterable[str]) -> None:`
+      - `class _ChromIndex:`
+      - `def __init__(self, genes:list[_GeneRecord]):`
+      - `def nearest_by_gene(self, start:int, end:int) -> tuple[list[_GeneRecord], int]:`
+      - `def nearest_by_tss(self, summit:int) -> tuple[list[_GeneRecord], int]:`
+      - `def in_window(self, summit:int, upstream:int, downstream:int) -> list[_GeneRecord]:`
+      - `def signed_tss_distance(summit:int, gene:_GeneRecord) -> int:`
+      - `def summit_location(summit:int, gene:_GeneRecord) -> str:`
+      - `def _gene_records(annotation:Annotation, coding_only:bool=False, skip_pseudogenes:bool=False, skip_te:bool=False) -> dict[str, list[_GeneRecord]]:`
+      - `def assign_peaks_to_genes(`
+      - `def summarise_target_genes(links:pd.DataFrame) -> pd.DataFrame:`
     - subfeatures.py
       - `class CDS(Feature):`
       - `def __init__(self, CDS_segments:list, feature_id:str, ch:str, source:str, feature:str, strand:str, start:int, end:int, score:str, parents:list[str]=[], attributes:dict=`
@@ -398,6 +425,8 @@
       - `def generate_best_protein(`
       - `def keep_unchanged_subfeatures(self, old_CDSs:list[CDS], old_UTRs:list[UTR], quiet:bool=False):`
       - `def almost_equal(self, other:Transcript):`
+      - `def incorporate_codons(self, codons:list[tuple[int, int]]) -> tuple[bool, list[tuple[int, int]]]:`
+      - `def _codon_segment(self, neighbour:Feature, start:int, end:int, five_prime:bool) -> Feature:`
       - `def _detect_polycistronic(self) -> list[str]:`
       - `def generate_CDSs(self, quiet:bool=False):`
       - `def place_UTRs(self):`
@@ -538,6 +567,10 @@
         - `def main(`
       - overlap.py
         - `def main(`
+      - peaks.py
+        - `def _is_annotation_path(path:str) -> bool:`
+        - `def main(`
+        - `def resolve(name:str) -> str:`
       - prune.py
         - `def main(`
       - reformat.py
@@ -1169,6 +1202,19 @@
       - `def test_mrna_with_gene_id_is_kept(self, tmp_path, capsys):`
       - `def test_list_load_warnings_prints_each_id(self, tmp_path, capsys):`
       - `def test_repeated_self_parented_entry_is_ignored(self, tmp_path):`
+      - `class TestCodonRows:`
+      - `def _gff(tmp_path, strand, rows):`
+      - `def _segments(annot):`
+      - `def test_adjacent_stop_codon_extends_last_segment(self, tmp_path):`
+      - `def test_gtf_stop_codon_is_in_extracted_CDS(self, tmp_path):`
+      - `def test_codons_within_CDS_change_nothing(self, tmp_path):`
+      - `def test_stop_codon_in_next_exon_becomes_new_segment(self, tmp_path):`
+      - `def test_split_start_codon_updates_phases(self, tmp_path):`
+      - `def test_minus_strand_codons(self, tmp_path):`
+      - `def test_minus_strand_partial_5_prime_extension_shifts_phase(self, tmp_path):`
+      - `def test_codon_away_from_CDS_is_not_incorporated(self, tmp_path):`
+      - `def test_codons_without_CDS_rows_are_ignored(self, tmp_path):`
+      - `def test_codon_with_unknown_parent(self, tmp_path):`
     - test_cli_extract.py
       - `def test_extract_cli_smoke(test_data_dir, tmp_path, feature_type, extra_args):`
       - `def test_extract_cli_validation_errors(test_data_dir, tmp_path):`
@@ -1782,6 +1828,25 @@
       - `class TestPromoter:`
       - `def test_init(self):`
       - `def test_promoter_atg_type(self):`
+    - test_peaks.py
+      - `def _gff_text():`
+      - `def gff_file(tmp_path):`
+      - `def annotation(gff_file):`
+      - `def _bed(tmp_path, rows, name="peaks.bed"):`
+      - `def _links(df):`
+      - `def test_read_bed_converts_to_one_based(tmp_path):`
+      - `def test_read_narrowpeak_uses_summit_offset(tmp_path):`
+      - `def test_read_gem_narrowpeak_uses_event_position(tmp_path):`
+      - `def test_read_gem_events_table(tmp_path):`
+      - `def test_non_unique_names_get_peak_ids(tmp_path):`
+      - `def test_nearest_gene(annotation, tmp_path):`
+      - `def test_reference_tss_vs_gene(annotation, tmp_path):`
+      - `def test_one_gene_per_peak_and_max_distance(annotation, tmp_path):`
+      - `def test_window_mode(annotation, tmp_path):`
+      - `def test_filters(annotation, tmp_path):`
+      - `def test_summarise_target_genes(annotation, tmp_path):`
+      - `def test_cli_peaks(gff_file, tmp_path):`
+      - `def test_cli_peaks_invalid_mode(gff_file, tmp_path):`
     - test_redundancy_alt_transcript_groups.py
       - `def _score10_hit(gene_id: str) -> OverlapHit:`
       - `def _build_gene(gene_id: str, cds_len: int, exon_len: int) -> Gene:`
