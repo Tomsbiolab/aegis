@@ -246,6 +246,8 @@ For further and more detailed information on how to use the **AEGIS** package, i
 If you use AEGIS in your research, please cite the following journal article:
 > Navarro-Payá, D., Santiago, A., Velt, A., Moretto, M., Rustenholz, C., & Matus, J. T. (2026). *AEGIS: An annotation extraction and genomic integration resource.* Bioinformatics. doi: [10.1093/bioinformatics/btag363](https://doi.org/10.1093/bioinformatics/btag363)
 
+You can also report the AEGIS version you used (`aegis --version`).
+
 ## License
 
 AEGIS is licensed under the GNU General Public License v3.0. See the `LICENSE.md` file for more details. Third-party tools included in the Docker image are distributed under their respective licenses.

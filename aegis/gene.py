@@ -415,6 +415,33 @@ class Gene(Feature):
             u.provisional = False
             u.update_numbering()
 
+    def name_new_exons(self, new_exons:list[Exon], sep:str="_", digits:int=3):
+        """
+        Names exons added to the gene (with provisional ids, see Transcript.cover_CDS_segments_beyond_exons)
+        without renaming the others: a new exon with the coordinates of an existing one takes its id, and the
+        rest take the free <gene>_e<n> numbers in transcript order, new exons shared between transcripts
+        sharing their id.
+        """
+        new = {id(e) for e in new_exons}
+        names: dict[tuple[int, int, str, str], str] = {}
+        used = set()
+        for t in self.transcripts.values():
+            for e in t.exons:
+                if id(e) not in new:
+                    names.setdefault((e.start, e.end, e.ch, e.strand), e.id)
+                    used.add(e.id)
+        n = 0
+        for e in sorted(new_exons, key=lambda e: -e.end if e.strand == "-" else e.start):
+            key = (e.start, e.end, e.ch, e.strand)
+            if key not in names:
+                n += 1
+                while f"{self.base_id}{sep}e{n:0{digits}d}" in used:
+                    n += 1
+                names[key] = f"{self.base_id}{sep}e{n:0{digits}d}"
+                used.add(names[key])
+            e.id = names[key]
+            e.update_numbering()
+
     def rename_utrs(self, base_id:str="", sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False, name_exons_independently_for_each_transcript:bool=False):
         """
         Deals with gene level naming of utrs, making sure shared utrs receive the same numbering, also considering strand orientation.

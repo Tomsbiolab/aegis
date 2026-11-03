@@ -3967,6 +3967,83 @@ class TestCDSSegmentsInIntrons:
         assert exons == {"t1": [("e1", 1, 100), ("e2_2", 200, 320), ("e3", 400, 500)], "t2": [("e2", 200, 300)]}
 
 
+class TestCDSSegmentsBeyondExons:
+    """CDS segments beyond the first/last exon: next to it they extend it, beyond a gap (an intron) they get their own exon."""
+
+    @staticmethod
+    def _annotation(tmp_path, exons, cds_rows, mode="contain", strand="+", extra=""):
+        start = min(a for a, _ in exons + cds_rows)
+        end = max(b for _, b in exons + cds_rows)
+        gff_file = tmp_path / "test.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            f"chr1\ttest\tgene\t{start}\t{end}\t.\t{strand}\t.\tID=g1\n"
+            f"chr1\ttest\tmRNA\t{start}\t{end}\t.\t{strand}\t.\tID=t1;Parent=g1\n"
+            + "".join(f"chr1\ttest\texon\t{a}\t{b}\t.\t{strand}\t.\tID=e{n};Parent=t1\n" for n, (a, b) in enumerate(exons, 1))
+            + "".join(f"chr1\ttest\tCDS\t{a}\t{b}\t.\t{strand}\t.\tID=c1;Parent=t1\n" for a, b in cds_rows)
+            + extra
+        )
+        return Annotation(str(gff_file), quiet=True, coordinate_polishing=mode)
+
+    @staticmethod
+    def _exons(annot, t_id="t1"):
+        return [(e.id, e.start, e.end) for e in annot.chrs["chr1"]["g1"].transcripts[t_id].exons]
+
+    @pytest.mark.parametrize("mode", ["contain", "trim"])
+    def test_segment_beyond_an_intron_gets_its_own_exon(self, tmp_path, mode):
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(50, 100), (200, 300), (400, 450)], mode=mode)
+        assert self._exons(annot) == [("e1", 1, 100), ("e2", 200, 300), ("g1_e001", 400, 450)]
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert (t.start, t.end) == (1, 450)
+        assert t.exons[-1].coding
+        c = next(iter(t.CDSs.values()))
+        assert [(u.start, u.end) for u in c.UTRs] == [(1, 49)]
+        assert c.full_UTR_exons == 0
+        assert annot.warnings["cds_exceeds_exon"] == {"c1"}
+        assert annot.recheck_warnings()["cds_exceeds_exon"] == set()
+
+    def test_segment_before_an_intron_on_minus_strand_gets_its_own_exon(self, tmp_path):
+        # As in AGAT's 36_test: the 5' CDS segment of a minus-strand transcript has no exon row
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(1, 100), (200, 300), (400, 450)], strand="-")
+        assert self._exons(annot) == [("e1", 1, 100), ("e2", 200, 300), ("g1_e001", 400, 450)]
+        annot = self._annotation(tmp_path, [(200, 300), (400, 500)], [(10, 50), (200, 300), (400, 500)], strand="-")
+        assert self._exons(annot) == [("g1_e001", 10, 50), ("e1", 200, 300), ("e2", 400, 500)]
+
+    def test_several_segments_beyond_introns_each_get_an_exon(self, tmp_path):
+        annot = self._annotation(tmp_path, [(200, 300)], [(10, 30), (60, 90), (200, 300), (400, 420), (500, 520)])
+        assert [(a, b) for _, a, b in self._exons(annot)] == [(10, 30), (60, 90), (200, 300), (400, 420), (500, 520)]
+        assert len({e_id for e_id, _, _ in self._exons(annot)}) == 5
+
+    @pytest.mark.parametrize("cds_rows, exons", [
+        ([(50, 100), (200, 320)], [("e1", 20, 100), ("e2", 200, 320)]),  # overhang past the last exon
+        ([(50, 100), (200, 290), (301, 330)], [("e1", 20, 100), ("e2", 200, 330)]),  # segment abutting it
+        ([(10, 100), (200, 300)], [("e1", 10, 100), ("e2", 200, 300)]),  # overhang before the first exon
+        ([(10, 19), (20, 100), (200, 300)], [("e1", 10, 100), ("e2", 200, 300)]),  # segment abutting it
+    ])
+    def test_segments_next_to_the_outermost_exon_extend_it(self, tmp_path, cds_rows, exons):
+        annot = self._annotation(tmp_path, [(20, 100), (200, 300)], cds_rows)
+        assert self._exons(annot) == exons
+
+    def test_no_correction_leaves_exons_untouched(self, tmp_path):
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(50, 100), (200, 300), (400, 450)], mode="none")
+        assert self._exons(annot) == [("e1", 1, 100), ("e2", 200, 300)]
+        assert annot.warnings["cds_exceeds_exon"] == {"c1"}
+        assert annot.recheck_warnings()["cds_exceeds_exon"] == {"c1"}
+
+    def test_new_exon_takes_the_id_of_an_identical_exon_in_the_gene(self, tmp_path):
+        t2 = (
+            "chr1\ttest\tmRNA\t200\t450\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\ttest\texon\t200\t300\t.\t+\t.\tID=t2_e1;Parent=t2\n"
+            "chr1\ttest\texon\t400\t450\t.\t+\t.\tID=t2_e2;Parent=t2\n"
+            "chr1\ttest\tCDS\t200\t300\t.\t+\t0\tID=c2;Parent=t2\n"
+            "chr1\ttest\tCDS\t400\t450\t.\t+\t2\tID=c2;Parent=t2\n"
+        )
+        annot = self._annotation(tmp_path, [(1, 100), (200, 300)], [(50, 100), (200, 300), (400, 450)], extra=t2)
+        new = next(e for e in annot.chrs["chr1"]["g1"].transcripts["t1"].exons if e.start == 400)
+        assert new.id == "t2_e2"
+        assert new.parents == ["t1", "t2"]
+
+
 class TestAnnotationCollapsing:
     @staticmethod
     def _annotation(tmp_path, body):
@@ -4540,3 +4617,109 @@ class TestSelfParentedTranscripts:
         annot = Annotation(str(gff_file), quiet=True)
         assert list(annot.chrs["chr1"]["g1"].transcripts) == ["t1"]
         assert annot.warnings["self_parented_transcript"] == {"g1"}
+
+
+class TestCodonRows:
+    """start_codon/stop_codon rows outside the CDS rows are folded into the CDS (e.g. GTF 2.2 stop codons)."""
+
+    # 10 bp 5' flank, ATGAAACCCGGG (11-22), intron (23-40), TTTCCC (41-46), TAA (47-49), 3' flank
+    GENOME = "GGGGGGGGGG" + "ATGAAACCCGGG" + "GTAAGTTTTTTTTTTCAG" + "TTTCCC" + "TAA" + "GGGGGGGGGGG"
+
+    @staticmethod
+    def _gff(tmp_path, strand, rows):
+        gff_file = tmp_path / "codons.gff3"
+        lines = [
+            "##gff-version 3",
+            f"chr1\tt\tgene\t1\t60\t.\t{strand}\t.\tID=g1",
+            f"chr1\tt\tmRNA\t1\t60\t.\t{strand}\t.\tID=t1;Parent=g1",
+            f"chr1\tt\texon\t1\t22\t.\t{strand}\t.\tID=e1;Parent=t1",
+            f"chr1\tt\texon\t41\t60\t.\t{strand}\t.\tID=e2;Parent=t1",
+        ]
+        for ft, start, end, phase in rows:
+            lines.append(f"chr1\tt\t{ft}\t{start}\t{end}\t.\t{strand}\t{phase}\tParent=t1")
+        gff_file.write_text("\n".join(lines) + "\n")
+        return str(gff_file)
+
+    @staticmethod
+    def _segments(annot):
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        return [(s.start, s.end, s.phase) for c in t.CDSs.values() for s in sorted(c.CDS_segments)]
+
+    def test_adjacent_stop_codon_extends_last_segment(self, tmp_path):
+        gff = self._gff(tmp_path, "+", [("CDS", 11, 22, 0), ("CDS", 41, 46, 0), ("start_codon", 11, 13, 0), ("stop_codon", 47, 49, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(11, 22, 0), (41, 49, 0)]
+        assert annot.warnings["codon_added_to_CDS"] == {"t1"}
+        assert annot.warnings["codon_not_incorporated"] == set()
+
+    def test_gtf_stop_codon_is_in_extracted_CDS(self, tmp_path):
+        genome_file = tmp_path / "g.fa"
+        genome_file.write_text(">chr1\n" + self.GENOME + "\n")
+        gtf_file = tmp_path / "codons.gtf"
+        attrs = 'gene_id "g1"; transcript_id "t1";'
+        gtf_file.write_text(
+            f"chr1\tt\texon\t1\t22\t.\t+\t.\t{attrs} exon_number \"1\";\n"
+            f"chr1\tt\texon\t41\t60\t.\t+\t.\t{attrs} exon_number \"2\";\n"
+            f"chr1\tt\tCDS\t11\t22\t.\t+\t0\t{attrs} exon_number \"1\";\n"
+            f"chr1\tt\tCDS\t41\t46\t.\t+\t0\t{attrs} exon_number \"2\";\n"
+            f"chr1\tt\tstart_codon\t11\t13\t.\t+\t0\t{attrs} exon_number \"1\";\n"
+            f"chr1\tt\tstop_codon\t47\t49\t.\t+\t0\t{attrs} exon_number \"2\";\n"
+        )
+        annot = Annotation(str(gtf_file), genome=Genome("g", str(genome_file)), quiet=True)
+        assert self._segments(annot) == [(11, 22, 0), (41, 49, 0)]
+        c = next(iter(annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs.values()))
+        assert c.seq == "ATGAAACCCGGGTTTCCCTAA"
+
+    def test_codons_within_CDS_change_nothing(self, tmp_path):
+        gff = self._gff(tmp_path, "+", [("CDS", 11, 22, 0), ("CDS", 41, 49, 0), ("start_codon", 11, 13, 0), ("stop_codon", 47, 49, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(11, 22, 0), (41, 49, 0)]
+        assert annot.warnings["codon_added_to_CDS"] == set()
+        assert annot.warnings["codon_not_incorporated"] == set()
+
+    def test_stop_codon_in_next_exon_becomes_new_segment(self, tmp_path):
+        gff = self._gff(tmp_path, "+", [("CDS", 11, 22, 0), ("stop_codon", 41, 43, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(11, 22, 0), (41, 43, 0)]
+
+    def test_split_start_codon_updates_phases(self, tmp_path):
+        # Start codon split as 21-22 | 41: the 41-55 row gains one base and the 21-22 row is added
+        gff = self._gff(tmp_path, "+", [("CDS", 42, 55, 0), ("start_codon", 21, 22, 0), ("start_codon", 41, 41, 2)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(21, 22, 0), (41, 55, 1)]
+
+    def test_minus_strand_codons(self, tmp_path):
+        # Minus strand: the stop codon lies below the lowest row and the start codon above the highest
+        gff = self._gff(tmp_path, "-", [("CDS", 47, 52, 0), ("CDS", 14, 22, 0), ("stop_codon", 11, 13, 0), ("start_codon", 53, 55, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(11, 22, 0), (47, 55, 0)]
+
+    def test_minus_strand_partial_5_prime_extension_shifts_phase(self, tmp_path):
+        gff = self._gff(tmp_path, "-", [("CDS", 14, 52, 0), ("start_codon", 53, 54, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(14, 54, 2)]
+
+    def test_codon_away_from_CDS_is_not_incorporated(self, tmp_path):
+        gff = self._gff(tmp_path, "+", [("CDS", 11, 22, 0), ("stop_codon", 50, 52, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == [(11, 22, 0)]
+        assert annot.warnings["codon_not_incorporated"] == {"t1"}
+
+    def test_codons_without_CDS_rows_are_ignored(self, tmp_path):
+        gff = self._gff(tmp_path, "+", [("start_codon", 11, 13, 0), ("stop_codon", 47, 49, 0)])
+        annot = Annotation(gff, quiet=True)
+        assert self._segments(annot) == []
+        assert annot.warnings["codon_not_incorporated"] == {"t1"}
+
+    def test_codon_with_unknown_parent(self, tmp_path):
+        gff_file = tmp_path / "orphan.gff3"
+        gff_file.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t1\t60\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t1\t60\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\tCDS\t11\t46\t.\t+\t0\tParent=t1\n"
+            "chr1\tt\tstop_codon\t47\t49\t.\t+\t0\tID=sc1;Parent=t_missing\n"
+        )
+        annot = Annotation(str(gff_file), quiet=True)
+        assert "sc1" in annot.warnings["missing_subfeature_parent"]
+        assert self._segments(annot) == [(11, 46, 0)]

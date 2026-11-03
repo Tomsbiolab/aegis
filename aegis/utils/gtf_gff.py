@@ -90,6 +90,7 @@ class GffEntry:
     transposable: bool
     decreasing_coordinates: bool
     phase: int | None = None
+    line: int = 0
 
 def parse_gff_parts(parts) -> GffEntry:
 
@@ -169,6 +170,7 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     source_keys = {}
     fallback_id = None
     fallback_parent = None
+    bare_id = None
 
     def keep_extra(raw):
         slot = f"{EXTRA_ATTRIBUTES}{len(parsed)}"
@@ -179,6 +181,10 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
         key, sep, val = p.partition("=")
         if not sep: # Means '=' was not found
+            # AUGUSTUS writes the ID of gene and transcript lines as a bare value ('g2', 'g2.t1;Parent=g2')
+            token = p.strip()
+            if (gene or transcript) and bare_id is None and token and not any(c.isspace() for c in token):
+                bare_id = token
             continue
         
         key = key.strip()
@@ -221,6 +227,11 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
         if lower_key in ID_OR_PARENT_KEYS:
             if fallback_parent is None:
                 fallback_parent = (key, val, keep_extra(None))
+            elif not (gene or transcript) and lower_key in ALT_ID_transcript and fallback_parent[0].lower() in ALT_ID_gene:
+                # a subfeature belongs to its transcript, so transcript_id wins over gene_id whatever their order
+                old_key, old_val, old_slot = fallback_parent
+                parsed[old_slot] = f"{old_key}={old_val}"
+                fallback_parent = (key, val, keep_extra(None))
             else:
                 keep_extra(f"{key}={val}")
             continue
@@ -237,6 +248,9 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
             parsed[INT_ID] = val
         else:
             parsed[slot] = f"{key}={val}"
+
+    if bare_id is not None and INT_ID not in parsed:
+        parsed[INT_ID] = bare_id
 
     if fallback_parent is not None:
         key, val, slot = fallback_parent
@@ -351,16 +365,26 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
 
     explicit_gene_lines = []
     explicit_transcript_lines = []
+    # Subfeatures naming neither gene nor transcript are written right after the gene/transcript line they
+    # follow in the input, so that the file order is kept for Annotation(link_by_file_order=True)
+    anchor = None
+    unnamed_after: dict[tuple[str, int], list] = {}
 
     # PASS 1 — read file
     with open_file(gtf_file, 'r', encoding=encoding) as infile:
         for line in infile:
+            if line.startswith('##FASTA') or line.startswith('>'):
+                break
             if line.startswith('#'):
                 if not line.startswith('##'):
                     comments.append(line)
                 continue
 
-            parts = line.strip().split('\t')
+            parts = line.rstrip('\r\n').strip(' ').split('\t')
+            if len(parts) == 8:
+                parts.append('')  # empty attribute column without its tab
+            if len(parts) == 9 and not parts[0].strip():
+                parts = []  # no seqid
             if len(parts) != 9:
                 if not quiet:
                     sys.stderr.write(f"Warning: Skipping malformed line: {line.strip()}\n")
@@ -379,9 +403,14 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
 
             if len(attributes) == 1 and fallback_key in attributes:
                 bare_val = attributes[fallback_key]
-                attributes['gene_id'] = bare_val
-                if feature not in default_features["gene"]:
-                    attributes['transcript_id'] = bare_val
+                if feature in default_features["transcript"]:
+                    # e.g. AUGUSTUS/TSEBRA 'anno1.g20064.t1': the transcript's own ID; its gene_id is taken
+                    # from the subfeatures that name it (below), not made equal to the transcript ID
+                    attributes = {'transcript_id': bare_val}
+                else:
+                    attributes['gene_id'] = bare_val
+                    if feature not in default_features["gene"]:
+                        attributes['transcript_id'] = bare_val
                     
             start_int = int(start)
             end_int = int(end)
@@ -393,12 +422,18 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                 if gene_id and gene_id not in seen_genes:
                     explicit_gene_lines.append((parts, attributes))
                     seen_genes.add(gene_id)
+                    anchor = ('gene', len(explicit_gene_lines) - 1)
                 continue
 
             if feature in default_features["transcript"]:
                 if transcript_id and transcript_id not in seen_transcripts:
                     explicit_transcript_lines.append((parts, attributes))
                     seen_transcripts.add(transcript_id)
+                    anchor = ('transcript', len(explicit_transcript_lines) - 1)
+                continue
+
+            if not gene_id and not transcript_id and anchor is not None:
+                unnamed_after.setdefault(anchor, []).append((parts, attributes, feature))
                 continue
 
             subfeature_lines.append((parts, attributes, feature))
@@ -437,6 +472,27 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                 if gene_id and gene_id in inferred_genes:
                     inferred_genes[gene_id]['transcript_ids'][transcript_id] = True
 
+    # Subfeatures naming only their gene (e.g. JGI CDS lines with gene_id and protein_id but no transcript_id)
+    # belong to that gene's transcript when it has exactly one
+    gene_transcripts: dict[str, set] = {}
+    for parts, attributes in explicit_transcript_lines:
+        if attributes.get('gene_id'):
+            gene_transcripts.setdefault(attributes['gene_id'], set()).add(attributes['transcript_id'])
+    for t_id, t in inferred_transcripts.items():
+        if t['gene_id']:
+            gene_transcripts.setdefault(t['gene_id'], set()).add(t_id)
+    for parts, attributes, feature in subfeature_lines:
+        if attributes.get('transcript_id') or not attributes.get('gene_id'):
+            continue
+        candidates = gene_transcripts.get(attributes['gene_id'], set())
+        if len(candidates) == 1:
+            t_id = next(iter(candidates))
+            attributes['transcript_id'] = t_id
+            if t_id in inferred_transcripts:
+                t = inferred_transcripts[t_id]
+                t['start'] = min(t['start'], int(parts[3]))
+                t['end'] = max(t['end'], int(parts[4]))
+
     # PASS 2 — write GFF3
     with open_file(gff3_file, 'w', encoding=encoding) as outfile:
         outfile.write("##gff-version 3\n")
@@ -444,7 +500,11 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
         for c in comments:
             outfile.write(f"#{c}")
 
-        for parts, attributes in explicit_gene_lines:
+        def write_unnamed(key):
+            for parts, attributes, feature in unnamed_after.get(key, ()):
+                outfile.write("\t".join(parts[:8] + [format_gff3_attributes(attributes, feature)]) + '\n')
+
+        for i, (parts, attributes) in enumerate(explicit_gene_lines):
             gene_attrs = {'gene_id': attributes['gene_id']}
             if 'gene_name' in attributes:
                 gene_attrs['gene_name'] = attributes['gene_name']
@@ -453,6 +513,7 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
             gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
             outfile.write("\t".join([parts[0], parts[1], 'gene', parts[3], parts[4],
                                      parts[5], parts[6], parts[7], gene_attr_str]) + '\n')
+            write_unnamed(('gene', i))
 
         for gene_id, g in inferred_genes.items():
             if gene_id in seen_genes:
@@ -468,9 +529,13 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                                      g['strand'], '.', gene_attr_str]) + '\n')
             seen_genes.add(gene_id)
 
-        for parts, attributes in explicit_transcript_lines:
+        for i, (parts, attributes) in enumerate(explicit_transcript_lines):
             tx_attrs = {k: v for k, v in attributes.items()
                         if 'transcript' in k or 'gene' in k}
+            if 'gene_id' not in tx_attrs:
+                inferred_gene = inferred_transcripts.get(attributes['transcript_id'], {}).get('gene_id')
+                if inferred_gene:
+                    tx_attrs['gene_id'] = inferred_gene
             tx_feature_type = 'transcript'
             if 'transcript_biotype' in attributes:
                 if 'RNA' in attributes['transcript_biotype']:
@@ -479,6 +544,7 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
             outfile.write("\t".join([parts[0], parts[1], tx_feature_type,
                                      parts[3], parts[4], parts[5], parts[6],
                                      parts[7], tx_attr_str]) + '\n')
+            write_unnamed(('transcript', i))
 
         for t_id, t in inferred_transcripts.items():
             if t_id in seen_transcripts:
@@ -535,10 +601,14 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
     try:
         with open_file(file_path, 'r', encoding=encoding) as f:
             i = 0
+            bare_values = False
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
+
+                if line.startswith("##FASTA") or line.startswith(">"):
+                    break
 
                 if line.startswith("##gff-version 3"):
                     return 'gff3'
@@ -558,11 +628,15 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
                     if re.search(r'\b\w+\s+(?:"[^"]+"|[^\s;]+)', attributes):
                         return 'gtf'
 
+                    # A bare value (e.g. AUGUSTUS gene lines 'g2') fits both formats: let the next lines decide
                     if re.match(r'^[\w\.\-]+$', attributes):
-                        return 'gtf'
+                        bare_values = True
 
                 if i >= lines_to_check:
                     break
+
+            if bare_values:
+                return 'gtf'
 
     except Exception as e:
         sys.stderr.write(f"Error reading file for format detection: {e}\n")

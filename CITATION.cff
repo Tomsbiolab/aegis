@@ -1,50 +1,55 @@
-references:
-  - title: >-
-      AEGIS: an annotation extraction and genomic integration resource
-    abstract: |
-      Abstract
-                  
-                    Motivation
-                    Genome annotation files (GFF3/GTF) are the standard for storing genomic feature data, yet their flexibility often results in formatting inconsistencies that create bottlenecks for downstream bioinformatics analyses. A robust, unified framework is required to parse, standardise, and validate these files to ensure interoperability and facilitate complex comparative genomic tasks.
-                  
-                  
-                    Results
-                    We present AEGIS (Annotation Extraction and Genomic Integration Suite), a comprehensive toolkit designed to parse, correct, and standardise genome annotations. Beyond quality control, AEGIS provides advanced modules for flexible feature extraction (e.g., coding sequences, promoters) and comparative genomic analysis. Uniquely, it integrates multiple lines of evidence, including sequence homology, synteny, and coordinate-based lift-overs, to assess gene model correspondence and infer orthology. We demonstrate the utility of AEGIS by quantifying complex structural changes between Arabidopsis annotation versions and identifying high-confidence orthologues across diverse plant genomes.
-                  
-                  
-                    Availability
-                    AEGIS is implemented in Python. Source code and documentation are freely available under the GPL-3 license at {{https://github.com/Tomsbiolab/aegis}} and as a Docker container at {{https://hub.docker.com/r/tomsbiolab/aegis}}. The package is also available on PyPI (pip install aegis-bio).
-                  
-                  
-                    Supplementary information
-                    Supplementary data are available at Bioinformatics online.
-    type: journalArticle
-    license: https://creativecommons.org/licenses/by/4.0/
-    copyright: https://creativecommons.org/licenses/by/4.0/
-    database: DOI.org (Crossref)
-    date-accessed: 2026-06-11T13:25:35Z
-    issn: 1367-4811
-    languages: 
-      - en
-    pages: btag363
-    url: https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/btag363/8704544
-    authors: 
-      - family-names: Navarro-Payá
-        given-names: David
-      - family-names: Santiago
-        given-names: Antonio
-      - family-names: Velt
-        given-names: Amandine
-      - family-names: Moretto
-        given-names: Marco
-      - family-names: Rustenholz
-        given-names: Camille
-      - family-names: Matus
-        given-names: José Tomás
-      - family-names: Cheng
-        given-names: Jianlin
-    
-    date-published: 2026-06-09
-    identifiers: 
-      - type: doi
-        value: 10.1093/bioinformatics/btag363
+cff-version: 1.2.0
+message: >-
+  If you use AEGIS in your research, please cite the journal article listed
+  under preferred-citation.
+type: software
+title: "AEGIS: Annotation Extraction and Genomic Integration Suite"
+abstract: >-
+  A toolkit to parse, correct and standardise genome annotations (GFF3/GTF),
+  extract features (e.g. coding sequences, promoters) and perform comparative
+  genomic analyses, including gene model correspondence and orthology
+  inference.
+version: 1.0.0
+date-released: 2026-11-03
+license: GPL-3.0-or-later
+repository-code: https://github.com/Tomsbiolab/aegis
+url: https://github.com/Tomsbiolab/aegis
+keywords:
+  - genome annotation
+  - GFF3
+  - GTF
+  - orthology
+  - bioinformatics
+authors:
+  - family-names: Navarro-Payá
+    given-names: David
+  - family-names: Santiago
+    given-names: Antonio
+  - family-names: Velt
+    given-names: Amandine
+  - family-names: Moretto
+    given-names: Marco
+preferred-citation:
+  type: article
+  title: "AEGIS: an annotation extraction and genomic integration resource"
+  authors:
+    - family-names: Navarro-Payá
+      given-names: David
+    - family-names: Santiago
+      given-names: Antonio
+    - family-names: Velt
+      given-names: Amandine
+    - family-names: Moretto
+      given-names: Marco
+    - family-names: Rustenholz
+      given-names: Camille
+    - family-names: Matus
+      given-names: José Tomás
+  journal: Bioinformatics
+  year: 2026
+  month: 6
+  start: btag363
+  issn: 1367-4811
+  doi: 10.1093/bioinformatics/btag363
+  url: https://doi.org/10.1093/bioinformatics/btag363
+  license: CC-BY-4.0

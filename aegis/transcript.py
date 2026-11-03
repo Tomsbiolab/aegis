@@ -490,6 +490,98 @@ class Transcript(Feature):
                     break
         return almost_equal
 
+    def incorporate_codons(self, codons:list[tuple[int, int]]) -> tuple[bool, list[tuple[int, int]]]:
+        """
+        Folds start_codon/stop_codon rows into the raw CDS rows (temp_CDSs), before CDS generation.
+        Some GFF/GTF files (e.g. GTF 2.2, where the CDS excludes the stop codon) annotate a codon outside
+        the CDS rows instead of within them. A codon row (start, end) already within a CDS row is left as is.
+        One that overlaps or abuts the first or last CDS row extends that row to cover it, and one that lies
+        across an intron from it (the CDS ends at an exon end and the codon starts the next exon, as in codons
+        split across exons) becomes a new CDS row. Annotated phases are kept consistent with the new 5' ends.
+        Returns whether any CDS row changed and the codon rows that could not be placed.
+        """
+        if not self.temp_CDSs:
+            return False, list(codons)
+
+        changed = False
+        exons = sorted(self.exons)
+        five_prime_low = self.strand != "-"
+        pending = sorted(codons)
+
+        # Rows are placed nearest the CDS first, so the second part of a codon split across exons
+        # follows the first part
+        progress = True
+        while pending and progress:
+            progress = False
+            remaining = []
+            for start, end in pending:
+                segs = self.temp_CDSs
+                if any(s.start <= start and end <= s.end for s in segs):
+                    progress = True
+                    continue
+
+                lo = min(s.start for s in segs)
+                hi = max(s.end for s in segs)
+                placed = False
+
+                if end > hi and start >= lo:
+                    nb = max(segs, key=lambda s: s.end)
+                    five_prime = not five_prime_low
+                    if start <= hi + 1:
+                        if start >= nb.start:
+                            if five_prime and nb.phase is not None:
+                                nb.phase = (nb.phase + end - hi) % 3
+                            nb.end = end
+                            placed = True
+                    elif any(e.start <= hi == e.end for e in exons):
+                        following = [e for e in exons if e.start > hi]
+                        if following and following[0].start == start and following[0].end >= end:
+                            self.temp_CDSs.append(self._codon_segment(nb, start, end, five_prime))
+                            placed = True
+
+                elif start < lo and end <= hi:
+                    nb = min(segs, key=lambda s: s.start)
+                    five_prime = five_prime_low
+                    if end >= lo - 1:
+                        if end <= nb.end:
+                            if five_prime and nb.phase is not None:
+                                nb.phase = (nb.phase + lo - start) % 3
+                            nb.start = start
+                            placed = True
+                    elif any(e.end >= lo == e.start for e in exons):
+                        preceding = [e for e in exons if e.end < lo]
+                        if preceding and preceding[-1].end == end and preceding[-1].start <= start:
+                            self.temp_CDSs.append(self._codon_segment(nb, start, end, five_prime))
+                            placed = True
+
+                if placed:
+                    changed = True
+                    progress = True
+                    self.temp_CDSs.sort()
+                else:
+                    remaining.append((start, end))
+            pending = remaining
+
+        return changed, pending
+
+    def _codon_segment(self, neighbour:Feature, start:int, end:int, five_prime:bool) -> Feature:
+        """
+        New CDS row for a codon across an intron from neighbour, the CDS row it continues, with the phase
+        that keeps the reading frame: a 5' row leaves the bases that neighbour's phase skips, and a 3' row
+        skips what neighbour leaves over.
+        """
+        size = end - start + 1
+        phase = None
+        if neighbour.phase is not None:
+            if five_prime:
+                phase = (size + neighbour.phase) % 3
+            else:
+                phase = (3 - (neighbour.size - neighbour.phase) % 3) % 3
+        seg = Feature(neighbour.id, neighbour.ch, neighbour.source, neighbour.feature, neighbour.strand, start, end, neighbour.score, neighbour.parents[:], phase=phase)
+        if neighbour.misc_attributes:
+            seg.misc_attributes = neighbour.misc_attributes[:]
+        return seg
+
     def _detect_polycistronic(self) -> list[str]:
         """
         Evaluates raw parsed temp_CDSs for polycistronic structures, overlapping segments,
@@ -717,6 +809,50 @@ class Transcript(Feature):
 
         self.rename_exons(base_id=self.id)
         self.generated_exons = True
+
+    def cover_CDS_segments_beyond_exons(self, c:CDS) -> tuple[list[Exon], list[Exon]]:
+        """
+        Makes the exons cover the CDS segments of c lying (partly) before the first or after the last exon.
+        A segment overlapping or abutting the outermost exon extends it (e.g. a stop codon left out of the
+        exon), while one separated from it by a gap, which the CDS defines as an intron, gets a new exon with
+        its coordinates, so that the intron is kept. New exons have provisional ids (see Gene.name_new_exons)
+        and the UTRs are placed again, as the exons changed. Returns the extended exons and the new ones.
+        """
+        extended, added = [], []
+        if not self.exons:
+            return extended, added
+        first = min(self.exons, key=lambda e: e.start)
+        last = max(self.exons, key=lambda e: e.end)
+
+        def new_exon(cs):
+            exon = Exon(f"{self.id}_new_exon_{len(added) + 1}", self.ch, cs.source, "exon", self.strand, cs.start, cs.end, cs.score, [self.id])
+            exon.coding = True
+            self.exons.append(exon)
+            added.append(exon)
+            return exon
+
+        # Segments are taken from the outermost exon outwards, so each is compared with the exon next to it
+        for cs in sorted(c.CDS_segments, key=lambda cs: cs.start, reverse=True):
+            if cs.start >= first.start:
+                continue
+            if cs.end >= first.start - 1:
+                first.start = cs.start
+                extended.append(first)
+            else:
+                first = new_exon(cs)
+        for cs in sorted(c.CDS_segments, key=lambda cs: cs.end):
+            if cs.end <= last.end:
+                continue
+            if cs.start <= last.end + 1:
+                last.end = cs.end
+                extended.append(last)
+            else:
+                last = new_exon(cs)
+
+        if added:
+            self.exons.sort()
+            self.place_UTRs()
+        return extended, added
 
     def generate_introns(self):
         if len(self.exons) > 1:
