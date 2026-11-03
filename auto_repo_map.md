@@ -639,6 +639,8 @@
         - `def taxonomy_callback(value: str) -> str:`
         - `def genetic_code_callback(value: Optional[int]) -> Optional[int]:`
       - __init__.py
+        - `def _version_callback(value: bool):`
+        - `def _main(`
       - __main__.py
     - **utils/**
       - evalue.py

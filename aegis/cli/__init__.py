@@ -26,6 +26,23 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
+def _version_callback(value: bool):
+    if value:
+        from aegis import __version__
+        typer.echo(f"aegis {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False, "--version", "-V", help="Show the AEGIS version and exit.",
+        callback=_version_callback, is_eager=True,
+    ),
+):
+    """Annotation Extraction Genomic Integration Suite."""
+
 # Single-command modules: register their main function directly as a command
 app.command(name="extract", help="Extract sequences from a genome based on an annotation file.")(extract_main)
 app.command(name="filter", help="Filter an annotation file based on biotypes, RNA classes, transposable elements, pseudogenes, or features.")(filter_main)
