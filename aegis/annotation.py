@@ -39,7 +39,7 @@ from .annotation_components.export import AnnotationExport
 from .annotation_components.motifs import AnnotationMotifs
 from .annotation_components.overlaps import AnnotationOverlaps
 from .annotation_components.redundancy import AnnotationRedundancy
-from .conf import default_noncoding_transcripts, default_features_r, default_features, default_codons
+from .conf import default_features_r, default_features, default_codons
 
 class Annotation():
 
@@ -2022,22 +2022,32 @@ class Annotation():
             print(f"\nWhole update process for {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
 
     def update_features(self, standardise=False, quiet:bool=True):
+        """
+        Recounts feature types. standardise=True also writes them as the most widely recognised types,
+        for tools that only look for those: genes become 'gene' (pseudogenes and transposable element
+        genes keep that status as Pseudogene=True / Transposable=True), transcripts with a CDS 'mRNA'
+        and every other transcript 'transcript' (e.g. lnc_RNA, tRNA, pseudogenic_transcript), exons
+        'exon' and CDS rows 'CDS'. Mature miRNAs keep their type.
+        """
 
         self.features = {}
         for genes in self.chrs.values():
             for g in genes.values():
                 if standardise:
-                    g.feature = default_features_r[g.feature]
+                    if g.feature != "gene":
+                        self.tags.add("standardised_features")
+                        g.feature = "gene"
                 if g.feature not in self.features:
                     self.features[g.feature] = 1
                 else:
                     self.features[g.feature] += 1
                 for t in g.transcripts.values():
                     if standardise:
-                        if t.feature not in default_noncoding_transcripts:
-                            if t.feature != "mRNA":
-                                self.tags.add("standardised_features")
-                                t.feature = "mRNA"
+                        # by whether it codes, not by its type: tools read 'mRNA' as protein-coding
+                        standard = "mRNA" if t.CDSs else "transcript"
+                        if t.feature != standard:
+                            self.tags.add("standardised_features")
+                            t.feature = standard
                     if t.feature not in self.features:
                         self.features[t.feature] = 1
                     else:
@@ -4059,19 +4069,20 @@ class Annotation():
                     transcript_names = (t.symbol_values() or t.names) if names else None
                     transcript_name = [f'transcript_name {gtf_quote(",".join(transcript_names))}'] if transcript_names else []
                     ids = [gene_id, f'transcript_id {gtf_quote(t.id)}']
-                    names = gene_name + transcript_name
-                    t.gtf_attributes = ids + names
+                    # not 'names', the argument, which every later gene and transcript still needs
+                    line_names = gene_name + transcript_name
+                    t.gtf_attributes = ids + line_names
                     num_exons = len(t.exons)
                     for x, e in enumerate(t.exons):
                         exon_num = (num_exons - x) if t.strand == "-" else (x + 1)
-                        e.gtf_attributes = ids + [f'exon_number "{exon_num}"'] + names
+                        e.gtf_attributes = ids + [f'exon_number "{exon_num}"'] + line_names
 
                     for c in t.CDSs.values():
-                        c.gtf_attributes = ids + names
+                        c.gtf_attributes = ids + line_names
                         for cs in c.CDS_segments:
-                            cs.gtf_attributes = ids + names
+                            cs.gtf_attributes = ids + line_names
                         for u in c.UTRs:
-                            u.gtf_attributes = ids + names
+                            u.gtf_attributes = ids + line_names
 
     def add_blast_hits(self, source, blastfile, mode:str="protein"):
         """
