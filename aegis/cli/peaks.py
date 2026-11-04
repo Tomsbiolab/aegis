@@ -179,7 +179,7 @@ def main(
     except ValueError as e:
         raise typer.BadParameter(str(e))
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annot_in, quiet=quiet, coordinate_polishing="none")
+    annotation = Annotation(name=annotation_name, annot_file_path=annot_in, quiet=quiet, coordinate_polishing="none", skip_atypical_features=True)
 
     try:
         links = assign_peaks_to_genes(

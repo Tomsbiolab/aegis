@@ -24,8 +24,8 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
     annot1: Annotation
     annot2: Annotation
 
-    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny)
-    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny)
+    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
+    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
     if strip_gene_tags:
         annot1.rename_ids(strip_gene_tag=True, quiet=quiet)
         annot2.rename_ids(strip_gene_tag=True, quiet=quiet)
@@ -111,9 +111,9 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
                 print(f"\t\tRunning aegis overlap on liftoff result.")
 
             if synteny:
-                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny)
+                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
             else:
-                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny)
+                a_liftoff = Annotation(annot_file_path=str(liftoff_gff), name=f"liftoff_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
 
             a_liftoff.overlaps.detect(annot2, quiet=quiet, clear=True)
 
@@ -187,9 +187,9 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
                 print(f"\t\tRunning aegis overlap on lifton result.")
 
             if synteny:
-                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny)
+                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, original_annotation=annot1, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
             else:
-                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny)
+                a_lifton = Annotation(annot_file_path=str(lifton_gff), name=f"lifton_{annot1.name}", genome=genome2, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
 
             a_lifton.overlaps.detect(annot2, quiet=quiet, clear=True)
 

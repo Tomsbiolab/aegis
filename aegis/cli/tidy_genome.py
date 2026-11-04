@@ -102,6 +102,10 @@ def main(
     )] = "",
 
     # 5. Execution & Debugging
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -160,7 +164,7 @@ def main(
             genome=g,
             coordinate_polishing=coordinate_polishing,
             recalculate_phases=recalculate_phases,
-            reset_phases_zero=reset_phases_zero,
+            reset_phases_zero=reset_phases_zero, skip_atypical_features=clean_features
         )
     
     os.makedirs(output_dir, exist_ok=True)
@@ -220,7 +224,7 @@ def main(
         extra_chrs = set(a.chrs.keys()) - set(g.scaffolds.keys())
         if extra_chrs:
             a.remove_chromosomes(extra_chrs)
-        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file)
+        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, skip_atypical_fts=clean_features)
 
 
 if __name__ == "__main__":

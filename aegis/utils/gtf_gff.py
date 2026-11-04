@@ -34,13 +34,19 @@ MAPPED_ATTRIBUTES = {
 # ID and Parent are kept as opaque tokens, exactly as read.
 DECODED_ATTRIBUTES = {INT_NAME, INT_SYMBOL, INT_ALIAS}
 
+# Symbol and Alias values may hold an unescaped ';' (Araport11 'symbol=SULTR1;2'): the text after it is
+# appended back to the value. Not Name, after which such text is a description that lost its key.
+CONTINUED_ATTRIBUTES = {INT_SYMBOL, INT_ALIAS}
+
 # Keys written for these attributes unless the input spelt them differently (e.g. 'gene_synonym', 'Symbol').
 # Lowercase 'symbol': GFF3 reserves capitalised attribute names and Symbol is not one of them.
-DEFAULT_WRITE_KEYS = {INT_NAME: "Name", INT_ALIAS: "Alias", INT_SYMBOL: "symbol"}
+DEFAULT_WRITE_KEYS = {INT_NAME: "Name", INT_ALIAS: "Alias", INT_SYMBOL: "symbol", INT_PARENT: "Parent"}
 
 # Entries of parse_gff_attributes() that are not attributes ('\x00' cannot start a GFF key)
 SOURCE_KEYS = "\x00source_keys"    # {INT_NAME/INT_ALIAS/INT_SYMBOL: key as spelt in the input}
 EXTRA_ATTRIBUTES = "\x00extra"     # prefix of numbered keys holding one raw 'key=value' (repeated or unused key) each, at its column-9 position
+PARENT_KEY = "\x00parent_key"      # key the Parent attribute was read under when not 'Parent' (e.g. 'Derives_from'), see GffEntry.parent_key
+FRAGMENTS = "\x00fragments"        # (joined, dropped): pieces of column 9 with no '=' (text after an unescaped ';'), see parse_gff_attributes
 
 def extra_attributes(parsed: dict) -> list[str]:
     """Raw 'key=value' strings kept under EXTRA_ATTRIBUTES keys, in column-9 order."""
@@ -60,14 +66,24 @@ def gff3_unescape(value: str) -> str:
 
 _GTF_UNESCAPE = re.compile(r'\\(["\\])')
 
+_GTF_SEMICOLON = re.compile("%3B", re.IGNORECASE)
+
 def gtf_quote(value: str) -> str:
-    """Quotes one GTF attribute value, backslash-escaping '"' and '\\' so the value cannot end early."""
+    """
+    Quotes one GTF attribute value, backslash-escaping '"' and '\\' so the value cannot end early.
+    ';' is written as '%3B' (e.g. the symbol 'SULTR1;2'), as GTF readers that split column 9 on ';'
+    (e.g. gffread) would otherwise cut the value there; gtf_unquote reads it back.
+    """
+    if ";" in value:
+        value = value.replace(";", "%3B")
     if '"' in value or "\\" in value:
         value = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{value}"'
 
 def gtf_unquote(value: str) -> str:
-    """Undoes gtf_quote escaping on the text between the quotes."""
+    """Undoes gtf_quote escaping on the text between the quotes ('%3B' is read as ';')."""
+    if "%" in value:
+        value = _GTF_SEMICOLON.sub(";", value)
     return _GTF_UNESCAPE.sub(r"\1", value) if "\\" in value else value
 
 def format_gff3_values(values) -> str:
@@ -91,6 +107,9 @@ class GffEntry:
     decreasing_coordinates: bool
     phase: int | None = None
     line: int = 0
+    joined_fragments: int = 0     # pieces with no '=' appended to the free-text value before them
+    dropped_fragments: int = 0    # pieces with no '=' that could not be appended (nor used as a bare ID)
+    parent_key: str = "Parent"    # spelling of the Parent attribute as read (e.g. 'Derives_from' in Araport11 protein rows)
 
 def parse_gff_parts(parts) -> GffEntry:
 
@@ -132,6 +151,8 @@ def parse_gff_parts(parts) -> GffEntry:
 
     entry_id = attr_dict.pop(INT_ID, "")
     parents = attr_dict.pop(INT_PARENT, [])
+    joined_fragments, dropped_fragments = attr_dict.pop(FRAGMENTS, (0, 0))
+    parent_key = attr_dict.pop(PARENT_KEY, INT_PARENT)
 
     if not entry_id and parents:
         entry_id = f"{parents[0]}_{feature}_{actual_start}_{actual_end}"
@@ -150,7 +171,10 @@ def parse_gff_parts(parts) -> GffEntry:
         pseudogene=pseudogene,
         transposable=transposable,
         decreasing_coordinates=decreasing_coordinates,
-        phase=phase
+        phase=phase,
+        joined_fragments=joined_fragments,
+        dropped_fragments=dropped_fragments,
+        parent_key=parent_key,
     )
 
 def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
@@ -161,6 +185,12 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     so it can be written back as read. Nothing is dropped: repeated
     keys, and gene_id/transcript_id-like keys not used as ID or Parent, are kept raw under numbered
     EXTRA_ATTRIBUTES keys. Dict order is column-9 order, so attributes can be written back in it.
+
+    A piece with no '=' after a free-text attribute is text that followed an unescaped ';' in its
+    value (e.g. Araport11 'Note=SNOR111; snoRNA; snoRNA'), so it is appended back to that value as
+    '%3B' + piece; after Symbol or Alias it is appended to their last value as ';' + piece (decoded
+    values, encoded on export), e.g. 'symbol=SULTR1;2'. Text after Name is not appended. A bare first piece on a gene or transcript line is still read as its ID (AUGUSTUS).
+    Pieces that are neither are dropped. Both are counted under FRAGMENTS as (joined, dropped).
     """
 
     if not attributes or attributes == ".":
@@ -171,6 +201,11 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     fallback_id = None
     fallback_parent = None
     bare_id = None
+    # key of the last plain 'key=value' read (an attribute or an EXTRA_ATTRIBUTES slot), which a piece with no '=' continues
+    free_text_key = None
+    # (values, index) of the last Symbol/Alias value read, which a piece with no '=' continues (e.g. Araport11 'symbol=SULTR1;2')
+    continued_value = None
+    joined = dropped = 0
 
     def keep_extra(raw):
         slot = f"{EXTRA_ATTRIBUTES}{len(parsed)}"
@@ -181,12 +216,24 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
         key, sep, val = p.partition("=")
         if not sep: # Means '=' was not found
-            # AUGUSTUS writes the ID of gene and transcript lines as a bare value ('g2', 'g2.t1;Parent=g2')
             token = p.strip()
-            if (gene or transcript) and bare_id is None and token and not any(c.isspace() for c in token):
+            if not token:
+                continue
+            if free_text_key is not None:
+                parsed[free_text_key] += "%3B" + p.rstrip()
+                joined += 1
+            elif continued_value is not None:
+                values, i = continued_value
+                values[i] += ";" + gff3_unescape(p.rstrip())  # decoded, like the value it continues
+                joined += 1
+            # AUGUSTUS writes the ID of gene and transcript lines as a bare value ('g2', 'g2.t1;Parent=g2')
+            elif (gene or transcript) and bare_id is None and not any(c.isspace() for c in token):
                 bare_id = token
+            else:
+                dropped += 1
             continue
-        
+
+        free_text_key = continued_value = None
         key = key.strip()
         val = val.strip()
 
@@ -213,13 +260,20 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
                 if target_key in parsed:
                     # e.g. 'Name=a;Name=b' or 'gene_synonym=A1;Alias=A2': one attribute, so that
                     # replacing or removing it leaves no stale copy; first key spelling and position
-                    parsed[target_key].extend(v for v in values if v not in parsed[target_key])
+                    merged = parsed[target_key]
+                    merged.extend(v for v in values if v not in merged)
+                    if values and target_key in CONTINUED_ATTRIBUTES:
+                        continued_value = (merged, merged.index(values[-1]))
                     continue
                 if key != DEFAULT_WRITE_KEYS[target_key]:
                     source_keys[target_key] = sys.intern(key)
+                if values and target_key in CONTINUED_ATTRIBUTES:
+                    continued_value = (values, len(values) - 1)
             elif target_key in parsed:
                 keep_extra(f"{key}={val}")
                 continue
+            elif target_key == INT_PARENT and key != INT_PARENT:
+                parsed[PARENT_KEY] = sys.intern(key)
             parsed[target_key] = values
             continue
             
@@ -237,9 +291,10 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
             continue
 
         if key in parsed:
-            keep_extra(f"{key}={val}")
+            free_text_key = keep_extra(f"{key}={val}")
         else:
-            parsed[sys.intern(key)] = val
+            free_text_key = sys.intern(key)
+            parsed[free_text_key] = val
 
     if fallback_id is not None:
         key, val, slot = fallback_id
@@ -249,8 +304,11 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
         else:
             parsed[slot] = f"{key}={val}"
 
-    if bare_id is not None and INT_ID not in parsed:
-        parsed[INT_ID] = bare_id
+    if bare_id is not None:
+        if INT_ID not in parsed:
+            parsed[INT_ID] = bare_id
+        else:
+            dropped += 1
 
     if fallback_parent is not None:
         key, val, slot = fallback_parent
@@ -262,6 +320,9 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
 
     if source_keys:
         parsed[SOURCE_KEYS] = source_keys
+
+    if joined or dropped:
+        parsed[FRAGMENTS] = (joined, dropped)
 
     return parsed
 
@@ -301,7 +362,14 @@ def format_gff3_attributes(attrs, feature_type):
     """
 
     special_keys = {'gene_id', 'transcript_id', 'exon_id', 'exon_number'}
-    
+
+    # IDs are written as read, but a ';' (e.g. a GTF '%3B', see gtf_quote) would end the GFF3 attribute
+    if any(";" in attrs.get(k, "") for k in ('gene_id', 'transcript_id')):
+        attrs = dict(attrs)
+        for k in ('gene_id', 'transcript_id'):
+            if k in attrs:
+                attrs[k] = attrs[k].replace(";", "%3B")
+
     gff3_attrs = []
 
     if feature_type in default_features["gene"]:

@@ -912,8 +912,32 @@ class AnnotationExport(AnnotationComponent):
             if clean_header or "dapmod" in self._annot.tags or self._annot.gff_header == []:
                 f_out.write("##gff-version 3\n")
             else:
-                f_out.write("\n".join(self._annot.gff_header) + "\n")
+                # only comment lines, so nothing but a feature line can ever start without '#'
+                f_out.write("\n".join(h for h in self._annot.gff_header if h.startswith("#")) + "\n")
 
+
+            # Atypical features are written inside the block of the gene they point to (e.g. a protein row
+            # with Derives_from=<transcript>), and after their atypical parent (e.g. a transposon_fragment
+            # after its transposable_element), so no line refers to a feature closed by an earlier '###'
+            write_atypical = not skip_atypical_fts and not just_genes and bool(self._annot.atypical_features)
+            atypical_by_gene, atypical_children, atypical_roots = self._place_atypical_features() if write_atypical else ({}, {}, [])
+            atypical_written = set()
+
+            def write_atypical_group(root, write=True):
+                # write=False drops the group instead (its gene or transcript is not written)
+                stack = [root]
+                while stack:
+                    ft = stack.pop()
+                    if id(ft) in atypical_written:
+                        continue
+                    atypical_written.add(id(ft))
+                    if write:
+                        f_out.write(ft.print_gff(clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                    stack.extend(reversed(atypical_children.get(id(ft), ())))
+
+            def write_atypical_of(g, gene_written=True):
+                for ft, t in atypical_by_gene.get(g.id, ()):
+                    write_atypical_group(ft, write=gene_written and not (main_only and t is not None and not t.main))
 
             for x1, genes in enumerate(self._annot.chrs.values()):
                 progress_bar.update(len(genes))
@@ -934,6 +958,7 @@ class AnnotationExport(AnnotationComponent):
                                         gene_1bp_feature = True
 
                         if gene_1bp_feature:
+                            write_atypical_of(g, gene_written=False)
                             continue
 
                     f_out.write(g.print_gff(extra_attributes=extra_attributes, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
@@ -1015,21 +1040,22 @@ class AnnotationExport(AnnotationComponent):
                             for u in unique_utrs:
                                 f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
+                    write_atypical_of(g)
+
                     if x1 == (len(self._annot.chrs) - 1) and x2 == (len(genes) - 1):
                         continue
                     f_out.write("###\n")
 
             progress_bar.close()
 
-            if not skip_atypical_fts:
-                if not just_genes:
-                    for x, ft in enumerate(self._annot.atypical_features):
-                        if x == 0:
-                            f_out.write("###\n")
-                        f_out.write(ft.print_gff(clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
-                        if x == (len(self._annot.atypical_features) - 1):
-                            continue
-                        f_out.write("###\n")
+            if write_atypical:
+                # the rest (no parent among the genes written, e.g. transposable_element), one group per root
+                # then any left (a parent gene that was not written, or a cycle of atypical parents)
+                for ft in atypical_roots + self._annot.atypical_features:
+                    if id(ft) in atypical_written:
+                        continue
+                    f_out.write("###\n")
+                    write_atypical_group(ft)
             if not skip_orphaned_fts:
                 if not just_genes:
                     for x, ft in enumerate(self._annot.orphaned_features):
@@ -1040,8 +1066,40 @@ class AnnotationExport(AnnotationComponent):
                             continue
                         f_out.write("###\n")
 
+    def _place_atypical_features(self):
+        """
+        Where gff() writes each atypical feature: returns ({gene id: [(feature, its transcript or None)] for
+        features whose parent is that gene or one of its transcripts or CDSs}, {id(feature): its atypical
+        children}, features with neither), in file order.
+        A feature whose parent is another atypical feature goes with it; ids are compared as written.
+        """
+        gene_of = {}
+        for genes in self._annot.chrs.values():
+            for g in genes.values():
+                gene_of[g.id] = (g.id, None)
+                for t in g.transcripts.values():
+                    gene_of[t.id] = (g.id, t)
+                    for c in t.CDSs.values():
+                        gene_of.setdefault(c.id, (g.id, t))
+        atypical_ids = {}
+        for ft in self._annot.atypical_features:
+            if ft.id:
+                atypical_ids.setdefault(ft.id, ft)
+        by_gene, children, roots = {}, {}, []
+        for ft in self._annot.atypical_features:
+            parents = ft.parents or []
+            placed = next((gene_of[p] for p in parents if p in gene_of), None)
+            parent = None if placed is not None else next((atypical_ids[p] for p in parents if p in atypical_ids and atypical_ids[p] is not ft), None)
+            if placed is not None:
+                by_gene.setdefault(placed[0], []).append((ft, placed[1]))
+            elif parent is not None:
+                children.setdefault(id(parent), []).append(ft)
+            else:
+                roots.append(ft)
+        return by_gene, children, roots
+
     def gtf(self, 
-            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, strict_gtf_2_2: bool = False,
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gtfs", extension=".gtf", main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, quiet: bool = False, strict_gtf_2_2: bool = False, names: bool = True,
             # Deprecated arguments
             custom_path: str = "", tag: str = ".gtf"):
 
@@ -1058,7 +1116,8 @@ class AnnotationExport(AnnotationComponent):
         if subfolder_name != "out_gtfs":
             subfolder = True
 
-        self._annot.create_gtf_attributes()
+        # names=False: no gene_name/transcript_name
+        self._annot.create_gtf_attributes(names=names)
 
         progress_bar = start_progress_bar(total=len(self._annot.all_gene_ids.keys()), description=f"Exporting gtf for {self._annot.id} annotation", quiet=quiet, colour="38;2;46;204;113")
 

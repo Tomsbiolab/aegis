@@ -371,6 +371,10 @@ def main(
         "-n", "--dry-run", help="Preview split partitions and matched features without writing files to disk.",
         rich_help_panel=EXEC_PANEL,
     )] = False,
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -517,7 +521,7 @@ def main(
         )
 
     if annotation_file:
-        annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms)
+        annot_obj = Annotation(annot_file_path=annotation_file, name=annotation_name, genome=genome_obj, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, auto_organelle_detection=auto_organelle_detection, mitochondria_chroms=mitochondria_chroms, chloroplast_chroms=chloroplast_chroms, skip_atypical_features=clean_features)
     elif genome_obj:
         missing = [c for c in (*mitochondria_chroms, *chloroplast_chroms) if c not in genome_obj.scaffolds]
         if missing:
@@ -671,7 +675,7 @@ def main(
                     if is_gtf:
                         a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, subfolder=False, quiet=True)
                     else:
-                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, subfolder=False, skip_atypical_fts=False, quiet=True)
+                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, subfolder=False, skip_atypical_fts=clean_features, quiet=True)
 
         if not quiet:
             label = "other (unassigned)" if tag == "other" else f"Tag '{tag}'"

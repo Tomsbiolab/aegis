@@ -109,6 +109,10 @@ def main(
     )] = "",
 
     # 4. Execution & Debugging
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -217,7 +221,7 @@ def main(
             header_id_regex=header_id_regex if header_id_regex != "" else None,
             gwh=gwh,
         )
-        a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False)
+        a = Annotation(annotation_file, annotation_name, genome=g, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, skip_atypical_features=clean_features)
         common_chromosomes = set(a.chrs).intersection(set(g.scaffolds))
         common_actual_chromosomes = common_chromosomes - g.scaffold_names
         common_actual_chromosomes_minus_mt_chl = common_actual_chromosomes - g.accessory_chromosome_names
@@ -237,7 +241,7 @@ def main(
                 )
             raise ValueError(f"There are no common scaffolds/chromosomes between provided annotation and genome file.")
     else:
-        a = Annotation(annotation_file, annotation_name, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False)
+        a = Annotation(annotation_file, annotation_name, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, skip_atypical_features=clean_features)
         common_chromosomes = set(a.chrs)
 
     if not chosen_chromosomes_set:
@@ -278,7 +282,7 @@ def main(
             quiet=quiet,
         )
 
-    a.export.gff(output_dir=output_dir, filename=output_annot_file, subfolder=False, skip_atypical_fts=True)
+    a.export.gff(output_dir=output_dir, filename=output_annot_file, subfolder=False, skip_atypical_fts=clean_features)
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)

@@ -87,6 +87,10 @@ def main(
     )] = "{annotation-name}_filtered.gff3",
 
     # 3. Execution / Debugging
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -136,7 +140,7 @@ def main(
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, skip_atypical_features=clean_features)
 
     # 1. Biotype filtering (coding vs non-coding)
     if coding_only:
@@ -178,7 +182,7 @@ def main(
         main_only=main_only,
         UTRs=include_UTRs,
         subfolder=subfolder,
-        quiet=quiet,
+        quiet=quiet, skip_atypical_fts=clean_features
     )
 
 

@@ -339,7 +339,7 @@ def main(
         orf_choice_mode=orf_choice_mode,
         min_codon_len=min_codon_len,
         recalculate_phases=recalculate_phases,
-        reset_phases_zero=reset_phases_zero,
+        reset_phases_zero=reset_phases_zero, skip_atypical_features=True
     )
 
     if "protein" in features or "CDS" in features or rework_all_cds or infer_missing_cds:

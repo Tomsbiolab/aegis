@@ -59,7 +59,9 @@ class Annotation():
         "repeated_subfeature_ids", "self_parented_transcript",
         "codon_added_to_CDS", "codon_not_incorporated",
         "linked_by_shared_attribute", "shared_attribute_not_linked", "repeated_feature_line",
-        "pseudogene_line_read_as_transcript", "linked_by_file_order", "linkable_by_file_order"
+        "pseudogene_line_read_as_transcript", "linked_by_file_order", "linkable_by_file_order",
+        "wrapped_line_joined", "malformed_line_skipped", "attribute_text_after_semicolon_joined",
+        "attribute_text_without_key_dropped", "linked_to_childless_gene_by_span"
     )
 
     # Warnings that describe the state of the annotation object and can therefore be rechecked
@@ -109,7 +111,7 @@ class Annotation():
     # Tags of renamed chromosomes only change exports that list chromosome names
     chromosome_tags:set[str] = {"confrenamed", "dapmod"}
 
-    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=True, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False, link_by:tuple[str, ...]|list[str]|str|None=("locus_tag",), link_by_file_order:bool=False):
+    def __init__(self, annot_file_path:str, name:str|None=None, genome:Genome|None=None, hard_masked_genome:Genome|None=None, original_annotation:Annotation|None=None, target:bool=False, to_overlap:bool=True, rework_all_CDSs:bool=False, work_out_missing_CDSs:bool=False, fallback_to_trim:bool=False, chosen_chromosomes:tuple[str, ...]|None=None, chosen_coordinates:tuple[int, int]|None=None, sort_processes:int=1, define_synteny=False, rename_features:tuple[str,...]=(), keep_existing_ids_if_derived_from_base_id:bool=False, quiet:bool=False, consider_read_utrs:bool=False, infer_genes_from_transcripts:bool=True, infer_genes_from_subfeatures:bool=True, skip_orphaned_features:bool=True, skip_atypical_features:bool=False, incorporate_and_rename_repeated_ids:bool=True, collapse_exons:bool=True, collapse_CDSs:bool=True, standardise_features:bool=False, remove_missing_transcript_parent_references:bool=False, remove_transcripts_with_no_exons:bool=False, remove_genes_with_no_transcripts:bool=False, remove_genes_with_no_transcripts_even_if_pseudogene:bool=False, rename_source:str="", adjust_internal_shifts:Literal["intra_exon", "all", "none"]|bool="intra_exon", taxonomy:Literal["plant", "vertebrate", "invertebrate", "yeast"]|str="plant", table:int|str=1, auto_organelle_detection:bool=True, mito_table:int|str|None=None, plastid_table:int|str|None=None, mitochondria_chroms:list[str]|tuple[str, ...]|str|None=None, chloroplast_chroms:list[str]|tuple[str, ...]|str|None=None, coordinate_polishing:Literal["none", "contain", "trim"]="contain", coding_ratio_threshold:float=0.7, allow_internal_stops:bool=True, allow_partial:bool=True, enforce_start_codon:bool=True, orf_choice_mode:Literal["longest", "earliest"]="longest", min_codon_len:int=2, recalculate_phases:bool=False, reset_phases_zero:bool=False, initiator_methionine:bool=True, alt_start_methionine:bool=True, list_load_warnings:bool=False, link_by:tuple[str, ...]|list[str]|str|None=("locus_tag",), link_by_file_order:bool=False):
         
         start_time = time.time()
 
@@ -381,8 +383,23 @@ class Annotation():
         if not quiet:
             for (note, warning_key), count in self._load_note_counts.items():
                 print(f"{self.id} Warning: {count} {note}" + ("" if self.list_load_warnings else Annotation._warning_ids_hint(warning_key)))
+            if self._skipped_atypical:
+                types = ", ".join(f"{ft}: {n}" for ft, n in sorted(self._skipped_atypical.items(), key=lambda x: -x[1]))
+                print(f"{self.id} Warning: {sum(self._skipped_atypical.values())} lines of feature types that are not genes, transcripts or their subfeatures were not read ({types})")
+            if not any(self.chrs.values()):
+                kept = {}
+                for ft in self.atypical_features:
+                    kept[ft.feature] = kept.get(ft.feature, 0) + 1
+                if kept:
+                    types = ", ".join(f"{ft}: {n}" for ft, n in sorted(kept.items(), key=lambda x: -x[1]))
+                    outcome = f"only its {len(self.atypical_features)} lines of other feature types ({types}) are kept, as read"
+                else:
+                    outcome = "nothing but its header will be exported"
+                print(f"{self.id} Warning: no gene models were read from {self.file}; {outcome}. Check that it is a GFF3/GTF annotation of genes"
+                      + (" (match/match_part lines are alignments, e.g. MAKER evidence, not gene models)" if {"match", "match_part"} & (set(self._skipped_atypical) | set(kept)) else ""))
             print(f"\nCreating {self.id} annotation object took {round(lapse/60, 1)} minutes\n")
         del self._load_note_counts
+        del self._skipped_atypical
 
         self.detect_polycistronic_transcripts(quiet=quiet)
 
@@ -780,13 +797,15 @@ class Annotation():
         staging = {"gene": [], "transcript": [], "miRNA": [],"exon": [], "CDS": [], "UTR": []}
         # start_codon/stop_codon rows are folded into the CDS rows once all subfeatures are added (see _incorporate_codons)
         self._codon_entries = []
+        # lines of feature types that are not genes, transcripts or subfeatures, skipped with skip_atypical_features
+        self._skipped_atypical = {}
 
         chromosomes_t = set()
         # gene and transcript lines by ID, to skip exact repeats (e.g. a whole gene block written twice)
         seen_lines = {}
 
         with open_file(gff_file, encoding=encoding) as f:
-            for line_number, raw_line in enumerate(f, start=1):
+            for line_number, raw_line, continuation_lines in Annotation._unwrapped_gff_lines(f):
                 line = raw_line.strip()
 
                 if not line:
@@ -803,9 +822,6 @@ class Annotation():
                     continue
 
                 parts = line.split("\t")
-                if len(parts) <= 2:
-                    self.gff_header.append(line)
-                    continue
 
                 # strip() also took the tab before an empty attribute column, or after an empty seqid
                 if len(parts) == 8:
@@ -817,10 +833,25 @@ class Annotation():
                     parts.append("")
 
                 if len(parts) < 9:
+                    self.warnings["malformed_line_skipped"].add(f"line {line_number}")
+                    self._note("lines with fewer than 9 tab-separated columns were skipped", f"line {line_number} has {len(parts)} tab-separated columns, not 9, and was skipped: {line[:200]}", "malformed_line_skipped", quiet)
                     continue
 
                 entry = parse_gff_parts(parts)
                 entry.line = line_number
+
+                if continuation_lines:
+                    self.warnings["wrapped_line_joined"].add(entry.id or f"line {line_number}")
+                    joined_lines = ", ".join(str(n) for n in continuation_lines)
+                    self._note("feature lines broken by a line break in their attributes were joined back", f"line(s) {joined_lines} continue the attributes of line {line_number} ({entry.feature} {entry.id}) and were joined to it", "wrapped_line_joined", quiet)
+
+                if entry.joined_fragments:
+                    self.warnings["attribute_text_after_semicolon_joined"].add(entry.id or f"line {line_number}")
+                    self._note("lines had text after an unescaped ';' in an attribute value, which was kept in that value as '%3B'", f"line {line_number} ({entry.feature} {entry.id}) has {entry.joined_fragments} piece(s) of text after an unescaped ';' in an attribute value; kept in that value as '%3B'", "attribute_text_after_semicolon_joined", quiet)
+
+                if entry.dropped_fragments:
+                    self.warnings["attribute_text_without_key_dropped"].add(entry.id or f"line {line_number}")
+                    self._note("lines had attribute text with no 'key=' that could not be kept and was dropped", f"line {line_number} ({entry.feature} {entry.id}) has {entry.dropped_fragments} attribute piece(s) with no 'key=' that were dropped", "attribute_text_without_key_dropped", quiet)
 
                 ID = entry.id
                 ft = entry.feature
@@ -837,9 +868,6 @@ class Annotation():
                     ft = entry.feature = "pseudogenic_transcript"
                     cat = "transcript"
 
-                if skip_atypical_features and cat == "atypical":
-                    continue
-
                 ch = entry.ch
                 start = entry.start
                 end = entry.end
@@ -854,6 +882,10 @@ class Annotation():
                         continue
                     if end > chosen_coordinates[1]:
                         continue
+
+                if skip_atypical_features and cat == "atypical":
+                    self._skipped_atypical[ft] = self._skipped_atypical.get(ft, 0) + 1
+                    continue
 
                 if not ID:
                     if not quiet:
@@ -878,7 +910,11 @@ class Annotation():
                     else:
                         self.features[ft] += 1
                     chromosomes_t.add(ch)
-                    self.atypical_features.append(Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes))
+                    atypical = Feature(ID, ch, source, ft, strand, start, end, score, parents, attributes)
+                    # written back as read: Derives_from is not a Parent (gene model features are linked by Parent alone)
+                    if entry.parent_key != "Parent":
+                        atypical.attribute_keys = {**(atypical.attribute_keys or {}), "Parent": entry.parent_key}
+                    self.atypical_features.append(atypical)
                 else:
                     if ft not in self.features:
                         self.features[ft] = 1
@@ -929,7 +965,10 @@ class Annotation():
         Features are grouped by (seqid, attribute, value). A group is linked only if it holds at most one
         gene and all its features are on one strand; otherwise nothing in it is changed and the IDs are
         listed under 'shared_attribute_not_linked'. In a linked group:
-          * transcripts without Parent get the gene as Parent (a gene is created if there is none),
+          * transcripts without Parent get the gene as Parent. If the group has no gene, they take the one
+            gene without children or the attribute that has the group's span, seqid and strand (AGAT test 6:
+            the gene line lacks the locus_tag of its mRNAs), listed under 'linked_to_childless_gene_by_span';
+            failing that, a gene is created,
           * subfeatures without Parent get the group's transcript if it has exactly one; with several, the
             transcript whose ID appears in the subfeature ID, else the only one spanning it; with none,
             transcripts are created, a new one starting whenever a subfeature overlaps one of the same type
@@ -1020,6 +1059,15 @@ class Annotation():
 
         linked, not_linked = [], []
 
+        # genes a group without its own gene line may take instead of creating one (see ensure_gene)
+        has_children = {p for stage in ("transcript", "miRNA", "exon", "CDS", "UTR") for e in staging[stage] for p in e.parents}
+        has_children.update(p for e in self._codon_entries for p in e.parents)
+        childless_genes = {}
+        for e in staging["gene"]:
+            if e.id and e.id not in has_children and self._shared_attribute(e, link_by) is None:
+                childless_genes.setdefault((e.ch, e.strand, e.start, e.end), []).append(e)
+        matched_by_span = []
+
         def link(entry, parent_id):
             entry.parents = [parent_id]
             if not entry.id:
@@ -1043,6 +1091,12 @@ class Annotation():
 
             def ensure_gene(template):
                 nonlocal gene
+                if gene is None:
+                    candidates = childless_genes.get((ch, template.strand, min(m.start for m in members), max(m.end for m in members)), [])
+                    if len(candidates) == 1:
+                        gene = candidates.pop()
+                        matched_by_span.append((gene.id, key, value))
+                        return gene
                 if gene is None and create_features:
                     gene = new_entry(template, unique_id(value, gene_ids), "gene", members, [])
                     gene.attributes = {key: value}
@@ -1098,8 +1152,15 @@ class Annotation():
             self.warnings["linked_by_shared_attribute"].add(ID)
         for ID in not_linked:
             self.warnings["shared_attribute_not_linked"].add(ID)
+        for ID, key, value in matched_by_span:
+            self.warnings["linked_to_childless_gene_by_span"].add(ID)
 
         if not quiet:
+            if self.list_load_warnings:
+                for ID, key, value in matched_by_span:
+                    print(f"{self.id} Warning: features with {key}={value} were linked to gene {ID}, which has no {key}, no children and their span and strand")
+            if matched_by_span:
+                print(f"{self.id} Warning: {len(matched_by_span)} genes without children were given the features that share their span and strand, which have a {'/'.join(link_by)} the gene line lacks" + ("" if self.list_load_warnings else self._warning_ids_hint("linked_to_childless_gene_by_span")))
             if linked:
                 print(f"{self.id} Warning: {len(linked)} features without Parent were linked to their gene or transcript by a shared attribute ({', '.join(link_by)})" + ("" if self.list_load_warnings else self._warning_ids_hint("linked_by_shared_attribute")))
             if not_linked:
@@ -1422,6 +1483,34 @@ class Annotation():
                                 print(f"{self.id} Warning: {ID} transcript was renamed to {unique_t_id} to avoid repeat transcript ids across genes ({parent} and {self.all_transcript_ids[ID][1]})")
                 elif not quiet:
                     print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as the provided transcript id was not unique")
+
+    @staticmethod
+    def _unwrapped_gff_lines(lines):
+        """
+        Yields (line_number, raw_line, continuation_line_numbers) for the lines of a GFF file. A line
+        with no tab directly after a 9-column feature line is the rest of that line's attribute column,
+        broken by a line break (e.g. AT2G12430.1 in Araport11), and is joined back to it; the break is
+        dropped, or read as a space if neither side of it has one. Lines are yielded in file order.
+        """
+        pending = None  # [line_number, raw_line without its line break, continuation line numbers]
+        for line_number, raw_line in enumerate(lines, start=1):
+            text = raw_line.rstrip("\r\n")
+            stripped = text.strip()
+            if pending is not None and stripped and "\t" not in text and stripped[0] not in "#>":
+                if not (pending[1][-1:].isspace() or text[:1].isspace()):
+                    pending[1] += " "
+                pending[1] += text
+                pending[2].append(line_number)
+                continue
+            if pending is not None:
+                yield tuple(pending)
+                pending = None
+            if stripped and stripped[0] != "#" and text.count("\t") >= 8:
+                pending = [line_number, text, []]
+            else:
+                yield line_number, raw_line, []
+        if pending is not None:
+            yield tuple(pending)
 
     def _note(self, summary:str, message:str, warning_key:str, quiet:bool=False):
         """
@@ -1874,6 +1963,14 @@ class Annotation():
             progress_bar.update(count)
         
         progress_bar.close()
+
+        if warnings_sink is self.warnings and not quiet:
+            for warning_key, summary in (
+                ("read_utrs_differ_from_derived", "transcripts have UTR rows that differ from the UTRs derived from their exons and CDS, which replace them (e.g. a UTR row extending past its exon); --consider-read-utrs (consider_read_utrs=True) keeps read UTRs that fit"),
+                ("read_utrs_inconsistent", "transcripts have UTR rows that do not fit their exons and CDS, so their UTRs were derived from the exons and CDS instead"),
+            ):
+                if warnings_sink[warning_key]:
+                    print(f"Warning: {len(warnings_sink[warning_key])} {summary} ({self.id})" + ("" if getattr(self, "list_load_warnings", False) else Annotation._warning_ids_hint(warning_key)))
         if standardise_features:
             self.update_features(standardise=standardise_features, quiet=quiet)
         
@@ -2246,6 +2343,9 @@ class Annotation():
 
                         if skip_correction:
                             boundary_summary = "transcripts do not start and end with their first and last exons"
+                        elif first_exon.start > t.start or last_exon.end < t.end:
+                            # trimming drops bases the transcript line covered, e.g. where an exon line is missing (AGAT test 36)
+                            boundary_summary = "transcripts extended past their first or last exon and were trimmed to them; an exon line may be missing from the file"
                         else:
                             boundary_summary = "transcripts were set to span exactly from their first to their last exon"
                         if first_exon.start < t.start:
@@ -2929,11 +3029,47 @@ class Annotation():
     def merge(self, other:Annotation, max_cds_overlap:int|float=100, max_exon_overlap:int|float=100, max_gene_overlap:int|float=100, features_to_rename:tuple[str,...]=("gene", "transcript", "CDS", "exon", "UTR"), rename_clashing_ids:bool=True, quiet:bool=False):
 
         """
-        Priority is given to self annotation
+        Priority is given to self annotation.
+        The atypical features of other come along (e.g. protein rows, transposable elements): those that
+        belong to its genes, transcripts or CDSs only with their gene, pointing at its ids after renaming;
+        the rest unless self already has an atypical feature with their id.
         """
         start_time = time.time()
         self.update(quiet=quiet)
         other.update(quiet=quiet)
+
+        def gene_model_features(genes_by_id):
+            """{id: feature} for genes, their transcripts and CDSs"""
+            found = {}
+            for g_id, g in genes_by_id.items():
+                found[g_id] = g
+                for t in g.transcripts.values():
+                    found[t.id] = t
+                    for c in t.CDSs.values():
+                        found.setdefault(c.id, c)
+            return found
+
+        # atypical features are tied to the features they belong to, not their ids, until renaming is done:
+        # copied ids of other may clash with ids of self until then (the renaming cannot tell them apart)
+        def tie(features, owners):
+            tied, untied = [], []
+            for ft in features:
+                targets = [owners[p] for p in (ft.parents or []) if p in owners]
+                (tied if targets else untied).append((ft, targets))
+            return tied, untied
+
+        self_atypical = self.atypical_features
+        self_tied, _ = tie(self_atypical, gene_model_features({g.id: g for genes in self.chrs.values() for g in genes.values()}))
+        tied_ids = {id(ft) for ft, _ in self_tied}
+        self.atypical_features = [ft for ft in self_atypical if id(ft) not in tied_ids]
+
+        # genes of other added to self: {id in other: the copy in self}
+        added_genes = {}
+        def add_gene(chr, g, temp_id):
+            copy = g.copy()
+            copy.id = temp_id
+            self.chrs[chr][temp_id] = copy
+            added_genes[g.id] = copy
 
         if rename_clashing_ids:
 
@@ -2975,8 +3111,7 @@ class Annotation():
                             temp_id = f"{g.id}_{count}"
 
                     if temp_id not in self.chrs[chr]:
-                        self.chrs[chr][temp_id] = g.copy()
-                        self.chrs[chr][temp_id].id = temp_id
+                        add_gene(chr, g, temp_id)
                         self.all_gene_ids[temp_id] = chr
                         
 
@@ -2994,8 +3129,7 @@ class Annotation():
                                 count += 1
                                 temp_id = f"{g.id}_{count}"
                         if temp_id not in self.chrs[chr]:
-                            self.chrs[chr][temp_id] = g.copy()
-                            self.chrs[chr][temp_id].id = temp_id
+                            add_gene(chr, g, temp_id)
                             self.all_gene_ids[temp_id] = chr
                     else:
                         cds_scores: list[float] = [0.0]
@@ -3022,8 +3156,7 @@ class Annotation():
                                         count += 1
                                         temp_id = f"{g.id}_{count}"
                                 if temp_id not in self.chrs[chr]:
-                                    self.chrs[chr][temp_id] = g.copy()
-                                    self.chrs[chr][temp_id].id = temp_id
+                                    add_gene(chr, g, temp_id)
                                     self.all_gene_ids[temp_id] = chr
                         
                         elif check_exons:
@@ -3034,8 +3167,7 @@ class Annotation():
                                         count += 1
                                         temp_id = f"{g.id}_{count}"
                                 if temp_id not in self.chrs[chr]:
-                                    self.chrs[chr][temp_id] = g.copy()
-                                    self.chrs[chr][temp_id].id = temp_id
+                                    add_gene(chr, g, temp_id)
                                 self.all_gene_ids[temp_id] = chr
 
                         elif max(gene_scores) <= max_gene_overlap:
@@ -3045,16 +3177,37 @@ class Annotation():
                                     count += 1
                                     temp_id = f"{g.id}_{count}"
                             if temp_id not in self.chrs[chr]:
-                                self.chrs[chr][temp_id] = g.copy()
-                                self.chrs[chr][temp_id].id = temp_id
+                                add_gene(chr, g, temp_id)
                             self.all_gene_ids[temp_id] = chr
 
         self.merged = True
   
         self.clear_proteins()
         progress_bar.close()
+
+        # atypical features of other: those of its genes only with their gene; the rest unless self has their id
+        copied = gene_model_features(added_genes)
+        other_owners = gene_model_features({g.id: g for genes in other.chrs.values() for g in genes.values()})
+        self_atypical_ids = {f.id for f in self_atypical if f.id}
+        other_tied, other_untied = [], []
+        for ft in other.atypical_features:
+            if any(p in other_owners for p in (ft.parents or [])):
+                targets = [copied[p] for p in ft.parents if p in copied]
+                if targets:  # else its gene was not added
+                    other_tied.append((ft.copy(), targets))
+            elif not (ft.id and ft.id in self_atypical_ids):
+                other_untied.append(ft.copy())
+
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=features_to_rename, quiet=quiet)
+
+        # back in place, now pointing at the renamed features
+        live = {id(f) for f in self._iter_all_features()}
+        for ft, targets in self_tied + other_tied:
+            ft.parents = [t.id for t in targets if id(t) in live] or [t.id for t in targets]
+        kept_untied = {id(ft) for ft in self.atypical_features}
+        self.atypical_features = [ft for ft in self_atypical if id(ft) in tied_ids or id(ft) in kept_untied]
+        self.atypical_features += [ft for ft, _ in other_tied] + other_untied
         now = time.time()
         lapse = now - start_time
         if not quiet:
@@ -3129,21 +3282,50 @@ class Annotation():
             self.remove_missing_transcript_parent_references(quiet=quiet)
 
     def remove_transcripts(self, to_remove:set, remove_genes_accordingly:bool=False,quiet:bool=False):
+        """
+        Removes transcripts by id (and genes left without transcripts, with remove_genes_accordingly).
+        A gene side that its removed transcripts set (its start or end was theirs) moves to its remaining
+        transcripts; a gene that extended beyond all its transcripts keeps that extension on that side.
+        Atypical features of removed transcripts (e.g. protein rows) are removed too.
+        """
         removed = False
+        # (start, end) of each affected gene's transcripts before any is removed
+        spans_before = {}
 
         for t in to_remove:
             if t in self.all_transcript_ids:
                 chrom = self.all_transcript_ids[t][0]
                 g_id = self.all_transcript_ids[t][1]
-                del self.chrs[chrom][g_id].transcripts[t]
+                g = self.chrs[chrom][g_id]
+                if (chrom, g_id) not in spans_before:
+                    spans_before[(chrom, g_id)] = (min(x.start for x in g.transcripts.values()), max(x.end for x in g.transcripts.values()))
+                del g.transcripts[t]
                 removed = True
                 if remove_genes_accordingly:
-                    if self.chrs[chrom][g_id].transcripts == {}:
+                    if g.transcripts == {}:
                         del self.chrs[chrom][g_id]
             elif not quiet:
                 warnings.warn(f"Transcript level id {t} is not present in annotation {self.id}", category=UserWarning)
 
+        trimmed = 0
+        for (chrom, g_id), (start_before, end_before) in spans_before.items():
+            g = self.chrs[chrom].get(g_id)
+            if g is None or not g.transcripts:
+                continue
+            start = min(x.start for x in g.transcripts.values())
+            end = max(x.end for x in g.transcripts.values())
+            if (g.start == start_before and start > g.start) or (g.end == end_before and end < g.end):
+                trimmed += 1
+                if g.start == start_before:
+                    g.start = start
+                if g.end == end_before:
+                    g.end = end
+
         if removed:
+            if trimmed:
+                self.sort_genes(processes=1)
+                if not quiet:
+                    print(f"{self.id}: {trimmed} genes were trimmed to their remaining transcripts")
             self.update_gene_and_transcript_list(quiet=quiet)
             self.remove_missing_transcript_parent_references(quiet=quiet)
 
@@ -3208,7 +3390,11 @@ class Annotation():
 
 
     def remove_missing_transcript_parent_references(self, quiet:bool=True):
-
+        """
+        Removes, from exon and CDS rows, parent references to transcripts no longer in the annotation (and,
+        for exons, to transcripts of their gene on the other strand). Prints how many, unless quiet.
+        """
+        removed = 0
         for genes in self.chrs.values():
             for g in genes.values():
                 for t in g.transcripts.values():
@@ -3219,8 +3405,8 @@ class Annotation():
                                 if p in self.all_transcript_ids:
                                     if p not in g.transcripts or g.transcripts[p].strand == e.strand:
                                         new_parents.append(p)
-                                elif not quiet:
-                                    print(f"Transcript level id {p} parent reference for {e.id} is not present in annotation {self.id}")
+                                else:
+                                    removed += 1
                         e.parents = new_parents
                         e.parents.sort()
                     for c in t.CDSs.values():
@@ -3236,10 +3422,12 @@ class Annotation():
                                 for p in (cs.parents or []):
                                     if p in self.all_transcript_ids:
                                         new_parents.append(p)
-                                    elif not quiet:
-                                        print(f"Transcript level id {p} parent reference for {cs.id} is not present in annotation {self.id}")
+                                    else:
+                                        removed += 1
                                 cs.parents = new_parents
                                 cs.parents.sort()
+        if removed and not quiet:
+            print(f"{self.id}: {removed} parent references to transcripts no longer in the annotation were removed from exon and CDS rows")
 
     def rework_CDSs(
         self,
@@ -3373,6 +3561,9 @@ class Annotation():
 
         progress_bar = start_progress_bar(total=total, description=f"Updating {self.id} annotation gene and transcript lists", colour="95", quiet=quiet)
 
+        # genes and transcripts listed before, to find those removed since (see _drop_atypical_features_of)
+        listed_before = (set(self.all_gene_ids) | set(self.all_transcript_ids)) if self.atypical_features else set()
+
         self.all_gene_ids = {}
         self.all_transcript_ids = {}
         for chr, genes in self.chrs.items():
@@ -3382,6 +3573,39 @@ class Annotation():
                 for t in g.transcripts.values():
                     self.all_transcript_ids[t.id] = (chr, g.id)
         progress_bar.close()
+
+        if listed_before:
+            removed = {i for i in listed_before if i not in self.all_gene_ids and i not in self.all_transcript_ids}
+            if removed:
+                self._drop_atypical_features_of(removed, quiet=quiet)
+
+    def _drop_atypical_features_of(self, removed_ids:set[str], quiet:bool=True) -> int:
+        """
+        Removes the atypical features that belong to removed genes or transcripts (e.g. the protein row,
+        Derives_from=<transcript>, of a removed isoform), and in turn the atypical features that belong
+        to those. A feature with other parents loses only the removed ones. Returns how many were removed.
+        """
+        removed_ids = set(removed_ids)
+        dropped = 0
+        while True:
+            kept, newly_removed = [], set()
+            for ft in self.atypical_features:
+                if ft.parents and any(p in removed_ids for p in ft.parents):
+                    remaining = [p for p in ft.parents if p not in removed_ids]
+                    if not remaining:
+                        dropped += 1
+                        if ft.id:
+                            newly_removed.add(ft.id)
+                        continue
+                    ft.parents = remaining
+                kept.append(ft)
+            self.atypical_features = kept
+            if not newly_removed:
+                break
+            removed_ids = newly_removed
+        if dropped and not quiet:
+            print(f"{self.id} Warning: {dropped} atypical features (e.g. protein rows) were removed with the genes or transcripts they belong to")
+        return dropped
 
     def make_alternative_transcripts_into_genes(self, quiet:bool=False):
         new_chrs = {}
@@ -3511,6 +3735,10 @@ class Annotation():
         if cds_segment_ids and "CDS" not in features:
             warnings.warn("CDS features will be changed if need be since cds_segment_ids have been requested.", category=UserWarning)
 
+        # ids before renaming, so atypical and orphaned features keep pointing at the renamed features (see _relink_parents)
+        passthrough = {id(f) for f in self.atypical_features + self.orphaned_features}
+        ids_before = [(f, f.id) for f in self._iter_all_features() if id(f) not in passthrough] if passthrough else []
+
         start_time = time.time()
 
         changed_features = set()
@@ -3637,6 +3865,10 @@ class Annotation():
                         else:
                             base_id_missing = True
 
+                    # mature miRNAs belong to their (primary) transcript too
+                    for m in t.miRNAs:
+                        m.parents = [t.id]
+
                     if keep_existing_ids_if_derived_from_base_id and base_id_present and base_id_missing:
                         warnings.warn(f"{self.id} annotation transcript {t.original_id} has a mix of exon id formats and renaming errors could occur!", category=UserWarning)
 
@@ -3673,6 +3905,9 @@ class Annotation():
 
         self.homogenise_shared_exons_utrs()
         self.update_keys()
+        # before the lists are rebuilt, so the old ids of renamed features are not taken as removed ones
+        if ids_before:
+            self._relink_parents(ids_before)
         self.update_gene_and_transcript_list(quiet=quiet)
         if old_id_names == "alias":
             self._move_stale_names_to_aliases()
@@ -3703,6 +3938,23 @@ class Annotation():
         if not quiet:
             print(f"\nRenaming {self.id} ids with prefix='{prefix}', changing={self.renamed_features} features took {round(lapse/60, 1)} minutes")        
 
+    def _relink_parents(self, ids_before:list):
+        """
+        After renaming, points the parents of atypical and orphaned features (e.g. Araport11 protein rows,
+        Derives_from=<transcript>) at the new id of the feature they referred to. Ids that became several
+        new ids (e.g. a CDS whose rows were given their own ids) are left as they were.
+        """
+        new_ids = {}
+        for f, old in ids_before:
+            if f.id != old:
+                new_ids.setdefault(old, set()).add(f.id)
+        renamed = {old: next(iter(new)) for old, new in new_ids.items() if len(new) == 1}
+        if not renamed:
+            return
+        for f in self.atypical_features + self.orphaned_features:
+            if f.parents and any(p in renamed for p in f.parents):
+                f.parents = [renamed.get(p, p) for p in f.parents]
+
     def _move_stale_names_to_aliases(self):
         """
         A renamed feature whose Name is its old ID (e.g. Araport 'ID=AT4G00005;Name=AT4G00005') would
@@ -3722,10 +3974,14 @@ class Annotation():
             move(f)
 
     def standardise_attribute_keys(self):
-        """Writes Name, Alias and symbol under their default keys instead of the spelling read (e.g. 'gene_synonym', 'Symbol')."""
+        """
+        Writes Name, Alias and symbol under their default keys instead of the spelling read (e.g. 'gene_synonym',
+        'Symbol'). The Derives_from of atypical features is kept: it is another attribute, not a spelling of Parent.
+        """
         for f in self._iter_all_features():
             if f.attribute_keys:
-                f.attribute_keys = None
+                parent_key = f.attribute_keys.get("Parent")
+                f.attribute_keys = {"Parent": parent_key} if parent_key else None
 
     def reorder_attributes(self):
         """Writes Name, Alias and symbol first and in that order (AEGIS's default), instead of where they were in column 9."""
@@ -3784,23 +4040,23 @@ class Annotation():
                     for e in t.exons:
                         e.gene_id = g.id
 
-    def create_gtf_attributes(self):
+    def create_gtf_attributes(self, names:bool=True):
         """
         GTF attributes for every gene and subfeature; values are quoted with gtf_quote. As in Ensembl
         GTFs, gene_name is on every line of a gene and transcript_name on every line of a transcript,
         as tools that read names from exon lines (e.g. Cell Ranger) expect. Names are symbol_values(),
-        else the Names as read.
+        else the Names as read; names=False leaves gene_name and transcript_name out.
         """
         for genes in self.chrs.values():
             for g in genes.values():
 
                 gene_id = f'gene_id {gtf_quote(g.id)}'
-                gene_names = g.symbol_values() or g.names
+                gene_names = (g.symbol_values() or g.names) if names else None
                 gene_name = [f'gene_name {gtf_quote(",".join(gene_names))}'] if gene_names else []
                 g.gtf_attributes = [gene_id] + gene_name
 
                 for t in g.transcripts.values():
-                    transcript_names = t.symbol_values() or t.names
+                    transcript_names = (t.symbol_values() or t.names) if names else None
                     transcript_name = [f'transcript_name {gtf_quote(",".join(transcript_names))}'] if transcript_names else []
                     ids = [gene_id, f'transcript_id {gtf_quote(t.id)}']
                     names = gene_name + transcript_name
@@ -4022,6 +4278,8 @@ class Annotation():
         if features_to_remove:
             for ft in features_to_remove:
                 del self.chrs[ft]
+            self.atypical_features = [f for f in self.atypical_features if f.ch not in features_to_remove]
+            self.orphaned_features = [f for f in self.orphaned_features if f.ch not in features_to_remove]
             self.remove_chromosomes_from_header()
 
         if update:
@@ -4138,7 +4396,31 @@ class Annotation():
             if g in self.chrs[chrom]:
                 del self.chrs[chrom][g]
 
+        # atypical features of a gene merged into another now belong to that one (so they are not removed with it)
+        if correspondence and self.atypical_features:
+            self._repoint_atypical_parents(correspondence)
+
         self.update(rename_features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
+
+    def _repoint_atypical_parents(self, merged_into:dict[str, str]):
+        """
+        Points atypical features at the gene their parent gene was merged into ({old id: new id}),
+        following chains (a gene merged into one that was merged in turn).
+        """
+        def final(i):
+            seen = set()
+            while i in merged_into and i not in seen:
+                seen.add(i)
+                i = merged_into[i]
+            return i
+        for ft in self.atypical_features:
+            if ft.parents and any(p in merged_into for p in ft.parents):
+                parents = []
+                for p in ft.parents:
+                    p = final(p)
+                    if p not in parents:
+                        parents.append(p)
+                ft.parents = parents
 
     def remove_genes_with_small_CDSs(self, CDS_threshold:int=200, quiet:bool=False):
 
