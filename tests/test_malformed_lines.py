@@ -162,6 +162,51 @@ class TestSymbolAndAliasWithSemicolon:
         assert attrs["Name"] == ["AT1G01760"]
         assert attrs[FRAGMENTS] == (0, 2)
 
+    def test_leftover_of_a_lost_note_is_not_a_name(self):
+        # Araport11 AT1G20860: '8' is what is left of a Note, not part of the Name
+        attrs = parse_gff_attributes("ID=AT1G20860;Name=AT1G20860;8;8;8, a member of the Pht1 family;locus=1", gene=True)
+        assert attrs["Name"] == ["AT1G20860"]
+        assert attrs[FRAGMENTS] == (0, 3)
+
+    def test_name_cut_at_semicolon_is_joined_when_it_continues_like_the_id(self):
+        # Araport11 CDS/UTR rows name the symbol: 'Name=CYCA2;3:CDS:1' is 'CYCA2;3' + ':CDS:1'
+        attrs = parse_gff_attributes("ID=AT1G15570:CDS:1;Parent=AT1G15570.1;Name=CYCA2;3:CDS:1;Note=CYCLIN A2;3")
+        assert attrs["Name"] == ["CYCA2;3:CDS:1"]
+        assert attrs["Note"] == "CYCLIN A2%3B3"
+        assert attrs[FRAGMENTS] == (2, 0)
+        # CDS shared by isoforms: the ID carries an extra '.2'
+        attrs = parse_gff_attributes("ID=AT1G16780:CDS:14.2;Parent=AT1G16780.2;Name=VHP2;2:CDS:14")
+        assert attrs["Name"] == ["VHP2;2:CDS:14"]
+        attrs = parse_gff_attributes("Name=PIP1;3:five_prime_UTR:2;ID=AT1G01030:five_prime_UTR:2;Parent=t1")
+        assert attrs["Name"] == ["PIP1;3:five_prime_UTR:2"]
+
+    def test_name_is_not_joined_without_a_matching_id(self):
+        for column9 in ("ID=g1;Name=CYCA2;3:CDS:1", "ID=g1:CDS:1;Name=CYCA2;3:1", "ID=g1:CDS:1;Name=CYCA2;3:CDS:1 x"):
+            attrs = parse_gff_attributes(column9)
+            assert attrs["Name"] == ["CYCA2"], column9
+            assert attrs[FRAGMENTS] == (0, 1), column9
+
+    def test_bare_id_after_name_still_read_as_id(self):
+        attrs = parse_gff_attributes("Name=x;g2", gene=True)
+        assert attrs["ID"] == "g2" and attrs["Name"] == ["x"]
+        assert FRAGMENTS not in attrs
+
+    def test_araport_cds_name_survives_export_and_reload(self, tmp_path):
+        text = (
+            "##gff-version 3\n"
+            "Chr1\tAraport11\tgene\t100\t400\t.\t+\t.\tID=AT1G15570;Name=AT1G15570\n"
+            "Chr1\tAraport11\tmRNA\t100\t400\t.\t+\t.\tID=AT1G15570.1;Parent=AT1G15570;Name=AT1G15570.1\n"
+            "Chr1\tAraport11\texon\t100\t400\t.\t+\t.\tID=AT1G15570:exon:1;Parent=AT1G15570.1\n"
+            "Chr1\tAraport11\tCDS\t100\t399\t.\t+\t0\tID=AT1G15570:CDS:1;Parent=AT1G15570.1;Name=CYCA2;3:CDS:1\n"
+        )
+        annot = Annotation(_write(tmp_path, text), quiet=True)
+        assert annot.warnings["attribute_text_without_key_dropped"] == set()
+        out = _export(annot, tmp_path)
+        assert "Name=CYCA2%3B3:CDS:1" in out
+        again = Annotation(_write(tmp_path, out, name="again.gff3"), quiet=True)
+        assert again.warnings["attribute_text_after_semicolon_joined"] == set()
+        assert _export(again, tmp_path, name="again_out.gff3") == out
+
     def test_symbol_survives_tidy_reload_and_gtf(self, tmp_path):
         annot = Annotation(_write(tmp_path, ARAPORT_SYMBOL), quiet=True)
         gene = annot.chrs["Chr1"]["AT1G78000"]

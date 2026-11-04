@@ -684,6 +684,7 @@
         - `def format_gff3_values(values) -> str:`
         - `class GffEntry:`
         - `def parse_gff_parts(parts) -> GffEntry:`
+        - `def _continues_id(piece: str, feature_id: str) -> bool:`
         - `def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):`
         - `def keep_extra(raw):`
         - `def parse_gtf_attributes(attr_string, default_key="id"):`
@@ -1620,6 +1621,7 @@
       - `def test_quote_round_trip(self):`
       - `def test_gene_name_escaped_in_export(self, tmp_path):`
       - `def test_names_on_every_line(self, tmp_path):`
+      - `def test_unnamed_gene_does_not_hide_later_names(self, tmp_path):`
       - `def test_gtf_round_trip_puts_names_on_their_own_level(self, tmp_path):`
       - `def test_transcript_name_kept_without_transcript_lines(self, tmp_path):`
       - `def test_gtf_to_gff3_keeps_escaped_name(self, tmp_path):`
@@ -1799,6 +1801,11 @@
       - `def test_parser_appends_to_the_last_symbol_or_alias_value(self):`
       - `def test_repeated_symbol_key_continues_the_value_just_read(self):`
       - `def test_text_after_name_is_still_dropped(self):`
+      - `def test_leftover_of_a_lost_note_is_not_a_name(self):`
+      - `def test_name_cut_at_semicolon_is_joined_when_it_continues_like_the_id(self):`
+      - `def test_name_is_not_joined_without_a_matching_id(self):`
+      - `def test_bare_id_after_name_still_read_as_id(self):`
+      - `def test_araport_cds_name_survives_export_and_reload(self, tmp_path):`
       - `def test_symbol_survives_tidy_reload_and_gtf(self, tmp_path):`
       - `def test_gtf_id_with_semicolon_does_not_break_the_line(self, tmp_path):`
     - test_misc.py
@@ -2022,6 +2029,13 @@
       - `def test_cli_split_gwh(gwh_sample_files, tmp_path):`
       - `def test_cli_summary_gwh(gwh_sample_files, tmp_path):`
       - `def test_cli_tidy_genome_no_keep_description(gwh_sample_files, tmp_path):`
+    - test_standard_features.py
+      - `def _write(tmp_path, text=MIXED):`
+      - `def _types(path):`
+      - `def test_transcripts_are_mrna_only_with_a_cds(tmp_path):`
+      - `def test_tidy_keeps_gene_status_and_subfeature_types(tmp_path):`
+      - `def test_tidy_filters_biotypes_before_standardising(tmp_path):`
+      - `def test_without_the_option_types_are_kept(tmp_path):`
     - test_subfeatures.py
       - `class TestCDS:`
       - `def test_init(self, make_CDS):`
@@ -2100,6 +2114,15 @@
       - `def test_splice_site_case_insensitivity(self, monkeypatch):`
       - `class DummyScaffold:`
       - `class DummyGenome:`
+    - test_tidy_compatible.py
+      - `def _run(tmp_path, *options):`
+      - `def _cds_phases(rows):`
+      - `def test_compatible_preset(tmp_path):`
+      - `def test_without_preset_nothing_changes(tmp_path):`
+      - `def test_explicit_options_win(tmp_path):`
+      - `def test_flag_and_its_negation_conflict(tmp_path):`
+      - `def test_phases_recalculated_only_when_asked(tmp_path):`
+      - `def test_remove_transcripts_with_no_exons_flag_is_gone(tmp_path):`
     - test_transcript.py
       - `class TestTranscriptInit:`
       - `def test_basic_properties(self, make_transcript):`

@@ -225,6 +225,28 @@ class TestGTFQuoting:
         assert _line(out, "exon") == 'gene_id "g1"; transcript_id "t1"; exon_number "1"; gene_name "PIP1"; transcript_name "PIP1.a"'
         assert _line(out, "CDS") == 'gene_id "g1"; transcript_id "t1"; gene_name "PIP1"; transcript_name "PIP1.a"'
 
+    def test_unnamed_gene_does_not_hide_later_names(self, tmp_path):
+        # A gene and transcript without names used to switch names off for every later gene
+        path = tmp_path / "in.gff3"
+        path.write_text(
+            "##gff-version 3\n"
+            "chr1\tsrc\tgene\t1\t99\t.\t+\t.\tID=g1\n"
+            "chr1\tsrc\tmRNA\t1\t99\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tsrc\texon\t1\t99\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tsrc\tgene\t201\t299\t.\t+\t.\tID=g2;Name=FOO\n"
+            "chr1\tsrc\tmRNA\t201\t299\t.\t+\t.\tID=t2;Parent=g2;Name=FOO-1\n"
+            "chr1\tsrc\texon\t201\t299\t.\t+\t.\tID=e2;Parent=t2\n",
+            encoding="utf-8",
+        )
+        annot = Annotation(str(path), quiet=True)
+        annot.export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)
+        lines = [l.rstrip("\n").split("\t")[8] for l in open(tmp_path / "out.gtf") if not l.startswith("#")]
+        assert 'gene_id "g2"; gene_name "FOO"' in lines
+        assert 'gene_id "g2"; transcript_id "t2"; exon_number "1"; gene_name "FOO"; transcript_name "FOO-1"' in lines
+        assert not any("gene_name" in l for l in lines if '"g1"' in l)
+        annot.export.gtf(output_dir=str(tmp_path), filename="no_names.gtf", quiet=True, names=False)
+        assert "_name" not in (tmp_path / "no_names.gtf").read_text()
+
     def test_gtf_round_trip_puts_names_on_their_own_level(self, tmp_path):
         path = _gff(tmp_path, "ID=g1;Name=PIP1%3B3", mrna_attributes="ID=t1;Parent=g1;Name=PIP1.a")
         Annotation(path, quiet=True).export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)

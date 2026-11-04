@@ -177,6 +177,25 @@ def parse_gff_parts(parts) -> GffEntry:
         parent_key=parent_key,
     )
 
+_ID_SEPARATORS = re.compile(r"[:._|-]")
+
+def _continues_id(piece: str, feature_id: str) -> bool:
+    """
+    Whether a piece with no '=' right after Name is the rest of that Name, cut at an unescaped ';':
+    it has no whitespace, and its part from the first separator on holds a letter and appears in the
+    line's ID as a whole token. E.g. '3:CDS:1' after 'Name=CYCA2' on 'ID=AT1G15570:CDS:1' (or on
+    'ID=AT1G16780:CDS:14.2' for '2:CDS:14'), but not '8' after 'Name=AT1G20860' (left of a lost Note).
+    """
+    if not feature_id or any(c.isspace() for c in piece):
+        return False
+    m = _ID_SEPARATORS.search(piece)
+    if m is None:
+        return False
+    tail = piece[m.start():]
+    if not any(c.isalpha() for c in tail):
+        return False
+    return re.search(re.escape(tail) + r"(?=$|[:._|-])", feature_id) is not None
+
 def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     """
     Parses a GFF3 attribute column. Name, Symbol and Alias (under any of their MAPPED_ATTRIBUTES
@@ -189,8 +208,12 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     A piece with no '=' after a free-text attribute is text that followed an unescaped ';' in its
     value (e.g. Araport11 'Note=SNOR111; snoRNA; snoRNA'), so it is appended back to that value as
     '%3B' + piece; after Symbol or Alias it is appended to their last value as ';' + piece (decoded
-    values, encoded on export), e.g. 'symbol=SULTR1;2'. Text after Name is not appended. A bare first piece on a gene or transcript line is still read as its ID (AUGUSTUS).
-    Pieces that are neither are dropped. Both are counted under FRAGMENTS as (joined, dropped).
+    values, encoded on export), e.g. 'symbol=SULTR1;2'. Text after Name is usually a description that
+    lost its key (e.g. Araport11 'Name=AT1G01760;RNA binding'), so it is only appended back to the Name
+    when it is the piece right after it and visibly continues it like the line's ID does (see
+    _continues_id): Araport11 'ID=AT1G15570:CDS:1;Name=CYCA2;3:CDS:1' reads Name 'CYCA2;3:CDS:1'.
+    A bare first piece on a gene or transcript line is still read as its ID (AUGUSTUS).
+    Pieces that are none of these are dropped. Both are counted under FRAGMENTS as (joined, dropped).
     """
 
     if not attributes or attributes == ".":
@@ -205,6 +228,9 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     free_text_key = None
     # (values, index) of the last Symbol/Alias value read, which a piece with no '=' continues (e.g. Araport11 'symbol=SULTR1;2')
     continued_value = None
+    # (values, index) of the Name value just read, and the piece with no '=' right after it, if any
+    name_value = None
+    name_piece = None
     joined = dropped = 0
 
     def keep_extra(raw):
@@ -226,6 +252,10 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
                 values, i = continued_value
                 values[i] += ";" + gff3_unescape(p.rstrip())  # decoded, like the value it continues
                 joined += 1
+            elif name_value is not None:
+                # decided once the ID is known (see _continues_id below)
+                name_piece = (*name_value, token)
+                name_value = None
             # AUGUSTUS writes the ID of gene and transcript lines as a bare value ('g2', 'g2.t1;Parent=g2')
             elif (gene or transcript) and bare_id is None and not any(c.isspace() for c in token):
                 bare_id = token
@@ -233,7 +263,7 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
                 dropped += 1
             continue
 
-        free_text_key = continued_value = None
+        free_text_key = continued_value = name_value = None
         key = key.strip()
         val = val.strip()
 
@@ -264,11 +294,15 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
                     merged.extend(v for v in values if v not in merged)
                     if values and target_key in CONTINUED_ATTRIBUTES:
                         continued_value = (merged, merged.index(values[-1]))
+                    elif values and target_key == INT_NAME:
+                        name_value = (merged, merged.index(values[-1]))
                     continue
                 if key != DEFAULT_WRITE_KEYS[target_key]:
                     source_keys[target_key] = sys.intern(key)
                 if values and target_key in CONTINUED_ATTRIBUTES:
                     continued_value = (values, len(values) - 1)
+                elif values and target_key == INT_NAME:
+                    name_value = (values, len(values) - 1)
             elif target_key in parsed:
                 keep_extra(f"{key}={val}")
                 continue
@@ -307,6 +341,16 @@ def parse_gff_attributes(attributes, gene:bool=False, transcript:bool=False):
     if bare_id is not None:
         if INT_ID not in parsed:
             parsed[INT_ID] = bare_id
+        else:
+            dropped += 1
+
+    if name_piece is not None:
+        values, i, token = name_piece
+        if _continues_id(token, parsed.get(INT_ID, "")):
+            values[i] += ";" + gff3_unescape(token)
+            joined += 1
+        elif (gene or transcript) and INT_ID not in parsed and not any(c.isspace() for c in token):
+            parsed[INT_ID] = token  # a bare ID, as before Name was continued
         else:
             dropped += 1
 

@@ -24,7 +24,7 @@ def main(
         rich_help_panel=FORMAT_PANEL,
     )] = None,
     strict_gtf_2_2: Annotated[bool, typer.Option(
-        "--strict-gtf-2-2", help="Export strict GTF 2.2 format without top-level gene/transcript lines and with 5UTR/3UTR features.",
+        "--strict-gtf-2-2", help="GTF 2.2 layout: no gene/transcript lines, and UTRs written as 5UTR/3UTR. CDS lines are written as stored, including the stop codon when the annotation has it, and no start_codon/stop_codon lines are written.",
         rich_help_panel=FORMAT_PANEL,
     )] = False,
     strip_utrs: Annotated[bool, typer.Option(

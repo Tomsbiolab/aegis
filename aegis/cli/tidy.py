@@ -40,12 +40,21 @@ def main(
     )] = "",
 
     # 1. Structural Model Sanitisation
+    compatible: Annotated[bool, typer.Option(
+        "--compatible", help="Preset for maximum compatibility with downstream tools. Turns on --clean-features, --standard-features, --standardise-attribute-keys and --remove-genes-with-no-transcripts. It keeps names, symbols, other attributes, every gene with a transcript and the annotated CDS phases (missing ones are filled in, as always), and adds no CDS. To leave one of them out, add its '--no-' form, e.g. '--compatible --no-clean-features' (--no-standard-features, --no-standardise-attribute-keys, --no-remove-genes-with-no-transcripts).",
+        rich_help_panel=MODEL_PANEL,
+    )] = False,
+    # '--no-' forms of the options --compatible turns on, hidden to keep the help readable (listed in --compatible)
+    no_clean_features: Annotated[bool, typer.Option("--no-clean-features", hidden=True)] = False,
+    no_standard_features: Annotated[bool, typer.Option("--no-standard-features", hidden=True)] = False,
+    no_standardise_attribute_keys: Annotated[bool, typer.Option("--no-standardise-attribute-keys", hidden=True)] = False,
+    no_remove_genes_with_no_transcripts: Annotated[bool, typer.Option("--no-remove-genes-with-no-transcripts", hidden=True)] = False,
     clean_features: Annotated[bool, typer.Option(
-        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own. [on with --compatible]",
         rich_help_panel=MODEL_PANEL,
     )] = False,
     standard_features: Annotated[bool, typer.Option(
-        "--standard-features", help="Standardises feature names to common types (e.g. 'pseudotranscript' -> 'mRNA').",
+        "--standard-features", help="Writes the most widely recognised feature types, for tools that only look for those: genes as 'gene' (pseudogenes and transposable element genes keep that status as Pseudogene=True / Transposable=True), transcripts with a CDS as 'mRNA' and all others as 'transcript' (e.g. lnc_RNA, tRNA, pseudogenic_transcript), and exons as 'exon'. --biotypes still filters by the types in the input. [on with --compatible]",
         rich_help_panel=MODEL_PANEL,
     )] = False,
     unique_cds_entry_ids: Annotated[bool, typer.Option(
@@ -95,7 +104,7 @@ def main(
         rich_help_panel=ATTR_PANEL,
     )] = False,
     standardise_attribute_keys: Annotated[bool, typer.Option(
-        "--standardise-attribute-keys", help="Write names, aliases and symbols as 'Name=', 'Alias=' and 'symbol=' whatever their spelling in the input (e.g. 'gene_synonym=', 'Symbol=').",
+        "--standardise-attribute-keys", help="Write names, aliases and symbols as 'Name=', 'Alias=' and 'symbol=' whatever their spelling in the input (e.g. 'gene_synonym=', 'Symbol='). [on with --compatible]",
         rich_help_panel=ATTR_PANEL,
     )] = False,
     reorder_attributes: Annotated[bool, typer.Option(
@@ -146,11 +155,7 @@ def main(
         rich_help_panel=FEATURE_PANEL,
     )] = [],
     remove_genes_with_no_transcripts: Annotated[bool, typer.Option(
-        "--remove-genes-with-no-transcripts", help="Removes genes with no transcripts.",
-        rich_help_panel=FEATURE_PANEL,
-    )] = False,
-    remove_transcripts_with_no_exons: Annotated[bool, typer.Option(
-        "--remove-transcripts-with-no-exons", help="Removes transcripts with no exons.",
+        "--remove-genes-with-no-transcripts", help="Removes genes with no transcripts, pseudogenes included. [on with --compatible]",
         rich_help_panel=FEATURE_PANEL,
     )] = False,
 
@@ -278,6 +283,25 @@ def main(
     if verbose:
         quiet = False
 
+    # --compatible turns these on, except those switched off with their '--no-' form
+    preset = {
+        "--clean-features": (clean_features, no_clean_features),
+        "--standard-features": (standard_features, no_standard_features),
+        "--standardise-attribute-keys": (standardise_attribute_keys, no_standardise_attribute_keys),
+        "--remove-genes-with-no-transcripts": (remove_genes_with_no_transcripts, no_remove_genes_with_no_transcripts),
+    }
+    for flag, (on, off) in preset.items():
+        if on and off:
+            raise typer.BadParameter(f"{flag} and --no-{flag[2:]} were both given.")
+    resolved = {flag: on or (compatible and not off) for flag, (on, off) in preset.items()}
+    if compatible and not quiet:
+        enabled = [flag for flag, (on, _) in preset.items() if resolved[flag] and not on]
+        print(f"--compatible enabled: {', '.join(enabled) if enabled else 'nothing (all given explicitly or left out)'}")
+    clean_features = resolved["--clean-features"]
+    standard_features = resolved["--standard-features"]
+    standardise_attribute_keys = resolved["--standardise-attribute-keys"]
+    remove_genes_with_no_transcripts = resolved["--remove-genes-with-no-transcripts"]
+
     annot_in = annotation_file_opt if annotation_file_opt else annotation_file
     genome_in = genome_file_opt if genome_file_opt else genome_file
 
@@ -347,9 +371,7 @@ def main(
         collapse_CDSs=collapse_CDSs,
         consider_read_utrs=consider_read_utrs,
         rename_features=rename_features,
-        standardise_features=standard_features,
         remove_genes_with_no_transcripts=remove_genes_with_no_transcripts,
-        remove_transcripts_with_no_exons=remove_transcripts_with_no_exons,
         remove_missing_transcript_parent_references=remove_missing_transcript_parent_references,
         remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts,
         skip_orphaned_features=not(print_orphaned_features),
@@ -398,6 +420,10 @@ def main(
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
         clean_features = True
+
+    # after the biotype filter, which reads the transcript types as given in the input
+    if standard_features:
+        annotation.update_features(standardise=True, quiet=quiet)
 
     annotation.export.gff(output_dir=output_dir, filename=output_file, main_only=main_only, UTRs=include_UTRs, just_genes=just_genes, repeat_exons_utrs=repeat_exons_utrs, skip_atypical_fts=clean_features, quiet=quiet, names=(not remove_names), aliases=(not remove_aliases), symbols=(not remove_symbols), symbols_as_description=symbols_as_description, clean_attributes=clean_attributes, featurecountsID=add_gene_id, print_empty_attributes=print_empty_attributes, subfolder=subfolder)
 

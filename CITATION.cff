@@ -10,7 +10,7 @@ abstract: >-
   genomic analyses, including gene model correspondence and orthology
   inference.
 version: 1.0.0
-date-released: 2026-11-03
+date-released: 2026-11-05
 license: GPL-3.0-or-later
 repository-code: https://github.com/Tomsbiolab/aegis
 url: https://github.com/Tomsbiolab/aegis
