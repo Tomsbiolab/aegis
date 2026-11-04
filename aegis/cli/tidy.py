@@ -41,7 +41,7 @@ def main(
 
     # 1. Structural Model Sanitisation
     clean_features: Annotated[bool, typer.Option(
-        "--clean-features", help="Removes non-standard features from a GFF for downstream compatibility.",
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
         rich_help_panel=MODEL_PANEL,
     )] = False,
     standard_features: Annotated[bool, typer.Option(
@@ -353,6 +353,7 @@ def main(
         remove_missing_transcript_parent_references=remove_missing_transcript_parent_references,
         remove_genes_with_no_transcripts_even_if_pseudogene=remove_genes_with_no_transcripts,
         skip_orphaned_features=not(print_orphaned_features),
+        skip_atypical_features=clean_features,
         adjust_internal_shifts=adjust_internal_shifts,
         taxonomy=taxonomy,
         table=genetic_code,

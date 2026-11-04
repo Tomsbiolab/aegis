@@ -110,6 +110,10 @@ def main(
     )] = "{annotation-name}_renamed.gff3",
 
     # 5. Execution & Debugging
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -165,7 +169,7 @@ def main(
         coordinate_polishing="none",
         auto_organelle_detection=auto_organelle_detection,
         mitochondria_chroms=mitochondria_chroms,
-        chloroplast_chroms=chloroplast_chroms,
+        chloroplast_chroms=chloroplast_chroms, skip_atypical_features=clean_features
     )
 
     if "{annotation-name}" in output_file:
@@ -177,7 +181,7 @@ def main(
     correspondences_kwargs = dict(correspondences_output_dir=output_dir, correspondences_filename=output_file_correspondences) if gene_id_correspondences else {}
 
     annotation.rename_ids(**correspondences_kwargs, features=tuple(rename_features), keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, old_id_names=("keep" if keep_old_names else "alias"), quiet=quiet)
-    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 if __name__ == "__main__":
     app()

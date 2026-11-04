@@ -121,7 +121,7 @@ def genes(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none")
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", skip_atypical_features=True)
 
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)
@@ -258,7 +258,7 @@ def transcripts(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none")
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", skip_atypical_features=True)
 
     if biotypes:
         annotation.filter_by_rna_class(rna_classes=biotypes, remove_genes_accordingly=True, quiet=quiet)

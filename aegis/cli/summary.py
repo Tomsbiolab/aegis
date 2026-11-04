@@ -433,7 +433,7 @@ def main(
                 mito_table=mito_code,
                 plastid_table=plastid_code,
                 auto_organelle_detection=auto_organelle_detection,
-                initiator_methionine=initiator_methionine, #type: ignore
+                initiator_methionine=initiator_methionine, #type: ignore, skip_atypical_features=True
             )
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)

@@ -93,6 +93,10 @@ def main(
     )] = "auto",
 
     # 3. Execution / Debugging
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -142,7 +146,7 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
     subfolder = False
 
-    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False)
+    annotation = Annotation(name=annotation_name, annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", collapse_exons=False, collapse_CDSs=False, skip_atypical_features=clean_features)
 
     if output_format == "auto":
         output_format = getattr(annotation, "input_format", "gff3")
@@ -166,7 +170,7 @@ def main(
     if output_format == "gtf":
         annotation.export.gtf(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
     else:
-        annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
+        annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 if __name__ == "__main__":
     app()

@@ -9,7 +9,7 @@ import re
 import warnings
 
 from .utils.genefunctions import reverse_complement
-from .utils.gtf_gff import format_gff3_values, DEFAULT_WRITE_KEYS, SOURCE_KEYS, EXTRA_ATTRIBUTES, INT_NAME, INT_SYMBOL, INT_ALIAS
+from .utils.gtf_gff import format_gff3_values, DEFAULT_WRITE_KEYS, SOURCE_KEYS, EXTRA_ATTRIBUTES, INT_NAME, INT_SYMBOL, INT_ALIAS, INT_PARENT
 from .other_components import FeatureQuality, FeatureAttributes
 from .conf import default_features
 
@@ -353,7 +353,8 @@ class Feature():
         if self.parents:
             parent_string = ",".join(self.parents)
             if parent_string or print_empty_attributes:
-                temp_attributes.append(f"Parent={parent_string}")
+                # 'Derives_from' kept for the atypical features that use it (e.g. Araport11 protein rows)
+                temp_attributes.append(f"{self.gff_key(INT_PARENT)}={parent_string}")
 
         if featurecountsID and self.gene_id is not None:
             temp_attributes.append(f"Gene_id={self.gene_id}")

@@ -73,6 +73,14 @@ def main(
     )] = "{annotation-name}.{ext}",
 
     # 4. Execution / Debugging
+    remove_names: Annotated[bool, typer.Option(
+        "--remove-names", help="Removes name attributes from the output: Name in GFF; gene_name and transcript_name in GTF.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
+    clean_features: Annotated[bool, typer.Option(
+        "--clean-features", help="Removes non-standard features for downstream compatibility: lines of feature types that are not genes, transcripts or their subfeatures (e.g. repeat_region, transposable_element, match, protein) are not read. By default they are kept, each written with the gene it belongs to (e.g. a protein row with its mRNA) or on its own.",
+        rich_help_panel=IO_PANEL,
+    )] = False,
     quiet: Annotated[bool, typer.Option(
         "-q", "--quiet", help="Keeps terminal reporting to a minimum.",
         rich_help_panel=EXEC_PANEL,
@@ -115,7 +123,7 @@ def main(
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero,
         collapse_exons=collapse_exons_opt,
-        collapse_CDSs=collapse_CDSs_opt,
+        collapse_CDSs=collapse_CDSs_opt, skip_atypical_features=clean_features
     )
 
     norm_in_format = input_format.lower().strip()
@@ -149,9 +157,9 @@ def main(
         output_file += f".{target_format}"
 
     if target_format == "gtf":
-        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=export_utrs, quiet=quiet, subfolder=subfolder, strict_gtf_2_2=strict_gtf_2_2)
+        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=export_utrs, quiet=quiet, subfolder=subfolder, strict_gtf_2_2=strict_gtf_2_2, names=not remove_names)
     elif target_format == "gff3":
-        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=export_utrs, quiet=quiet, subfolder=subfolder)
+        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=export_utrs, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features, names=not remove_names)
 
 if __name__ == "__main__":
     app()
