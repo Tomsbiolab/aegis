@@ -1,5 +1,7 @@
 """Tests for peak-to-gene assignment (aegis.peaks and the `aegis peaks` command)."""
 
+import math
+
 import pandas as pd
 import pytest
 from typer.testing import CliRunner
@@ -7,9 +9,12 @@ from typer.testing import CliRunner
 from aegis.annotation import Annotation
 from aegis.cli.peaks import app
 from aegis.peaks import (
+    _GeneRecord,
     assign_peaks_to_genes,
     detect_peak_format,
+    inside_feature,
     read_peaks,
+    shortest_distance,
     summarise_target_genes,
 )
 
@@ -78,6 +83,24 @@ def test_read_narrowpeak_uses_summit_offset(tmp_path):
     assert (p.start, p.end, p.summit, p.signal, p.p_log10, p.q_log10) == (1000, 1200, 1050, 12.5, 4.2, 3.1)
 
 
+def test_read_narrowpeak_missing_values_and_named_extra_columns(tmp_path):
+    path = tmp_path / "x.narrowPeak"
+    path.write_text(
+        "#chrom\tstart\tend\tname\tscore\tstrand\tsignalValue\tpValue\tqValue\tpeak\tfold_enrichment\tbinding_motif\n"
+        "chr1\t999\t1200\t01:1100\t103\t.\t43\t1.28\t1.22\t100\t13.7\tGGGTTGGTGG_168/13\n"
+        "chr1\t2999\t3200\tp2\t-1\t.\t-1\t-1\t-1\t-1\t-1\t.\n"
+    )
+    first, second = read_peaks(str(path))
+    assert (first.score, first.signal, first.fold, first.motif) == (103.0, 43.0, 13.7, "GGGTTGGTGG_168/13")
+    # -1: not available
+    assert all(math.isnan(v) for v in (second.score, second.signal, second.fold, second.p_log10, second.q_log10))
+    assert (second.summit, second.motif) == (3100, "")
+    # without a header naming them, extra columns are not read (e.g. the IDR columns of IDR narrowPeaks)
+    plain = _bed(tmp_path, [("chr1", 999, 1200, "p", 103, ".", 43, 1.28, 1.22, 100, 0.5, 0.7)], "idr.narrowPeak")
+    p = read_peaks(plain)[0]
+    assert math.isnan(p.fold) and p.motif == ""
+
+
 def test_read_gem_narrowpeak_uses_event_position(tmp_path):
     path = _bed(tmp_path, [("chr00", 5064640, 5064841, "00:5064740", 1000, ".", 36399.8, 999.0, 999.0, 100)], "g.narrowPeak")
     p = read_peaks(path)[0]
@@ -89,13 +112,14 @@ def test_read_gem_events_table(tmp_path):
     path.write_text(
         "Position\tIP\tControl\tFold\tExpectd\tQ_-lg10\tP_-lg10\tP_poiss\tIPvsEMP\tNoise\tKmerGroup\tMotifId\tKG_score\tStrand\n"
         "00:5064740\t36399.8\t  430.9\t   84.5\t  291.5\t 999.00\t 999.00\t 999.00\t  -0.83\t   0.07\t--------\t-1\t0.00\t*\n"
-        "01:4000\t100.0\t 1.0\t 10.0\t 1.0\t 5.00\t 6.00\t 6.00\t 0\t 0\t--------\t-1\t0.00\t*\n"
+        "01:4000\t100.0\t 1.0\t 10.0\t 1.0\t 5.00\t 6.00\t 6.00\t 0\t 0\tAAGGTTGTTGG_125/10\t0\t8.35\t+\n"
     )
     assert detect_peak_format(str(path)) == "gem"
     peaks = read_peaks(str(path))
     # same interval as GEM's own BED output (200 bp)
     assert (peaks[0].chrom, peaks[0].start, peaks[0].end, peaks[0].summit) == ("00", 5064641, 5064840, 5064740)
     assert (peaks[0].signal, peaks[0].fold, peaks[0].q_log10) == (36399.8, 84.5, 999.0)
+    assert (peaks[0].motif, peaks[1].motif) == ("--------", "AAGGTTGTTGG_125/10")
     point = read_peaks(str(path), event_width=0)[1]
     assert (point.start, point.end, point.summit) == (4000, 4000, 4000)
 
@@ -120,6 +144,7 @@ def test_nearest_gene(annotation, tmp_path):
 
     a = df[df.peak_id == "down_A"].iloc[0]
     assert (a.distance_to_gene, a.distance_to_tss, a.summit_location, a.n_linked_genes) == (100, 1149, "downstream", 1)
+    assert (a.inside_feature, a.shortest_distance) == ("downstream", 100)
 
     bc = df[df.peak_id == "in_BC"].set_index("gene_id")
     assert list(bc.index) == ["geneC", "geneB"]  # ties sorted by distance to TSS
@@ -127,9 +152,32 @@ def test_nearest_gene(annotation, tmp_path):
     assert bc.loc["geneC", "distance_to_tss"] == 5650 - 5501
     assert set(bc.distance_to_gene) == {0}
     assert set(bc.summit_location) == {"genic"}
+    assert set(bc.inside_feature) == {"inside"}
 
     e = df[df.peak_id == "down_E"].iloc[0]
     assert (e.gene_chrom, e.distance_to_gene, e.summit_location) == ("chr2", 41, "downstream")
+    assert (e.inside_feature, e.shortest_distance) == ("downstream", 41)
+
+
+@pytest.mark.parametrize("start, end, plus, minus", [
+    (800, 900, "upstream", "downstream"),
+    (2100, 2200, "downstream", "upstream"),
+    (1200, 1800, "inside", "inside"),
+    (900, 1100, "overlapStart", "overlapEnd"),
+    (1900, 2100, "overlapEnd", "overlapStart"),
+    (1500, 2000, "overlapEnd", "inside"),
+    (1001, 1500, "inside", "overlapEnd"),
+    (900, 2100, "includeFeature", "includeFeature"),
+])
+def test_inside_feature_follows_the_strand(start, end, plus, minus):
+    # as ChIPpeakAnno's insideFeature for a gene at 1001-2000
+    assert inside_feature(start, end, _GeneRecord("g", "chr1", 1001, 2000, "+")) == plus
+    assert inside_feature(start, end, _GeneRecord("g", "chr1", 1001, 2000, "-")) == minus
+
+
+def test_shortest_distance():
+    gene = _GeneRecord("g", "chr1", 1001, 2000, "+")
+    assert [shortest_distance(s, e, gene) for s, e in ((800, 900), (900, 1100), (1200, 1800), (900, 2100))] == [101, 99, 199, 100]
 
 
 def test_reference_tss_vs_gene(annotation, tmp_path):
@@ -148,6 +196,7 @@ def test_one_gene_per_peak_and_max_distance(annotation, tmp_path):
     df = assign_peaks_to_genes(annotation, path, reference="gene", one_gene_per_peak=True, max_distance=5000, keep_unassigned=True, quiet=True)
     far = df[df.peak_id == "far"].iloc[0]
     assert far.gene_id == "" and far.n_linked_genes == 0
+    assert far.inside_feature == "" and pd.isna(far.shortest_distance)
 
 
 def test_window_mode(annotation, tmp_path):

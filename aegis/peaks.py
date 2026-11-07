@@ -13,6 +13,14 @@ and linked to the genes of an :class:`~aegis.annotation.Annotation`:
   contains the summit, i.e. from ``upstream`` bp before the TSS to
   ``downstream`` bp after the TES (strand aware).
 
+Besides the distances AEGIS uses, every link gets the location of the whole peak
+relative to its gene and the shortest distance between their ends, as
+ChIPpeakAnno's ``insideFeature`` and ``shortestDistance`` (``inside_feature``,
+``shortest_distance``). Peak values given as -1 (the narrowPeak convention for
+"not available") are read as missing. narrowPeak and BED files can carry a fold
+enrichment and a binding motif (e.g. GEM's ``Fold`` and ``KmerGroup``) in extra
+columns named ``fold_enrichment`` and ``binding_motif`` in a ``#`` header line.
+
 All coordinates in the output are 1-based and inclusive, as in GFF.
 """
 
@@ -50,6 +58,7 @@ class Peak:
     fold: float = math.nan
     p_log10: float = math.nan
     q_log10: float = math.nan
+    motif: str = ""
     peak_id: str = ""
 
 
@@ -85,6 +94,29 @@ def _to_float(value:str) -> float:
         return float(value)
     except (TypeError, ValueError):
         return math.nan
+
+
+def _peak_value(value:str) -> float:
+    """A narrowPeak / BED value: -1 means not available."""
+    number = _to_float(value)
+    return math.nan if number == -1 else number
+
+
+# Extra columns of narrowPeak / BED files, found by their name in a '#' header line
+_EXTRA_COLUMNS = {"fold": ("fold_enrichment", "fold"), "motif": ("binding_motif", "motif")}
+
+
+def _header_columns(path:str) -> list[str]:
+    """Column names of a '#' header line before the first data line (empty without one)."""
+    names = []
+    with _open(path) as fh:
+        for line in fh:
+            line = line.rstrip("\r\n")
+            if line.startswith("#"):
+                names = [c.strip().lower() for c in line.lstrip("#").split("\t")]
+            elif line.strip() and not line.startswith(("track", "browser")):
+                break
+    return names
 
 
 def _is_int(value:str) -> bool:
@@ -132,9 +164,11 @@ def _read_gem(path:str, event_width:int) -> list[Peak]:
         if not m:
             raise ValueError(f"Unexpected GEM event position '{cols[0]}' in '{path}'.")
         chrom, pos = m.group(1), int(m.group(2))
-        def col(name, default_index):
+        def text(name, default_index):
             i = columns.get(name, default_index) if columns else default_index
-            return _to_float(cols[i]) if i is not None and i < len(cols) else math.nan
+            return cols[i] if i is not None and i < len(cols) else ""
+        def col(name, default_index):
+            return _to_float(text(name, default_index))
         peaks.append(Peak(
             chrom=chrom,
             start=max(1, pos - half_left),
@@ -145,6 +179,7 @@ def _read_gem(path:str, event_width:int) -> list[Peak]:
             fold=col("Fold", 3),
             q_log10=col("Q_-lg10", 5),
             p_log10=col("P_-lg10", 6),
+            motif=text("KmerGroup", 10),
         ))
     return peaks
 
@@ -152,6 +187,14 @@ def _read_gem(path:str, event_width:int) -> list[Peak]:
 def _read_bed_like(path:str, narrowpeak:bool) -> list[Peak]:
     peaks = []
     seen = set()
+    # extra columns (fold enrichment, motif) named in a header line, after the narrowPeak / BED6 columns
+    header = _header_columns(path)
+    first_extra = 10 if narrowpeak else 6
+    extra = {}
+    for field_name, names in _EXTRA_COLUMNS.items():
+        found = [i for i, c in enumerate(header) if c in names and i >= first_extra]
+        if found:
+            extra[field_name] = found[0]
     for line in _data_lines(path):
         cols = [c.strip() for c in line.split("\t")]
         if len(cols) < 3 or not (_is_int(cols[1]) and _is_int(cols[2])):
@@ -167,12 +210,16 @@ def _read_bed_like(path:str, narrowpeak:bool) -> list[Peak]:
         seen.add(key)
         start = start0 + 1
         summit = (start + end) // 2
-        score = _to_float(cols[4]) if len(cols) > 4 else math.nan
+        score = _peak_value(cols[4]) if len(cols) > 4 else math.nan
         signal = p_log10 = q_log10 = math.nan
+        fold = _peak_value(cols[extra["fold"]]) if "fold" in extra and extra["fold"] < len(cols) else math.nan
+        motif = cols[extra["motif"]] if "motif" in extra and extra["motif"] < len(cols) else ""
+        if motif == ".":
+            motif = ""
         if narrowpeak:
-            signal = _to_float(cols[6])
-            p_log10 = _to_float(cols[7])
-            q_log10 = _to_float(cols[8])
+            signal = _peak_value(cols[6])
+            p_log10 = _peak_value(cols[7])
+            q_log10 = _peak_value(cols[8])
             offset = int(cols[9])
             m = _GEM_POSITION_RE.match(name)
             if m and start - 1 <= int(m.group(2)) <= end + 1:
@@ -181,7 +228,7 @@ def _read_bed_like(path:str, narrowpeak:bool) -> list[Peak]:
             elif offset >= 0:
                 summit = start + offset
         peaks.append(Peak(chrom=chrom, start=start, end=end, summit=summit, name=name,
-                          score=score, signal=signal, p_log10=p_log10, q_log10=q_log10))
+                          score=score, signal=signal, fold=fold, p_log10=p_log10, q_log10=q_log10, motif=motif))
     return peaks
 
 
@@ -343,6 +390,30 @@ def summit_location(summit:int, gene:_GeneRecord) -> str:
     return "upstream" if upstream else "downstream"
 
 
+def inside_feature(start:int, end:int, gene:_GeneRecord) -> str:
+    """
+    Location of the whole peak relative to the gene, following the gene strand, as ChIPpeakAnno's insideFeature:
+    'upstream' or 'downstream' (no overlap), 'inside' (within the gene), 'overlapStart' (over the TSS),
+    'overlapEnd' (over the TES or ending at it) or 'includeFeature' (the gene lies within the peak).
+    """
+    g_start, g_end = gene.start, gene.end
+    if gene.strand == "-":
+        # mirrored so that the TSS is the gene start
+        start, end, g_start, g_end = -end, -start, -g_end, -g_start
+    if end < g_start:
+        return "upstream"
+    if start > g_end:
+        return "downstream"
+    if start < g_start:
+        return "includeFeature" if end > g_end else "overlapStart"
+    return "overlapEnd" if end >= g_end else "inside"
+
+
+def shortest_distance(start:int, end:int, gene:_GeneRecord) -> int:
+    """Shortest distance between an end of the peak and an end of the gene, as ChIPpeakAnno's shortestDistance."""
+    return min(abs(start - gene.start), abs(start - gene.end), abs(end - gene.start), abs(end - gene.end))
+
+
 def _gene_records(annotation:Annotation, coding_only:bool=False, skip_pseudogenes:bool=False, skip_te:bool=False) -> dict[str, list[_GeneRecord]]:
     records = {}
     for ch, genes in annotation.chrs.items():
@@ -359,8 +430,8 @@ def _gene_records(annotation:Annotation, coding_only:bool=False, skip_pseudogene
 
 OUTPUT_COLUMNS = [
     "peak_id", "peak_name", "chrom", "peak_start", "peak_end", "summit", "score", "signal", "fold", "p_log10", "q_log10",
-    "gene_id", "gene_chrom", "gene_start", "gene_end", "gene_strand",
-    "distance_to_tss", "distance_to_gene", "summit_location", "n_linked_genes",
+    "motif", "gene_id", "gene_chrom", "gene_start", "gene_end", "gene_strand",
+    "distance_to_tss", "distance_to_gene", "shortest_distance", "summit_location", "inside_feature", "n_linked_genes",
 ]
 
 
@@ -427,7 +498,7 @@ def assign_peaks_to_genes(
     rows = []
     unassigned = 0
     for p in peaks:
-        base = [p.peak_id, p.name, p.chrom, p.start, p.end, p.summit, p.score, p.signal, p.fold, p.p_log10, p.q_log10]
+        base = [p.peak_id, p.name, p.chrom, p.start, p.end, p.summit, p.score, p.signal, p.fold, p.p_log10, p.q_log10, p.motif]
         index = indexes.get(p.chrom)
         hits = []
         if index is not None:
@@ -445,16 +516,17 @@ def assign_peaks_to_genes(
         if not hits:
             unassigned += 1
             if keep_unassigned:
-                rows.append(base + ["", "", pd.NA, pd.NA, "", pd.NA, pd.NA, "", 0])
+                rows.append(base + ["", "", pd.NA, pd.NA, "", pd.NA, pd.NA, pd.NA, "", "", 0])
             continue
         hits = sorted(hits, key=lambda g: (abs(signed_tss_distance(p.summit, g)), g.id))
         for g in hits:
             d_gene = max(0, g.start - p.end, p.start - g.end)
             rows.append(base + [g.id, g.ch, g.start, g.end, g.strand,
-                                signed_tss_distance(p.summit, g), d_gene, summit_location(p.summit, g), len(hits)])
+                                signed_tss_distance(p.summit, g), d_gene, shortest_distance(p.start, p.end, g),
+                                summit_location(p.summit, g), inside_feature(p.start, p.end, g), len(hits)])
 
     df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
-    for col in ("gene_start", "gene_end", "distance_to_tss", "distance_to_gene"):
+    for col in ("gene_start", "gene_end", "distance_to_tss", "distance_to_gene", "shortest_distance"):
         df[col] = df[col].astype("Int64")
 
     if not quiet:
