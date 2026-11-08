@@ -370,10 +370,13 @@
       - `def __post_init__(self):`
       - `def _open(path:str):`
       - `def _to_float(value:str) -> float:`
+      - `def _peak_value(value:str) -> float:`
+      - `def _header_columns(path:str) -> list[str]:`
       - `def _is_int(value:str) -> bool:`
       - `def _data_lines(path:str):`
       - `def detect_peak_format(path:str) -> str:`
       - `def _read_gem(path:str, event_width:int) -> list[Peak]:`
+      - `def text(name, default_index):`
       - `def col(name, default_index):`
       - `def _read_bed_like(path:str, narrowpeak:bool) -> list[Peak]:`
       - `def read_peaks(path:str, peak_format:str="auto", event_width:int=200) -> list[Peak]:`
@@ -387,6 +390,8 @@
       - `def in_window(self, summit:int, upstream:int, downstream:int) -> list[_GeneRecord]:`
       - `def signed_tss_distance(summit:int, gene:_GeneRecord) -> int:`
       - `def summit_location(summit:int, gene:_GeneRecord) -> str:`
+      - `def inside_feature(start:int, end:int, gene:_GeneRecord) -> str:`
+      - `def shortest_distance(start:int, end:int, gene:_GeneRecord) -> int:`
       - `def _gene_records(annotation:Annotation, coding_only:bool=False, skip_pseudogenes:bool=False, skip_te:bool=False) -> dict[str, list[_GeneRecord]]:`
       - `def assign_peaks_to_genes(`
       - `def summarise_target_genes(links:pd.DataFrame) -> pd.DataFrame:`
@@ -1988,10 +1993,13 @@
       - `def _links(df):`
       - `def test_read_bed_converts_to_one_based(tmp_path):`
       - `def test_read_narrowpeak_uses_summit_offset(tmp_path):`
+      - `def test_read_narrowpeak_missing_values_and_named_extra_columns(tmp_path):`
       - `def test_read_gem_narrowpeak_uses_event_position(tmp_path):`
       - `def test_read_gem_events_table(tmp_path):`
       - `def test_non_unique_names_get_peak_ids(tmp_path):`
       - `def test_nearest_gene(annotation, tmp_path):`
+      - `def test_inside_feature_follows_the_strand(start, end, plus, minus):`
+      - `def test_shortest_distance():`
       - `def test_reference_tss_vs_gene(annotation, tmp_path):`
       - `def test_one_gene_per_peak_and_max_distance(annotation, tmp_path):`
       - `def test_window_mode(annotation, tmp_path):`
