@@ -749,11 +749,35 @@ class AnnotationExport(AnnotationComponent):
                             f_out.write(f"|{g.strand}|{g.ch}|{g.start}:{g.end}")
                         f_out.write(f"\n{g.seq}\n")
 
-    def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet:bool=False,
+    def _ensure_promoters(self, promoter_size: int | None, promoter_type: str | None):
+        """
+        Generates promoters unless ones matching the requested size and type
+        already exist. None means 'keep what the annotation already has', or
+        the defaults (2000, 'standard') if no promoters have been generated yet.
+        """
+        if self._annot.contains_promoters:
+            size = self._annot.promoter_size if promoter_size is None else promoter_size
+            ptype = self._annot.promoter_type if promoter_type is None else promoter_type
+            if size == self._annot.promoter_size and ptype == self._annot.promoter_type:
+                return
+        else:
+            size = 2000 if promoter_size is None else promoter_size
+            ptype = "standard" if promoter_type is None else promoter_type
+
+        self._annot.generate_promoters(promoter_size=size, promoter_type=ptype)
+
+    def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int | None = None, promoter_type: str | None = None, unique_promoters_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet:bool=False,
         #deprecated arguments
         custom_filename: str="", custom_path:str=""):
         """
         Verbose will include promoter type, strand, chromosome, and coordinates.
+
+        promoter_size and promoter_type default to the promoters already generated
+        in the annotation, or to 2000 and 'standard' if there are none. Passing
+        values that differ from the existing promoters regenerates them.
+
+        unique_promoters_per_gene keeps one copy of each distinct promoter
+        sequence per gene (e.g. transcripts sharing a TSS), across all transcripts.
         """
 
         if custom_filename != "":
@@ -773,6 +797,13 @@ class AnnotationExport(AnnotationComponent):
         if used_id not in valid_id_choices:
             raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export promoters.")
 
+        if unique_promoters_per_gene:
+            only_main = False
+            if used_id == "gene":
+                used_id = "promoter"
+                warnings.warn(f"Used id 'gene' has been changed to 'promoter' as unique promoters per gene was selected.", category=UserWarning)
+
+        self._ensure_promoters(promoter_size, promoter_type)
 
         extra_suffixes = ["promoters"]
 
@@ -784,7 +815,9 @@ class AnnotationExport(AnnotationComponent):
                 extra_suffixes.append("t_id")
             if used_id == "promoter":
                 extra_suffixes.append("prom_id")
-            if only_main:
+            if unique_promoters_per_gene:
+                extra_suffixes.append("unique_per_gene")
+            elif only_main:
                 extra_suffixes.append("main")
             else:
                 extra_suffixes.append("all")
@@ -795,20 +828,24 @@ class AnnotationExport(AnnotationComponent):
         extra_suffixes.append(str(self._annot.promoter_size))
         extra_suffixes.append(self._annot.promoter_type)
 
-        if not self._annot.contains_promoters:
-            self._annot.generate_promoters(promoter_size=promoter_size, promoter_type=promoter_type)
-
         final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
 
         with open(str(final_output_path), "w", encoding="utf-8") as f_out:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
+                    seen_seqs = set()
                     for t in g.transcripts.values():
                         if only_main and not t.main:
                             continue
 
                         if t.promoter is not None:
-                            if t.promoter.seq != "":
+                            prom_seq = t.promoter.seq
+                            if prom_seq != "":
+
+                                if unique_promoters_per_gene:
+                                    if prom_seq in seen_seqs:
+                                        continue
+                                    seen_seqs.add(prom_seq)
 
                                 if used_id == "promoter":
                                     f_out.write(f">{t.promoter.id}")
@@ -820,11 +857,44 @@ class AnnotationExport(AnnotationComponent):
                                 if verbose:
                                     f_out.write(f"|{t.promoter.type}|{t.strand}|{t.ch}|{t.promoter.start}:{t.promoter.end}")
 
-                                f_out.write(f"\n{t.promoter.seq}\n")
+                                f_out.write(f"\n{prom_seq}\n")
                             elif not quiet:
                                 print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter sequence.\n")
                         elif not quiet:
                             print(f"Warning: transcript {t.id} from annotation {self._annot.id} has no promoter (strand='{t.strand}'), skipping.\n")
+
+    def unique_promoters(self, used_id: str = "promoter", promoter_size: int | None = None, promoter_type: str | None = None, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False):
+        """
+        Exports one copy of each distinct promoter sequence across the whole
+        annotation, headed by the id of the first transcript's promoter (or the
+        transcript id) carrying it. Size/type behave as in promoters().
+        """
+
+        if subfolder_name != "features":
+            subfolder = True
+
+        valid_id_choices = ["transcript", "promoter"]
+        if used_id not in valid_id_choices:
+            raise ValueError(f"used_id={used_id} is not amongst the valid_id_choices={valid_id_choices} to export unique promoters.")
+
+        self._ensure_promoters(promoter_size, promoter_type)
+
+        extra_suffixes = ["unique_promoters", str(self._annot.promoter_size), self._annot.promoter_type]
+
+        final_output_path = self._resolve_output_path(filepath=filepath, output_dir=output_dir, filename=filename, suffix=self._annot.feature_suffix, extension=extension, use_annot_dir=use_annot_dir, subfolder_name=subfolder_name, subfolder=subfolder, extra_suffixes=extra_suffixes, use_name_not_id=use_name_not_id)
+
+        unique_sequences = {}
+        for genes in self._annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    if t.promoter is not None:
+                        prom_seq = t.promoter.seq
+                        if prom_seq != "" and prom_seq not in unique_sequences:
+                            unique_sequences[prom_seq] = t.promoter.id if used_id == "promoter" else t.id
+
+        with open(str(final_output_path), "w", encoding="utf-8") as f_out:
+            for sequence, seq_id in unique_sequences.items():
+                f_out.write(f">{seq_id}\n{sequence}\n")
 
     def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False, genome_keep_description: bool = True,
         #deprecated arguments
