@@ -490,7 +490,9 @@
         - `def CDSs(`
         - `def transcripts(self, only_main: bool = True, verbose: bool = True, used_id: str = "transcript", rna_classes: list = [], unique_transcripts_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
         - `def genes(self, verbose: bool = True, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta",`
-        - `def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int = 2000, promoter_type: str = "standard", use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet:bool=False,`
+        - `def _ensure_promoters(self, promoter_size: int | None, promoter_type: str | None):`
+        - `def promoters(self, only_main: bool = True, verbose: bool = True, used_id: str = "promoter", promoter_size: int | None = None, promoter_type: str | None = None, unique_promoters_per_gene: bool = False, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet:bool=False,`
+        - `def unique_promoters(self, used_id: str = "promoter", promoter_size: int | None = None, promoter_type: str | None = None, use_name_not_id: bool = False, filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "features", extension=".fasta", quiet: bool = False):`
         - `def for_dapseq(self, genome: Genome, genome_output_dir: str | None = None, gff_output_dir: str | None = None, genome_filepath: str | None = None, genome_filename: str | None = None, use_genome_dir: bool = False, genome_subfolder: bool = False, genome_subfolder_name: str = "out_genomes", genome_extension:str=".fasta", gff_filepath: str | None = None, gff_filename: str | None = None, use_annot_dir: bool = False, gff_subfolder: bool = False, gff_subfolder_name: str = "out_gffs", gff_extension:str=".gff3", gff_use_name_not_id:bool = False, skip_atypical_fts: bool = True, main_only: bool = False, UTRs: bool = False, exclude_non_coding: bool = False, genome_keep_description: bool = True,`
         - `def gff(self,`
         - `def write_atypical_group(root, write=True):`
@@ -720,6 +722,7 @@
       - __init__.py
   - **aegis_bio.egg-info/**
   - **aegis_output/**
+    - **features/**
     - **stats/**
   - **htmlcov/**
     - coverage_html_cb_dd2e7eb5.js
@@ -1394,6 +1397,15 @@
       - `def test_exported_CDS_with_a_stop_completed_by_polyadenylation(tmp_path, strip_stop, length, end):`
       - `def _rebuild(genome_seq: str, header: str, stop_stripped: bool) -> str:`
       - `def test_CDS_headers_locate_their_sequence(tmp_path, example, protein_oriented, strip_stop):`
+    - test_export_promoters.py
+      - `def _records(path):`
+      - `def _load(test_data_dir):`
+      - `def _extract(test_data_dir, out_dir, *extra):`
+      - `def test_cli_promoter_filename_uses_requested_size_and_type(test_data_dir, tmp_path):`
+      - `def test_cli_promoter_filename_defaults(test_data_dir, tmp_path):`
+      - `def test_cli_promoter_modes_collapse_identical_sequences(test_data_dir, tmp_path):`
+      - `def test_export_promoters_regenerates_on_new_size_or_type(test_data_dir, tmp_path):`
+      - `def test_export_promoters_reuses_pre_generated_promoters(test_data_dir, tmp_path):`
     - test_feature.py
       - `class TestFeatureInit:`
       - `def test_basic_properties(self, make_feature):`

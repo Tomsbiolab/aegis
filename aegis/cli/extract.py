@@ -55,9 +55,9 @@ def main(
     mode: Annotated[List[str], typer.Option(
         "-m", "--mode", help=f"""Extraction mode(s), as a comma-separated list. Controls filtering of features.\n\n
         - 'all': Extract all features (e.g., all transcripts for a gene).\n
-        - 'unique_per_gene': Keep one copy of each unique protein/CDS sequence per gene.\n
+        - 'unique_per_gene': Keep one copy of each unique transcript/protein/CDS/promoter sequence per gene.\n
         - 'main': Extract only the main variant (e.g., the longest transcript).\n
-        - 'unique': Keep only one copy of each unique protein/CDS sequence across the entire output.""",
+        - 'unique': Keep only one copy of each unique transcript/protein/CDS/promoter sequence across the entire output.""",
         callback=split_callback,
         rich_help_panel=EXTRACTION_PANEL,
     )] = ["all"],
@@ -450,7 +450,11 @@ def main(
         else:
             used_id = "promoter"
 
-        if "all" in mode or "unique_per_gene" in mode or "unique" in mode:
+        if "unique_per_gene" in mode:
+            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_promoters_per_gene=True, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "unique_per_gene"))
+        elif "unique" in mode:
+            annotation.export.unique_promoters(output_dir=output_dir, used_id="transcript" if used_id == "transcript" else "promoter", promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "unique"))
+        elif "all" in mode:
             annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "all"))
         else:
             annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "main"))
