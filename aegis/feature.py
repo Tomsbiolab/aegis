@@ -47,6 +47,32 @@ def merge_identity_and_misc(identity: list[tuple[str, str]], misc: list[str] | N
     out.extend(s for _, s in placed[j:])
     return out
 
+class _GenomeContext:
+    """
+    Per-Annotation holder for its genome and hard-masked genome, shared across
+    all Feature instances belonging to that Annotation.
+    """
+    __slots__ = ('genome', 'hard_genome')
+
+    def __init__(self, genome: Genome | None = None, hard_genome: Genome | None = None):
+        self.genome = genome
+        self.hard_genome = hard_genome
+
+    def __deepcopy__(self, memo):
+        # Never deep-copy Genome payloads when copying individual Features/Genes/Transcripts.
+        # Annotation.__deepcopy__ creates a fresh _GenomeContext for copied Annotations.
+        return self
+
+    def __getstate__(self):
+        # Do not serialize Genome payloads across multiprocessing IPC (e.g. sort_genes Pool).
+        # Annotation.__setstate__ and sort_genes() rebind features to their Annotation's context.
+        return None
+
+    def __setstate__(self, state):
+        self.genome = None
+        self.hard_genome = None
+
+
 @total_ordering
 class Feature():
     """
@@ -55,8 +81,9 @@ class Feature():
     editing. Or used on its own for CDS segments.
     """
 
-    __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'parents', 'renamed', 'id_number', 'original_id_number', 'extra_copy', 'coding', '_quality', '_attributes')
+    __slots__ = ('id', 'original_id', 'ch', 'source', 'feature', 'start', 'end', 'score', 'strand', 'phase', 'frame', 'gtf_attributes', 'gene_id', 'parents', 'renamed', 'id_number', 'original_id_number', 'extra_copy', 'coding', '_quality', '_attributes', '_genome_context')
     
+    # Fallback for standalone Feature instances created outside an Annotation
     _ACTIVE_GENOME: Genome | None = None
     _ACTIVE_HARD_GENOME: Genome | None = None
 
@@ -81,6 +108,7 @@ class Feature():
     coding:bool
     _quality: FeatureQuality | None
     _attributes: FeatureAttributes | None
+    _genome_context: _GenomeContext | None
     ch:str
 
     # Structural keys and AEGIS's own processing state (written by AEGIS and recomputed rather than read back)
@@ -124,6 +152,7 @@ class Feature():
         self.extra_copy = False
 
         self._quality = None
+        self._genome_context = None
 
         # (identity attribute, number of misc attributes read before it), in column-9 order
         identity_order = []
@@ -411,6 +440,8 @@ class Feature():
             return False
 
         for attr in self.__slots__:
+            if attr == "_genome_context":
+                continue
             self_has = hasattr(self, attr)
             other_has = hasattr(other, attr)
 
@@ -540,37 +571,53 @@ class Feature():
         return scf_seq[start:end]
 
     @property
+    def _genome(self) -> Genome | None:
+        if self._genome_context is not None:
+            return self._genome_context.genome
+        return self._ACTIVE_GENOME
+
+    @property
+    def _hard_genome(self) -> Genome | None:
+        if self._genome_context is not None:
+            return self._genome_context.hard_genome
+        return self._ACTIVE_HARD_GENOME
+
+    @property
     def seq(self) -> str:
-        if not self._ACTIVE_GENOME:
+        genome = self._genome
+        if not genome:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
-        raw = self._genome_slice(self._ACTIVE_GENOME)
+        raw = self._genome_slice(genome)
         if not raw:
             return ""
         return reverse_complement(raw) if self.strand == "-" else raw
 
     @property
     def hard_seq(self) -> str:
-        if not self._ACTIVE_HARD_GENOME:
+        hard_genome = self._hard_genome
+        if not hard_genome:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
-        raw = self._genome_slice(self._ACTIVE_HARD_GENOME, "hard-masked genome")
+        raw = self._genome_slice(hard_genome, "hard-masked genome")
         if not raw:
             return ""
         return reverse_complement(raw) if self.strand == "-" else raw
 
     @property
     def seqs(self) -> list[str]:
-        if not self._ACTIVE_GENOME:
+        genome = self._genome
+        if not genome:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
-        raw = self._genome_slice(self._ACTIVE_GENOME)
+        raw = self._genome_slice(genome)
         if not raw:
             return ["", ""]
         return [raw, reverse_complement(raw)]
 
     @property
     def hard_seqs(self) -> list[str]:
-        if not self._ACTIVE_HARD_GENOME:
+        hard_genome = self._hard_genome
+        if not hard_genome:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
-        raw = self._genome_slice(self._ACTIVE_HARD_GENOME, "hard-masked genome")
+        raw = self._genome_slice(hard_genome, "hard-masked genome")
         if not raw:
             return ["", ""]
         return [raw, reverse_complement(raw)]

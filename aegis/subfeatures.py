@@ -217,7 +217,7 @@ class CDS(Feature):
 
     @property
     def seq(self) -> str:
-        if not self._ACTIVE_GENOME:
+        if not self._genome:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             cds_seq = ""
@@ -233,7 +233,7 @@ class CDS(Feature):
 
     @property
     def hard_seq(self) -> str:
-        if not self._ACTIVE_HARD_GENOME:
+        if not self._hard_genome:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             cds_seq = ""
@@ -249,19 +249,20 @@ class CDS(Feature):
 
     @property
     def seqs(self) -> list[str]:
-        if not self._ACTIVE_GENOME:
+        genome = self._genome
+        if not genome:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             if not self.CDS_segments:
                 return ["", ""]
-            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+            if self.ch not in genome.scaffolds:
                 warnings.warn(
-                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from genome '{genome.name}'. Returning empty sequences.",
                     category=UserWarning,
                     stacklevel=2,
                 )
                 return ["", ""]
-            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_seq = genome.scaffolds[self.ch].seq
             scf_len = len(scf_seq)
             if len(self.CDS_segments) > 1:
                 self.CDS_segments.sort()
@@ -270,19 +271,20 @@ class CDS(Feature):
 
     @property
     def hard_seqs(self) -> list[str]:
-        if not self._ACTIVE_HARD_GENOME:
+        hard_genome = self._hard_genome
+        if not hard_genome:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             if not self.CDS_segments:
                 return ["", ""]
-            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+            if self.ch not in hard_genome.scaffolds:
                 warnings.warn(
-                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    f"CDS '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{hard_genome.name}'. Returning empty sequences.",
                     category=UserWarning,
                     stacklevel=2,
                 )
                 return ["", ""]
-            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_seq = hard_genome.scaffolds[self.ch].seq
             scf_len = len(scf_seq)
             if len(self.CDS_segments) > 1:
                 self.CDS_segments.sort()
@@ -508,6 +510,7 @@ class CDS(Feature):
 
                     for start, end in corrected_segments:
                         new_segment = Feature(feature_id=self.id, ch=self.ch, start=start, end=end, strand=self.strand, parents=new_parents, source=self.source, score=self.score, feature=self.feature)
+                        new_segment._genome_context = self._genome_context
                         if segment_attributes:
                             new_segment.misc_attributes = segment_attributes[:]
                         new_CDS_segments.append(new_segment)

@@ -25,7 +25,7 @@ import re
 from multiprocessing import Pool
 from pathlib import Path
 
-from .feature import Feature
+from .feature import Feature, _GenomeContext
 from .genome import classify_compartment
 from .gene import Gene
 from .transcript import Transcript
@@ -89,7 +89,7 @@ class Annotation():
 
     entry: GffEntry
     
-    genome: Genome | None
+    _genome_context: _GenomeContext
     original_annotation: Annotation | None
     all_gene_ids:dict[str, str]
     # the tuple values consist of transcript id keys consist of (chromosome, gene_id)
@@ -166,16 +166,12 @@ class Annotation():
         self._defer_self_parented_transcripts = True
         self._self_parented_transcripts = []
 
-        self.genome = genome
-        
+        self._genome_context = _GenomeContext(genome, hard_masked_genome)
+
         if self.genome is not None:
             self.id = f"{self.name}_on_{self.genome.name}"
-            Feature._ACTIVE_GENOME = self.genome
         else:
             self.id = self.name
-
-        if hard_masked_genome is not None:
-            Feature._ACTIVE_HARD_GENOME = hard_masked_genome
 
         self.original_annotation = original_annotation
 
@@ -304,6 +300,7 @@ class Annotation():
                 self._add_self_parented_transcripts(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
 
         self._incorporate_codons(skip_orphaned_features=skip_orphaned_features, quiet=quiet)
+        self._bind_all_features()
 
         del self._gene_info
         del self._transcript_info
@@ -1904,6 +1901,89 @@ class Annotation():
 
         return unique_id
 
+    @property
+    def genome(self) -> Genome | None:
+        return self._genome_context.genome
+
+    @genome.setter
+    def genome(self, value: Genome | None):
+        self._genome_context.genome = value
+
+    @property
+    def hard_masked_genome(self) -> Genome | None:
+        return self._genome_context.hard_genome
+
+    @hard_masked_genome.setter
+    def hard_masked_genome(self, value: Genome | None):
+        self._genome_context.hard_genome = value
+
+    def _bind_gene(self, g: Gene):
+        ctx = self._genome_context
+        g._genome_context = ctx
+        for t in g.transcripts.values():
+            t._genome_context = ctx
+            for e in t.exons:
+                e._genome_context = ctx
+            for ft in t.miRNAs:
+                ft._genome_context = ctx
+            if t.introns:
+                for i in t.introns:
+                    i._genome_context = ctx
+            if t.promoter is not None:
+                t.promoter._genome_context = ctx
+            if t.temp_CDSs:
+                for cs in t.temp_CDSs:
+                    cs._genome_context = ctx
+            if t.temp_UTRs:
+                for u in t.temp_UTRs:
+                    u._genome_context = ctx
+            for c in t.CDSs.values():
+                c._genome_context = ctx
+                for cs in c.CDS_segments:
+                    cs._genome_context = ctx
+                for u in c.UTRs:
+                    u._genome_context = ctx
+
+    def _bind_all_features(self):
+        ctx = self._genome_context
+        for genes in self.chrs.values():
+            for g in genes.values():
+                self._bind_gene(g)
+        for ft in self.atypical_features:
+            ft._genome_context = ctx
+        for ft in self.orphaned_features:
+            ft._genome_context = ctx
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        new_ctx = _GenomeContext(
+            copy.deepcopy(self._genome_context.genome, memo),
+            copy.deepcopy(self._genome_context.hard_genome, memo),
+        )
+        memo[id(self._genome_context)] = new_ctx
+        result._genome_context = new_ctx
+        for k, v in self.__dict__.items():
+            if k == "_genome_context":
+                continue
+            setattr(result, k, copy.deepcopy(v, memo))
+        return result
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        ctx = state.pop("_genome_context", None)
+        state["_pickled_genome"] = ctx.genome if ctx is not None else None
+        state["_pickled_hard_genome"] = ctx.hard_genome if ctx is not None else None
+        return state
+
+    def __setstate__(self, state):
+        genome = state.pop("_pickled_genome", None)
+        hard_genome = state.pop("_pickled_hard_genome", None)
+        self.__dict__.update(state)
+        self._genome_context = _GenomeContext(genome, hard_genome)
+        self._bind_all_features()
+
     def copy(self):
         return copy.deepcopy(self)
     
@@ -1931,6 +2011,8 @@ class Annotation():
 
         for genes in self.chrs.values():
             for g in genes.values():
+                if g._genome_context is not self._genome_context:
+                    self._bind_gene(g)
                 count += 1
                 if count >= batch_size:
                     progress_bar.update(count)
@@ -2772,6 +2854,8 @@ class Annotation():
                 for chrom, sorted_genes in pool.starmap(sort_and_update_genes, [(chrom, genes) for chrom, genes in self.chrs.items()]):
                     if not quiet and noisy:
                         print(f"Parallel sorting {chrom} genes for {self.id}")
+                    for g in sorted_genes.values():
+                        self._bind_gene(g)
                     self.chrs[chrom] = sorted_genes
                     progress_bar.update(len(sorted_genes))
         else:
@@ -3076,10 +3160,11 @@ class Annotation():
         # genes of other added to self: {id in other: the copy in self}
         added_genes = {}
         def add_gene(chr, g, temp_id):
-            copy = g.copy()
-            copy.id = temp_id
-            self.chrs[chr][temp_id] = copy
-            added_genes[g.id] = copy
+            copied_gene = g.copy()
+            copied_gene.id = temp_id
+            self._bind_gene(copied_gene)
+            self.chrs[chr][temp_id] = copied_gene
+            added_genes[g.id] = copied_gene
 
         if rename_clashing_ids:
 
@@ -3204,9 +3289,13 @@ class Annotation():
             if any(p in other_owners for p in (ft.parents or [])):
                 targets = [copied[p] for p in ft.parents if p in copied]
                 if targets:  # else its gene was not added
-                    other_tied.append((ft.copy(), targets))
+                    ft_copy = ft.copy()
+                    ft_copy._genome_context = self._genome_context
+                    other_tied.append((ft_copy, targets))
             elif not (ft.id and ft.id in self_atypical_ids):
-                other_untied.append(ft.copy())
+                ft_copy = ft.copy()
+                ft_copy._genome_context = self._genome_context
+                other_untied.append(ft_copy)
 
         self.update_gene_and_transcript_list(quiet=quiet)
         self.update(rename_features=features_to_rename, quiet=quiet)

@@ -210,6 +210,7 @@ class Transcript(Feature):
                         continue
                     rep = group[0] if self.strand != "-" else max(group, key=lambda e: e.end)
                     exon = Exon(rep.id, rep.ch, rep.source, rep.feature, rep.strand, group[0].start, max(e.end for e in group), rep.score, [self.id])
+                    exon._genome_context = self._genome_context
                     if rep.misc_attributes:
                         exon.misc_attributes = rep.misc_attributes[:]
                     merged.append(exon)
@@ -271,7 +272,9 @@ class Transcript(Feature):
                     for group in groups:
                         # A merged row starts where its 5'-most row starts, so it takes that row's phase
                         rep = group[0] if cds.strand != "-" else max(group, key=lambda s: s.end)
-                        merged.append(Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, group[0].start, max(s.end for s in group), rep.score, parents, phase=rep.phase))
+                        merged_seg = Feature(cds.id, rep.ch, rep.source, "CDS", rep.strand, group[0].start, max(s.end for s in group), rep.score, parents, phase=rep.phase)
+                        merged_seg._genome_context = self._genome_context
+                        merged.append(merged_seg)
                         if rep.misc_attributes:
                             merged[-1].misc_attributes = rep.misc_attributes[:]
                     cds.CDS_segments = merged
@@ -383,6 +386,7 @@ class Transcript(Feature):
                 temp_end = 0
 
             self.promoter = Promoter(promoter_type, prom_id, self.ch, self.source, self.feature, self.strand, temp_start, temp_end, self.score, [self.id])
+            self.promoter._genome_context = self._genome_context
 
     def generate_best_protein(
         self,
@@ -412,7 +416,9 @@ class Transcript(Feature):
 
         cds_id = f"{self.id}_CDS1"
         for e in self.exons:
-            self.temp_CDSs.append(Feature(feature_id=cds_id, ch=self.ch, source=self.source, feature="CDS", strand=self.strand, start=e.start, end=e.end, score=self.score, parents=[self.id]))
+            seg = Feature(feature_id=cds_id, ch=self.ch, source=self.source, feature="CDS", strand=self.strand, start=e.start, end=e.end, score=self.score, parents=[self.id])
+            seg._genome_context = self._genome_context
+            self.temp_CDSs.append(seg)
 
         self.generate_CDSs(quiet=quiet)
 
@@ -578,6 +584,7 @@ class Transcript(Feature):
             else:
                 phase = (3 - (neighbour.size - neighbour.phase) % 3) % 3
         seg = Feature(neighbour.id, neighbour.ch, neighbour.source, neighbour.feature, neighbour.strand, start, end, neighbour.score, neighbour.parents[:], phase=phase)
+        seg._genome_context = self._genome_context
         if neighbour.misc_attributes:
             seg.misc_attributes = neighbour.misc_attributes[:]
         return seg
@@ -647,7 +654,7 @@ class Transcript(Feature):
             else:
                 temp_id = self.temp_CDSs[-1].id
 
-            self.CDSs[temp_id] = CDS(
+            cds_obj = CDS(
                 self.temp_CDSs, temp_id,
                 self.temp_CDSs[0].ch,
                 self.temp_CDSs[0].source,
@@ -658,6 +665,11 @@ class Transcript(Feature):
                 self.temp_CDSs[0].score,
                 parents
             )
+            cds_obj._genome_context = self._genome_context
+            if self._genome_context is not None:
+                for cs in cds_obj.CDS_segments:
+                    cs._genome_context = self._genome_context
+            self.CDSs[temp_id] = cds_obj
 
             self.temp_CDSs = None
 
@@ -753,6 +765,7 @@ class Transcript(Feature):
             used_ids = {u.id for u in c.UTRs if u.id}
             n = 0
             for u in (c.UTRs if c.strand != "-" else reversed(c.UTRs)):
+                u._genome_context = self._genome_context
                 u.parents = parents[:]
                 if not u.id:
                     n += 1
@@ -801,11 +814,14 @@ class Transcript(Feature):
         # Exons reconstructed from CDS/UTRs
         if temp_fts != []:
             self.exons = [ Exon("temp", ft.ch, ft.source, "exon", ft.strand, ft.start, ft.end, ft.score, parents) for ft in temp_fts ]
+            for e in self.exons:
+                e._genome_context = self._genome_context
             self.collapse_exons()
 
         # Exons rebuilt from the transcript
         else:
             self.exons = [Exon(f"temp", self.ch, self.source, "exon", self.strand, self.start, self.end, self.score, parents)]
+            self.exons[0]._genome_context = self._genome_context
 
         self.rename_exons(base_id=self.id)
         self.generated_exons = True
@@ -826,6 +842,7 @@ class Transcript(Feature):
 
         def new_exon(cs):
             exon = Exon(f"{self.id}_new_exon_{len(added) + 1}", self.ch, cs.source, "exon", self.strand, cs.start, cs.end, cs.score, [self.id])
+            exon._genome_context = self._genome_context
             exon.coding = True
             self.exons.append(exon)
             added.append(exon)
@@ -872,9 +889,11 @@ class Transcript(Feature):
         self.introns = []
         for n, (start, end) in enumerate(intervals):
             number = total - n if self.strand == "-" else n + 1
-            self.introns.append(Intron(f"{self.id}_intron_{number}", self.ch,
-                                       self.source, "intron", self.strand,
-                                       start, end, self.score, parents))
+            intron = Intron(f"{self.id}_intron_{number}", self.ch,
+                            self.source, "intron", self.strand,
+                            start, end, self.score, parents)
+            intron._genome_context = self._genome_context
+            self.introns.append(intron)
         if self.strand == "+":
             for i in self.introns:
                 for c in self.CDSs.values():
@@ -893,7 +912,7 @@ class Transcript(Feature):
 
     @property
     def seq(self) -> str:
-        if not self._ACTIVE_GENOME:
+        if not self._genome:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             transcript_seq = ""
@@ -908,7 +927,7 @@ class Transcript(Feature):
 
     @property
     def hard_seq(self) -> str:
-        if not self._ACTIVE_HARD_GENOME:
+        if not self._hard_genome:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             transcript_seq = ""
@@ -922,19 +941,20 @@ class Transcript(Feature):
 
     @property
     def seqs(self) -> list[str]:
-        if not self._ACTIVE_GENOME:
+        genome = self._genome
+        if not genome:
             raise ValueError("No genome loaded and you are trying to access the sequence. Load your genome together with your annotation.")
         else:
             if not self.exons:
                 return ["", ""]
-            if self.ch not in self._ACTIVE_GENOME.scaffolds:
+            if self.ch not in genome.scaffolds:
                 warnings.warn(
-                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from genome '{self._ACTIVE_GENOME.name}'. Returning empty sequences.",
+                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from genome '{genome.name}'. Returning empty sequences.",
                     category=UserWarning,
                     stacklevel=2,
                 )
                 return ["", ""]
-            scf_seq = self._ACTIVE_GENOME.scaffolds[self.ch].seq
+            scf_seq = genome.scaffolds[self.ch].seq
             scf_len = len(scf_seq)
             if len(self.exons) > 1:
                 self.exons.sort()
@@ -943,19 +963,20 @@ class Transcript(Feature):
 
     @property
     def hard_seqs(self) -> list[str]:
-        if not self._ACTIVE_HARD_GENOME:
+        hard_genome = self._hard_genome
+        if not hard_genome:
             raise ValueError("No hard masked genome loaded and you are trying to access the hard masked sequence. Load your hard masked genome together with your annotation.")
         else:
             if not self.exons:
                 return ["", ""]
-            if self.ch not in self._ACTIVE_HARD_GENOME.scaffolds:
+            if self.ch not in hard_genome.scaffolds:
                 warnings.warn(
-                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{self._ACTIVE_HARD_GENOME.name}'. Returning empty sequences.",
+                    f"Transcript '{self.id}' is on contig '{self.ch}', which is missing from hard-masked genome '{hard_genome.name}'. Returning empty sequences.",
                     category=UserWarning,
                     stacklevel=2,
                 )
                 return ["", ""]
-            scf_seq = self._ACTIVE_HARD_GENOME.scaffolds[self.ch].seq
+            scf_seq = hard_genome.scaffolds[self.ch].seq
             scf_len = len(scf_seq)
             if len(self.exons) > 1:
                 self.exons.sort()

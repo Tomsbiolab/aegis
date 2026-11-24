@@ -105,3 +105,61 @@ def test_cli_summary_initiator_methionine(test_data_dir, tmp_path):
         res = runner.invoke(app, [str(a1), "-g", str(g1), flag, "-d", str(tmp_path), "-q"])
         assert res.exit_code == 0, f"Summary with {flag} failed: {res.stdout}"
 
+
+def test_cli_summary_multi_genome_translates_all_annotations(tmp_path):
+    """Multi-genome `aegis summary a1.gff a2.gff -g g1.fa,g2.fa` must translate each annotation against its own genome."""
+    # Disjoint scaffold names (chrA vs chrB): previously a1 got Translated Proteins = 0 because _ACTIVE_GENOME pointed to g2
+    seq_a = "ATGAAATTTGGG" + "GTAAAAAG" + "CCCAAACCCTAA" + "A" * 20
+    seq_b = "ATGGGGCCCTTT" + "GCAAAAAG" + "TTTGGGTTTTGA" + "C" * 20
+
+    fa1 = tmp_path / "g1.fa"
+    fa1.write_text(f">chrA\n{seq_a}\n")
+    fa2 = tmp_path / "g2.fa"
+    fa2.write_text(f">chrB\n{seq_b}\n")
+
+    gff1 = tmp_path / "a1.gff3"
+    gff1.write_text(
+        "##gff-version 3\n"
+        "chrA\ttest\tgene\t1\t32\t.\t+\t.\tID=gA\n"
+        "chrA\ttest\tmRNA\t1\t32\t.\t+\t.\tID=tA;Parent=gA\n"
+        "chrA\ttest\texon\t1\t12\t.\t+\t.\tID=eA1;Parent=tA\n"
+        "chrA\ttest\texon\t21\t32\t.\t+\t.\tID=eA2;Parent=tA\n"
+        "chrA\ttest\tCDS\t1\t12\t.\t+\t0\tID=cA;Parent=tA\n"
+        "chrA\ttest\tCDS\t21\t32\t.\t+\t0\tID=cA;Parent=tA\n"
+    )
+    gff2 = tmp_path / "a2.gff3"
+    gff2.write_text(
+        "##gff-version 3\n"
+        "chrB\ttest\tgene\t1\t32\t.\t+\t.\tID=gB\n"
+        "chrB\ttest\tmRNA\t1\t32\t.\t+\t.\tID=tB;Parent=gB\n"
+        "chrB\ttest\texon\t1\t12\t.\t+\t.\tID=eB1;Parent=tB\n"
+        "chrB\ttest\texon\t21\t32\t.\t+\t.\tID=eB2;Parent=tB\n"
+        "chrB\ttest\tCDS\t1\t12\t.\t+\t0\tID=cB;Parent=tB\n"
+        "chrB\ttest\tCDS\t21\t32\t.\t+\t0\tID=cB;Parent=tB\n"
+    )
+
+    out_dir = tmp_path / "out"
+    out_tsv = out_dir / "summary.tsv"
+    res = runner.invoke(app, [str(gff1), str(gff2), "-g", f"{fa1},{fa2}", "-an", "A1,A2", "-d", str(out_dir), "-o", str(out_tsv)])
+    assert res.exit_code == 0, f"Multi-genome summary failed: {res.stdout}"
+
+    rows = {}
+    for line in out_tsv.read_text().splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            rows[parts[0]] = parts[1:]
+
+    assert rows["Translated Proteins"][0] == "1"
+    assert rows["Translated Proteins"][1] == "1"
+    assert rows["Complete Proteins"][0] == "1"
+    assert rows["Complete Proteins"][1] == "1"
+
+    # Also verify splice-site boundaries in each exported stats CSV match their own genome
+    a1_stats = (out_dir / "A1_on_g1_full_stats.csv").read_text()
+    a2_stats = (out_dir / "A2_on_g2_full_stats.csv").read_text()
+    assert "Intron-exon boundary GT-AG count\t1" in a1_stats
+    assert "Intron-exon boundary GC-AG count\t0" in a1_stats
+    assert "Intron-exon boundary GC-AG count\t1" in a2_stats
+    assert "Intron-exon boundary GT-AG count\t0" in a2_stats
+
+
