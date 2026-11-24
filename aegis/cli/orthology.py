@@ -15,7 +15,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..annotation import Annotation
 from ..genome import Genome
-from ..feature import Feature
 from ..conf import default_features
 from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 from ..utils.misc import read_headerless_tsv
@@ -801,8 +800,6 @@ def main(
 
     # Create gff, protein, CDS files, mcscan, and diamond databases in a non-redundant manner
     for n, a in enumerate(annotations):
-
-        Feature._ACTIVE_GENOME = a.genome
 
         mcscan_name = a.name.replace(".", "_")
 
