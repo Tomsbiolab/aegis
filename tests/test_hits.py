@@ -123,3 +123,19 @@ class TestOverlapHit:
         assert hit.extra_copy is True
         assert hit.target_synteny_conserved is True
         assert hit.min_gene_percent == 80.0
+        assert hit.antiscore is None
+        assert hit.min_protein_percent is None
+
+    def test_all_slots_initialized(self):
+        for orientation in (True, False):
+            for prot in (None, 75.0):
+                hit = OverlapHit(
+                    ID="g_slot", origin="annot1", orientation=orientation,
+                    gene_query_percent=80, gene_target_percent=90,
+                    exons_in_both=False, exon_query_percent=None, exon_target_percent=None,
+                    CDSs_in_both=False, CDS_query_percent=None, CDS_target_percent=None,
+                    protein_query_percent=prot, protein_target_percent=prot,
+                    target_synteny_conserved=False, target_copy=False
+                )
+                for slot in OverlapHit.__slots__:
+                    getattr(hit, slot)
