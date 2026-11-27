@@ -180,6 +180,32 @@ class TestReciprocalOverlapEquivalences:
         assert eq.score == "9 (synteny)/8 (synteny)"
         assert (eq.aegis_synteny, eq.aegis_synteny_rev) == (True, True)
 
+    def test_native_gene_id_B_extra_copy_not_stripped(self, tmp_path):
+        from types import SimpleNamespace
+        from aegis.equivalence import Simple_annotation
+
+        # Native genes in Q and T happen to have extra_copy_number>=1 (gene_id_B_copy == "True")
+        # Only lifted gene_id_A should strip its synthetic _<copy> suffix
+        self.write(tmp_path / "liftoff__Q__to__T_overlaps.tsv", [
+            ["q_1_1", "t_1", "False", "False", "True", "100.0", "100.0", "100.0", "liftoff_Q", "T", "9", "True", "True"],
+        ])
+        self.write(tmp_path / "liftoff__T__to__Q_overlaps.tsv", [
+            ["t_1_1", "q_1", "False", "False", "True", "95.0", "95.0", "95.0", "liftoff_T", "Q", "8", "True", "True"],
+            ["t_2", "q_2", "False", "False", "True", "90.0", "90.0", "90.0", "liftoff_T", "Q", "7", "False", "True"],
+        ])
+        annot = Simple_annotation("Q", SimpleNamespace(all_gene_ids={"q_1": "chr1", "q_2": "chr1"}, target=False), "species1")
+        annot.add_reciprocal_overlap_equivalences(str(tmp_path), "Q", "T", "species2", quiet=True, synteny_present=False)
+
+        eq1 = annot.genes["q_1"].equivalences[0]
+        assert eq1.id == "t_1"
+        assert eq1.type == "rec_liftoff_aegis"
+        assert eq1.score == "9 (copies)/8 (copies)"
+
+        eq2 = annot.genes["q_2"].equivalences[0]
+        assert eq2.id == "t_2"
+        assert eq2.type == "rev_liftoff_aegis"
+        assert eq2.score == "7"
+
 
 class TestMergeScoreStrings:
     def test_identical_scores_are_kept(self):

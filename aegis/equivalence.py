@@ -948,14 +948,15 @@ class Simple_annotation():
             fwd_hits = {}
             fwd_synteny_col = fwd_df["gene_id_A_synteny_conserved"] if (synteny_present and "gene_id_A_synteny_conserved" in fwd_df.columns) else [None] * len(fwd_df)
             
-            for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
-                fwd_df["gene_id_A"], fwd_df["gene_id_B"], fwd_df["gene_id_A_copy"], fwd_df["gene_id_B_copy"], fwd_synteny_col, fwd_df["overlap_score"]
+            for g_q, g_t, q_cp, synt_val, score_val in zip(
+                fwd_df["gene_id_A"], fwd_df["gene_id_B"], fwd_df["gene_id_A_copy"], fwd_synteny_col, fwd_df["overlap_score"]
             ):
-                copies = (q_cp == "True" or t_cp == "True")
-                gene_query = "_".join(g_q.split("_")[:-1]) if q_cp == "True" else g_q
-                gene_target = "_".join(g_t.split("_")[:-1]) if t_cp == "True" else g_t
+                # Only lifted gene_id_A carries synthetic _<copy> suffixes from liftover; native gene_id_B must stay intact
+                copies = (q_cp == "True")
+                gene_query = g_q.rsplit("_", 1)[0] if copies else g_q
+                gene_target = g_t
 
-                pair = f"{gene_query}---{gene_target}"
+                pair = (gene_query, gene_target)
                 synteny = (synt_val == "True") if synt_val is not None else False
 
                 modifiers = []
@@ -987,14 +988,15 @@ class Simple_annotation():
             # In the rev file the lifted genes (those with synteny conservation) are gene_id_A
             rev_synteny_col = rev_df["gene_id_A_synteny_conserved"] if (synteny_present and "gene_id_A_synteny_conserved" in rev_df.columns) else [None] * len(rev_df)
             
-            for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
-                rev_df["gene_id_B"], rev_df["gene_id_A"], rev_df["gene_id_B_copy"], rev_df["gene_id_A_copy"], rev_synteny_col, rev_df["overlap_score"]
+            for g_q, g_t, t_cp, synt_val, score_val in zip(
+                rev_df["gene_id_B"], rev_df["gene_id_A"], rev_df["gene_id_A_copy"], rev_synteny_col, rev_df["overlap_score"]
             ):
-                copies = (q_cp == "True" or t_cp == "True")
-                gene_query = "_".join(g_q.split("_")[:-1]) if q_cp == "True" else g_q
-                gene_target = "_".join(g_t.split("_")[:-1]) if t_cp == "True" else g_t
+                # Only lifted gene_id_A carries synthetic _<copy> suffixes from liftover; native gene_id_B must stay intact
+                copies = (t_cp == "True")
+                gene_query = g_q
+                gene_target = g_t.rsplit("_", 1)[0] if copies else g_t
 
-                pair = f"{gene_query}---{gene_target}"
+                pair = (gene_query, gene_target)
                 synteny = (synt_val == "True") if synt_val is not None else False
 
                 modifiers = []
@@ -1023,7 +1025,7 @@ class Simple_annotation():
                     rev_hits[pair] = f"{new_score}{mod_str} (multiple {match_num})"
 
             for fwd_pair, f_score in fwd_hits.items():
-                gene_query, gene_target = fwd_pair.split("---")
+                gene_query, gene_target = fwd_pair
                 if fwd_pair in rev_hits:
                     equivalence_type = f"rec_{equivalence_suffix}"
                     score = f"{f_score}/{rev_hits[fwd_pair]}"
@@ -1036,7 +1038,7 @@ class Simple_annotation():
             for rev_pair, r_score in rev_hits.items():
                 if rev_pair not in fwd_hits:
                     equivalence_type = f"rev_{equivalence_suffix}"
-                    gene_query, gene_target = rev_pair.split("---")
+                    gene_query, gene_target = rev_pair
                     self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, r_score))
 
             end = time.time()
