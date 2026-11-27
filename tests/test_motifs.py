@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 matplotlib.use("Agg")
 
 from aegis.annotation import Annotation
-from aegis.cli.motif_search import app as motif_app
+from aegis.cli.motif_search import _read_gene_list, app as motif_app
 from aegis.genome import Genome
 from aegis.utils.genefunctions import reverse_complement
 
@@ -202,5 +202,59 @@ def test_find_and_plot_output_paths_never_overwrite_and_handle_tsv_and_backlist(
     assert (out_cli / "cli_out.tsv").exists()
     assert (out_cli / "cli_out.pdf").exists()
     assert (out_cli / "cli_out_whole_genome.pdf").exists()
+
+
+def test_motif_cli_reads_single_column_gene_ids_without_sniffer_splitting(tmp_path):
+    # Unit checks for tricky single-column IDs that csv.Sniffer previously split on 'e', '1', '0', '.'
+    p_single = tmp_path / "single.txt"
+    p_single.write_text("gene-LOC1\nAT1G01010\nSoltu.DM.01G000010\n\n", encoding="utf-8")
+    assert _read_gene_list(str(p_single), header=False) == [
+        "gene-LOC1",
+        "AT1G01010",
+        "Soltu.DM.01G000010",
+    ]
+
+    p_hdr = tmp_path / "with_header.csv"
+    p_hdr.write_text("gene_id,description\ngene-LOC1,foo\nAT1G01010,bar\n", encoding="utf-8")
+    assert _read_gene_list(str(p_hdr), header=True) == ["gene-LOC1", "AT1G01010"]
+
+    p_tsv = tmp_path / "multi.tsv"
+    p_tsv.write_text("Soltu.DM.01G000010\tname1\nAT1G01010\tname2\n", encoding="utf-8")
+    assert _read_gene_list(str(p_tsv), header=False) == ["Soltu.DM.01G000010", "AT1G01010"]
+
+    # End-to-end CLI test with single-column dotted/hyphenated IDs
+    seq = "C" * 100 + "TATAAA" + "C" * 494
+    gene_ids = ["gene-LOC1", "AT1G01010", "Soltu.DM.01G000010", "gene-LOC2", "AT1G01020", "Soltu.DM.01G000020"]
+    gff_rows = []
+    for idx, gid in enumerate(gene_ids):
+        s = 180 + idx * 60
+        e = s + 30
+        gff_rows.extend([
+            f"chr1\tsrc\tgene\t{s}\t{e}\t.\t+\t.\tID={gid}",
+            f"chr1\tsrc\tmRNA\t{s}\t{e}\t.\t+\t.\tID={gid}.1;Parent={gid}",
+            f"chr1\tsrc\texon\t{s}\t{e}\t.\t+\t.\tID={gid}.e1;Parent={gid}.1",
+            f"chr1\tsrc\tCDS\t{s}\t{e}\t.\t+\t0\tID={gid}.c1;Parent={gid}.1",
+        ])
+    _make_motif_annot(tmp_path, seq, gff_rows, promoter_size=150)
+
+    out_dir = tmp_path / "cli_single_out"
+    res = runner.invoke(
+        motif_app,
+        [
+            str(tmp_path / "annot.gff3"),
+            str(tmp_path / "genome.fa"),
+            "-l", str(p_single),
+            "-m", "TATAAA",
+            "-ps", "150",
+            "-d", str(out_dir),
+            "-o", "hits.tsv",
+            "-q",
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    df = pd.read_csv(out_dir / "hits.tsv", sep="\t")
+    assert set(df["gene_id"]).issubset({"gene-LOC1", "AT1G01010", "Soltu.DM.01G000010"})
+    assert "gene-LOC1" in df["gene_id"].tolist()
+
 
 
