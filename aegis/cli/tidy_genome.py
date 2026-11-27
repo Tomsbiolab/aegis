@@ -161,6 +161,7 @@ def main(
     g = Genome(
         name=genome_name,
         genome_file_path=genome_file,
+        quiet=quiet,
         header_id_tag=header_id_tag if header_id_tag != "" else None,
         header_id_regex=header_id_regex if header_id_regex != "" else None,
         gwh=gwh,
@@ -172,6 +173,7 @@ def main(
             annot_file_path=annotation_file,
             name=annotation_name,
             genome=g,
+            quiet=quiet,
             coordinate_polishing=coordinate_polishing,
             recalculate_phases=recalculate_phases,
             reset_phases_zero=reset_phases_zero, skip_atypical_features=clean_features
@@ -180,13 +182,20 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     if rename_map != "":
-        with open(rename_map, encoding='utf-8') as f:
-            chromosome_rename_map = {linea.split('\t')[0]: linea.split('\t')[1].strip() for linea in f}
+        chromosome_rename_map = {}
+        with open(rename_map, encoding="utf-8") as f:
+            for line_num, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
+                    raise typer.BadParameter(
+                        f"Malformed line {line_num} in --rename-map '{rename_map}': expected 'old_name<tab>new_name'."
+                    )
+                chromosome_rename_map[parts[0].strip()] = parts[1].strip()
 
         chromosome_equivalences = g.rename_features_from_dic(rename_map=chromosome_rename_map)
-
-    if verbose:
-        quiet = False
 
     if remove_scaffolds:
         g.remove_scaffolds(remove_00=remove_chr00)
@@ -229,15 +238,15 @@ def main(
     if "{annotation-name}" in output_annot_file:
         output_annot_file = output_annot_file.replace("{annotation-name}", annotation_name)
 
-    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description)
+    g.export(output_dir=output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description, quiet=quiet)
 
     if annotation_file:
         if rename_map != "":
             a.rename_chromosomes(equivalences=chromosome_equivalences)
         extra_chrs = set(a.chrs.keys()) - set(g.scaffolds.keys())
         if extra_chrs:
-            a.remove_chromosomes(extra_chrs)
-        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, UTRs=True, skip_atypical_fts=clean_features)
+            a.remove_chromosomes(extra_chrs, quiet=quiet)
+        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, UTRs=True, quiet=quiet, skip_atypical_fts=clean_features)
 
 
 if __name__ == "__main__":
