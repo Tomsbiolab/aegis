@@ -1,9 +1,11 @@
 import matplotlib
+import pandas as pd
 
 matplotlib.use("Agg")
 
 from aegis.annotation import Annotation
 from aegis.genome import Genome
+from aegis.utils.genefunctions import reverse_complement
 
 
 def _make_motif_annot(tmp_path, seq, gff_rows, promoter_size=200):
@@ -56,3 +58,65 @@ def test_find_and_plot_handles_short_first_promoter_and_small_promoter_size(tmp_
         output_dir=str(out2),
         quiet=True,
     )
+
+
+def test_find_and_plot_genomic_coordinates_both_strands_and_orientations(tmp_path):
+    motif = "ACGTTT"
+    rc_motif = reverse_complement(motif)  # AAACGT
+    seq = list("C" * 600)
+    # + strand gene at 250..300 -> promoter 50..249
+    seq[100:106] = list(motif)      # 1-based 101..106 -> same
+    seq[150:156] = list(rc_motif)   # 1-based 151..156 -> different
+    # - strand gene at 320..350 -> promoter 351..550
+    seq[400:406] = list(rc_motif)   # 1-based 401..406 -> same on '-' strand
+    seq[450:456] = list(motif)      # 1-based 451..456 -> different on '-' strand
+    seq_str = "".join(seq)
+
+    gff_rows = []
+    for gid, s, e, st in [
+        ("g_plus", 250, 300, "+"),
+        ("g_minus", 320, 350, "-"),
+        ("g_bg1", 1, 20, "+"),
+        ("g_bg2", 560, 590, "+"),
+    ]:
+        gff_rows.extend([
+            f"chr1\tsrc\tgene\t{s}\t{e}\t.\t{st}\t.\tID={gid}",
+            f"chr1\tsrc\tmRNA\t{s}\t{e}\t.\t{st}\t.\tID=t_{gid};Parent={gid}",
+            f"chr1\tsrc\texon\t{s}\t{e}\t.\t{st}\t.\tID=e_{gid};Parent=t_{gid}",
+            f"chr1\tsrc\tCDS\t{s}\t{e}\t.\t{st}\t0\tID=c_{gid};Parent=t_{gid}",
+        ])
+
+    _, annot = _make_motif_annot(tmp_path, seq_str, gff_rows, promoter_size=200)
+    out = tmp_path / "out"
+    annot.motifs.find_and_plot(
+        query_genes=["g_plus", "g_minus"],
+        motif=motif,
+        motif_length=len(motif),
+        glistname="q",
+        tf_motif_tag="M",
+        output_dir=str(out),
+        quiet=True,
+    )
+
+    query_csv = next(p for p in out.iterdir() if p.name.endswith("_q.csv"))
+    df = pd.read_csv(query_csv, sep="\t")
+    assert len(df) == 4
+
+    by_key = {}
+    for _, row in df.iterrows():
+        gs, ge = int(row["genomic_start"]), int(row["genomic_end"])
+        assert gs <= ge
+        genome_slice = seq_str[gs - 1 : ge]
+        if row["gene_strand"] == "-":
+            gene_oriented = reverse_complement(genome_slice)
+        else:
+            gene_oriented = genome_slice
+        expected_seq = motif if row["orientation with respect to gene"] == "same" else rc_motif
+        assert gene_oriented == expected_seq
+        by_key[(row["gene_id"], row["orientation with respect to gene"])] = (gs, ge)
+
+    assert by_key[("g_plus", "same")] == (101, 106)
+    assert by_key[("g_plus", "different")] == (151, 156)
+    assert by_key[("g_minus", "same")] == (401, 406)
+    assert by_key[("g_minus", "different")] == (451, 456)
+

@@ -15,6 +15,14 @@ class AnnotationMotifs (AnnotationComponent):
     Accessed via 'annotation_object.motifs'.
     """
 
+    @staticmethod
+    def _motif_genomic_coords(promoter, m_start: int, m_end: int, same_orientation: bool) -> tuple[int, int]:
+        """Return 1-based inclusive (genomic_start, genomic_end) for a 0-based half-open match span."""
+        on_plus_strand = (promoter.strand != "-") == same_orientation
+        if on_plus_strand:
+            return promoter.start + m_start, promoter.start + m_end - 1
+        return promoter.end - m_end + 1, promoter.end - m_start
+
     def find_and_plot(self, query_genes:list[str], motif:str, motif_length:int, glistname:str, tf_motif_tag:str, backlist:list[str]=[], backlistname:str="", filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "motifs", subfolder: bool = False, use_annot_dir: bool = False, quiet:bool=False):
 
         if subfolder_name != "motifs":
@@ -74,9 +82,11 @@ class AnnotationMotifs (AnnotationComponent):
                     if occurrences_t != [] or occurrences_a != []:
                         interest_proportion += 1
                     for m in occurrences_t:
-                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
+                        g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], True)
+                        towards_occurrences.append((m[0], m[1], g_start, g_end, m[2], "same", g.id, str(g.names), g.strand, g.ch))
                     for m in occurrences_a:
-                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
+                        g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], False)
+                        against_occurrences.append((m[0], m[1], g_start, g_end, m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
 
         midpoints = []
@@ -142,9 +152,11 @@ class AnnotationMotifs (AnnotationComponent):
                     if occurrences_t != [] or occurrences_a != []:
                         random_proportion += 1
                     for m in occurrences_t:
-                        towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
+                        g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], True)
+                        towards_occurrences.append((m[0], m[1], g_start, g_end, m[2], "same", g.id, str(g.names), g.strand, g.ch))
                     for m in occurrences_a:
-                        against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
+                        g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], False)
+                        against_occurrences.append((m[0], m[1], g_start, g_end, m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
         midpoints = []
         for o in towards_occurrences:
@@ -206,9 +218,11 @@ class AnnotationMotifs (AnnotationComponent):
                         if occurrences_t != [] or occurrences_a != []:
                             genomic_proportion += 1
                         for m in occurrences_t:
-                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
+                            g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], True)
+                            towards_occurrences.append((m[0], m[1], g_start, g_end, m[2], "same", g.id, str(g.names), g.strand, g.ch))
                         for m in occurrences_a:
-                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
+                            g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], False)
+                            against_occurrences.append((m[0], m[1], g_start, g_end, m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
             midpoints = []
             for o in towards_occurrences:
@@ -256,9 +270,11 @@ class AnnotationMotifs (AnnotationComponent):
                         if occurrences_t != [] or occurrences_a != []:
                             genomic_proportion += 1
                         for m in occurrences_t:
-                            towards_occurrences.append((m[0], m[1], p.start + m[0], p.start + m[1], m[2], "same", g.id, str(g.names), g.strand, g.ch))
+                            g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], True)
+                            towards_occurrences.append((m[0], m[1], g_start, g_end, m[2], "same", g.id, str(g.names), g.strand, g.ch))
                         for m in occurrences_a:
-                            against_occurrences.append((m[0], m[1], p.end - m[0], p.end - m[1], m[2], "different", g.id, str(g.names), g.strand, g.ch))
+                            g_start, g_end = self._motif_genomic_coords(p, m[0], m[1], False)
+                            against_occurrences.append((m[0], m[1], g_start, g_end, m[2], "different", g.id, str(g.names), g.strand, g.ch))
 
             midpoints = []
             for o in towards_occurrences:
