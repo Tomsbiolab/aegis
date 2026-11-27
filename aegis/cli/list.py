@@ -4,6 +4,7 @@ from typing import Optional, List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
+from ..conf import RNA_CLASSES
 from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL, split_callback
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -112,6 +113,13 @@ def genes(
 
     if length_type not in ("exonic", "coding-exonic", "main-transcript", "span"):
         raise typer.BadParameter(f"Invalid --length-type '{length_type}'. Choose from: exonic, coding-exonic, main-transcript, span.")
+
+    if coding_only and non_coding_only:
+        raise typer.BadParameter("Cannot specify both --coding-only and --non-coding-only.")
+
+    for biotype in biotypes:
+        if biotype not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid RNA class: '{biotype}'. Choose from: {RNA_CLASSES}")
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
@@ -249,6 +257,13 @@ def transcripts(
     if not annot_in:
         raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
     annotation_file = annot_in
+
+    if coding_only and non_coding_only:
+        raise typer.BadParameter("Cannot specify both --coding-only and --non-coding-only.")
+
+    for biotype in biotypes:
+        if biotype not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid RNA class: '{biotype}'. Choose from: {RNA_CLASSES}")
 
     if annotation_name == "{annotation-file}":
         annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
