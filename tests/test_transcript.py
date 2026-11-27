@@ -185,6 +185,44 @@ class TestTranscriptExonUpdate:
         # After exon_update, coding_ratio should be set
         assert hasattr(t, 'coding_ratio')
 
+    def test_update_resets_stale_exon_coding_and_marks_unstranded(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", start=1, end=300, strand="+")
+        e1 = make_exon("e1", 1, 100, strand="+")
+        e2 = make_exon("e2", 200, 300, strand="+")
+        t.exons = [e1, e2]
+        c = make_CDS(
+            segments=[
+                make_CDS_segment("c1", start=1, end=100, strand="+", phase=0),
+                make_CDS_segment("c1", start=200, end=300, strand="+", phase=0),
+            ],
+            feature_id="c1",
+            strand="+",
+        )
+        t.CDSs = {"c1": c}
+        t.update()
+        assert [e.coding for e in t.exons] == [True, True]
+
+        # Shrink CDS to exon 2 only: exon 1 becomes pure UTR and must have coding=False
+        c.CDS_segments = [make_CDS_segment("c1", start=200, end=300, strand="+", phase=0)]
+        c.update()
+        t.update()
+        assert [e.coding for e in t.exons] == [False, True]
+
+        # Remove CDS entirely: all exons become non-coding
+        t.CDSs = {}
+        t.update()
+        assert [e.coding for e in t.exons] == [False, False]
+
+        # Unstranded transcript with CDS marks overlapping exon as coding
+        t_dot = make_transcript(feature_id="t2", start=1, end=300, strand=".")
+        e_coding = make_exon("e_coding", 1, 100, strand=".")
+        e_utr = make_exon("e_utr", 200, 300, strand=".")
+        t_dot.exons = [e_coding, e_utr]
+        c_dot = make_CDS(segments=[make_CDS_segment("c2", start=10, end=90, strand=".", phase=0)], feature_id="c2", strand=".")
+        t_dot.CDSs = {"c2": c_dot}
+        t_dot.update()
+        assert [e.coding for e in t_dot.exons] == [True, False]
+
 
 # ============================================================
 # rename_exons

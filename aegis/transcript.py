@@ -69,15 +69,11 @@ class Transcript(Feature):
                     c_end = c.end
 
         if self.CDSs:
-            if self.strand == "+":
-                for e in self.exons:
-                    if e.end >= c_start and e.start <= c_end:
-                        e.coding = True
-                    
-            elif self.strand == "-":
-                for e in self.exons:
-                    if e.start <= c_end and e.end >= c_start:
-                        e.coding = True
+            for e in self.exons:
+                e.coding = e.end >= c_start and e.start <= c_end
+        else:
+            for e in self.exons:
+                e.coding = False
 
     def rename(self, base_id:str, count:int, sep:str="_", digits:int=3, keep_numbering:bool=False, keep_existing_ids_if_derived_from_base_id:bool=False):
 
