@@ -314,3 +314,53 @@ class TestBlastEquivalenceKeys:
         assert [(e.id, e.type) for e in annot.genes["g2"].equivalences] == [("g1", "rbh"), ("g3", "rev_blastp")]
         assert [(e.id, e.type) for e in annot.genes["a-b"].equivalences] == [("c", "rbbh")]
         assert [(e.id, e.type) for e in annot.genes["a"].equivalences] == [("b-c", "rbh")]
+
+
+class TestPairwiseOrthologySyntenyStripTags:
+    def test_synteny_conserved_when_strip_gene_tags_enabled(self, tmp_path):
+        from aegis.equivalence import pairwise_orthology
+        from aegis.genome import Genome
+
+        fa_path = tmp_path / "g.fa"
+        fa_path.write_text(">chr1\n" + "A" * 5000 + "\n")
+        g1_path = tmp_path / "g1.fa"
+        g2_path = tmp_path / "g2.fa"
+        g1_path.write_text(fa_path.read_text())
+        g2_path.write_text(fa_path.read_text())
+
+        gff_a1 = tmp_path / "a1.gff3"
+        gff_a1.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t100\t500\t.\t+\t.\tID=gene-G1\n"
+            "chr1\taegis\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=gene-G1\n"
+            "chr1\taegis\texon\t100\t500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tgene\t1000\t1500\t.\t+\t.\tID=gene-G2\n"
+            "chr1\taegis\tmRNA\t1000\t1500\t.\t+\t.\tID=t2;Parent=gene-G2\n"
+            "chr1\taegis\texon\t1000\t1500\t.\t+\t.\tID=e2;Parent=t2\n"
+        )
+        gff_a2 = tmp_path / "a2.gff3"
+        gff_a2.write_text(gff_a1.read_text().replace("gene-G", "gene-H"))
+
+        work = tmp_path / "work"
+        liftoff_pair = work / "liftoff" / "A1__to__A2"
+        liftoff_pair.mkdir(parents=True)
+        # Pre-seed liftoff output with stripped IDs (as Liftoff produces from stripped GFF)
+        (liftoff_pair / "liftoff__A1__to__A2.gff").write_text(gff_a1.read_text().replace("gene-", ""))
+
+        g1 = Genome(name="G1", genome_file_path=str(g1_path), quiet=True)
+        g2 = Genome(name="G2", genome_file_path=str(g2_path), quiet=True)
+
+        pairwise_orthology(
+            annot1_name="A1", annot2_name="A2",
+            annot1_file=str(gff_a1), annot2_file=str(gff_a2),
+            genome1=g1, genome2=g2,
+            working_directory=work, num_threads=1, types="",
+            synteny=True, strip_gene_tags=True,
+            skip_liftoff=False, skip_lifton=True, skip_mcscan=True,
+            skip_blasts=True, skip_orthofinder=True, quiet=True,
+        )
+
+        out_tsv = work / "liftoff" / "liftoff__A1__to__A2_overlaps.tsv"
+        text = out_tsv.read_text()
+        assert "G1\tH1\tTrue\t" in text
+        assert "G2\tH2\tTrue\t" in text

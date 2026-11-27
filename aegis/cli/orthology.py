@@ -720,10 +720,13 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, coordinate_polishing="none", taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_detection=auto_organelle_detection, skip_atypical_features=True))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=False, coordinate_polishing="none", taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_detection=auto_organelle_detection, skip_atypical_features=True))
 
         if strip_gene_tags:
             annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
+
+        if synteny:
+            annotations[-1].define_synteny(quiet=quiet)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True

@@ -25,11 +25,14 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
     annot1: Annotation
     annot2: Annotation
 
-    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
-    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
+    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=False, skip_atypical_features=True)
+    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=False, skip_atypical_features=True)
     if strip_gene_tags:
         annot1.rename_ids(strip_gene_tag=True, quiet=quiet)
         annot2.rename_ids(strip_gene_tag=True, quiet=quiet)
+    if synteny:
+        annot1.define_synteny(quiet=quiet)
+        annot2.define_synteny(quiet=quiet)
 
     liftless_overlaps_dir = working_directory / "liftless_overlaps"
     liftoff_dir = working_directory / "liftoff"
