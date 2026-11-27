@@ -101,6 +101,39 @@ class TestGeneRename:
         assert [e.id for e in t.exons] == ["g1_e001", "g1_e002"]
         assert [u.id for u in c.UTRs] == ["g1_u001", "g1_u002"]
 
+    def test_update_generated_exons_keeps_sibling_ids_and_survives_rename(self, make_gene, make_transcript, make_exon, make_CDS_segment):
+        g = make_gene(feature_id="g1", start=1, end=500, strand="+")
+        t1 = make_transcript("t1", start=1, end=300, strand="+")
+        t1.exons = [
+            make_exon("explicit_e1", 1, 100, strand="+"),
+            make_exon("explicit_e2", 200, 300, strand="+"),
+        ]
+        t2 = make_transcript("t2", start=1, end=500, strand="+")
+        t2.temp_CDSs = [
+            make_CDS_segment("c2", start=1, end=100, strand="+"),
+            make_CDS_segment("c2", start=400, end=500, strand="+"),
+        ]
+        t1.update(quiet=True)
+        t2.update(quiet=True)
+        assert t2.generated_exons is True
+
+        g.transcripts = {"t1": t1, "t2": t2}
+        g.update(quiet=True)
+
+        assert t2.generated_exons is False
+        assert [e.id for e in t1.exons] == ["explicit_e1", "explicit_e2"]
+        assert [e.id for e in t2.exons] == ["explicit_e1", "g1_e001"]
+
+        g.rename_exons(sep=".", digits=2)
+        expected_t1 = [e.id for e in t1.exons]
+        expected_t2 = [e.id for e in t2.exons]
+        assert expected_t1 == ["g1.e01", "g1.e02"]
+        assert expected_t2 == ["g1.e01", "g1.e03"]
+
+        g.update(quiet=True)
+        assert [e.id for e in t1.exons] == expected_t1
+        assert [e.id for e in t2.exons] == expected_t2
+
 
 # ============================================================
 # obtain_base_id

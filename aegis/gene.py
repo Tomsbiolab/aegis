@@ -43,10 +43,11 @@ class Gene(Feature):
         self.coding = False
         self.noncoding = False
 
-        generated_exons = False
+        generated_exons = []
         for t in self.transcripts.values():
             if t.generated_exons:
-                generated_exons = True
+                generated_exons.extend(t.exons)
+                t.generated_exons = False
             if t.coding:
                 self.coding = True
             else:
@@ -92,7 +93,7 @@ class Gene(Feature):
         self.homogenise_exon_scores()
 
         if generated_exons:
-            self.rename_exons()
+            self.name_new_exons(generated_exons)
 
     def rename(self, count:int, sep:str="_", digits:int=5, prefix:str="", suffix:str="", base_id_as_id:bool=False, remove_point_suffix:bool=False, chrom_label:str=""):
         """
@@ -376,6 +377,7 @@ class Gene(Feature):
                             exon_names[key] = f"{base_id}{sep}e{x:0{digits}d}"
 
                 for t in self.transcripts.values():
+                    t.generated_exons = False
                     for e in t.exons:
                         key = (e.start, e.end, e.ch, e.strand)
                         e.id = exon_names[key]

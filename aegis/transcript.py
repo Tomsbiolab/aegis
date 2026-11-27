@@ -115,6 +115,7 @@ class Transcript(Feature):
             rename = True
 
         if rename:
+            self.generated_exons = False
             if len(self.exons) > 1:
                 self.exons.sort()
             keep_numbering = keep_numbering and unambiguous_numbers(((e.start, e.end), e.id_number) for e in self.exons)
