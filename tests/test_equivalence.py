@@ -240,3 +240,21 @@ class TestRBBHCoverage:
     def test_partial_rbbh_does_not_change_high(self):
         partial = make_equivalence("B", "rbbh", "evalue=1e-50/1e-40, coverage=90.0/20.0, identity=70.0/60.0")
         assert tier(partial, make_equivalence("B", "rec_liftoff_aegis", "7/7"), coverage_threshold=30)[0] == "high_confidence"
+
+
+class TestEquivalenceRanking:
+    def test_na_evalue_does_not_break_tiebreakers(self):
+        e_low = Equivalence("g_low", "fwd_liftoff_aegis [7]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+        e_high = Equivalence("g_high", "fwd_liftoff_aegis [8]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+        e_syn = Equivalence("g_syn", "fwd_liftoff_aegis [8 (synteny)]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+        e_finite = Equivalence("g_fin", "fwd_liftoff_aegis [7], rbbh [evalue=1e-10/1e-10, coverage=90/90, identity=90/90]", "annot2", "sp", "high_confidence", "1e-10", "top_reliable")
+
+        assert [e.id for e in sorted([e_low, e_high, e_syn, e_finite])] == ["g_fin", "g_syn", "g_high", "g_low"]
+        assert e_syn == Equivalence("g_syn2", "fwd_liftoff_aegis [8 (synteny)]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+
+    def test_missing_aegis_score_sorts_after_valid_scores(self):
+        e_no_ov = Equivalence("g_no_ov", "rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
+        e_with_ov = Equivalence("g_with_ov", "fwd_liftoff_aegis [9], rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
+        e_rec_ov = Equivalence("g_rec_ov", "rec_liftoff_aegis [9/8], rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
+
+        assert [e.id for e in sorted([e_no_ov, e_with_ov, e_rec_ov])] == ["g_rec_ov", "g_with_ov", "g_no_ov"]

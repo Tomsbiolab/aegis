@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .genome import Genome
 
+import math
 import pandas as pd
 import time
 import os
@@ -480,78 +481,22 @@ class Equivalence():
                             self.aegis_synteny_rev = False
 
     def _rank(self):
+        target_rank = self.target_annotation.lower()
         if self.reliability == "NA":
-            target_rank = self.target_annotation.lower()
-            type_rank = self.preferred_type_order.index(self.type) if self.type in self.preferred_type_order else float('inf')
-            evalue = self.evalue if isinstance(self.evalue, float) else float('inf')
-            aegis_score = self.aegis_score if self.aegis_score != None else 100
-            aegis_score_rev = self.aegis_score_rev if self.aegis_score_rev != None else 100
-
-            if self.aegis_synteny == None:
-                synteny = 3
-            elif self.aegis_synteny:
-                synteny = 1
-            else:
-                synteny = 2
-
-            if self.aegis_synteny_rev == None:
-                synteny_rev = 3
-            elif self.aegis_synteny_rev:
-                synteny_rev = 1
-            else:
-                synteny_rev = 2
-
-            if self.aegis_copies == None:
-                copies = 3
-            elif self.aegis_copies:
-                copies = 1
-            else:
-                copies = 2
-
-            if self.aegis_copies_rev == None:
-                copies_rev = 3
-            elif self.aegis_copies_rev:
-                copies_rev = 1
-            else:
-                copies_rev = 2
-
-            return (target_rank, type_rank, evalue, -aegis_score, -aegis_score_rev, synteny, synteny_rev, copies, copies_rev)
+            primary_rank = self.preferred_type_order.index(self.type) if self.type in self.preferred_type_order else float('inf')
         else:
-            target_rank = self.target_annotation.lower()
-            reliability_rank = self.reliability_order.index(self.reliability) if self.reliability in self.reliability_order else float('inf')
-            evalue = self.evalue if isinstance(self.evalue, float) else float('inf')
-            aegis_score = self.aegis_score if self.aegis_score != None else 100
-            aegis_score_rev = self.aegis_score_rev if self.aegis_score_rev != None else 100
+            primary_rank = self.reliability_order.index(self.reliability) if self.reliability in self.reliability_order else float('inf')
 
-            if self.aegis_synteny == None:
-                synteny = 3
-            elif self.aegis_synteny:
-                synteny = 1
-            else:
-                synteny = 2
+        evalue = self.evalue if isinstance(self.evalue, float) and not math.isnan(self.evalue) else float('inf')
+        aegis_score = -self.aegis_score if self.aegis_score is not None else float('inf')
+        aegis_score_rev = -self.aegis_score_rev if self.aegis_score_rev is not None else float('inf')
 
-            if self.aegis_synteny_rev == None:
-                synteny_rev = 3
-            elif self.aegis_synteny_rev:
-                synteny_rev = 1
-            else:
-                synteny_rev = 2
+        synteny = 3 if self.aegis_synteny is None else (1 if self.aegis_synteny else 2)
+        synteny_rev = 3 if self.aegis_synteny_rev is None else (1 if self.aegis_synteny_rev else 2)
+        copies = 3 if self.aegis_copies is None else (1 if self.aegis_copies else 2)
+        copies_rev = 3 if self.aegis_copies_rev is None else (1 if self.aegis_copies_rev else 2)
 
-            if self.aegis_copies == None:
-                copies = 3
-            elif self.aegis_copies:
-                copies = 1
-            else:
-                copies = 2
-
-            if self.aegis_copies_rev == None:
-                copies_rev = 3
-            elif self.aegis_copies_rev:
-                copies_rev = 1
-            else:
-                copies_rev = 2
-            
-            return (target_rank, reliability_rank, evalue, -aegis_score, -aegis_score_rev, synteny, synteny_rev, copies, copies_rev)
+        return (target_rank, primary_rank, evalue, aegis_score, aegis_score_rev, synteny, synteny_rev, copies, copies_rev)
 
     def __lt__(self, other):
         return self._rank() < other._rank()
