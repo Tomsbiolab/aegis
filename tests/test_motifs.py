@@ -1,11 +1,15 @@
 import matplotlib
 import pandas as pd
+from typer.testing import CliRunner
 
 matplotlib.use("Agg")
 
 from aegis.annotation import Annotation
+from aegis.cli.motif_search import app as motif_app
 from aegis.genome import Genome
 from aegis.utils.genefunctions import reverse_complement
+
+runner = CliRunner()
 
 
 def _make_motif_annot(tmp_path, seq, gff_rows, promoter_size=200):
@@ -119,4 +123,84 @@ def test_find_and_plot_genomic_coordinates_both_strands_and_orientations(tmp_pat
     assert by_key[("g_plus", "different")] == (151, 156)
     assert by_key[("g_minus", "same")] == (401, 406)
     assert by_key[("g_minus", "different")] == (451, 456)
+
+
+def test_find_and_plot_output_paths_never_overwrite_and_handle_tsv_and_backlist(tmp_path):
+    seq = "C" * 100 + "TATAAA" + "C" * 394
+    gff_rows = []
+    for i, (s, e) in enumerate([(200, 230), (260, 290), (320, 350), (380, 410)], 1):
+        gff_rows.extend([
+            f"chr1\tsrc\tgene\t{s}\t{e}\t.\t+\t.\tID=g{i}",
+            f"chr1\tsrc\tmRNA\t{s}\t{e}\t.\t+\t.\tID=t{i};Parent=g{i}",
+            f"chr1\tsrc\texon\t{s}\t{e}\t.\t+\t.\tID=e{i};Parent=t{i}",
+            f"chr1\tsrc\tCDS\t{s}\t{e}\t.\t+\t0\tID=c{i};Parent=t{i}",
+        ])
+    _, annot = _make_motif_annot(tmp_path, seq, gff_rows, promoter_size=150)
+
+    # 1. Explicit .tsv filename: PDF saves as .pdf and query table is preserved
+    out_tsv = tmp_path / "out_tsv"
+    res = annot.motifs.find_and_plot(
+        ["g1"], "TATAAA", 6, "q", "TATA", filename="results.tsv", output_dir=str(out_tsv), quiet=True
+    )
+    assert sorted(p.name for p in out_tsv.iterdir()) == [
+        "results.pdf",
+        "results.tsv",
+        "results_random.pdf",
+        "results_random.tsv",
+        "results_whole_genome.pdf",
+    ]
+    assert res[-1] == out_tsv / "results.tsv"
+    df_tsv = pd.read_csv(out_tsv / "results.tsv", sep="\t")
+    assert df_tsv["gene_id"].tolist() == ["g1"]
+
+    # 2. Extensionless filename: distinct files, query not overwritten by random/background
+    out_extless = tmp_path / "out_extless"
+    annot.motifs.find_and_plot(
+        ["g1"], "TATAAA", 6, "q", "TATA", filename="myrun", output_dir=str(out_extless), quiet=True
+    )
+    assert sorted(p.name for p in out_extless.iterdir()) == [
+        "myrun.csv",
+        "myrun.pdf",
+        "myrun_random.csv",
+        "myrun_random.pdf",
+        "myrun_whole_genome.pdf",
+    ]
+    df_extless = pd.read_csv(out_extless / "myrun.csv", sep="\t")
+    assert df_extless["gene_id"].tolist() == ["g1"]
+
+    # 3. Custom backlist: query & random outputs are STILL written alongside background PDF
+    out_bg = tmp_path / "out_bg"
+    annot.motifs.find_and_plot(
+        ["g1"], "TATAAA", 6, "q", "TATA", backlist=["g2", "g3"], backlistname="bg", output_dir=str(out_bg), quiet=True
+    )
+    bg_files = sorted(p.name for p in out_bg.iterdir())
+    assert len(bg_files) == 5
+    assert any(name.endswith("_TATA_q.csv") for name in bg_files)
+    assert any(name.endswith("_TATA_q.pdf") for name in bg_files)
+    assert any(name.endswith("_TATA_q_random.csv") for name in bg_files)
+    assert any(name.endswith("_TATA_q_random.pdf") for name in bg_files)
+    assert any(name.endswith("_TATA_bg_as_background.pdf") for name in bg_files)
+
+    # 4. CLI -o with .tsv works end-to-end
+    genelist = tmp_path / "genes.tsv"
+    genelist.write_text("g1\tquery\n", encoding="utf-8")
+    out_cli = tmp_path / "out_cli"
+    cli_res = runner.invoke(
+        motif_app,
+        [
+            str(tmp_path / "annot.gff3"),
+            str(tmp_path / "genome.fa"),
+            "-l", str(genelist),
+            "-m", "TATAAA",
+            "-ps", "150",
+            "-d", str(out_cli),
+            "-o", "cli_out.tsv",
+            "-q",
+        ],
+    )
+    assert cli_res.exit_code == 0, cli_res.stdout
+    assert (out_cli / "cli_out.tsv").exists()
+    assert (out_cli / "cli_out.pdf").exists()
+    assert (out_cli / "cli_out_whole_genome.pdf").exists()
+
 

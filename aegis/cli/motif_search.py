@@ -96,7 +96,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Custom output filename.",
+        "-o", "--output-file", help="Custom output filename or prefix (derived random/background tables and PDF plots are named alongside it without overwriting).",
         rich_help_panel=IO_PANEL,
     )] = "",
 

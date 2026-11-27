@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 from scipy.stats import fisher_exact
 import pandas as pd
@@ -15,6 +17,9 @@ class AnnotationMotifs (AnnotationComponent):
     Accessed via 'annotation_object.motifs'.
     """
 
+    _TABLE_EXTENSIONS = {".csv", ".tsv", ".txt"}
+    _PLOT_EXTENSIONS = {".pdf", ".png", ".svg", ".eps", ".jpg", ".jpeg"}
+
     @staticmethod
     def _motif_genomic_coords(promoter, m_start: int, m_end: int, same_orientation: bool) -> tuple[int, int]:
         """Return 1-based inclusive (genomic_start, genomic_end) for a 0-based half-open match span."""
@@ -23,7 +28,70 @@ class AnnotationMotifs (AnnotationComponent):
             return promoter.start + m_start, promoter.start + m_end - 1
         return promoter.end - m_end + 1, promoter.end - m_start
 
-    def find_and_plot(self, query_genes:list[str], motif:str, motif_length:int, glistname:str, tf_motif_tag:str, backlist:list[str]=[], backlistname:str="", filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "motifs", subfolder: bool = False, use_annot_dir: bool = False, quiet:bool=False):
+    def _resolve_motif_outputs(
+        self,
+        *,
+        tf_motif_tag: str,
+        glistname: str,
+        background_tag: str,
+        filepath: str | None = None,
+        output_dir: str | None = None,
+        filename: str | None = None,
+        subfolder_name: str = "motifs",
+        subfolder: bool = False,
+        use_annot_dir: bool = False,
+    ) -> dict[str, Path]:
+        if filepath or filename:
+            raw_path = self._resolve_output_path(
+                output_dir=output_dir,
+                subfolder_name=subfolder_name,
+                subfolder=subfolder,
+                use_annot_dir=use_annot_dir,
+                filepath=filepath,
+                filename=filename,
+                extension="",
+            )
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            ext = raw_path.suffix.lower()
+            if ext in self._TABLE_EXTENSIONS:
+                stem = raw_path.name[: -len(raw_path.suffix)]
+                table_ext = raw_path.suffix
+            elif ext in self._PLOT_EXTENSIONS:
+                stem = raw_path.name[: -len(raw_path.suffix)]
+                table_ext = ".csv"
+            else:
+                stem = raw_path.name
+                table_ext = ".csv"
+            parent = raw_path.parent
+            return {
+                "query_table": parent / f"{stem}{table_ext}",
+                "query_pdf": parent / f"{stem}.pdf",
+                "random_table": parent / f"{stem}_random{table_ext}",
+                "random_pdf": parent / f"{stem}_random.pdf",
+                "background_pdf": parent / f"{stem}_{background_tag}.pdf",
+            }
+
+        extra_suffixes = [tf_motif_tag]
+        query_suffixes = extra_suffixes + [glistname]
+        random_suffixes = query_suffixes + ["random"]
+        bg_suffixes = extra_suffixes + [background_tag]
+        common = dict(
+            output_dir=output_dir,
+            subfolder_name=subfolder_name,
+            subfolder=subfolder,
+            use_annot_dir=use_annot_dir,
+        )
+        return {
+            "query_table": self._resolve_output_path(**common, extra_suffixes=query_suffixes, extension=".csv"),
+            "query_pdf": self._resolve_output_path(**common, extra_suffixes=query_suffixes, extension=".pdf"),
+            "random_table": self._resolve_output_path(**common, extra_suffixes=random_suffixes, extension=".csv"),
+            "random_pdf": self._resolve_output_path(**common, extra_suffixes=random_suffixes, extension=".pdf"),
+            "background_pdf": self._resolve_output_path(**common, extra_suffixes=bg_suffixes, extension=".pdf"),
+        }
+
+    def find_and_plot(self, query_genes:list[str], motif:str, motif_length:int, glistname:str, tf_motif_tag:str, backlist:list[str] | None = None, backlistname:str="", filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, subfolder_name: str = "motifs", subfolder: bool = False, use_annot_dir: bool = False, quiet:bool=False):
+
+        backlist = list(backlist) if backlist else []
 
         if subfolder_name != "motifs":
             subfolder = True
@@ -31,21 +99,33 @@ class AnnotationMotifs (AnnotationComponent):
         bin_division = 30
         bins_genome_division = 30
 
-        if backlist != [] and not backlistname:
+        if backlist and not backlistname:
             backlistname = "custom_background"
 
         if motif_length < 4 or len(motif) < 4:
             raise ValueError(f"Chosen motif={motif} is too short (len={motif_length}) for promoter search.")
 
         random_ids = self._annot.return_random_gene_ids(len(query_genes), to_avoid=query_genes)
-        if backlist == []:
+        if not backlist:
             total = (len(query_genes) * 2) + len(self._annot.all_gene_ids.keys())
+            background_tag = "whole_genome"
         else:
             total = (len(query_genes) * 2) + len(backlist)
+            background_tag = f"{backlistname}_as_background"
 
         progress_bar = start_progress_bar(total=total, description=f"Scanning {glistname} genes for {tf_motif_tag} ({motif})", colour="94", quiet=quiet)
 
-        extra_suffixes = [tf_motif_tag]
+        outputs = self._resolve_motif_outputs(
+            tf_motif_tag=tf_motif_tag,
+            glistname=glistname,
+            background_tag=background_tag,
+            filepath=filepath,
+            output_dir=output_dir,
+            filename=filename,
+            subfolder_name=subfolder_name,
+            subfolder=subfolder,
+            use_annot_dir=use_annot_dir,
+        )
 
         motif = motif.upper()
         promoter_length = getattr(self._annot, "promoter_size", 0) or 0
@@ -104,14 +184,7 @@ class AnnotationMotifs (AnnotationComponent):
 
         all_occurrences = towards_occurrences + against_occurrences
         df = pd.DataFrame(all_occurrences, columns=["start", "end", "genomic_start", "genomic_end", "sequence", "orientation with respect to gene", "gene_id", "gene_name", "gene_strand", "chromosome"])
-        if backlist == []:
-
-            backlist_suffixes = extra_suffixes.copy()
-            backlist_suffixes.append(glistname)
-
-            backlist_file_path = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, extra_suffixes=backlist_suffixes, filename=filename, extension=".csv")
-
-            df.to_csv(str(backlist_file_path), sep="\t")
+        df.to_csv(str(outputs["query_table"]), sep="\t")
         
         interest_count = len(midpoints)
         plt.hist(midpoints, bins=hist_bins, color='skyblue', edgecolor='skyblue')
@@ -120,13 +193,7 @@ class AnnotationMotifs (AnnotationComponent):
         plt.xlabel("promoter position")
         plt.ylabel(f"motif occurrence count (total: {interest_count})")
         plt.grid(True)
-        
-        if backlist == []:
-
-            backlist_file_path = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, extra_suffixes=backlist_suffixes, filename=filename, extension=".pdf")
-            
-            plt.savefig(str(backlist_file_path))
-
+        plt.savefig(str(outputs["query_pdf"]))
         plt.close()
 
         # critical thing to understand here is that we are looking at how a motif
@@ -173,13 +240,7 @@ class AnnotationMotifs (AnnotationComponent):
 
         all_occurrences = towards_occurrences + against_occurrences
         df = pd.DataFrame(all_occurrences, columns=["start", "end", "genomic_start", "genomic_end", "sequence", "orientation with respect to gene", "gene_id", "gene_name", "gene_strand", "chromosome"])
-        if backlist == []:
-
-            backlist_suffixes.append("random")
-
-            backlist_file_path = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, extra_suffixes=backlist_suffixes, filename=filename, extension=".csv")
-
-            df.to_csv(str(backlist_file_path), sep="\t")
+        df.to_csv(str(outputs["random_table"]), sep="\t")
 
         random_count = len(midpoints)
         plt.hist(midpoints, bins=hist_bins, color='grey', edgecolor='grey')
@@ -188,10 +249,7 @@ class AnnotationMotifs (AnnotationComponent):
         plt.xlabel("promoter position")
         plt.ylabel(f"motif occurrence count (total: {random_count})")
         plt.grid(True)
-        if backlist == []:
-            backlist_file_path = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, extra_suffixes=backlist_suffixes, filename=filename, extension=".pdf")
-
-            plt.savefig(str(backlist_file_path))
+        plt.savefig(str(outputs["random_pdf"]))
         plt.close()
 
         # critical thing to understand here is that we are looking at how a motif
@@ -244,12 +302,7 @@ class AnnotationMotifs (AnnotationComponent):
             plt.ylabel(f"motif occurrence count (total: {genomic_count})")
             plt.grid(True)
 
-            whole_genome_suffixes = extra_suffixes.copy()
-            whole_genome_suffixes.append("whole_genome")
-
-            whole_genome_file_path = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, extra_suffixes=whole_genome_suffixes, filename=filename, extension=".pdf")
-
-            plt.savefig(str(whole_genome_file_path))
+            plt.savefig(str(outputs["background_pdf"]))
             plt.close()
         
         else:
@@ -296,12 +349,7 @@ class AnnotationMotifs (AnnotationComponent):
             plt.ylabel(f"motif occurrence count (total: {genomic_count})")
             plt.grid(True)
 
-            background_suffixes = extra_suffixes.copy()
-            background_suffixes.append(f"{backlistname}_as_background")            
-
-            back_file_path = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, extra_suffixes=background_suffixes, filename=filename, extension=".pdf")
-
-            plt.savefig(str(back_file_path))
+            plt.savefig(str(outputs["background_pdf"]))
             plt.close()
 
         progress_bar.close()
@@ -330,6 +378,6 @@ class AnnotationMotifs (AnnotationComponent):
         else:
             promoter_percentage_genome = (genomic_proportion / len(backlist)) * 100
 
-        output_file = self._resolve_output_path(output_dir=output_dir, subfolder_name=subfolder_name, subfolder=subfolder, use_annot_dir=use_annot_dir, filepath=filepath, filename=filename, extension=".csv")
+        output_file = outputs["query_table"]
 
         return interest_count, genomic_count, p_value_occurrences, odds_ratio_occurrences, promoter_percentage_interest, promoter_percentage_genome, p_value_proportion, odds_ratio_proportion, avg_motifs_interest, avg_motifs_genomic, output_file
