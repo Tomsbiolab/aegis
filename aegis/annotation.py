@@ -5191,7 +5191,15 @@ class Annotation():
         self.update(quiet=quiet)
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.update(quiet=quiet)
-        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet, clean_attributes=True)
+        if not tag or tag == ".gff3":
+            out_filename = f"{self.id}.gff3"
+        elif tag.startswith((".", "_", "-")):
+            out_filename = f"{self.id}{tag}"
+        else:
+            out_filename = f"{self.id}_{tag}"
+        if not out_filename.endswith((".gff3", ".gff")):
+            out_filename = f"{out_filename}.gff3"
+        self.export.gff(output_dir=custom_path or None, extra_attributes=extra_attributes, filename=out_filename, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet, clean_attributes=True)
 
     def generate_introns(self):
         for genes in self.chrs.values():

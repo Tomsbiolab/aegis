@@ -5014,3 +5014,24 @@ class TestMakeAlternativeGenesIntoTranscripts:
         g1 = annot.chrs["chr1"]["g1"]
         assert {t.original_id for t in g1.transcripts.values()} == {"t1", "t2", "t3", "t4"}
         assert g1.start == 100 and g1.end == 450
+
+
+class TestAnnotationRelease:
+    def test_release_writes_named_gff3_not_hidden_dotfile(self, tmp_path):
+        gff = tmp_path / "in.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tCDS\t100\t500\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        out_default = tmp_path / "out_default"
+        a1 = Annotation(str(gff), quiet=True)
+        a1.release(name="rel", id="rel_v1.0", source_name="src", id_prefix="REL_", custom_path=str(out_default), quiet=True)
+        assert [p.name for p in out_default.iterdir()] == ["rel_v1.0.gff3"]
+
+        out_tagged = tmp_path / "out_tagged"
+        a2 = Annotation(str(gff), quiet=True)
+        a2.release(name="rel", id="rel_v1", source_name="src", id_prefix="REL_", custom_path=str(out_tagged), tag="final", quiet=True)
+        assert [p.name for p in out_tagged.iterdir()] == ["rel_v1_final.gff3"]
