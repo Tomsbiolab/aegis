@@ -1712,25 +1712,39 @@ class Annotation():
 
                     # cases where subfeature directly references a pseudogene creating a pseudotranscript for the pseudogene
                     if self.chrs[ch][parent].pseudogene:
-                        if parent[0:4] == "gene":
-                            pseudo_t = f"pseudo_t_{parent[5:]}"
+                        gene_obj = self.chrs[ch][parent]
+                        if parent.startswith(("gene-", "gene_", "gene:")) and len(parent) > 5:
+                            base_pseudo_t = f"pseudo_t_{parent[5:]}"
                         else:
-                            pseudo_t = f"pseudo_t_{parent}"
+                            base_pseudo_t = f"pseudo_t_{parent}"
 
-                        if self.chrs[ch][parent].transcripts == {}:
+                        if gene_obj.transcripts == {}:
+                            pseudo_t = base_pseudo_t
+                            if pseudo_t in self.all_transcript_ids:
+                                pseudo_t = f"pseudo_t_{parent}"
+                            count = 1
+                            while pseudo_t in self.all_transcript_ids:
+                                count += 1
+                                pseudo_t = f"{base_pseudo_t}_{count}"
                             # PSEUDOGENES referred to by transcript subfeatures are given a single pseudotranscript
-                            self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, [parent])
+                            gene_obj.transcripts[pseudo_t] = Transcript(pseudo_t, gene_obj.ch, gene_obj.source, "pseudotranscript", gene_obj.strand, gene_obj.start, gene_obj.end, gene_obj.score, [parent])
                             self.all_transcript_ids[pseudo_t] = (ch, parent)
-                            
-                        if pseudo_t in self.chrs[ch][parent].transcripts:
+                        else:
+                            pseudo_t = next(
+                                (t_id for t_id, t_obj in gene_obj.transcripts.items()
+                                 if t_obj.feature == "pseudotranscript" and (t_id == base_pseudo_t or t_id == f"pseudo_t_{parent}" or t_id.startswith(f"{base_pseudo_t}_"))),
+                                None,
+                            )
+
+                        if pseudo_t is not None and pseudo_t in gene_obj.transcripts:
                             if ft_level == "CDS":
-                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes, phase=phase))
+                                gene_obj.transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes, phase=phase))
                             elif ft_level == "exon":
-                                self.chrs[ch][parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                gene_obj.transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                             elif ft_level == "UTR":
-                                self.chrs[ch][parent].transcripts[pseudo_t].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                gene_obj.transcripts[pseudo_t].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                             else:
-                                self.chrs[ch][parent].transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                gene_obj.transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                                 self._miRNA_info.add(ID)
                         else:
                             if not skip_orphaned_features:

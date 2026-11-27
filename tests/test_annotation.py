@@ -2183,6 +2183,29 @@ class TestPseudogeneGFF3:
         coords = [(e.start, e.end) for e in t.exons]
         assert coords == [(1000, 2000), (3000, 4000), (4500, 5000)]
 
+    def test_pseudotranscript_ids_do_not_collide(self, tmp_path):
+        gff = tmp_path / "pseudo_ids.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tpseudogene\t100\t300\t.\t+\t.\tID=gene1\n"
+            "chr1\tt\texon\t100\t300\t.\t+\t.\tID=e1;Parent=gene1\n"
+            "chr1\tt\tpseudogene\t500\t700\t.\t+\t.\tID=gene2\n"
+            "chr1\tt\texon\t500\t700\t.\t+\t.\tID=e2;Parent=gene2\n"
+            "chr1\tt\tpseudogene\t900\t1200\t.\t+\t.\tID=gene_1\n"
+            "chr1\tt\texon\t900\t1000\t.\t+\t.\tID=e3;Parent=gene_1\n"
+            "chr1\tt\texon\t1100\t1200\t.\t+\t.\tID=e4;Parent=gene_1\n"
+            "chr1\tt\tpseudogene\t1400\t1700\t.\t+\t.\tID=gene-1\n"
+            "chr1\tt\texon\t1400\t1500\t.\t+\t.\tID=e5;Parent=gene-1\n"
+            "chr1\tt\texon\t1600\t1700\t.\t+\t.\tID=e6;Parent=gene-1\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        assert list(annot.chrs["chr1"]["gene1"].transcripts) == ["pseudo_t_gene1"]
+        assert list(annot.chrs["chr1"]["gene2"].transcripts) == ["pseudo_t_gene2"]
+        assert list(annot.chrs["chr1"]["gene_1"].transcripts) == ["pseudo_t_1"]
+        assert list(annot.chrs["chr1"]["gene-1"].transcripts) == ["pseudo_t_gene-1"]
+        assert len(next(iter(annot.chrs["chr1"]["gene-1"].transcripts.values())).exons) == 2
+        assert len(annot.all_transcript_ids) == 4
+
 
 # ---- 6. Overlapping, and adjacent exons (collapse) ----
 
