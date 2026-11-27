@@ -49,3 +49,21 @@ def test_fasta_gz_support(tmp_path):
     genome = Genome("minimal", str(gz_path), quiet=True)
     
     assert len(genome.scaffolds) > 0
+
+
+def test_open_file_gz_text_modes(tmp_path):
+    from aegis.utils.misc import open_file
+
+    gz_x = tmp_path / "created.txt.gz"
+    with open_file(gz_x, "x", encoding="utf-8") as fh:
+        fh.write("first\n")
+    with open_file(gz_x, "a", encoding="utf-8") as fh:
+        fh.write("second\n")
+    with open_file(gz_x, "rt", encoding="utf-8") as fh:
+        assert fh.read() == "first\nsecond\n"
+
+    gz_w = tmp_path / "written.txt.gz"
+    with open_file(gz_w, "w", encoding="utf-8") as fh:
+        fh.write("replaced\n")
+    with open_file(gz_w, "r", encoding="utf-8") as fh:
+        assert fh.read() == "replaced\n"
