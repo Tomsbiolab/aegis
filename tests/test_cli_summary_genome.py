@@ -98,3 +98,20 @@ def test_cli_summary_genome_soft_masked(tmp_path):
     assert "*" not in res_ref.stdout  # no sequence difference marker
 
 
+def test_cli_summary_genome_duplicate_filenames_disambiguated(tmp_path):
+    """Duplicate genome basenames (e.g. v1/genome.fa vs v2/genome.fa) are disambiguated so pairing and Diff work."""
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+    g1 = tmp_path / "v1" / "genome.fa"
+    g2 = tmp_path / "v2" / "genome.fa"
+    g1.write_text(">chr1\nACGTACGT\n")
+    g2.write_text(">chr1\nACGTACGTACGTACGT\n")
+
+    out_tsv = tmp_path / "dup.tsv"
+    res = runner.invoke(app, [str(g1), str(g2), "-o", str(out_tsv), "-q"])
+    assert res.exit_code == 0, res.output
+    lines = out_tsv.read_text().splitlines()
+    assert lines[0] == "Feature\tgenome\tgenome_2\tDiff"
+    assert lines[1] == "chr1\t8\t16\t+8"
+
+

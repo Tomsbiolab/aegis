@@ -6,7 +6,7 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..genome import Genome, Scaffold
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SUMMARY_PANEL
+from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SUMMARY_PANEL, FASTA_EXTENSIONS, strip_bio_extension
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -453,14 +453,22 @@ def main(
     # Parse names
     names = [item.strip() for item in genome_names.split(",")] if genome_names else []
     
+    seen_names: set[str] = set()
     genomes: list[Genome] = []
     for idx, gfile in enumerate(genome_files):
         if idx < len(names) and names[idx]:
             gname = names[idx]
         else:
-            gname = Path(gfile).stem
-            if gname.endswith(".fasta") or gname.endswith(".fa"):
-                gname = Path(gname).stem
+            gname, _ = strip_bio_extension(Path(gfile).name, FASTA_EXTENSIONS)
+
+        if gname in seen_names:
+            suffix = idx + 1
+            candidate = f"{gname}_{suffix}"
+            while candidate in seen_names:
+                suffix += 1
+                candidate = f"{gname}_{suffix}"
+            gname = candidate
+        seen_names.add(gname)
 
         g = Genome(
             name=gname,
