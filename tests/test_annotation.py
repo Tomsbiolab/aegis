@@ -801,6 +801,38 @@ class TestAnnotationRemoveTranscripts:
             annot.remove_transcripts(to_remove={"fake_transcript"}, remove_genes_accordingly=True, quiet=False)
             assert any("fake_transcript" in str(warning.message) for warning in w)
 
+    def test_remove_main_transcript_updates_gene_and_cleans_utr_parents(self, tmp_path):
+        gff = tmp_path / "isoforms.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t1000\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t1000\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t300\t.\t+\t.\tID=e1;Parent=t1,t2\n"
+            "chr1\tt\texon\t400\t1000\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\tt\tCDS\t200\t300\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\tt\tCDS\t400\t900\t.\t+\t1\tID=c1;Parent=t1\n"
+            "chr1\tt\tmRNA\t100\t800\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\tt\texon\t400\t800\t.\t+\t.\tID=e3;Parent=t2\n"
+            "chr1\tt\tCDS\t200\t300\t.\t+\t0\tID=c2;Parent=t2\n"
+            "chr1\tt\tCDS\t400\t700\t.\t+\t1\tID=c2;Parent=t2\n"
+            "chr1\tt\tlnc_RNA\t100\t500\t.\t+\t.\tID=t3;Parent=g1\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e4;Parent=t3\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        g = annot.chrs["chr1"]["g1"]
+        assert g.transcripts["t1"].main is True
+
+        annot.remove_transcripts({"t1"}, quiet=True)
+        assert g.transcripts["t2"].main is True
+        assert g.coding is True and g.noncoding is True
+        for c in g.transcripts["t2"].CDSs.values():
+            for u in c.UTRs:
+                assert "t1" not in u.parents
+
+        annot.remove_transcripts({"t2"}, quiet=True)
+        assert g.transcripts["t3"].main is True
+        assert g.coding is False and g.noncoding is True
+
 
 # ============================================================
 # Annotation — remove_transcripts_with_no_exons
@@ -1598,6 +1630,36 @@ class TestAnnotationRenameChromosomes:
         annot.rename_chromosomes(equivalences)
         assert "confrenamed" in annot.tags
 
+    def test_rename_updates_caches_mirnas_circular_and_header(self, tmp_path):
+        gff = tmp_path / "mirna_circ.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "##sequence-region chr1 1 5000\n"
+            "##sequence-region chr2 1 3000\n"
+            "chr1\tt\tregion\t1\t5000\t.\t+\t.\tID=reg1;Is_circular=true\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmiRNA_primary_transcript\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tmiRNA\t200\t222\t.\t+\t.\tID=m1;Parent=t1\n"
+            "chr2\tt\tgene\t100\t400\t.\t+\t.\tID=g2\n"
+            "chr2\tt\tmRNA\t100\t400\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr2\tt\texon\t100\t400\t.\t+\t.\tID=e2;Parent=t2\n"
+        )
+        annot = Annotation(str(gff), quiet=True, mitochondria_chroms=("chr1",), chloroplast_chroms=("chr2",))
+        annot.all_protein_ids["p1"] = ("chr1", "g1", "t1", "c1")
+        annot.rename_chromosomes({"chr1": "scaf_1", "chr2": "scaf_2"})
+
+        assert annot.all_gene_ids == {"g1": "scaf_1", "g2": "scaf_2"}
+        assert annot.all_transcript_ids == {"t1": ("scaf_1", "g1"), "t2": ("scaf_2", "g2")}
+        assert annot.all_protein_ids == {"p1": ("scaf_1", "g1", "t1", "c1")}
+        assert annot.chrs["scaf_1"]["g1"].transcripts["t1"].miRNAs[0].ch == "scaf_1"
+        assert annot.circular_chromosomes == {"scaf_1"}
+        assert annot.mitochondria_chroms == ("scaf_1",)
+        assert annot.chloroplast_chroms == ("scaf_2",)
+        assert "##sequence-region scaf_1 1 5000" in annot.gff_header
+        assert "##sequence-region scaf_2 1 3000" in annot.gff_header
+        assert not any("chr1" in h or "chr2" in h for h in annot.gff_header)
+
 
 # ============================================================
 # Annotation — feature tags round trip
@@ -1763,6 +1825,52 @@ class TestAnnotationRemoveCodingGenes:
         assert "geneR2" not in annot.all_gene_ids
         # geneR3 (noncoding) should remain
         assert "geneR3" in annot.all_gene_ids
+
+    def test_mixed_gene_filters_clean_parents_atypicals_and_preserve_pure_genes(self, tmp_path):
+        gff = tmp_path / "mixed_coding.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g_mix\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t_cod;Parent=g_mix\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e_shared;Parent=t_cod,t_nc\n"
+            "chr1\tt\tCDS\t150\t450\t.\t+\t0\tID=c_cod;Parent=t_cod\n"
+            "chr1\tt\tprotein\t150\t450\t.\t+\t.\tID=p_cod;Derives_from=t_cod\n"
+            "chr1\tt\tlnc_RNA\t100\t500\t.\t+\t.\tID=t_nc;Parent=g_mix\n"
+            "chr1\tt\tgene\t700\t900\t.\t+\t.\tID=g_pure_cod\n"
+            "chr1\tt\tmRNA\t700\t900\t.\t+\t.\tID=t_pc;Parent=g_pure_cod\n"
+            "chr1\tt\texon\t700\t900\t.\t+\t.\tID=e_pc;Parent=t_pc\n"
+            "chr1\tt\tCDS\t700\t900\t.\t+\t0\tID=c_pc;Parent=t_pc\n"
+            "chr1\tt\tgene\t1100\t1300\t.\t+\t.\tID=g_pure_nc\n"
+            "chr1\tt\tlnc_RNA\t1100\t1300\t.\t+\t.\tID=t_pnc;Parent=g_pure_nc\n"
+            "chr1\tt\texon\t1100\t1300\t.\t+\t.\tID=e_pnc;Parent=t_pnc\n"
+        )
+
+        # Removing coding genes & transcripts cleans shared exon parents, all_transcript_ids, and atypical proteins
+        a1 = Annotation(str(gff), quiet=True)
+        a1.remove_coding_genes_and_transcripts(quiet=True)
+        assert "t_cod" not in a1.all_transcript_ids
+        assert "g_pure_cod" not in a1.all_gene_ids
+        assert [e.parents for e in a1.chrs["chr1"]["g_mix"].transcripts["t_nc"].exons] == [["t_nc"]]
+        assert a1.atypical_features == []
+
+        # Removing non-coding genes & transcripts cleans shared exon parents and all_transcript_ids
+        a2 = Annotation(str(gff), quiet=True)
+        a2.remove_non_coding_genes_and_transcripts(quiet=True)
+        assert "t_nc" not in a2.all_transcript_ids
+        assert "g_pure_nc" not in a2.all_gene_ids
+        assert [e.parents for e in a2.chrs["chr1"]["g_mix"].transcripts["t_cod"].exons] == [["t_cod"]]
+        assert len(a2.atypical_features) == 1
+
+        # Direct calls only affect mixed genes, never emptying pure genes
+        a3 = Annotation(str(gff), quiet=True)
+        a3.remove_coding_transcripts_from_non_coding_genes(update=False, quiet=True)
+        assert list(a3.chrs["chr1"]["g_pure_cod"].transcripts) == ["t_pc"]
+        assert list(a3.chrs["chr1"]["g_mix"].transcripts) == ["t_nc"]
+
+        a4 = Annotation(str(gff), quiet=True)
+        a4.remove_non_coding_transcripts_from_coding_genes(update=False, quiet=True)
+        assert list(a4.chrs["chr1"]["g_pure_nc"].transcripts) == ["t_pnc"]
+        assert list(a4.chrs["chr1"]["g_mix"].transcripts) == ["t_cod"]
 
 
 # ============================================================
@@ -2182,6 +2290,29 @@ class TestPseudogeneGFF3:
         t = annot.chrs["chr1"]["gene_ps1"].transcripts["pseudo_t_ps1"]
         coords = [(e.start, e.end) for e in t.exons]
         assert coords == [(1000, 2000), (3000, 4000), (4500, 5000)]
+
+    def test_pseudotranscript_ids_do_not_collide(self, tmp_path):
+        gff = tmp_path / "pseudo_ids.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tpseudogene\t100\t300\t.\t+\t.\tID=gene1\n"
+            "chr1\tt\texon\t100\t300\t.\t+\t.\tID=e1;Parent=gene1\n"
+            "chr1\tt\tpseudogene\t500\t700\t.\t+\t.\tID=gene2\n"
+            "chr1\tt\texon\t500\t700\t.\t+\t.\tID=e2;Parent=gene2\n"
+            "chr1\tt\tpseudogene\t900\t1200\t.\t+\t.\tID=gene_1\n"
+            "chr1\tt\texon\t900\t1000\t.\t+\t.\tID=e3;Parent=gene_1\n"
+            "chr1\tt\texon\t1100\t1200\t.\t+\t.\tID=e4;Parent=gene_1\n"
+            "chr1\tt\tpseudogene\t1400\t1700\t.\t+\t.\tID=gene-1\n"
+            "chr1\tt\texon\t1400\t1500\t.\t+\t.\tID=e5;Parent=gene-1\n"
+            "chr1\tt\texon\t1600\t1700\t.\t+\t.\tID=e6;Parent=gene-1\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        assert list(annot.chrs["chr1"]["gene1"].transcripts) == ["pseudo_t_gene1"]
+        assert list(annot.chrs["chr1"]["gene2"].transcripts) == ["pseudo_t_gene2"]
+        assert list(annot.chrs["chr1"]["gene_1"].transcripts) == ["pseudo_t_1"]
+        assert list(annot.chrs["chr1"]["gene-1"].transcripts) == ["pseudo_t_gene-1"]
+        assert len(next(iter(annot.chrs["chr1"]["gene-1"].transcripts.values())).exons) == 2
+        assert len(annot.all_transcript_ids) == 4
 
 
 # ---- 6. Overlapping, and adjacent exons (collapse) ----
@@ -3381,6 +3512,27 @@ class TestCDSReformatting:
         assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[0].id == "mRNA_iso1c_CDS1"
         assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[1].id == "mRNA_iso1c_CDS1"
 
+    def test_CDS_segment_to_CDS_ids_preserves_shared_ids_without_override(self, tmp_path):
+        gff = tmp_path / "shared_cds.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\texon\t300\t500\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\tt\tCDS\t100\t200\t.\t+\t0\tID=cds-NP_001;Parent=t1\n"
+            "chr1\tt\tCDS\t300\t500\t.\t+\t1\tID=cds-NP_001;Parent=t1\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        annot.CDS_segment_to_CDS_ids(override=False)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert list(t.CDSs.keys()) == ["cds-NP_001"]
+        assert [cs.id for cs in t.CDSs["cds-NP_001"].CDS_segments] == ["cds-NP_001", "cds-NP_001"]
+
+        annot.CDS_segment_to_CDS_ids(override=True)
+        assert list(t.CDSs.keys()) == ["t1_CDS1"]
+        assert [cs.id for cs in t.CDSs["t1_CDS1"].CDS_segments] == ["t1_CDS1", "t1_CDS1"]
+
 # ============================================================
 # Testing synteny
 # ============================================================
@@ -3422,6 +3574,8 @@ class TestSynteny:
 
         annot_after = Annotation(synteny_after_liftover_gff3_file, quiet=True, original_annotation=annot_before, define_synteny=True)
         
+        assert annot_after.unmapped == ["g6"]
+        annot_after.update(quiet=True)
         assert annot_after.unmapped == ["g6"]
 
         assert annot_after.chrs["chr1"]["g1"].synteny.old_previous == None
@@ -4723,3 +4877,218 @@ class TestCodonRows:
         annot = Annotation(str(gff_file), quiet=True)
         assert "sc1" in annot.warnings["missing_subfeature_parent"]
         assert self._segments(annot) == [(11, 46, 0)]
+
+
+class TestRemoveChromosomesFromHeader:
+    def test_preserves_directives_and_matches_exact_seqid(self, tmp_path):
+        gff = tmp_path / "header.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "#!genome-build test\n"
+            "##sequence-region chr1 1 1000\n"
+            "##sequence-region chr10 1 2000\n"
+            "##sequence-region 1 1 500\n"
+            "##sequence-region chr2 1 500\n"
+            "chr1\tt\tgene\t10\t100\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t10\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t10\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr10\tt\tgene\t10\t100\t.\t+\t.\tID=g2\n"
+            "chr10\tt\tmRNA\t10\t100\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr10\tt\texon\t10\t100\t.\t+\t.\tID=e2;Parent=t2\n"
+            "1\tt\tgene\t10\t100\t.\t+\t.\tID=g3\n"
+            "1\tt\tmRNA\t10\t100\t.\t+\t.\tID=t3;Parent=g3\n"
+            "1\tt\texon\t10\t100\t.\t+\t.\tID=e3;Parent=t3\n"
+            "chr2\tt\tgene\t10\t100\t.\t+\t.\tID=g4\n"
+            "chr2\tt\tmRNA\t10\t100\t.\t+\t.\tID=t4;Parent=g4\n"
+            "chr2\tt\texon\t10\t100\t.\t+\t.\tID=e4;Parent=t4\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        del annot.chrs["chr10"]
+        del annot.chrs["chr2"]
+        annot.remove_chromosomes_from_header()
+        assert annot.gff_header == [
+            "##gff-version 3",
+            "#!genome-build test",
+            "##sequence-region chr1 1 1000",
+            "##sequence-region 1 1 500",
+        ]
+
+
+class TestAddBlastHits:
+    def test_propagates_hits_to_equivalent_proteins_and_validates_mode(self, tmp_path):
+        fa = tmp_path / "g.fa"
+        fa.write_text(">chr1\n" + "A" * 50 + "ATGGGCCCCTAA" + "A" * 50 + "ATGGGCCCCTAA" + "A" * 50 + "\n")
+        gff = tmp_path / "a.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t51\t62\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t51\t62\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t51\t62\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tCDS\t51\t62\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\tt\tgene\t113\t124\t.\t+\t.\tID=g2\n"
+            "chr1\tt\tmRNA\t113\t124\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\tt\texon\t113\t124\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\tt\tCDS\t113\t124\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        blast = tmp_path / "hits.tsv"
+        blast.write_text("c1.prot\tsubj1\t100.0\t4\t0\t0\t1\t4\t1\t4\t1e-5\t50.0\n")
+
+        genome = Genome("test", str(fa), quiet=True)
+        annot = Annotation(str(gff), genome=genome, quiet=True)
+        annot.add_blast_hits("swissprot", str(blast), mode="protein")
+
+        p1 = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].protein
+        p2 = annot.chrs["chr1"]["g2"].transcripts["t2"].CDSs["c2"].protein
+        assert len(p1.blast_hits) == 1
+        assert len(p2.blast_hits) == 1
+        assert p2.blast_hits[0].score == 50.0
+        assert p2.blast_hits[0].evalue == 1e-5
+
+        with pytest.raises(NotImplementedError):
+            annot.add_blast_hits("swissprot", str(blast), mode="gene")
+        with pytest.raises(ValueError):
+            annot.add_blast_hits("swissprot", str(blast), mode="invalid")
+
+
+class TestPartialGenomeAndTranslTable:
+    def test_generate_promoters_and_rework_CDSs_skip_missing_contigs_and_use_cds_transl_table(self, tmp_path):
+        # Code 4 translates TGA as Trp (W) instead of STOP
+        fa = tmp_path / "partial.fa"
+        fa.write_text(">chr1\n" + "A" * 30 + "ATGCCCTGACCCTAA" + "A" * 30 + "\n")
+        gff = tmp_path / "partial.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t31\t45\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t31\t45\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t31\t45\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tCDS\t31\t45\t.\t+\t0\tID=c1;Parent=t1;transl_table=4\n"
+            "chr_missing\tt\tgene\t10\t50\t.\t+\t.\tID=g2\n"
+            "chr_missing\tt\tmRNA\t10\t50\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr_missing\tt\texon\t10\t50\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr_missing\tt\tCDS\t10\t50\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        genome = Genome("test", str(fa), quiet=True)
+        annot = Annotation(str(gff), genome=genome, quiet=True)
+
+        annot.generate_promoters(20)
+        assert annot.chrs["chr1"]["g1"].transcripts["t1"].promoter is not None
+        assert annot.chrs["chr_missing"]["g2"].transcripts["t2"].promoter is None
+
+        annot.rework_CDSs(quiet=True, allow_internal_stops=False, allow_partial=False)
+        c1 = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
+        assert c1.protein is not None and c1.protein.seq == "MPWP*"
+        assert c1.transl_table == 4
+        assert list(annot.chrs["chr_missing"]["g2"].transcripts["t2"].CDSs.keys()) == ["c2"]
+
+
+class TestMakeAlternativeGenesIntoTranscripts:
+    def test_transitive_overlap_chain_preserves_all_transcripts(self, tmp_path):
+        from types import SimpleNamespace
+
+        gff = tmp_path / "chain.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t300\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t300\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t300\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tgene\t150\t350\t.\t+\t.\tID=g2\n"
+            "chr1\tt\tmRNA\t150\t350\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\tt\texon\t150\t350\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\tt\tgene\t200\t400\t.\t+\t.\tID=g3\n"
+            "chr1\tt\tmRNA\t200\t400\t.\t+\t.\tID=t3;Parent=g3\n"
+            "chr1\tt\texon\t200\t400\t.\t+\t.\tID=e3;Parent=t3\n"
+            "chr1\tt\tgene\t250\t450\t.\t+\t.\tID=g4\n"
+            "chr1\tt\tmRNA\t250\t450\t.\t+\t.\tID=t4;Parent=g4\n"
+            "chr1\tt\texon\t250\t450\t.\t+\t.\tID=e4;Parent=t4\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        hit = lambda i: SimpleNamespace(id=i, score=6)
+        annot.chrs["chr1"]["g1"].overlaps["self"] = [hit("g2")]
+        annot.chrs["chr1"]["g2"].overlaps["self"] = [hit("g1"), hit("g3")]
+        annot.chrs["chr1"]["g3"].overlaps["self"] = [hit("g2"), hit("g4")]
+        annot.chrs["chr1"]["g4"].overlaps["self"] = [hit("g3")]
+
+        annot.make_alternative_genes_into_transcripts(quiet=True)
+
+        assert list(annot.chrs["chr1"].keys()) == ["g1"]
+        g1 = annot.chrs["chr1"]["g1"]
+        assert {t.original_id for t in g1.transcripts.values()} == {"t1", "t2", "t3", "t4"}
+        assert g1.start == 100 and g1.end == 450
+
+
+class TestAnnotationRelease:
+    def test_release_writes_named_gff3_not_hidden_dotfile(self, tmp_path):
+        gff = tmp_path / "in.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tCDS\t100\t500\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        out_default = tmp_path / "out_default"
+        a1 = Annotation(str(gff), quiet=True)
+        a1.release(name="rel", id="rel_v1.0", source_name="src", id_prefix="REL_", custom_path=str(out_default), quiet=True)
+        assert [p.name for p in out_default.iterdir()] == ["rel_v1.0.gff3"]
+
+        out_tagged = tmp_path / "out_tagged"
+        a2 = Annotation(str(gff), quiet=True)
+        a2.release(name="rel", id="rel_v1", source_name="src", id_prefix="REL_", custom_path=str(out_tagged), tag="final", quiet=True)
+        assert [p.name for p in out_tagged.iterdir()] == ["rel_v1_final.gff3"]
+
+
+class TestRenameIdsBugFixes:
+    def test_cds_segment_ids_without_cds_in_features_renames_segments(self, tmp_path):
+        gff = tmp_path / "cds_seg.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\texon\t300\t500\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\tt\tCDS\t100\t200\t.\t+\t0\tID=cds1;Parent=t1\n"
+            "chr1\tt\tCDS\t300\t500\t.\t+\t1\tID=cds1;Parent=t1\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        with pytest.warns(UserWarning, match="cds_segment_ids"):
+            annot.rename_ids(features=("gene", "transcript"), cds_segment_ids=True, quiet=True)
+        t = next(iter(annot.chrs["chr1"]["g1"].transcripts.values()))
+        c = next(iter(t.CDSs.values()))
+        assert [cs.id for cs in c.CDS_segments] == [f"{c.id}_1", f"{c.id}_2"]
+        assert "CDS" in annot.renamed_features
+
+    def test_remove_point_suffix_and_strip_gene_tag_do_not_overwrite_colliding_genes(self, tmp_path):
+        gff = tmp_path / "collide.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t200\t.\t+\t.\tID=g1.1\n"
+            "chr1\tt\tmRNA\t100\t200\t.\t+\t.\tID=t1;Parent=g1.1\n"
+            "chr1\tt\texon\t100\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tgene\t300\t400\t.\t+\t.\tID=g1.2\n"
+            "chr1\tt\tmRNA\t300\t400\t.\t+\t.\tID=t2;Parent=g1.2\n"
+            "chr1\tt\texon\t300\t400\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\tt\tgene\t500\t600\t.\t+\t.\tID=gene-X\n"
+            "chr1\tt\tmRNA\t500\t600\t.\t+\t.\tID=t3;Parent=gene-X\n"
+            "chr1\tt\texon\t500\t600\t.\t+\t.\tID=e3;Parent=t3\n"
+            "chr1\tt\tgene\t700\t800\t.\t+\t.\tID=X\n"
+            "chr1\tt\tmRNA\t700\t800\t.\t+\t.\tID=t4;Parent=X\n"
+            "chr1\tt\texon\t700\t800\t.\t+\t.\tID=e4;Parent=t4\n"
+            "chr2\tt\tgene\t100\t200\t.\t+\t.\tID=g1.3\n"
+            "chr2\tt\tmRNA\t100\t200\t.\t+\t.\tID=t5;Parent=g1.3\n"
+            "chr2\tt\texon\t100\t200\t.\t+\t.\tID=e5;Parent=t5\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        with pytest.warns(UserWarning, match="colliding"):
+            annot.rename_ids(remove_point_suffix=True, strip_gene_tag=True, quiet=True)
+
+        assert len(annot.all_gene_ids) == 5
+        assert set(annot.chrs["chr1"].keys()) == {"g1", "g1_2", "X_2", "X"}
+        assert set(annot.chrs["chr2"].keys()) == {"g1_3"}
+        # Unchanged gene X keeps its ID; gene-X is disambiguated to X_2
+        assert annot.chrs["chr1"]["X"].original_id == "X"
+        assert annot.chrs["chr1"]["X_2"].original_id == "gene-X"
+        # Transcripts point to the disambiguated gene IDs
+        for genes in annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    assert t.parents == [g.id]

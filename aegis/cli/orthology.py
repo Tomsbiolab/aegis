@@ -20,6 +20,10 @@ from ..equivalence import Simple_annotation, pairwise_orthology, run_command
 from ..utils.misc import read_headerless_tsv
 from .utils import (
     split_callback,
+    strip_bio_extension,
+    resolve_unique_names,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
     TaxonomyOption,
     GeneticCodeOption,
     AutoOrganelleDetectionOption,
@@ -92,9 +96,12 @@ def get_tiered_cardinality(df, allowed_scores):
 
     sub_df['d1'] = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].transform('count')
     sub_df['d2'] = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].transform('count')
+    # A bipartite connected component has >1 node on side 2 iff some neighbor of g2 has d1 > 1,
+    # and >1 node on side 1 iff some neighbor of g1 has d2 > 1.
+    sub_df['max_d1'] = sub_df.groupby(['a1', 'a2', 'g2'])['d1'].transform('max')
     sub_df['max_d2'] = sub_df.groupby(['a1', 'a2', 'g1'])['d2'].transform('max')
-    
-    deg_A = sub_df['d1'].to_numpy()
+
+    deg_A = sub_df['max_d1'].to_numpy()
     deg_B = sub_df['max_d2'].to_numpy()
     
     condlist = [
@@ -563,25 +570,21 @@ def main(
                 f"Invalid confidence level: '{conf}'. Allowed options are 'high', 'medium', 'lower', 'high_confidence', 'medium_confidence', or 'lower_confidence' (separated by commas)."
             )
 
-    expected_extensions = {".gff", ".gtf", ".gff3", ".fasta", ".fa"}
-    files_to_check = []
-    
-    if annotation_files and annotation_names == ["{annotation-filename(s)}"]:
-        files_to_check.extend(annotation_files)
-    if genome_files and genome_names == ["{genome-filename(s)}"]:
-        files_to_check.extend(genome_files)
-        
     invalid_extensions = []
-    for f in files_to_check:
-        _, ext = os.path.splitext(f)
-        if ext.lower() not in expected_extensions:
-            invalid_extensions.append(f)
+    if annotation_files and annotation_names == ["{annotation-filename(s)}"]:
+        for f in annotation_files:
+            if not strip_bio_extension(os.path.basename(f), ANNOT_EXTENSIONS)[1]:
+                invalid_extensions.append(f)
+    if genome_files and genome_names == ["{genome-filename(s)}"]:
+        for f in genome_files:
+            if not strip_bio_extension(os.path.basename(f), FASTA_EXTENSIONS)[1]:
+                invalid_extensions.append(f)
             
     if invalid_extensions:
         print("\nWarning: Proper file extensions were not found for the following file(s):")
         for f in invalid_extensions:
             print(f"  - {os.path.basename(f)}")
-        print("Expected extensions: .gff, .gtf, .gff3, .fasta, .fa\n"
+        print("Expected extensions: .gff, .gtf, .gff3, .fasta, .fa (optionally .gz)\n"
               "Some naming or downstream processing functionality may be compromised if extensions are missing.\n")
 
     synteny = not skip_synteny
@@ -597,45 +600,33 @@ def main(
         )
         raise typer.Exit(code=1)
 
-    if annotation_names == ["{annotation-filename(s)}"]:
-        annotation_names = [] # type: ignore
-        for annotation_file in annotation_files:
-            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0]) # type: ignore
-
-    if genome_names == ["{genome-filename(s)}"]:
-        genome_names = [] # type: ignore
-        for genome_file in genome_files:
-            genome_names.append(os.path.splitext(os.path.basename(genome_file))[0]) # type: ignore
-
     genome_files = [str(Path(g).resolve()) for g in genome_files] # type: ignore
     annotation_files = [str(Path(g).resolve()) for g in annotation_files] # type: ignore
 
-    if len(annotation_files) != len(annotation_names):
-        raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
+    if len(annotation_files) != len(set(annotation_files)):
+        raise typer.BadParameter("Avoid repeated annotation filename(s).")
 
-    if len(genome_files) != len(genome_names):
-        raise typer.BadParameter(f"The provided number of genome name(s)/tag(s) do not match the number of genome file(s).")
+    if len(genome_files) != len(annotation_files):
+        raise typer.BadParameter(f"A single genome file must be provided for each annotation file. Genome files: {genome_files}. Annotation files: {annotation_files}")
 
-    name_to_files = {}
-    file_to_names = {}
-    for g_file, g_name in zip(genome_files, genome_names):
-        name_to_files.setdefault(g_name, set()).add(g_file)
-        file_to_names.setdefault(g_file, set()).add(g_name)
+    annotation_names = resolve_unique_names(
+        annotation_files,
+        provided_names=annotation_names,
+        extensions=ANNOT_EXTENSIONS,
+        kind="annotation",
+        strict_count=True,
+        quiet=quiet,
+    )
 
-    for name, files in name_to_files.items():
-        if len(files) > 1:
-            base_files = [os.path.basename(f) for f in files]
-            raise typer.BadParameter(
-                f"The genome tag '{name}' is mapped to multiple distinct genome files: {base_files}. "
-                "Each distinct assembly file must have a unique tag."
-            )
-
-    for g_file, names in file_to_names.items():
-        if len(names) > 1:
-            raise typer.BadParameter(
-                f"The genome file '{os.path.basename(g_file)}' is mapped to multiple different tags: {list(names)}. "
-                "The same assembly file must use a single consistent tag."
-            )
+    genome_names = resolve_unique_names(
+        genome_files,
+        provided_names=genome_names,
+        extensions=FASTA_EXTENSIONS,
+        kind="genome",
+        share_by_file=True,
+        strict_count=True,
+        quiet=quiet,
+    )
 
     for annotation_name in annotation_names:
         if "__to__" in annotation_name:
@@ -647,15 +638,6 @@ def main(
 
     if skip_mcscan and skip_liftoff and skip_all_blasts and skip_orthofinder and skip_lifton:
         raise typer.BadParameter("No analysis methods selected. Please select at least one analysis method. Run 'aegis orthology --help' for more information.")
-
-    if len(annotation_names) != len(set(annotation_names)):
-        raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
-    
-    if len(annotation_files) != len(set(annotation_files)):
-        raise typer.BadParameter("Avoid repeated annotation filename(s).")
-
-    if len(genome_files) != len(annotation_files):
-        raise typer.BadParameter(f"A single genome file must be provided for each annotation file. Genome files: {genome_files}. Annotation files: {annotation_files}")
 
     if len(genome_names) != len(set(genome_names)):
         repeated_genomes = {}
@@ -720,10 +702,13 @@ def main(
 
     for n, annotation_file in enumerate(annotation_files):
 
-        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=synteny, coordinate_polishing="none", taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_detection=auto_organelle_detection, skip_atypical_features=True))
+        annotations.append(Annotation(name=annotation_names[n], genome=genomes[genome_files[n]], annot_file_path=annotation_file, quiet=quiet, define_synteny=False, coordinate_polishing="none", taxonomy=taxonomy, table=genetic_code, mito_table=mito_code, plastid_table=plastid_code, auto_organelle_detection=auto_organelle_detection, skip_atypical_features=True))
 
         if strip_gene_tags:
             annotations[-1].rename_ids(strip_gene_tag=True, quiet=quiet)
+
+        if synteny:
+            annotations[-1].define_synteny(quiet=quiet)
 
         if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
             annotations[n].target = True
@@ -804,18 +789,11 @@ def main(
         mcscan_name = a.name.replace(".", "_")
 
         gff_file1 = gff_path / f"{a.name}.gff3"
-        gff_file2 = gff_path / f"{mcscan_name}.gff3"
 
         if not gff_file1.exists():
             a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
         else:
             print(f"\n\tExisting GFF file for {a.name}. Skipping.")
-
-        if gff_file1 != gff_file2:
-            if not gff_file2.exists():
-                a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
-            else:
-                print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
             
         if not skip_lifton:
             lifton_prep_file = gff_path / f"{a.name}__for__lifton.gff3"
@@ -862,9 +840,27 @@ def main(
                 print(f"\n\tExisting cleaned CDS for {a.name}. Skipping.")
 
             if not bed_file.exists():
+                # JCVI extracts BED rows with --type=mRNA; standardise coding transcripts to mRNA
+                # (e.g. GTF inputs use 'transcript') on a temporary copy so other tools keep original types.
+                needs_mcscan_standardise = any(
+                    (t.feature != "mRNA") if t.CDSs else (t.feature == "mRNA")
+                    for genes in a.chrs.values()
+                    for g in genes.values()
+                    for t in g.transcripts.values()
+                )
+                if needs_mcscan_standardise:
+                    mcscan_gff = gff_path / f"{mcscan_name}__for__mcscan.gff3"
+                    if not mcscan_gff.exists():
+                        a_mcscan = a.copy()
+                        a_mcscan.update_features(standardise=True, quiet=quiet)
+                        a_mcscan.export.gff(output_dir=str(gff_path), filename=mcscan_gff.name, subfolder=False, quiet=quiet, clean_attributes=True)
+                        del a_mcscan
+                else:
+                    mcscan_gff = gff_file1
+
                 gff_to_bed_cmd_1 = [
                     "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-                    "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
+                    "--key=Parent", "--primary_only", str(mcscan_gff), "-o", str(bed_file)
                 ]
                 run_command(mcscan_path, gff_to_bed_cmd_1)
             else:
@@ -1188,7 +1184,7 @@ def main(
 
     valid_confidences = [f"{c}_confidence" for c in sorted_confs]
 
-    if not final_df.empty and not skip_cardinality:
+    if not skip_cardinality:
         if tiered_cardinality:
             if conf_set not in standard_sets:
                 final_df['cardinality'] = get_tiered_cardinality(final_df, valid_confidences)
@@ -1265,27 +1261,26 @@ def main(
         final_df['summary_score'] = final_df['summary_score'].astype(str)
         final_df['annotation_B'] = final_df['annotation_B'].astype(str)
 
-    if not final_df.empty and "species_A" in final_df.columns and "species_B" in final_df.columns:
-        if (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all():
+    if "species_A" in final_df.columns and "species_B" in final_df.columns:
+        if (final_df.empty and all(g == "NA" for g in group_names)) or (
+            not final_df.empty and (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all()
+        ):
             final_df = final_df.drop(columns=["species_A", "species_B"])
 
-    if not final_df.empty and split_scores:
+    if split_scores:
+        if final_df.empty:
+            final_df = final_df.drop(columns=["score"], errors="ignore")
+        else:
+            if not quiet:
+                print("\nSplitting aggregate scores into individual tool columns.")
 
-        if not quiet:
-            print("\nSplitting aggregate scores into individual tool columns.")
+            score_data = [parse_score_column(s) for s in final_df["score"]]
+            split_df = pd.DataFrame(score_data, index=final_df.index)
 
-        score_data = [parse_score_column(s) for s in final_df["score"]]
-        split_df = pd.DataFrame(score_data, index=final_df.index)
+            split_df = split_df.loc[:, (split_df != "NA").any(axis=0)]
 
-        split_df = split_df.loc[:, (split_df != "NA").any(axis=0)]
-        
-        try:
-            col_idx = list(final_df.columns).index("score")
-        except ValueError:
-            col_idx = 0
-
-        final_df = final_df.drop(columns=["score"], errors="ignore")
-        final_df = pd.concat([final_df, split_df], axis=1)
+            final_df = final_df.drop(columns=["score"], errors="ignore")
+            final_df = pd.concat([final_df, split_df], axis=1)
 
     desired_column_order = [
         "gene_id_A",

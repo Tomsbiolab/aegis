@@ -10,6 +10,9 @@ from .utils import (
     warn_organelle_genetic_codes,
     split_callback,
     detect_file_type,
+    resolve_bio_name,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
     TaxonomyOption,
     GeneticCodeOption,
     AutoOrganelleDetectionOption,
@@ -321,8 +324,7 @@ def main(
 
     rename_features = ("CDS", "UTR", "exon") if rename_subfeature_ids else ()
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     if coordinate_polishing not in ("none", "contain", "trim"):
         raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
@@ -343,8 +345,7 @@ def main(
         raise typer.BadParameter("A genome FASTA file must be provided via --genome-file when using --rework-all-cds or --infer-missing-cds.")
 
     if genome_file:
-        if not genome_name or genome_name == "{genome-file}":
-            genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+        genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
         genome = Genome(
             name=genome_name,
             genome_file_path=genome_file,

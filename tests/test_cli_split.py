@@ -156,3 +156,62 @@ def test_split_by_chromosome_sends_listed_organelles_to_other_smoke(tmp_path):
     result = runner.invoke(app, [str(gff_file), "--by-chromosome", "--mitochondria-chroms", "chr9", "-d", str(out_dir), "-q"])
     assert result.exit_code == 0, f"Error: {result.stdout}"
     assert sorted(f.name for f in out_dir.iterdir()) == ["o_split_other.gff3", "o_splitchr1.gff3"]
+
+
+def test_split_paired_output_file_extensions(tmp_path):
+    """Paired -o in split keeps distinct tags and proper GFF/FASTA extensions, including dotted prefixes."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1A\n" + "ACGT" * 25 + "\n>chr1D\n" + "TGCA" * 25 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1A\tt\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1A\tt\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1D\tt\tgene\t1\t30\t.\t+\t.\tID=g2\n"
+        "chr1D\tt\tmRNA\t1\t30\t.\t+\t.\tID=t2;Parent=g2\n"
+    )
+
+    out1 = tmp_path / "out_dot"
+    res1 = runner.invoke(app, [str(gff), str(fa), "-s", "A,D", "-d", str(out1), "-o", "release_v1.2", "-q"])
+    assert res1.exit_code == 0, res1.output
+    assert sorted(f.name for f in out1.iterdir()) == [
+        "release_v1.2_splitA.fasta",
+        "release_v1.2_splitA.gff3",
+        "release_v1.2_splitD.fasta",
+        "release_v1.2_splitD.gff3",
+    ]
+
+    out2 = tmp_path / "out_fa"
+    res2 = runner.invoke(app, [str(gff), str(fa), "-s", "A,D", "-d", str(out2), "-o", "out.fasta", "-q"])
+    assert res2.exit_code == 0, res2.output
+    assert sorted(f.name for f in out2.iterdir()) == [
+        "out_splitA.fasta",
+        "out_splitA.gff3",
+        "out_splitD.fasta",
+        "out_splitD.gff3",
+    ]
+    assert (out2 / "out_splitA.fasta").read_text().startswith(">chr1A")
+    assert (out2 / "out_splitD.fasta").read_text().startswith(">chr1D")
+    assert (out2 / "out_splitA.gff3").read_text().startswith("##gff-version 3")
+
+
+def test_split_write_empty_other_only_for_other_and_creates_fasta(tmp_path):
+    """--write-empty-other writes empty _split_other FASTA/GFF3 and skips unmatched named tags."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1A\n" + "ACGT" * 25 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1A\tt\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1A\tt\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+    )
+    out = tmp_path / "out"
+    res = runner.invoke(app, [str(fa), str(gff), "-s", "A,Z", "--write-empty-other", "-d", str(out), "-q"])
+    assert res.exit_code == 0, res.output
+    assert sorted(f.name for f in out.iterdir()) == [
+        "a_splitA.gff3",
+        "a_split_other.gff3",
+        "g_splitA.fasta",
+        "g_split_other.fasta",
+    ]
+    assert (out / "g_split_other.fasta").read_text() == ""

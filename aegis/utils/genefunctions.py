@@ -655,18 +655,18 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
     genome_none = False
     genome_name = ""
     for a in annotations:
-        if a.genome == None:
+        if a.genome is None:
             genome_none = True
         else:
-            genome_name = a.genome
+            genome_name = a.genome.name
 
     if genome_none:
         warnings.warn("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.", category=UserWarning)
 
     if genome_name != "":
         for a in annotations:
-            if a.genome != None:
-                if a.genome != genome_name:
+            if a.genome is not None:
+                if a.genome.name != genome_name:
                     raise ValueError("The provided annotations are not based on the same genome version/assembly. Please review input.")
                 
     if len(annotations) < 2:
@@ -714,6 +714,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
             all_genes[a.name] = set(a.all_gene_ids.keys())
             unmapped_genes[a.name] = set(a.unmapped)
 
+    eq_df = None
     for x, a in enumerate(annotations):
 
         if group_tag and (reference or len(annotations) == 2):
@@ -749,10 +750,10 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
 
         if len(annotations) > 2:
 
-            if x == 0:
+            if eq_df is None:
                 eq_df = single_df.copy()
             else:
-                eq_df = pd.concat([eq_df, single_df])
+                eq_df = pd.concat([eq_df, single_df], ignore_index=True)
 
         if len(annotations) == 2 or output_also_single_files:
 

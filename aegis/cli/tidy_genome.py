@@ -5,7 +5,18 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, COORDS_PANEL, GENOME_CLEANING_PANEL, detect_file_type
+from .utils import (
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    COORDS_PANEL,
+    GENOME_CLEANING_PANEL,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
+    detect_file_type,
+    strip_bio_extension,
+    resolve_bio_name,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
@@ -138,11 +149,10 @@ def main(
     genome_file = gen_in
     annotation_file = annot_in
 
-    if genome_name == "{genome-file}":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+    genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
 
-    if (annotation_name == "{annotation-file}") and (annotation_file != ""):
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    if annotation_file != "":
+        annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     if coordinate_polishing not in ("none", "contain", "trim"):
         raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")
@@ -151,6 +161,7 @@ def main(
     g = Genome(
         name=genome_name,
         genome_file_path=genome_file,
+        quiet=quiet,
         header_id_tag=header_id_tag if header_id_tag != "" else None,
         header_id_regex=header_id_regex if header_id_regex != "" else None,
         gwh=gwh,
@@ -162,6 +173,7 @@ def main(
             annot_file_path=annotation_file,
             name=annotation_name,
             genome=g,
+            quiet=quiet,
             coordinate_polishing=coordinate_polishing,
             recalculate_phases=recalculate_phases,
             reset_phases_zero=reset_phases_zero, skip_atypical_features=clean_features
@@ -170,13 +182,20 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     if rename_map != "":
-        with open(rename_map, encoding='utf-8') as f:
-            chromosome_rename_map = {linea.split('\t')[0]: linea.split('\t')[1].strip() for linea in f}
+        chromosome_rename_map = {}
+        with open(rename_map, encoding="utf-8") as f:
+            for line_num, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
+                    raise typer.BadParameter(
+                        f"Malformed line {line_num} in --rename-map '{rename_map}': expected 'old_name<tab>new_name'."
+                    )
+                chromosome_rename_map[parts[0].strip()] = parts[1].strip()
 
         chromosome_equivalences = g.rename_features_from_dic(rename_map=chromosome_rename_map)
-
-    if verbose:
-        quiet = False
 
     if remove_scaffolds:
         g.remove_scaffolds(remove_00=remove_chr00)
@@ -190,20 +209,23 @@ def main(
 
 
     if output_file:
+        stem, known_ext = strip_bio_extension(output_file)
+        clean_ext = known_ext[:-3] if known_ext.lower().endswith(".gz") else known_ext
+        is_fasta_ext = known_ext.lower() in FASTA_EXTENSIONS
+        is_annot_ext = known_ext.lower() in ANNOT_EXTENSIONS
+
         if not output_genome_file:
-            if not annotation_file or output_file.lower().endswith((".fa", ".fasta", ".fna")):
-                output_genome_file = output_file
+            if is_fasta_ext:
+                output_genome_file = f"{stem}{clean_ext}"
+            elif not annotation_file:
+                output_genome_file = f"{stem}.fasta"
             else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".fasta"
-                output_genome_file = f"{stem}_tidy{ext}"
+                output_genome_file = f"{stem}_tidy.fasta"
         if not output_annot_file and annotation_file:
-            if output_file.lower().endswith((".gff", ".gff3", ".gtf")):
-                output_annot_file = output_file
+            if is_annot_ext:
+                output_annot_file = f"{stem}{clean_ext}"
             else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".gff3"
-                output_annot_file = f"{stem}_matching_genome_tidy{ext}"
+                output_annot_file = f"{stem}_matching_genome_tidy.gff3"
 
     if not output_genome_file:
         output_genome_file = "{genome-name}_tidy.fasta"
@@ -216,15 +238,15 @@ def main(
     if "{annotation-name}" in output_annot_file:
         output_annot_file = output_annot_file.replace("{annotation-name}", annotation_name)
 
-    g.export(output_dir = output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description)
+    g.export(output_dir=output_dir, filename=output_genome_file, subfolder=subfolder, keep_description=keep_description, quiet=quiet)
 
     if annotation_file:
         if rename_map != "":
             a.rename_chromosomes(equivalences=chromosome_equivalences)
         extra_chrs = set(a.chrs.keys()) - set(g.scaffolds.keys())
         if extra_chrs:
-            a.remove_chromosomes(extra_chrs)
-        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, skip_atypical_fts=clean_features)
+            a.remove_chromosomes(extra_chrs, quiet=quiet)
+        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, UTRs=True, quiet=quiet, skip_atypical_fts=clean_features)
 
 
 if __name__ == "__main__":

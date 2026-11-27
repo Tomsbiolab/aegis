@@ -10,8 +10,6 @@ if TYPE_CHECKING:
 
 import copy
 
-from .utils.misc import count_occurrences
-
 class FeatureAttributes():
     __slots__ = ('names', 'symbols', 'aliases', 'descriptors', 'keys', 'misc', 'order')
 
@@ -120,7 +118,13 @@ class FeatureQuality():
         self.potential_alt_transcript_group = None
 
     def calculate_masking(self):
-        self.masked_fraction = round(((count_occurrences(self._feature.hard_seq, "X") + (count_occurrences(self._feature.hard_seq, "N"))) / self._feature.size), 2)
+        hard_seq = self._feature.hard_seq
+        if hard_seq and self._feature.size > 0:
+            seq_upper = hard_seq.upper()
+            masked_count = seq_upper.count("X") + seq_upper.count("N")
+            self.masked_fraction = round(masked_count / self._feature.size, 2)
+        else:
+            self.masked_fraction = 0
 
     def calculate_gc_content(self):
         if self._feature.seq:

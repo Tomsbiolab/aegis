@@ -259,6 +259,14 @@ class TestCDS:
         cds.rename(base_id="t1", base_gene_id="g1", count=1, cds_segment_ids=True)
         assert [cs.id for cs in cds.CDS_segments] == ["t1_CDS001_1", "t1_CDS001_2"]
 
+    def test_rename_unchanged_id_does_not_mark_renamed(self, make_CDS, make_CDS_segment):
+        seg = make_CDS_segment("t1_CDS001", start=100, end=300)
+        cds = make_CDS(segments=[seg], feature_id="t1_CDS001")
+        cds.main = True
+        cds.rename(base_id="t1", base_gene_id="g1", count=1)
+        assert cds.id == "t1_CDS001"
+        assert cds.renamed is False
+
     def test_translation_attributes_read_from_segments(self, make_CDS, make_CDS_segment):
         attributes = {"transl_table": "2", "exception": "ribosomal slippage", "Note": "x"}
         segments = [

@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation, read_file_with_fallback
-from .utils import IO_PANEL, EXEC_PANEL, PRUNE_PANEL
+from .utils import IO_PANEL, EXEC_PANEL, PRUNE_PANEL, ANNOT_EXTENSIONS, resolve_bio_name
 
 features = ["gene", "transcript"]
 
@@ -85,8 +85,7 @@ def main(
     if feature_type not in features:
         raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     subfolder = False
 
@@ -113,10 +112,10 @@ def main(
 
     if keep:
         if feature_type == "gene":
-            to_remove = set(annotation.genes.keys()) - input_ids
+            to_remove = set(annotation.all_gene_ids.keys()) - input_ids
             annotation.remove_genes(to_remove=to_remove, override_rescue=True, quiet=quiet)
         else:
-            to_remove = set(annotation.transcripts.keys()) - input_ids
+            to_remove = set(annotation.all_transcript_ids.keys()) - input_ids
             annotation.remove_transcripts(to_remove=to_remove, remove_genes_accordingly=True, quiet=quiet)
     else:
         if feature_type == "gene":
@@ -130,7 +129,7 @@ def main(
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
 
-    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 
 if __name__ == "__main__":

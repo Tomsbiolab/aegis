@@ -1,3 +1,4 @@
+import csv
 import typer
 import os
 import re
@@ -12,10 +13,51 @@ from .utils import (
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
     PROMOTER_PANEL,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
     detect_file_type,
+    resolve_bio_name,
 )
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+def _read_gene_list(path: str, header: bool = False) -> list[str]:
+    """Read gene IDs from the first column of an Excel, TSV, CSV, or plain text file."""
+    if path.lower().endswith((".xlsx", ".xls")):
+        df = pd.read_excel(path, header=0 if header else None, dtype=str)
+        df = df.fillna("")
+        return [g.strip() for g in df.iloc[:, 0].tolist() if g.strip()]
+
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        raw_lines = [line.rstrip("\r\n") for line in handle if line.strip()]
+
+    if header and raw_lines:
+        raw_lines = raw_lines[1:]
+    if not raw_lines:
+        return []
+
+    delimiter = None
+    for candidate in ("\t", ",", ";"):
+        if any(candidate in line for line in raw_lines):
+            delimiter = candidate
+            break
+
+    genes: list[str] = []
+    if delimiter is not None:
+        for row in csv.reader(raw_lines, delimiter=delimiter):
+            if row:
+                gene_id = row[0].strip()
+                if gene_id:
+                    genes.append(gene_id)
+    else:
+        for line in raw_lines:
+            token = line.split()[0].strip()
+            if len(token) >= 2 and token[0] == '"' and token[-1] == '"':
+                token = token[1:-1].strip()
+            if token:
+                genes.append(token)
+    return genes
 
 @app.command()
 def main(
@@ -96,7 +138,7 @@ def main(
         rich_help_panel=IO_PANEL,
     )] = "./aegis_output/",
     output_file: Annotated[str, typer.Option(
-        "-o", "--output-file", help="Custom output filename.",
+        "-o", "--output-file", help="Custom output filename or prefix (derived random/background tables and PDF plots are named alongside it without overwriting).",
         rich_help_panel=IO_PANEL,
     )] = "",
 
@@ -148,22 +190,12 @@ def main(
         else:
             final_motif_len = len(motif_in)
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-
-    if genome_name == "{genome-file}":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
+    genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
 
     subfolder = False
 
-    if genelist.endswith(".xlsx"):
-        df = pd.read_excel(genelist, header=0 if header else None, dtype=str)
-    else:
-        df = pd.read_csv(genelist, sep=None, engine="python", header=0 if header else None, dtype=str)
-
-    df = df.fillna("")
-    genes = df.iloc[:, 0].tolist()
-    genes = [gene for gene in genes if gene != ""]
+    genes = _read_gene_list(genelist, header=header)
 
     genome = Genome(
         name=genome_name,

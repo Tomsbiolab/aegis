@@ -488,8 +488,9 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
             if line.startswith('##FASTA') or line.startswith('>'):
                 break
             if line.startswith('#'):
-                if not line.startswith('##'):
-                    comments.append(line)
+                stripped = line.rstrip('\r\n')
+                if not stripped.startswith('##gff-version') and stripped != '###':
+                    comments.append(stripped + '\n')
                 continue
 
             parts = line.rstrip('\r\n').strip(' ').split('\t')
@@ -519,10 +520,10 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                     # e.g. AUGUSTUS/TSEBRA 'anno1.g20064.t1': the transcript's own ID; its gene_id is taken
                     # from the subfeatures that name it (below), not made equal to the transcript ID
                     attributes = {'transcript_id': bare_val}
+                elif feature in default_features["gene"]:
+                    attributes = {'gene_id': bare_val}
                 else:
-                    attributes['gene_id'] = bare_val
-                    if feature not in default_features["gene"]:
-                        attributes['transcript_id'] = bare_val
+                    attributes = {'gene_id': bare_val, 'transcript_id': bare_val}
                     
             start_int = int(start)
             end_int = int(end)
@@ -610,20 +611,21 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
         outfile.write("##gff-version 3\n")
 
         for c in comments:
-            outfile.write(f"#{c}")
+            outfile.write(c)
 
         def write_unnamed(key):
             for parts, attributes, feature in unnamed_after.get(key, ()):
                 outfile.write("\t".join(parts[:8] + [format_gff3_attributes(attributes, feature)]) + '\n')
 
         for i, (parts, attributes) in enumerate(explicit_gene_lines):
+            gene_feature_type = parts[2]
             gene_attrs = {'gene_id': attributes['gene_id']}
             if 'gene_name' in attributes:
                 gene_attrs['gene_name'] = attributes['gene_name']
             if 'gene_biotype' in attributes:
                 gene_attrs['gene_biotype'] = attributes['gene_biotype']
-            gene_attr_str = format_gff3_attributes(gene_attrs, 'gene')
-            outfile.write("\t".join([parts[0], parts[1], 'gene', parts[3], parts[4],
+            gene_attr_str = format_gff3_attributes(gene_attrs, gene_feature_type)
+            outfile.write("\t".join([parts[0], parts[1], gene_feature_type, parts[3], parts[4],
                                      parts[5], parts[6], parts[7], gene_attr_str]) + '\n')
             write_unnamed(('gene', i))
 
@@ -648,10 +650,10 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                 inferred_gene = inferred_transcripts.get(attributes['transcript_id'], {}).get('gene_id')
                 if inferred_gene:
                     tx_attrs['gene_id'] = inferred_gene
-            tx_feature_type = 'transcript'
-            if 'transcript_biotype' in attributes:
-                if 'RNA' in attributes['transcript_biotype']:
-                    tx_feature_type = attributes['transcript_biotype']
+            tx_feature_type = parts[2]
+            biotype = attributes.get('transcript_biotype')
+            if tx_feature_type == 'transcript' and biotype and 'RNA' in biotype and biotype in default_features["transcript"]:
+                tx_feature_type = biotype
             tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
             outfile.write("\t".join([parts[0], parts[1], tx_feature_type,
                                      parts[3], parts[4], parts[5], parts[6],
@@ -673,33 +675,39 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
             seen_transcripts.add(t_id)
 
         subfeature_counters: dict[tuple[str, str], int] = {}
+        subfeature_skip_keys = {'gene_id', 'transcript_id', 'exon_id', 'exon_number', 'gene_name', 'transcript_name'}
 
         for parts, attributes, feature in subfeature_lines:
             transcript_id = attributes.get('transcript_id', '')
 
-            gff3_attrs = []
-
             if transcript_id:
-                key = (transcript_id, feature)
-                subfeature_counters[key] = subfeature_counters.get(key, 0) + 1
-                count = subfeature_counters[key]
-                feature_id = f"{transcript_id}_{feature}{count}"
-                gff3_attrs.append(f"ID={feature_id}")
-                gff3_attrs.append(f"Parent={transcript_id}")
+                if feature in default_features["CDS"]:
+                    feature_id = f"{transcript_id}_CDS1"
+                else:
+                    key = (transcript_id, feature)
+                    subfeature_counters[key] = subfeature_counters.get(key, 0) + 1
+                    count = subfeature_counters[key]
+                    feature_id = f"{transcript_id}_{feature}{count}"
+                escaped_tid = transcript_id.replace(";", "%3B")
+                gff3_attrs = [f"ID={feature_id.replace(';', '%3B')}", f"Parent={escaped_tid}"]
+                for key_name, value in attributes.items():
+                    if key_name not in subfeature_skip_keys and key_name.lower() not in ('id', 'parent'):
+                        gff3_attrs.append(f"{key_name}={gff3_escape(value)}")
+                gff3_attr_string = ";".join(gff3_attrs)
             else:
                 gff3_attr_string = format_gff3_attributes(attributes, feature)
-                outfile.write("\t".join([parts[0], parts[1], feature,
-                                         parts[3], parts[4], parts[5], parts[6],
-                                         parts[7], gff3_attr_string]) + '\n')
-                continue
 
-            gff3_attr_string = ";".join(gff3_attrs)
             outfile.write("\t".join([parts[0], parts[1], feature,
                                      parts[3], parts[4], parts[5], parts[6],
                                      parts[7], gff3_attr_string]) + '\n')
 
     if not quiet:
         print(f"Successfully converted {gtf_file} to a gff format")
+
+_QUOTED_STR_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_GFF3_ATTR_RE = re.compile(r'(?:^|;)\s*[\w.-]+=')
+_GTF_ATTR_RE = re.compile(r'(?:^|;)\s*[\w.-]+\s+(?:"(?:[^"\\]|\\.)*"|[^\s;]+)')
+
 
 def detect_file_format(file_path, encoding, lines_to_check=20):
     """
@@ -733,11 +741,12 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
 
                 if len(parts) == 9:
                     attributes = parts[8].strip()
+                    unquoted = _QUOTED_STR_RE.sub('""', attributes)
 
-                    if re.search(r'\b\w+=', attributes):
+                    if _GFF3_ATTR_RE.search(unquoted):
                         return 'gff3'
 
-                    if re.search(r'\b\w+\s+(?:"[^"]+"|[^\s;]+)', attributes):
+                    if _GTF_ATTR_RE.search(attributes):
                         return 'gtf'
 
                     # A bare value (e.g. AUGUSTUS gene lines 'g2') fits both formats: let the next lines decide

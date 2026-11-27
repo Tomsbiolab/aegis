@@ -4,7 +4,8 @@ from typing import Optional, List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL, split_callback
+from ..conf import RNA_CLASSES
+from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL, ANNOT_EXTENSIONS, split_callback, resolve_bio_name
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -113,8 +114,14 @@ def genes(
     if length_type not in ("exonic", "coding-exonic", "main-transcript", "span"):
         raise typer.BadParameter(f"Invalid --length-type '{length_type}'. Choose from: exonic, coding-exonic, main-transcript, span.")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    if coding_only and non_coding_only:
+        raise typer.BadParameter("Cannot specify both --coding-only and --non-coding-only.")
+
+    for biotype in biotypes:
+        if biotype not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid RNA class: '{biotype}'. Choose from: {RNA_CLASSES}")
+
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)
@@ -250,8 +257,14 @@ def transcripts(
         raise typer.BadParameter("Missing required annotation file. Provide as positional argument or via -a/--annotation.")
     annotation_file = annot_in
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    if coding_only and non_coding_only:
+        raise typer.BadParameter("Cannot specify both --coding-only and --non-coding-only.")
+
+    for biotype in biotypes:
+        if biotype not in RNA_CLASSES:
+            raise typer.BadParameter(f"Invalid RNA class: '{biotype}'. Choose from: {RNA_CLASSES}")
+
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
     
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)

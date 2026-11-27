@@ -102,7 +102,7 @@ class AnnotationStats(AnnotationComponent):
         self.data = {}
 
     def calculate_transcript_masking(self):
-        if self._annot.hard_masked_genome is not None or self._annot.genome is not None:
+        if self._annot.hard_masked_genome is not None:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     g.quality.calculate_masking()
@@ -161,7 +161,10 @@ class AnnotationStats(AnnotationComponent):
                 intervals = []
                 for g in genes.values():
                     if g.start is not None and g.end is not None:
-                        intervals.append((max(1, g.start), min(size, g.end)))
+                        s = max(1, g.start)
+                        e = min(size, g.end)
+                        if s <= e:
+                            intervals.append((s, e))
                 intervals.sort()
                 merged = []
                 for s, e in intervals:
@@ -213,7 +216,7 @@ class AnnotationStats(AnnotationComponent):
 
         return sorted(contig_dict.values(), key=sort_key)
 
-    def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,
+    def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, plots:bool=True, max_x:int|None=None, quiet:bool=True,
         #deprecated_arguments
         custom_path:str=""):
 
@@ -292,6 +295,11 @@ class AnnotationStats(AnnotationComponent):
                 if _shortest_gene is None or g.size < _shortest_gene:
                     _shortest_gene = g.size
 
+                if g.coding:
+                    self.data["coding_genes"].append(g.id)
+                else:
+                    self.data["noncoding_genes"].append(g.id)
+
                 for t in g.transcripts.values():
                     if t.main:
                         if t.introns:
@@ -362,9 +370,6 @@ class AnnotationStats(AnnotationComponent):
                                                         self.data["introns_in_3utr"] += 1
                                     if self._annot.genome is not None and c.protein is not None:
                                         self.data["mean_protein_size"].append(c.protein.size)
-                            self.data["coding_genes"].append(g.id)
-                        else:
-                            self.data["noncoding_genes"].append(g.id)
 
                         for e in t.exons:
                             self.data["mean_exon_size"].append(e.size)
@@ -410,7 +415,7 @@ class AnnotationStats(AnnotationComponent):
         self.data["phase_mismatches"]     = qc["phase_mismatches"]
 
         # anything with mean will be also plotted as distribution plots:
-        if export:
+        if export and plots:
             for key in self.data:
                 if "mean" in key:
                     tag = key.split("mean_")[1]
@@ -447,7 +452,7 @@ class AnnotationStats(AnnotationComponent):
                                         intron_stats["other_intron_seqs"] += 1
             self.data["intron_composition"] = list(self.data["intron_composition"])
 
-            if export:
+            if export and plots:
                 labels = list(intron_stats.keys())
                 mod_labels = []
                 for l in labels:

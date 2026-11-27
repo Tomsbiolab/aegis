@@ -4,7 +4,7 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback, IO_PANEL, EXEC_PANEL, FILTER_PANEL
+from .utils import split_callback, resolve_bio_name, ANNOT_EXTENSIONS, IO_PANEL, EXEC_PANEL, FILTER_PANEL
 from ..conf import RNA_CLASSES
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -128,8 +128,7 @@ def main(
         if rna_class not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid RNA class: '{rna_class}'. Choose from: {RNA_CLASSES}")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     os.makedirs(output_dir, exist_ok=True)
     subfolder = False

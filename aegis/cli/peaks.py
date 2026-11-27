@@ -5,7 +5,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..peaks import assign_peaks_to_genes, summarise_target_genes, read_peaks, PEAK_FORMATS, ChromosomeMismatchError
-from .utils import FILTER_PANEL, IO_PANEL, EXEC_PANEL, PEAKS_PANEL
+from .utils import FILTER_PANEL, IO_PANEL, EXEC_PANEL, PEAKS_PANEL, ANNOT_EXTENSIONS, resolve_bio_name
 
 _ANNOTATION_EXTS = (".gff", ".gff3", ".gtf", ".gff.gz", ".gff3.gz", ".gtf.gz")
 
@@ -153,8 +153,7 @@ def main(
     if max_distance is not None and max_distance < 0:
         raise typer.BadParameter("--max-distance must be >= 0.")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annot_in))[0]
+    annotation_name = resolve_bio_name(annot_in, annotation_name, extensions=ANNOT_EXTENSIONS)
     if peaks_name == "{peaks-file}":
         base = os.path.basename(peaks_in)
         if base.endswith(".gz"):

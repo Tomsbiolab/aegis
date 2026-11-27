@@ -4,7 +4,15 @@ from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import MERGE_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL, split_callback
+from .utils import (
+    MERGE_PANEL,
+    SUBFEATURE_PANEL,
+    IO_PANEL,
+    EXEC_PANEL,
+    ANNOT_EXTENSIONS,
+    split_callback,
+    resolve_unique_names,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -32,11 +40,6 @@ def main(
     )] = 100,
 
     # 2. Subfeature & Model Options
-    skip_renaming: Annotated[bool, typer.Option(
-        "--skip-renaming",
-        help="Skip renaming of subgene features (transcript, CDS, exon, UTRs).",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=SUBFEATURE_PANEL,
@@ -97,18 +100,21 @@ def main(
 
     subfolder = False
 
+    resolved_names = resolve_unique_names(
+        annot_files,
+        provided_names=annotation_names,
+        extensions=ANNOT_EXTENSIONS,
+        kind="annotation",
+        quiet=quiet,
+    )
+
     if output_file == "{annotation-names}.gff3":
         output_file = None  # type: ignore
     elif "{annotation-names}" in output_file:
-        names_tag = "_".join(annotation_names) if annotation_names else "merged"
+        names_tag = "_".join(resolved_names)
         output_file = output_file.replace("{annotation-names}", names_tag)
 
-    if skip_renaming:
-        features = []
-    else:
-        features = ["transcript", "CDS", "exon", "UTR"]
-
-    name_1 = annotation_names[0] if len(annotation_names) > 0 else os.path.splitext(os.path.basename(annot_files[0]))[0]
+    name_1 = resolved_names[0]
     if not quiet:
         print(f"Loading base annotation from {annot_files[0]}...")
     base_annotation = Annotation(
@@ -120,8 +126,7 @@ def main(
         coordinate_polishing="none", skip_atypical_features=clean_features
     )
 
-    for i, annotation_file in enumerate(annot_files[1:], start=1):
-        name_i = annotation_names[i] if len(annotation_names) > i else os.path.splitext(os.path.basename(annotation_file))[0]
+    for annotation_file, name_i in zip(annot_files[1:], resolved_names[1:]):
         if not quiet:
             print(f"Loading annotation to merge from {annotation_file}...")
         merge_annotation = Annotation(
@@ -140,12 +145,13 @@ def main(
             max_gene_overlap=max_gene_overlap,
             max_exon_overlap=max_exon_overlap,
             max_cds_overlap=max_cds_overlap,
-            features_to_rename=tuple(features),
+            features_to_rename=("transcript", "CDS", "exon", "UTR"),
+            quiet=quiet,
         )
 
     if not quiet:
         print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export.gff(output_dir=output_dir, quiet=quiet, subfolder=subfolder, filename=output_file, skip_atypical_fts=clean_features)
+    base_annotation.export.gff(output_dir=output_dir, UTRs=True, quiet=quiet, subfolder=subfolder, filename=output_file, skip_atypical_fts=clean_features)
 
     if not quiet:
         print("Done.")

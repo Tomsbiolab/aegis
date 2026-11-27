@@ -179,8 +179,6 @@ class CDS(Feature):
             rename_cs = True
 
         if rename:
-            self.renamed = True
-
             if keep_numbering and self.id_number != None:
                 self.id = f"{base_id}{sep}CDS{self.id_number:0{digits}d}"
             else:

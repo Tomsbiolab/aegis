@@ -9,7 +9,17 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
-from .utils import split_callback, SUBSET_PANEL, FASTA_HEADER_PANEL, IO_PANEL, EXEC_PANEL
+from .utils import (
+    split_callback,
+    strip_bio_extension,
+    resolve_bio_name,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
+    SUBSET_PANEL,
+    FASTA_HEADER_PANEL,
+    IO_PANEL,
+    EXEC_PANEL,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
@@ -155,29 +165,31 @@ def main(
 
     chosen_chromosomes_set = set(chosen_chromosomes)
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
-    if genome_name == "{genome-file}" and genome_file != "":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
-    elif genome_file == "":
+    if genome_file != "":
+        genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
+    else:
         genome_name = "genome"
 
     if output_file:
+        stem, known_ext = strip_bio_extension(output_file)
+        clean_ext = known_ext[:-3] if known_ext.lower().endswith(".gz") else known_ext
+        is_annot_ext = known_ext.lower() in ANNOT_EXTENSIONS
+        is_fasta_ext = known_ext.lower() in FASTA_EXTENSIONS
+
         if not output_annot_file:
-            if not genome_file or output_file.lower().endswith((".gff", ".gff3", ".gtf")):
-                output_annot_file = output_file
+            if is_annot_ext:
+                output_annot_file = f"{stem}{clean_ext}"
+            elif not genome_file:
+                output_annot_file = f"{stem}.gff3"
             else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".gff3"
-                output_annot_file = f"{stem}_subset{ext}"
+                output_annot_file = f"{stem}_subset.gff3"
         if not output_genome_file and genome_file:
-            if output_file.lower().endswith((".fa", ".fasta", ".fna")):
-                output_genome_file = output_file
+            if is_fasta_ext:
+                output_genome_file = f"{stem}{clean_ext}"
             else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".fasta"
-                output_genome_file = f"{stem}_subset{ext}"
+                output_genome_file = f"{stem}_subset.fasta"
 
     if not output_annot_file:
         output_annot_file = "{annotation-name}_subset.gff3"
@@ -282,7 +294,7 @@ def main(
             quiet=quiet,
         )
 
-    a.export.gff(output_dir=output_dir, filename=output_annot_file, subfolder=False, skip_atypical_fts=clean_features)
+    a.export.gff(output_dir=output_dir, filename=output_annot_file, UTRs=True, subfolder=False, skip_atypical_fts=clean_features)
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)

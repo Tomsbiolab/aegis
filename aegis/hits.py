@@ -4,6 +4,7 @@ class OverlapHit():
     full_CDS_overlaps: int
     full_UTR_overlaps: int
     score: int
+    antiscore: int | None
     id: str
     origin: str
     extra_copy: bool
@@ -21,7 +22,7 @@ class OverlapHit():
     min_gene_percent: float
     min_exon_percent: float | None
     min_CDS_percent: float | None
-    min_protein_percent: float
+    min_protein_percent: float | None
     target_synteny_conserved: bool
 
     __slots__ = (
@@ -40,6 +41,7 @@ class OverlapHit():
         self.full_CDS_overlaps = 0
         self.full_UTR_overlaps = 0
         self.score = 1
+        self.antiscore = None
         self.id = ID
         self.origin = origin
         self.extra_copy = target_copy
@@ -88,8 +90,10 @@ class OverlapHit():
         else:
             self.min_CDS_percent = None
 
-        if self.protein_query_percent != None:
+        if self.protein_query_percent is not None and self.protein_target_percent is not None:
             self.min_protein_percent = min(self.protein_query_percent, self.protein_target_percent)
+        else:
+            self.min_protein_percent = None
         self.target_synteny_conserved = target_synteny_conserved
         
         """

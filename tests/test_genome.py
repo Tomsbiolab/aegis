@@ -140,6 +140,25 @@ class TestScaffold:
         s.update(new_name="chr01")
         assert s.description == "chr10 something"
 
+    @pytest.mark.parametrize("name", ["scaffold_12", "ctg100", "contig_42"])
+    def test_renamed_two_or_three_digit_scaffolds_stay_scaffolds(self, name):
+        s = Scaffold(name, "ATGC", original_name="GWH00000001")
+        assert s.renamed is True
+        assert s.chromosome is False
+
+    def test_update_resets_stale_flags_on_rename(self):
+        s = Scaffold("Ch0", "ATGC")
+        assert (s.chromosome, s.unknown_chromosome) == (True, False)
+        s.update(new_name="chr00")
+        assert (s.chromosome, s.unknown_chromosome, s.dapfit, s.renamed) == (False, True, True, True)
+
+        s2 = Scaffold("chr1", "ATGC")
+        assert (s2.chromosome, s2.dapfit) == (True, True)
+        s2.update(new_name="scaffold_12")
+        assert (s2.chromosome, s2.dapfit, s2.renamed) == (False, False, True)
+        s2.update(new_name="chr1")
+        assert (s2.chromosome, s2.dapfit, s2.renamed) == (True, True, False)
+
 
 # ============================================================
 # Genome
@@ -211,6 +230,11 @@ class TestGenome:
         g_tuple = Genome("test_genome", sample_fasta_file, quiet=True)
         g_tuple.subset(chosen_features=("chr1",))
         assert "chr1" in g_tuple.scaffolds
+
+    def test_subset_cap_exceeding_scaffolds_quiet(self, sample_fasta_file):
+        g = Genome("test_genome", sample_fasta_file, quiet=True)
+        g.subset(cap=10, quiet=True)
+        assert set(g.scaffolds) == {"chr1", "chr2"}
 
     def test_copy(self, sample_fasta_file):
         g = Genome("test_genome", sample_fasta_file, quiet=True)
@@ -471,6 +495,9 @@ class TestDapRenaming:
         assert equivalences["Ch0"] == "chr00"
         assert equivalences["chrUn"] == "chr00000001"
         assert len(g.scaffolds) == 3
+        assert g.scaffolds["chr00"].chromosome is True
+        assert g.scaffolds["chr00"].unknown_chromosome is False
+        assert g.get_stats()["num_scaffolds"] == 0
 
     def test_dapfit_genome_with_chr00_is_unchanged(self, tmp_path, capsys):
         fasta = self._write_fasta(tmp_path / "fit.fa", ["chr01", "chr02", "chr00"])
@@ -479,6 +506,13 @@ class TestDapRenaming:
         assert "already fit for DAP-Seq analysis" in capsys.readouterr().out
         assert list(g.scaffolds) == ["chr01", "chr02", "chr00"]
         assert g.suffix == "_scffree_dapfit_organellefree_chr00"
+
+    @pytest.mark.parametrize("name", ["chr1_1", "chr1r2", "chr-1"])
+    def test_genome_dapfit_rejects_non_digit_chr_names(self, tmp_path, name):
+        fasta = self._write_fasta(tmp_path / "bad.fa", [name])
+        g = Genome("bad", fasta, quiet=True)
+        assert g.scaffolds[name].dapfit is False
+        assert g.dapfit is False
 
     @pytest.mark.parametrize("fasta_text", [
         ">chr1 desc one\nAAAA\n>chr2\nCCCC\n>chr00\nGGGG\n>scf1 some scaffold\nTTTT\n>ChrC\nACGT\n",

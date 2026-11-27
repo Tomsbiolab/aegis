@@ -1,3 +1,4 @@
+import csv
 from typer.testing import CliRunner
 from aegis.cli.summary_genome import app
 
@@ -96,5 +97,59 @@ def test_cli_summary_genome_soft_masked(tmp_path):
     assert res_ref.exit_code == 0, f"Ref run failed: {res_ref.stdout}"
     assert "= ref (PN1)" in res_ref.stdout
     assert "*" not in res_ref.stdout  # no sequence difference marker
+
+
+def test_cli_summary_genome_duplicate_filenames_disambiguated(tmp_path):
+    """Duplicate genome basenames (e.g. v1/genome.fa vs v2/genome.fa) are disambiguated so pairing and Diff work."""
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+    g1 = tmp_path / "v1" / "genome.fa"
+    g2 = tmp_path / "v2" / "genome.fa"
+    g1.write_text(">chr1\nACGTACGT\n")
+    g2.write_text(">chr1\nACGTACGTACGTACGT\n")
+
+    out_tsv = tmp_path / "dup.tsv"
+    res = runner.invoke(app, [str(g1), str(g2), "-o", str(out_tsv), "-q"])
+    assert res.exit_code == 0, res.output
+    lines = out_tsv.read_text().splitlines()
+    assert lines[0] == "Feature\tgenome\tgenome_2\tDiff"
+    assert lines[1] == "chr1\t8\t16\t+8"
+
+
+def test_cli_summary_genome_duplicate_collision_with_existing_suffix(tmp_path):
+    """Disambiguation avoids colliding with a genome genuinely named genome_2."""
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+    g1 = tmp_path / "v1" / "genome.fa"
+    g2 = tmp_path / "v2" / "genome.fa"
+    g3 = tmp_path / "genome_2.fa"
+    g1.write_text(">chr1\nACGTACGT\n")
+    g2.write_text(">chr1\nACGTACGTACGT\n")
+    g3.write_text(">chr1\nACGTACGTACGTACGT\n")
+
+    out_tsv = tmp_path / "dup3.tsv"
+    res = runner.invoke(app, [str(g1), str(g2), str(g3), "-o", str(out_tsv), "-q"])
+    assert res.exit_code == 0, res.output
+    lines = out_tsv.read_text().splitlines()
+    assert lines[0] == "Feature\tgenome\tgenome_3\tgenome_2"
+    assert lines[1] == "chr1\t8\t12\t16"
+
+
+def test_cli_summary_genome_csv_quotes_commas(tmp_path):
+    """CSV export quotes cells containing commas (e.g. '= ref (PN1, seq diff)')."""
+    g1 = tmp_path / "ga.fa"
+    g2 = tmp_path / "gc.fa"
+    g1.write_text(">chr1\nACGTACGTACGT\n")
+    g2.write_text(">PN1\nACGTTTTTACGT\n")
+
+    out_csv = tmp_path / "summary.csv"
+    res = runner.invoke(app, [str(g1), str(g2), "-r", "-o", str(out_csv), "-q"])
+    assert res.exit_code == 0, res.output
+
+    with open(out_csv, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["Feature", "ga [Ref]", "gc"]
+    assert rows[1] == ["chr1", "12", "= ref (PN1, seq diff)"]
+    assert all(len(row) == 3 for row in rows)
 
 

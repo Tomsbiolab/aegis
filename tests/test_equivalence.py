@@ -180,6 +180,32 @@ class TestReciprocalOverlapEquivalences:
         assert eq.score == "9 (synteny)/8 (synteny)"
         assert (eq.aegis_synteny, eq.aegis_synteny_rev) == (True, True)
 
+    def test_native_gene_id_B_extra_copy_not_stripped(self, tmp_path):
+        from types import SimpleNamespace
+        from aegis.equivalence import Simple_annotation
+
+        # Native genes in Q and T happen to have extra_copy_number>=1 (gene_id_B_copy == "True")
+        # Only lifted gene_id_A should strip its synthetic _<copy> suffix
+        self.write(tmp_path / "liftoff__Q__to__T_overlaps.tsv", [
+            ["q_1_1", "t_1", "False", "False", "True", "100.0", "100.0", "100.0", "liftoff_Q", "T", "9", "True", "True"],
+        ])
+        self.write(tmp_path / "liftoff__T__to__Q_overlaps.tsv", [
+            ["t_1_1", "q_1", "False", "False", "True", "95.0", "95.0", "95.0", "liftoff_T", "Q", "8", "True", "True"],
+            ["t_2", "q_2", "False", "False", "True", "90.0", "90.0", "90.0", "liftoff_T", "Q", "7", "False", "True"],
+        ])
+        annot = Simple_annotation("Q", SimpleNamespace(all_gene_ids={"q_1": "chr1", "q_2": "chr1"}, target=False), "species1")
+        annot.add_reciprocal_overlap_equivalences(str(tmp_path), "Q", "T", "species2", quiet=True, synteny_present=False)
+
+        eq1 = annot.genes["q_1"].equivalences[0]
+        assert eq1.id == "t_1"
+        assert eq1.type == "rec_liftoff_aegis"
+        assert eq1.score == "9 (copies)/8 (copies)"
+
+        eq2 = annot.genes["q_2"].equivalences[0]
+        assert eq2.id == "t_2"
+        assert eq2.type == "rev_liftoff_aegis"
+        assert eq2.score == "7"
+
 
 class TestMergeScoreStrings:
     def test_identical_scores_are_kept(self):
@@ -240,3 +266,101 @@ class TestRBBHCoverage:
     def test_partial_rbbh_does_not_change_high(self):
         partial = make_equivalence("B", "rbbh", "evalue=1e-50/1e-40, coverage=90.0/20.0, identity=70.0/60.0")
         assert tier(partial, make_equivalence("B", "rec_liftoff_aegis", "7/7"), coverage_threshold=30)[0] == "high_confidence"
+
+
+class TestEquivalenceRanking:
+    def test_na_evalue_does_not_break_tiebreakers(self):
+        e_low = Equivalence("g_low", "fwd_liftoff_aegis [7]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+        e_high = Equivalence("g_high", "fwd_liftoff_aegis [8]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+        e_syn = Equivalence("g_syn", "fwd_liftoff_aegis [8 (synteny)]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+        e_finite = Equivalence("g_fin", "fwd_liftoff_aegis [7], rbbh [evalue=1e-10/1e-10, coverage=90/90, identity=90/90]", "annot2", "sp", "high_confidence", "1e-10", "top_reliable")
+
+        assert [e.id for e in sorted([e_low, e_high, e_syn, e_finite])] == ["g_fin", "g_syn", "g_high", "g_low"]
+        assert e_syn == Equivalence("g_syn2", "fwd_liftoff_aegis [8 (synteny)]", "annot2", "sp", "high_confidence", "NA", "top_reliable")
+
+    def test_missing_aegis_score_sorts_after_valid_scores(self):
+        e_no_ov = Equivalence("g_no_ov", "rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
+        e_with_ov = Equivalence("g_with_ov", "fwd_liftoff_aegis [9], rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
+        e_rec_ov = Equivalence("g_rec_ov", "rec_liftoff_aegis [9/8], rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
+
+        assert [e.id for e in sorted([e_no_ov, e_with_ov, e_rec_ov])] == ["g_rec_ov", "g_with_ov", "g_no_ov"]
+
+
+class TestBlastEquivalenceKeys:
+    HEADER = "\tquery_x\tsubject_x\tidentity_x\tcoverage_x\tqlength_x\tslength_x\talength_x\tbitscore_x\tE-value_x\tnorm_bitscore_x\tqcov_x\tscov_x\tquery_y\tsubject_y\tidentity_y\tcoverage_y\tqlength_y\tslength_y\talength_y\tbitscore_y\tE-value_y\tnorm_bitscore_y\tqcov_y\tscov_y\n"
+
+    def test_directed_tuple_keys_avoid_shared_and_hyphen_collisions(self, tmp_path):
+        from types import SimpleNamespace
+        from aegis.equivalence import Simple_annotation
+
+        (tmp_path / "rbbh_Q__to__T.txt").write_text(
+            self.HEADER
+            + "0\tg1\tg2\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\tg2\tg1\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\n"
+            + "1\ta-b\tc\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\tc\ta-b\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\n"
+        )
+        (tmp_path / "rbh_Q__to__T.txt").write_text(
+            self.HEADER
+            + "0\tg1\tg2\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\tg2\tg1\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\n"
+            + "1\tg2\tg1\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\tg1\tg2\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\n"
+            + "2\ta\tb-c\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\tb-c\ta\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\n"
+        )
+        (tmp_path / "single_Q__to__T.txt").write_text("g1\tg2\t90\t90\t100\t100\t90\t200\t1e-50\n")
+        (tmp_path / "single_T__to__Q.txt").write_text("g3\tg2\t70\t70\t100\t100\t70\t120\t1e-20\n")
+
+        annot = Simple_annotation("Q", SimpleNamespace(all_gene_ids={"g1": "c1", "g2": "c1", "a-b": "c1", "a": "c1"}, target=False), "sp1")
+        annot.add_blast_equivalences(str(tmp_path), "Q", "T", "sp2", quiet=True)
+
+        assert [(e.id, e.type) for e in annot.genes["g1"].equivalences] == [("g2", "rbbh")]
+        assert [(e.id, e.type) for e in annot.genes["g2"].equivalences] == [("g1", "rbh"), ("g3", "rev_blastp")]
+        assert [(e.id, e.type) for e in annot.genes["a-b"].equivalences] == [("c", "rbbh")]
+        assert [(e.id, e.type) for e in annot.genes["a"].equivalences] == [("b-c", "rbh")]
+
+
+class TestPairwiseOrthologySyntenyStripTags:
+    def test_synteny_conserved_when_strip_gene_tags_enabled(self, tmp_path):
+        from aegis.equivalence import pairwise_orthology
+        from aegis.genome import Genome
+
+        fa_path = tmp_path / "g.fa"
+        fa_path.write_text(">chr1\n" + "A" * 5000 + "\n")
+        g1_path = tmp_path / "g1.fa"
+        g2_path = tmp_path / "g2.fa"
+        g1_path.write_text(fa_path.read_text())
+        g2_path.write_text(fa_path.read_text())
+
+        gff_a1 = tmp_path / "a1.gff3"
+        gff_a1.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t100\t500\t.\t+\t.\tID=gene-G1\n"
+            "chr1\taegis\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=gene-G1\n"
+            "chr1\taegis\texon\t100\t500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tgene\t1000\t1500\t.\t+\t.\tID=gene-G2\n"
+            "chr1\taegis\tmRNA\t1000\t1500\t.\t+\t.\tID=t2;Parent=gene-G2\n"
+            "chr1\taegis\texon\t1000\t1500\t.\t+\t.\tID=e2;Parent=t2\n"
+        )
+        gff_a2 = tmp_path / "a2.gff3"
+        gff_a2.write_text(gff_a1.read_text().replace("gene-G", "gene-H"))
+
+        work = tmp_path / "work"
+        liftoff_pair = work / "liftoff" / "A1__to__A2"
+        liftoff_pair.mkdir(parents=True)
+        # Pre-seed liftoff output with stripped IDs (as Liftoff produces from stripped GFF)
+        (liftoff_pair / "liftoff__A1__to__A2.gff").write_text(gff_a1.read_text().replace("gene-", ""))
+
+        g1 = Genome(name="G1", genome_file_path=str(g1_path), quiet=True)
+        g2 = Genome(name="G2", genome_file_path=str(g2_path), quiet=True)
+
+        pairwise_orthology(
+            annot1_name="A1", annot2_name="A2",
+            annot1_file=str(gff_a1), annot2_file=str(gff_a2),
+            genome1=g1, genome2=g2,
+            working_directory=work, num_threads=1, types="",
+            synteny=True, strip_gene_tags=True,
+            skip_liftoff=False, skip_lifton=True, skip_mcscan=True,
+            skip_blasts=True, skip_orthofinder=True, quiet=True,
+        )
+
+        out_tsv = work / "liftoff" / "liftoff__A1__to__A2_overlaps.tsv"
+        text = out_tsv.read_text()
+        assert "G1\tH1\tTrue\t" in text
+        assert "G2\tH2\tTrue\t" in text

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .genome import Genome
 
+import math
 import pandas as pd
 import time
 import os
@@ -24,11 +25,14 @@ def pairwise_orthology(annot1_name:str, annot2_name: str, annot1_file: str, anno
     annot1: Annotation
     annot2: Annotation
 
-    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
-    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=synteny, skip_atypical_features=True)
+    annot1 = Annotation(annot_file_path=annot1_file, genome=genome1, name=annot1_name, quiet=quiet, define_synteny=False, skip_atypical_features=True)
+    annot2 = Annotation(annot_file_path=annot2_file, genome=genome2, name=annot2_name, quiet=quiet, define_synteny=False, skip_atypical_features=True)
     if strip_gene_tags:
         annot1.rename_ids(strip_gene_tag=True, quiet=quiet)
         annot2.rename_ids(strip_gene_tag=True, quiet=quiet)
+    if synteny:
+        annot1.define_synteny(quiet=quiet)
+        annot2.define_synteny(quiet=quiet)
 
     liftless_overlaps_dir = working_directory / "liftless_overlaps"
     liftoff_dir = working_directory / "liftoff"
@@ -480,78 +484,22 @@ class Equivalence():
                             self.aegis_synteny_rev = False
 
     def _rank(self):
+        target_rank = self.target_annotation.lower()
         if self.reliability == "NA":
-            target_rank = self.target_annotation.lower()
-            type_rank = self.preferred_type_order.index(self.type) if self.type in self.preferred_type_order else float('inf')
-            evalue = self.evalue if isinstance(self.evalue, float) else float('inf')
-            aegis_score = self.aegis_score if self.aegis_score != None else 100
-            aegis_score_rev = self.aegis_score_rev if self.aegis_score_rev != None else 100
-
-            if self.aegis_synteny == None:
-                synteny = 3
-            elif self.aegis_synteny:
-                synteny = 1
-            else:
-                synteny = 2
-
-            if self.aegis_synteny_rev == None:
-                synteny_rev = 3
-            elif self.aegis_synteny_rev:
-                synteny_rev = 1
-            else:
-                synteny_rev = 2
-
-            if self.aegis_copies == None:
-                copies = 3
-            elif self.aegis_copies:
-                copies = 1
-            else:
-                copies = 2
-
-            if self.aegis_copies_rev == None:
-                copies_rev = 3
-            elif self.aegis_copies_rev:
-                copies_rev = 1
-            else:
-                copies_rev = 2
-
-            return (target_rank, type_rank, evalue, -aegis_score, -aegis_score_rev, synteny, synteny_rev, copies, copies_rev)
+            primary_rank = self.preferred_type_order.index(self.type) if self.type in self.preferred_type_order else float('inf')
         else:
-            target_rank = self.target_annotation.lower()
-            reliability_rank = self.reliability_order.index(self.reliability) if self.reliability in self.reliability_order else float('inf')
-            evalue = self.evalue if isinstance(self.evalue, float) else float('inf')
-            aegis_score = self.aegis_score if self.aegis_score != None else 100
-            aegis_score_rev = self.aegis_score_rev if self.aegis_score_rev != None else 100
+            primary_rank = self.reliability_order.index(self.reliability) if self.reliability in self.reliability_order else float('inf')
 
-            if self.aegis_synteny == None:
-                synteny = 3
-            elif self.aegis_synteny:
-                synteny = 1
-            else:
-                synteny = 2
+        evalue = self.evalue if isinstance(self.evalue, float) and not math.isnan(self.evalue) else float('inf')
+        aegis_score = -self.aegis_score if self.aegis_score is not None else float('inf')
+        aegis_score_rev = -self.aegis_score_rev if self.aegis_score_rev is not None else float('inf')
 
-            if self.aegis_synteny_rev == None:
-                synteny_rev = 3
-            elif self.aegis_synteny_rev:
-                synteny_rev = 1
-            else:
-                synteny_rev = 2
+        synteny = 3 if self.aegis_synteny is None else (1 if self.aegis_synteny else 2)
+        synteny_rev = 3 if self.aegis_synteny_rev is None else (1 if self.aegis_synteny_rev else 2)
+        copies = 3 if self.aegis_copies is None else (1 if self.aegis_copies else 2)
+        copies_rev = 3 if self.aegis_copies_rev is None else (1 if self.aegis_copies_rev else 2)
 
-            if self.aegis_copies == None:
-                copies = 3
-            elif self.aegis_copies:
-                copies = 1
-            else:
-                copies = 2
-
-            if self.aegis_copies_rev == None:
-                copies_rev = 3
-            elif self.aegis_copies_rev:
-                copies_rev = 1
-            else:
-                copies_rev = 2
-            
-            return (target_rank, reliability_rank, evalue, -aegis_score, -aegis_score_rev, synteny, synteny_rev, copies, copies_rev)
+        return (target_rank, primary_rank, evalue, aegis_score, aegis_score_rev, synteny, synteny_rev, copies, copies_rev)
 
     def __lt__(self, other):
         return self._rank() < other._rank()
@@ -878,9 +826,7 @@ class Simple_annotation():
                     score += f", norm_bitscore={round(float(q_nb), 1)}/{round(float(t_nb), 1)}"
                     score += f", coverage={round(float(q_cov), 1)}/{round(float(t_cov), 1)}"
                     score += f", identity={round(float(q_id), 1)}/{round(float(t_id), 1)}"
-                    pair = sorted([gene_query, gene_target])
-                    pair = "-".join(pair)
-                    rbbh_hits.add(pair)
+                    rbbh_hits.add((gene_query, gene_target))
                     self.genes[gene_query].equivalences.append(
                         Equivalence(gene_target, "rbbh", target_annotation, species, score, q_ev)
                     )
@@ -907,8 +853,7 @@ class Simple_annotation():
                         score += f", norm_bitscore={round(float(q_nb), 1)}/{round(float(t_nb), 1)}"
                         score += f", coverage={round(float(q_cov), 1)}/{round(float(t_cov), 1)}"
                         score += f", identity={round(float(q_id), 1)}/{round(float(t_id), 1)}"
-                        pair = sorted([gene_query, gene_target])
-                        pair = "-".join(pair)
+                        pair = (gene_query, gene_target)
                         if pair not in rbbh_hits:
                             rbh_hits.add(pair)
                             self.genes[gene_query].equivalences.append(
@@ -939,8 +884,7 @@ class Simple_annotation():
                             score += f", norm_bitscore={norm_bitscore}"
                             score += f", coverage={round(float(qcov), 1)}"
                             score += f", identity={round(float(pident), 1)}"
-                            pair = sorted([q, s])
-                            pair = "-".join(pair)
+                            pair = (q, s)
                             if pair not in rbh_hits and pair not in rbbh_hits:
                                 self.genes[q].equivalences.append(Equivalence(s, equivalence_type, target_annotation, species, score, evalue))
 
@@ -961,8 +905,7 @@ class Simple_annotation():
                             score += f", norm_bitscore={norm_bitscore}"
                             score += f", coverage={round(float(qcov), 1)}"
                             score += f", identity={round(float(pident), 1)}"
-                            pair = sorted([gene_query, gene_target])
-                            pair = "-".join(pair)
+                            pair = (gene_query, gene_target)
                             if pair not in rbh_hits and pair not in rbbh_hits:
                                 self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_annotation, species, score, evalue))
 
@@ -1008,14 +951,15 @@ class Simple_annotation():
             fwd_hits = {}
             fwd_synteny_col = fwd_df["gene_id_A_synteny_conserved"] if (synteny_present and "gene_id_A_synteny_conserved" in fwd_df.columns) else [None] * len(fwd_df)
             
-            for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
-                fwd_df["gene_id_A"], fwd_df["gene_id_B"], fwd_df["gene_id_A_copy"], fwd_df["gene_id_B_copy"], fwd_synteny_col, fwd_df["overlap_score"]
+            for g_q, g_t, q_cp, synt_val, score_val in zip(
+                fwd_df["gene_id_A"], fwd_df["gene_id_B"], fwd_df["gene_id_A_copy"], fwd_synteny_col, fwd_df["overlap_score"]
             ):
-                copies = (q_cp == "True" or t_cp == "True")
-                gene_query = "_".join(g_q.split("_")[:-1]) if q_cp == "True" else g_q
-                gene_target = "_".join(g_t.split("_")[:-1]) if t_cp == "True" else g_t
+                # Only lifted gene_id_A carries synthetic _<copy> suffixes from liftover; native gene_id_B must stay intact
+                copies = (q_cp == "True")
+                gene_query = g_q.rsplit("_", 1)[0] if copies else g_q
+                gene_target = g_t
 
-                pair = f"{gene_query}---{gene_target}"
+                pair = (gene_query, gene_target)
                 synteny = (synt_val == "True") if synt_val is not None else False
 
                 modifiers = []
@@ -1047,14 +991,15 @@ class Simple_annotation():
             # In the rev file the lifted genes (those with synteny conservation) are gene_id_A
             rev_synteny_col = rev_df["gene_id_A_synteny_conserved"] if (synteny_present and "gene_id_A_synteny_conserved" in rev_df.columns) else [None] * len(rev_df)
             
-            for g_q, g_t, q_cp, t_cp, synt_val, score_val in zip(
-                rev_df["gene_id_B"], rev_df["gene_id_A"], rev_df["gene_id_B_copy"], rev_df["gene_id_A_copy"], rev_synteny_col, rev_df["overlap_score"]
+            for g_q, g_t, t_cp, synt_val, score_val in zip(
+                rev_df["gene_id_B"], rev_df["gene_id_A"], rev_df["gene_id_A_copy"], rev_synteny_col, rev_df["overlap_score"]
             ):
-                copies = (q_cp == "True" or t_cp == "True")
-                gene_query = "_".join(g_q.split("_")[:-1]) if q_cp == "True" else g_q
-                gene_target = "_".join(g_t.split("_")[:-1]) if t_cp == "True" else g_t
+                # Only lifted gene_id_A carries synthetic _<copy> suffixes from liftover; native gene_id_B must stay intact
+                copies = (t_cp == "True")
+                gene_query = g_q
+                gene_target = g_t.rsplit("_", 1)[0] if copies else g_t
 
-                pair = f"{gene_query}---{gene_target}"
+                pair = (gene_query, gene_target)
                 synteny = (synt_val == "True") if synt_val is not None else False
 
                 modifiers = []
@@ -1083,7 +1028,7 @@ class Simple_annotation():
                     rev_hits[pair] = f"{new_score}{mod_str} (multiple {match_num})"
 
             for fwd_pair, f_score in fwd_hits.items():
-                gene_query, gene_target = fwd_pair.split("---")
+                gene_query, gene_target = fwd_pair
                 if fwd_pair in rev_hits:
                     equivalence_type = f"rec_{equivalence_suffix}"
                     score = f"{f_score}/{rev_hits[fwd_pair]}"
@@ -1096,7 +1041,7 @@ class Simple_annotation():
             for rev_pair, r_score in rev_hits.items():
                 if rev_pair not in fwd_hits:
                     equivalence_type = f"rev_{equivalence_suffix}"
-                    gene_query, gene_target = rev_pair.split("---")
+                    gene_query, gene_target = rev_pair
                     self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_tag, species, r_score))
 
             end = time.time()

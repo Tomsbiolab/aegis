@@ -114,6 +114,72 @@ class TestParsing:
         annot = Annotation(f, quiet=True)
         assert models(annot) == {"e_gw1": {"3359": (((100, 300), (500, 900)), ((100, 300), (500, 900)))}}
 
+    def test_gtf_non_transcript_rna_biotypes_stay_linked(self, tmp_path):
+        # Biotypes containing 'RNA' that are not valid transcript feature types (e.g. miRNA, mt_tRNA, misc_RNA)
+        # must fall back to a valid transcript feature type rather than losing ID/Parent
+        f = write(tmp_path, "ensembl_rna.gtf", [
+            'chr1|ensembl|gene|1|100|.|+|.|gene_id "ENSG1";',
+            'chr1|ensembl|transcript|1|100|.|+|.|gene_id "ENSG1"; transcript_id "ENST1"; transcript_biotype "miRNA";',
+            'chr1|ensembl|exon|1|100|.|+|.|gene_id "ENSG1"; transcript_id "ENST1";',
+            'chr1|ensembl|gene|200|300|.|+|.|gene_id "ENSG2";',
+            'chr1|ensembl|transcript|200|300|.|+|.|gene_id "ENSG2"; transcript_id "ENST2"; transcript_biotype "mt_tRNA";',
+            'chr1|ensembl|exon|200|300|.|+|.|gene_id "ENSG2"; transcript_id "ENST2";',
+            'chr1|ensembl|gene|400|500|.|+|.|gene_id "ENSG3";',
+            'chr1|ensembl|transcript|400|500|.|+|.|gene_id "ENSG3"; transcript_id "ENST3"; transcript_biotype "lncRNA";',
+            'chr1|ensembl|exon|400|500|.|+|.|gene_id "ENSG3"; transcript_id "ENST3";',
+        ], header="")
+        annot = Annotation(f, quiet=True)
+        assert models(annot) == {
+            "ENSG1": {"ENST1": (((1, 100),), ())},
+            "ENSG2": {"ENST2": (((200, 300),), ())},
+            "ENSG3": {"ENST3": (((400, 500),), ())},
+        }
+        assert annot.chrs["chr1"]["ENSG1"].transcripts["ENST1"].feature == "transcript"
+        assert annot.chrs["chr1"]["ENSG2"].transcripts["ENST2"].feature == "transcript"
+        assert annot.chrs["chr1"]["ENSG3"].transcripts["ENST3"].feature == "lncRNA"
+
+    def test_gtf_conversion_preserves_headers_feature_types_cds_ids_and_subfeature_attrs(self, tmp_path):
+        from aegis.peaks import annotation_sequences
+        f = write(tmp_path, "rich.gtf", [
+            "##gff-version 2",
+            "##sequence-region chr1 1 10000",
+            "##sequence-region chr_empty 1 5000",
+            "#!genome-build GRCh38",
+            "# plain comment",
+            'chr1|src|pseudogene|100|500|.|+|.|gene_id "pg1";',
+            'chr1|src|pseudogenic_transcript|100|500|.|+|.|gene_id "pg1"; transcript_id "pt1";',
+            'chr1|src|exon|100|500|.|+|.|gene_id "pg1"; transcript_id "pt1";',
+            'chr1|src|gene|1000|2000|.|+|.|gene_id "g1";',
+            'chr1|src|mRNA|1000|2000|.|+|.|gene_id "g1"; transcript_id "t1";',
+            'chr1|src|exon|1000|1200|.|+|.|gene_id "g1"; transcript_id "t1";',
+            'chr1|src|exon|1500|2000|.|+|.|gene_id "g1"; transcript_id "t1";',
+            'chr1|src|CDS|1000|1200|.|+|0|gene_id "g1"; transcript_id "t1"; transl_except "(pos:1030..1032,aa:Sec)"; transl_table "2";',
+            'chr1|src|CDS|1500|1800|.|+|0|gene_id "g1"; transcript_id "t1"; transl_except "(pos:1030..1032,aa:Sec)"; transl_table "2";',
+        ], header="")
+        annot = Annotation(f, quiet=True)
+        # 1. Pragmas and comments preserved without doubling '#' or duplicating ##gff-version
+        assert annot.gff_header == [
+            "##gff-version 3",
+            "##sequence-region chr1 1 10000",
+            "##sequence-region chr_empty 1 5000",
+            "#!genome-build GRCh38",
+            "# plain comment",
+        ]
+        assert "chr_empty" in annotation_sequences(annot)
+        # 2. Explicit column-3 gene/transcript feature types preserved
+        pg = annot.chrs["chr1"]["pg1"]
+        assert pg.feature == "pseudogene" and pg.pseudogene is True
+        assert pg.transcripts["pt1"].feature == "pseudogenic_transcript"
+        t1 = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert t1.feature == "mRNA"
+        # 3. Multi-exon CDS shares one CDS ID -> no false independent_CDS_segment_ids warning
+        assert "t1" not in annot.warnings["independent_CDS_segment_ids"]
+        cds = next(iter(t1.CDSs.values()))
+        assert {s.id for s in cds.CDS_segments} == {"t1_CDS1"}
+        # 4. Extra subfeature attributes preserved
+        assert cds.transl_except == ((1030, 1032, "U"),)
+        assert cds.transl_table == 2
+
     def test_processed_transcript_is_a_transcript(self, tmp_path):
         f = write(tmp_path, "ensembl.gff3", [
             "1|ens|gene|100|500|.|+|.|ID=gene:G1",

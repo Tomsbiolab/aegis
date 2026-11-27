@@ -80,3 +80,19 @@ def test_list_genes_length_type_smoke(tmp_path):
         result = runner.invoke(app, ["genes", str(gff_file), "-l", "--length-type", "coding-exonic", flag, "-o", out_file.name, "-d", str(tmp_path), "-q"])
         assert result.exit_code == 0, result.output
         assert out_file.read_text().replace("gene_id\t", "").strip() == expected
+
+
+@pytest.mark.parametrize("subcmd", ["genes", "transcripts"])
+def test_list_validation_errors(test_data_dir, tmp_path, subcmd):
+    """Conflicting coding flags and unknown --biotypes fail with non-zero exit code."""
+    a1 = test_data_dir / "input/annotation/minimal.gff3"
+
+    res_conflict = runner.invoke(
+        app, [subcmd, str(a1), "--coding-only", "--non-coding-only", "-d", str(tmp_path), "-q"]
+    )
+    assert res_conflict.exit_code != 0
+
+    res_bad_bio = runner.invoke(
+        app, [subcmd, str(a1), "-b", "not_a_valid_biotype", "-d", str(tmp_path), "-q"]
+    )
+    assert res_bad_bio.exit_code != 0

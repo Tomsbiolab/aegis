@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 import typer
@@ -6,7 +7,15 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..genome import Genome, Scaffold
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SUMMARY_PANEL
+from .utils import (
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    SUMMARY_PANEL,
+    FASTA_EXTENSIONS,
+    split_callback,
+    resolve_unique_names,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -396,10 +405,11 @@ def main(
         "-g", "--genomes", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Overrides positional arguments if provided.",
         rich_help_panel=IO_PANEL,
     )] = None,
-    genome_names: Annotated[str, typer.Option(
+    genome_names: Annotated[List[str], typer.Option(
         "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
+        callback=split_callback,
         rich_help_panel=IO_PANEL,
-    )] = "",
+    )] = [],
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to output TSV/CSV file.",
         rich_help_panel=IO_PANEL,
@@ -450,18 +460,17 @@ def main(
         except Exception:
             typer.echo(f"Warning: Could not parse --genome-size '{genome_size}'. Ignoring.", err=True)
 
-    # Parse names
-    names = [item.strip() for item in genome_names.split(",")] if genome_names else []
-    
-    genomes: list[Genome] = []
-    for idx, gfile in enumerate(genome_files):
-        if idx < len(names) and names[idx]:
-            gname = names[idx]
-        else:
-            gname = Path(gfile).stem
-            if gname.endswith(".fasta") or gname.endswith(".fa"):
-                gname = Path(gname).stem
+    # Resolve and disambiguate genome names
+    resolved_genome_names = resolve_unique_names(
+        genome_files,
+        provided_names=genome_names,
+        extensions=FASTA_EXTENSIONS,
+        kind="genome",
+        quiet=quiet,
+    )
 
+    genomes: list[Genome] = []
+    for gfile, gname in zip(genome_files, resolved_genome_names):
         g = Genome(
             name=gname,
             genome_file_path=gfile,
@@ -746,12 +755,11 @@ def main(
         if is_two_genomes and not is_ref_mode:
             file_headers.append("Diff")
 
-        with open(export_path, "w", encoding="utf-8") as f_out:
-            f_out.write(delimiter.join(file_headers) + "\n")
-            for row in file_rows:
-                f_out.write(delimiter.join(row) + "\n")
-            for row in file_summary_rows:
-                f_out.write(delimiter.join(row) + "\n")
+        with open(export_path, "w", encoding="utf-8", newline="") as f_out:
+            writer = csv.writer(f_out, delimiter=delimiter, lineterminator="\n")
+            writer.writerow(file_headers)
+            writer.writerows(file_rows)
+            writer.writerows(file_summary_rows)
 
         if not quiet:
             typer.echo(f"\nGenome summary exported to: {export_path}")

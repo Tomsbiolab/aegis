@@ -76,6 +76,29 @@ def test_read_bed_converts_to_one_based(tmp_path):
     assert (p.start, p.end, p.summit, p.score, p.peak_id) == (2100, 2200, 2150, 50.0, "p1")
 
 
+def test_detect_and_read_bed_and_narrowpeak_with_unprefixed_header(tmp_path):
+    bed_path = _bed(tmp_path, [("chrom", "start", "end", "name", "score"), ("chr1", 99, 200, "p1", 50)], "hdr.bed")
+    assert detect_peak_format(bed_path) == "bed"
+    p = read_peaks(bed_path)[0]
+    assert (p.chrom, p.start, p.end, p.name, p.score) == ("chr1", 100, 200, "p1", 50.0)
+
+    np_path = _bed(
+        tmp_path,
+        [
+            ("chrom", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "peak", "fold_enrichment", "binding_motif"),
+            ("chr1", 999, 1200, "peakX", 300, ".", 12.5, 4.2, 3.1, 50, 7.5, "ACGT"),
+        ],
+        "hdr.narrowPeak",
+    )
+    assert detect_peak_format(np_path) == "narrowpeak"
+    p = read_peaks(np_path)[0]
+    assert (p.start, p.end, p.summit, p.signal, p.fold, p.motif) == (1000, 1200, 1050, 12.5, 7.5, "ACGT")
+
+    bad_path = _bed(tmp_path, [("chrom", "start", "end"), ("not", "ints", "here")], "bad.bed")
+    with pytest.raises(ValueError, match="Could not detect"):
+        detect_peak_format(bad_path)
+
+
 def test_read_narrowpeak_uses_summit_offset(tmp_path):
     path = _bed(tmp_path, [("chr1", 999, 1200, "peakX", 300, ".", 12.5, 4.2, 3.1, 50)], "x.narrowPeak")
     assert detect_peak_format(path) == "narrowpeak"
@@ -122,6 +145,17 @@ def test_read_gem_events_table(tmp_path):
     assert (peaks[0].motif, peaks[1].motif) == ("--------", "AAGGTTGTTGG_125/10")
     point = read_peaks(str(path), event_width=0)[1]
     assert (point.start, point.end, point.summit) == (4000, 4000, 4000)
+
+
+def test_read_gps_events_table_without_kmer_group(tmp_path):
+    # GPS_events.txt has Strand at column 10 instead of KmerGroup; parsed headers must not fall back positionally
+    path = tmp_path / "TF.GPS_events.txt"
+    path.write_text(
+        "Position\tIP\tControl\tFold\tExpectd\tQ_-lg10\tP_-lg10\tP_poiss\tIPvsEMP\tNoise\tStrand\n"
+        "chr1:5000\t100.0\t1.0\t10.0\t1.0\t5.0\t6.0\t6.0\t0\t0\t+\n"
+    )
+    p = read_peaks(str(path))[0]
+    assert (p.chrom, p.summit, p.signal, p.fold, p.motif) == ("chr1", 5000, 100.0, 10.0, "")
 
 
 def test_non_unique_names_get_peak_ids(tmp_path):

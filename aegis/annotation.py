@@ -1397,9 +1397,10 @@ class Annotation():
                                 self._transcript_info[ID].add(unique_t_id)
                             else:
                                 self._transcript_info[ID] = {ID, unique_t_id}
-                                print(f"{self.id} Warning: Transcript referred to an inexistent gene so the following {parent} gene was created for {ID} transcript")
+                            if not quiet:
+                                print(f"{self.id} Warning: Transcript referred to an inexistent gene so the following {parent} gene was created for {ID} transcript which was renamed to {unique_t_id} to avoid repeat ids")
                         elif not quiet:
-                            print(f"{self.id} Warning: Transcript referred to an inexistent gene so the following {parent} gene was created for {ID} transcript which was renamed to {unique_t_id} to avoid repeat ids")
+                            print(f"{self.id} Warning: Transcript referred to an inexistent gene so the following {parent} gene was created for {ID} transcript")
                     elif not quiet:
                         print(f"{self.id} Warning: {ID} transcript could not be assigned to a gene with the chosen parameter (rename_repeated_id={rename_repeated_id}) as transcript referred to an inexistent gene parent and the provided transcript id was not unique")
                 elif not quiet:
@@ -1711,25 +1712,39 @@ class Annotation():
 
                     # cases where subfeature directly references a pseudogene creating a pseudotranscript for the pseudogene
                     if self.chrs[ch][parent].pseudogene:
-                        if parent[0:4] == "gene":
-                            pseudo_t = f"pseudo_t_{parent[5:]}"
+                        gene_obj = self.chrs[ch][parent]
+                        if parent.startswith(("gene-", "gene_", "gene:")) and len(parent) > 5:
+                            base_pseudo_t = f"pseudo_t_{parent[5:]}"
                         else:
-                            pseudo_t = f"pseudo_t_{parent}"
+                            base_pseudo_t = f"pseudo_t_{parent}"
 
-                        if self.chrs[ch][parent].transcripts == {}:
+                        if gene_obj.transcripts == {}:
+                            pseudo_t = base_pseudo_t
+                            if pseudo_t in self.all_transcript_ids:
+                                pseudo_t = f"pseudo_t_{parent}"
+                            count = 1
+                            while pseudo_t in self.all_transcript_ids:
+                                count += 1
+                                pseudo_t = f"{base_pseudo_t}_{count}"
                             # PSEUDOGENES referred to by transcript subfeatures are given a single pseudotranscript
-                            self.chrs[ch][parent].transcripts[pseudo_t] = Transcript(pseudo_t, self.chrs[ch][parent].ch, self.chrs[ch][parent].source, "pseudotranscript", self.chrs[ch][parent].strand, self.chrs[ch][parent].start, self.chrs[ch][parent].end, self.chrs[ch][parent].score, [parent])
+                            gene_obj.transcripts[pseudo_t] = Transcript(pseudo_t, gene_obj.ch, gene_obj.source, "pseudotranscript", gene_obj.strand, gene_obj.start, gene_obj.end, gene_obj.score, [parent])
                             self.all_transcript_ids[pseudo_t] = (ch, parent)
-                            
-                        if pseudo_t in self.chrs[ch][parent].transcripts:
+                        else:
+                            pseudo_t = next(
+                                (t_id for t_id, t_obj in gene_obj.transcripts.items()
+                                 if t_obj.feature == "pseudotranscript" and (t_id == base_pseudo_t or t_id == f"pseudo_t_{parent}" or t_id.startswith(f"{base_pseudo_t}_"))),
+                                None,
+                            )
+
+                        if pseudo_t is not None and pseudo_t in gene_obj.transcripts:
                             if ft_level == "CDS":
-                                self.chrs[ch][parent].transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes, phase=phase))
+                                gene_obj.transcripts[pseudo_t].temp_CDSs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes, phase=phase))
                             elif ft_level == "exon":
-                                self.chrs[ch][parent].transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                gene_obj.transcripts[pseudo_t].exons.append(Exon(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                             elif ft_level == "UTR":
-                                self.chrs[ch][parent].transcripts[pseudo_t].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                gene_obj.transcripts[pseudo_t].temp_UTRs.append(UTR(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                             else:
-                                self.chrs[ch][parent].transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
+                                gene_obj.transcripts[pseudo_t].miRNAs.append(Feature(ID, ch, source, ft, strand, start, end, score, [pseudo_t], attributes))
                                 self._miRNA_info.add(ID)
                         else:
                             if not skip_orphaned_features:
@@ -2094,9 +2109,10 @@ class Annotation():
         if define_synteny:
             self.define_synteny(sort_processes=sort_processes)
         if self.original_annotation is not None:
-            for g_id in self.original_annotation.all_gene_ids:
-                if g_id not in self.all_gene_ids:
-                    self.unmapped.append(g_id)
+            self.unmapped = [
+                g_id for g_id in self.original_annotation.all_gene_ids
+                if g_id not in self.all_gene_ids
+            ]
 
         now = time.time()
         lapse = now - start_time
@@ -2524,10 +2540,16 @@ class Annotation():
 
         self.contains_promoters = True
 
-        for genes in self.chrs.values():
+        if self.genome is None:
+            raise ValueError("No genome loaded; cannot generate promoters without scaffold sizes.")
+
+        for chrom, genes in self.chrs.items():
+            if chrom not in self.genome.scaffolds:
+                continue
+            scaffold_size = self.genome.scaffolds[chrom].size
             for g in genes.values():
                 for t in g.transcripts.values():
-                    t.generate_promoter(promoter_size, self.genome.scaffolds[t.ch].size, promoter_type)
+                    t.generate_promoter(promoter_size, scaffold_size, promoter_type)
     
     def clear_promoters(self):
         for genes in self.chrs.values():
@@ -3100,7 +3122,7 @@ class Annotation():
                             for x2, cs2 in enumerate(c.CDS_segments):
                                 if x1 == x2:
                                     continue
-                                if cs1 != cs2:
+                                if cs1.id != cs2.id:
                                     common_protein_CDS_ids = False
                                     break
 
@@ -3409,16 +3431,18 @@ class Annotation():
         trimmed = 0
         for (chrom, g_id), (start_before, end_before) in spans_before.items():
             g = self.chrs[chrom].get(g_id)
-            if g is None or not g.transcripts:
+            if g is None:
                 continue
-            start = min(x.start for x in g.transcripts.values())
-            end = max(x.end for x in g.transcripts.values())
-            if (g.start == start_before and start > g.start) or (g.end == end_before and end < g.end):
-                trimmed += 1
-                if g.start == start_before:
-                    g.start = start
-                if g.end == end_before:
-                    g.end = end
+            if g.transcripts:
+                start = min(x.start for x in g.transcripts.values())
+                end = max(x.end for x in g.transcripts.values())
+                if (g.start == start_before and start > g.start) or (g.end == end_before and end < g.end):
+                    trimmed += 1
+                    if g.start == start_before:
+                        g.start = start
+                    if g.end == end_before:
+                        g.end = end
+            g.update(quiet=quiet)
 
         if removed:
             if trimmed:
@@ -3509,22 +3533,33 @@ class Annotation():
                         e.parents = new_parents
                         e.parents.sort()
                     for c in t.CDSs.values():
-                        new_parents = []
                         if c.parents:
+                            new_parents = []
                             for p in c.parents:
                                 if p in self.all_transcript_ids:
                                     new_parents.append(p)
                             c.parents = new_parents
                             c.parents.sort()
-                            for cs in c.CDS_segments:
-                                new_parents = []
-                                for p in (cs.parents or []):
+                        for cs in c.CDS_segments:
+                            new_parents = []
+                            for p in (cs.parents or []):
+                                if p in self.all_transcript_ids:
+                                    new_parents.append(p)
+                                else:
+                                    removed += 1
+                            cs.parents = new_parents
+                            cs.parents.sort()
+                        for u in c.UTRs:
+                            new_parents = []
+                            if u.parents:
+                                for p in u.parents:
                                     if p in self.all_transcript_ids:
-                                        new_parents.append(p)
+                                        if p not in g.transcripts or g.transcripts[p].strand == u.strand:
+                                            new_parents.append(p)
                                     else:
                                         removed += 1
-                                cs.parents = new_parents
-                                cs.parents.sort()
+                            u.parents = new_parents
+                            u.parents.sort()
         if removed and not quiet:
             print(f"{self.id}: {removed} parent references to transcripts no longer in the annotation were removed from exon and CDS rows")
 
@@ -3563,7 +3598,9 @@ class Annotation():
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
 
         for chrom, genes in self.chrs.items():
-            chrom_table = self.translation_table(chrom)
+            if self.genome is not None and chrom not in self.genome.scaffolds:
+                progress_bar.update(len(genes))
+                continue
 
             for g in genes.values():
                 progress_bar.update(1)
@@ -3572,6 +3609,10 @@ class Annotation():
                         continue
                     old_CDSs = list(t.CDSs.values())
                     old_UTRs = [u for c in old_CDSs for u in c.UTRs]
+                    ref_cds = next((c for c in old_CDSs if c.main and c.transl_table is not None), None)
+                    if ref_cds is None:
+                        ref_cds = next((c for c in old_CDSs if c.transl_table is not None), None)
+                    cds_table = self.translation_table(chrom, ref_cds)
 
                     t.generate_best_protein(
                         mode=mode,
@@ -3583,7 +3624,7 @@ class Annotation():
                         tolerated_stops=tolerated_stops,
                         orf_choice_mode=orf_choice_mode,
                         quiet=quiet,
-                        table=chrom_table,
+                        table=cds_table,
                         initiator_methionine=self.initiator_methionine,
                         alt_start_methionine=self.alt_start_methionine,
                     )
@@ -3600,7 +3641,7 @@ class Annotation():
                             must_have_stop=must_have_stop,
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
-                            table=chrom_table,
+                            table=cds_table,
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
@@ -3617,7 +3658,7 @@ class Annotation():
                             enforce_start_codon=enforce_start_codon,
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
-                            table=chrom_table,
+                            table=cds_table,
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
@@ -3634,13 +3675,17 @@ class Annotation():
                             enforce_start_codon=enforce_start_codon,
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
-                            table=chrom_table,
+                            table=cds_table,
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
                         t.update(quiet=quiet)
 
                     t.keep_unchanged_subfeatures(old_CDSs, old_UTRs, quiet=quiet)
+                    if ref_cds is not None:
+                        for c in t.CDSs.values():
+                            if c.transl_table is None:
+                                c.transl_table = ref_cds.transl_table
 
                 g.update(quiet=quiet)
 
@@ -3852,21 +3897,54 @@ class Annotation():
         # Organelle genes are labelled chrMT/chrCP instead of their chromosome name; chromosomes sharing
         # a label (e.g. several mitochondrial contigs) continue its gene numbering
         organelle_labels = {"mitochondria": "chrMT", "chloroplast": "chrCP"}
-        g_counts: dict[str, int] = {}
 
-        for chrom, genes in self.chrs.items():
-            chrom_label = organelle_labels.get(self.chromosome_compartment(chrom), chrom)
-            for g in genes.values():
-                progress_bar.update(1)
-                g_counts[chrom_label] = g_counts.get(chrom_label, 0) + spacer
-                g_count = g_counts[chrom_label]
-
-                if "gene" in features or prefix:
+        if "gene" in features or prefix:
+            g_counts: dict[str, int] = {}
+            by_new_id: dict[str, list[tuple[Gene, str]]] = {}
+            for chrom, genes in self.chrs.items():
+                chrom_label = organelle_labels.get(self.chromosome_compartment(chrom), chrom)
+                for g in genes.values():
+                    g_counts[chrom_label] = g_counts.get(chrom_label, 0) + spacer
+                    g_count = g_counts[chrom_label]
+                    old_id = g.id
                     g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix, chrom_label=chrom_label)
+                    by_new_id.setdefault(g.id, []).append((g, old_id))
+
+            used_gene_ids = set(by_new_id.keys())
+            collisions = 0
+            for new_id, group in by_new_id.items():
+                if len(group) == 1:
+                    continue
+                if not any(old_id != new_id for _, old_id in group):
+                    continue
+                # Preserve an unchanged gene on its existing ID before disambiguating others
+                group.sort(key=lambda item: item[1] != new_id)
+                for g, _ in group[1:]:
+                    collisions += 1
+                    n = 2
+                    while f"{new_id}_{n}" in used_gene_ids:
+                        n += 1
+                    unique_id = f"{new_id}_{n}"
+                    used_gene_ids.add(unique_id)
+                    g.id = unique_id
+                    g.renamed = (g.id != g.original_id)
+                    g.update_numbering()
+
+            if collisions:
+                warnings.warn(
+                    f"Renaming gene IDs produced {collisions} colliding ID(s); disambiguated with numeric suffixes to avoid overwriting genes.",
+                    category=UserWarning,
+                )
+
+            for genes in self.chrs.values():
+                for g in genes.values():
                     if g.renamed:
                         changed_features.add("gene")
-
                     correspondences_d[g.original_id] = g.id
+
+        for chrom, genes in self.chrs.items():
+            for g in genes.values():
+                progress_bar.update(1)
 
                 tmains = 0
 
@@ -3940,12 +4018,18 @@ class Annotation():
                         if not c.main:
                             c_count += 1
 
-                        if "CDS" in features or prefix:
+                        if "CDS" in features or prefix or cds_segment_ids:
 
                             if prefix or base_id_missing:
                                 c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False, cds_segment_ids=cds_segment_ids)
                             else:
                                 c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, cds_segment_ids=cds_segment_ids)
+                                if cds_segment_ids and keep_existing_ids_if_derived_from_base_id and any(cs.id == c.id for cs in c.CDS_segments):
+                                    for cs_count, cs in enumerate(c.CDS_segments, start=1):
+                                        cs.id = f"{c.id}{sep}{cs_count}"
+                                        if cs.original_id != cs.id:
+                                            c.renamed = True
+                                            cs.update_numbering()
 
                             if c.renamed:
                                 changed_features.add("CDS")
@@ -4107,18 +4191,26 @@ class Annotation():
 
         for chrom, genes_dict in self.chrs.items():
             new_genes = {}
-            
+
             for gene in genes_dict.values():
                 new_transcripts = {}
                 for transcript in gene.transcripts.values():
-                    new_cdss = {cds.id: cds for cds in transcript.CDSs.values()}
+                    new_cdss = {}
+                    for cds in transcript.CDSs.values():
+                        if CDS_keys and cds.id in new_cdss:
+                            raise ValueError(f"Duplicate CDS ID '{cds.id}' in transcript '{transcript.id}' on chromosome '{chrom}'.")
+                        new_cdss[cds.id] = cds
                     if CDS_keys:
                         transcript.CDSs = new_cdss
+                    if transcript_keys and transcript.id in new_transcripts:
+                        raise ValueError(f"Duplicate transcript ID '{transcript.id}' in gene '{gene.id}' on chromosome '{chrom}'.")
                     new_transcripts[transcript.id] = transcript
-                
+
                 if transcript_keys:
                     gene.transcripts = new_transcripts
 
+                if gene_keys and gene.id in new_genes:
+                    raise ValueError(f"Duplicate gene ID '{gene.id}' on chromosome '{chrom}'.")
                 new_genes[gene.id] = gene
 
             if gene_keys:
@@ -4182,11 +4274,18 @@ class Annotation():
         """
         accepted_levels = ["protein", "CDS", "transcript", "gene"]
 
-        if mode in accepted_levels:
-            hits = {}
-            f_in = open(blastfile, encoding="utf-8")
-            for line in f_in:
-                line = line.strip().split("\t")
+        if mode not in accepted_levels:
+            raise ValueError(f"Invalid mode '{mode}'. Choose from: {accepted_levels}.")
+        if mode != "protein":
+            raise NotImplementedError("Adding blast hits is not available for gene, transcripts and CDSs yet.")
+
+        hits = {}
+        with open(blastfile, encoding="utf-8") as f_in:
+            for raw_line in f_in:
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                line = stripped.split("\t")
                 ID = line[0]
                 evalue = float(line[-2])
                 bitscore = float(line[-1])
@@ -4194,39 +4293,38 @@ class Annotation():
                     hits[ID] = BlastHit(source, bitscore, evalue)
                 else:
                     print(f"Warning: for now the add blast hits method does not accept more than one blast hit per ID ({ID})")
-            f_in.close()
-            if mode == "protein":
-                if not self.protein_equivalences:
-                    self.generate_protein_equivalences(quiet=True)
-                for protein_id in self.protein_equivalences:
-                    chrom, g, t, c = self.all_protein_ids[protein_id]
-                    prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
-                    if protein_id in hits:
-                        if prot is not None:
-                            prot.blast_hits.append(hits[protein_id])
-                    for protein_id_copy in self.protein_equivalences[protein_id]:
-                        chrom, g, t, c = self.all_protein_ids[protein_id_copy]
-                        prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
-                        if protein_id_copy in self.chrs[chrom] and protein_id in hits:
-                            if prot is not None:
-                                prot.blast_hits.append(hits[protein_id])
-            else:
-                "Adding blast hits is not available for gene, transcripts and CDSs yet."
-        else:
-            print(f"Warning: {mode} chosen is not in accepted list of choices=['protein', 'CDS', 'transcript', 'gene]")   
+
+        if not self.protein_equivalences:
+            self.generate_protein_equivalences(quiet=True)
+
+        for protein_id, copies in self.protein_equivalences.items():
+            hit = hits.get(protein_id)
+            if hit is None:
+                for pid in copies:
+                    if pid in hits:
+                        hit = hits[pid]
+                        break
+            if hit is None:
+                continue
+            for pid in (protein_id, *copies):
+                if pid not in self.all_protein_ids:
+                    continue
+                chrom, g, t, c = self.all_protein_ids[pid]
+                prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                if prot is not None:
+                    prot.blast_hits.append(hit)
 
     def remove_chromosomes_from_header(self):
         new_header = []
         ft_to_keep = set(self.chrs)
-        
+
         for line in self.gff_header:
-            if line.startswith("##sequence-region"):
-                keep_header = False
-                for ft in ft_to_keep:
-                    if ft in line:
-                        keep_header = True
-                if keep_header:
+            parts = line.split()
+            if parts and parts[0] == "##sequence-region":
+                if len(parts) >= 2 and parts[1] in ft_to_keep:
                     new_header.append(line)
+            else:
+                new_header.append(line)
 
         self.gff_header = new_header
 
@@ -4468,29 +4566,41 @@ class Annotation():
     def make_alternative_genes_into_transcripts(self, quiet:bool=False):
 
         correspondence = {}
-
         to_remove = []
+
         for chrom, genes in self.chrs.items():
+            gene_ids = list(genes.keys())
+            order = {g_id: idx for idx, g_id in enumerate(gene_ids)}
+            eligible = {g_id: (not g.quality.remove or g.quality.rescue) for g_id, g in genes.items()}
+            parent = {g_id: g_id for g_id in gene_ids}
+
+            def find(x: str) -> str:
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
             for g in genes.values():
-                if (not g.quality.remove or g.quality.rescue) and (g.id not in correspondence):
-                    if g.overlaps:
-                        for o in g.overlaps["self"]:
-                            if o.score >= 5:
+                if not eligible[g.id] or not g.overlaps or "self" not in g.overlaps:
+                    continue
+                for o in g.overlaps["self"]:
+                    if o.score >= 5 and o.id != g.id and o.id in genes:
+                        rg = find(g.id)
+                        ro = find(o.id)
+                        if rg == ro:
+                            continue
+                        if (not eligible[rg], order[rg]) <= (not eligible[ro], order[ro]):
+                            parent[ro] = rg
+                        else:
+                            parent[rg] = ro
 
-                                if o.id in correspondence:
-
-                                    correspondence_gene = correspondence[o.id]
-                                    correspondence[g.id] = correspondence_gene
-                                    to_remove.append((g.id, chrom))
-                                    for t in self.chrs[chrom][g.id].transcripts.values():
-                                        self.chrs[chrom][correspondence_gene].transcripts[t.id] = t.copy()
-
-                                else:
-
-                                    correspondence[o.id] = g.id
-                                    to_remove.append((o.id, chrom))
-                                    for t in self.chrs[chrom][o.id].transcripts.values():
-                                        g.transcripts[t.id] = t.copy()
+            for g_id in gene_ids:
+                root = find(g_id)
+                if root != g_id:
+                    correspondence[g_id] = root
+                    to_remove.append((g_id, chrom))
+                    for t in genes[g_id].transcripts.values():
+                        genes[root].transcripts[t.id] = t.copy()
 
         for g, chrom in to_remove:
             if g in self.chrs[chrom]:
@@ -4656,24 +4766,22 @@ class Annotation():
         self.update(quiet=quiet)
 
     def remove_coding_transcripts_from_non_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):
-        transcripts_to_remove = []
+        transcripts_to_remove = {
+            t.id
+            for genes in self.chrs.values()
+            for g in genes.values()
+            if g.coding and g.noncoding
+            for t in g.transcripts.values()
+            if t.coding
+        }
 
-        for chrom, genes in self.chrs.items():
-            for g in genes.values():
-                if g.coding:
-                    for t in g.transcripts.values():
-                        if t.coding == True:
-                            transcripts_to_remove.append((chrom, g.id, t.id))
-        
-        for chrom, g_id, t_id in transcripts_to_remove:
-            del self.chrs[chrom][g_id].transcripts[t_id]
-
-        if transcripts_to_remove != []:
+        if transcripts_to_remove:
+            self.remove_transcripts(transcripts_to_remove, quiet=quiet)
             removed_any = True
 
         if removed_any:
             self.feature_tags.add("minus_coding")
-        
+
         self.overlaps.clear()
 
         if update:
@@ -4682,19 +4790,17 @@ class Annotation():
         return removed_any
 
     def remove_non_coding_transcripts_from_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):
-        transcripts_to_remove = []
+        transcripts_to_remove = {
+            t.id
+            for genes in self.chrs.values()
+            for g in genes.values()
+            if g.noncoding and g.coding
+            for t in g.transcripts.values()
+            if not t.coding
+        }
 
-        for chrom, genes in self.chrs.items():
-            for g in genes.values():
-                if g.noncoding:
-                    for t in g.transcripts.values():
-                        if t.coding == False:
-                            transcripts_to_remove.append((chrom, g.id, t.id))
-        
-        for chrom, g_id, t_id in transcripts_to_remove:
-            del self.chrs[chrom][g_id].transcripts[t_id]
-
-        if transcripts_to_remove != []:
+        if transcripts_to_remove:
+            self.remove_transcripts(transcripts_to_remove, quiet=quiet)
             removed_any = True
 
         if removed_any:
@@ -4749,6 +4855,8 @@ class Annotation():
                             u.ch = chrom
                     for e in t.exons:
                         e.ch = chrom
+                    for m in t.miRNAs:
+                        m.ch = chrom
                     if t.introns is not None:
                         for i in t.introns:
                             i.ch = chrom
@@ -4760,6 +4868,22 @@ class Annotation():
         for o in self.orphaned_features:
             if o.ch in equivalences:
                 o.ch = equivalences[o.ch]
+
+        self.all_gene_ids = {g_id: equivalences.get(ch, ch) for g_id, ch in self.all_gene_ids.items()}
+        self.all_transcript_ids = {t_id: (equivalences.get(ch, ch), g_id) for t_id, (ch, g_id) in self.all_transcript_ids.items()}
+        self.all_protein_ids = {p_id: (equivalences.get(ch, ch), g_id, t_id, c_id) for p_id, (ch, g_id, t_id, c_id) in self.all_protein_ids.items()}
+        self.circular_chromosomes = {equivalences.get(ch, ch) for ch in self.circular_chromosomes}
+        self.mitochondria_chroms = tuple(equivalences.get(ch, ch) for ch in self.mitochondria_chroms)
+        self.chloroplast_chroms = tuple(equivalences.get(ch, ch) for ch in self.chloroplast_chroms)
+
+        new_header = []
+        for line in self.gff_header:
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == "##sequence-region" and parts[1] in equivalences:
+                new_ch = equivalences[parts[1]]
+                line = re.sub(r"^(##sequence-region\s+)\S+", lambda m, nc=new_ch: m.group(1) + nc, line, count=1)
+            new_header.append(line)
+        self.gff_header = new_header
         if dap:
             self.tags.add("dapfit")
             if renamed_scaffolds:
@@ -5114,7 +5238,15 @@ class Annotation():
         self.update(quiet=quiet)
         self.rename_ids(prefix=id_prefix, spacer=spacer, suffix=suffix, features=("gene", "transcript", "CDS", "exon", "UTR"), quiet=quiet)
         self.update(quiet=quiet)
-        self.export.gff(output_dir=custom_path, extra_attributes=extra_attributes, filename=tag, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet, clean_attributes=True)
+        if not tag or tag == ".gff3":
+            out_filename = f"{self.id}.gff3"
+        elif tag.startswith((".", "_", "-")):
+            out_filename = f"{self.id}{tag}"
+        else:
+            out_filename = f"{self.id}_{tag}"
+        if not out_filename.endswith((".gff3", ".gff")):
+            out_filename = f"{out_filename}.gff3"
+        self.export.gff(output_dir=custom_path or None, extra_attributes=extra_attributes, filename=out_filename, skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, quiet=quiet, clean_attributes=True)
 
     def generate_introns(self):
         for genes in self.chrs.values():

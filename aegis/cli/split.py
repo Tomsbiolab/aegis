@@ -10,7 +10,19 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome, classify_compartment
 from ..utils.misc import open_file
-from .utils import AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SPLIT_PANEL
+from .utils import (
+    AutoOrganelleDetectionOption,
+    MitochondriaChromsOption,
+    ChloroplastChromsOption,
+    strip_bio_extension,
+    resolve_bio_name,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    SPLIT_PANEL,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -252,7 +264,6 @@ def classify_feature(
 
 def resolve_split_filename(template: str, name: str, tag: str, default_ext: str) -> str:
     """Format output filename using template, name, tag and extension."""
-    tag_str = tag
     if tag == "other":
         if "_split{tag}" in template:
             filename = template.replace("_split{tag}", "_split_other")
@@ -261,13 +272,18 @@ def resolve_split_filename(template: str, name: str, tag: str, default_ext: str)
         elif "{tag}" in template:
             filename = template.replace("{tag}", "_other")
         else:
-            filename = f"{template}_other"
+            stem, ext = strip_bio_extension(template)
+            filename = f"{stem}_other{ext}"
+    elif "{tag}" in template:
+        filename = template.replace("{tag}", tag)
     else:
-        filename = template.replace("{tag}", tag_str)
+        stem, ext = strip_bio_extension(template)
+        filename = f"{stem}_{tag}{ext}"
 
     filename = filename.replace("{annotation-name}", name).replace("{genome-name}", name)
 
-    if not os.path.splitext(filename)[1]:
+    _, ext = strip_bio_extension(filename)
+    if not ext:
         filename = f"{filename}{default_ext}"
     return filename
 
@@ -467,36 +483,25 @@ def main(
 
     # 3. Derive names
     if annotation_file:
-        if annotation_name == "{annotation-file}":
-            annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-            if annotation_name.endswith(".gff") or annotation_name.endswith(".gtf"):
-                annotation_name = os.path.splitext(annotation_name)[0]
+        annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
     else:
         annotation_name = "annotation"
 
     if genome_file:
-        if genome_name == "{genome-file}":
-            genome_name = os.path.splitext(os.path.basename(genome_file))[0]
-            if genome_name.endswith(".fa") or genome_name.endswith(".fasta"):
-                genome_name = os.path.splitext(genome_name)[0]
+        genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
     else:
         genome_name = "genome"
 
     if output_file:
+        stem, known_ext = strip_bio_extension(output_file)
+        clean_ext = known_ext[:-3] if known_ext.lower().endswith(".gz") else known_ext
+        annot_ext = clean_ext if known_ext.lower() in ANNOT_EXTENSIONS else ".gff3"
+        genome_ext = clean_ext if known_ext.lower() in FASTA_EXTENSIONS else ".fasta"
+
         if not output_annot_file and annotation_file:
-            if not genome_file or output_file.lower().endswith((".gff", ".gff3", ".gtf")):
-                output_annot_file = output_file
-            else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".gff3"
-                output_annot_file = f"{stem}_split{{tag}}{ext}" if "{tag}" not in output_file else output_file
+            output_annot_file = f"{stem}{annot_ext}" if "{tag}" in stem else f"{stem}_split{{tag}}{annot_ext}"
         if not output_genome_file and genome_file:
-            if not annotation_file or output_file.lower().endswith((".fa", ".fasta", ".fna")):
-                output_genome_file = output_file
-            else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".fasta"
-                output_genome_file = f"{stem}_split{{tag}}{ext}" if "{tag}" not in output_file else output_file
+            output_genome_file = f"{stem}{genome_ext}" if "{tag}" in stem else f"{stem}_split{{tag}}{genome_ext}"
 
     if not output_annot_file:
         output_annot_file = "{annotation-name}_split{tag}.gff3"
@@ -624,8 +629,9 @@ def main(
 
     for tag in all_tags:
         target_features = tag_to_features.get(tag, set())
+        allow_empty = write_empty_other and tag == "other"
 
-        if not target_features and not write_empty_other:
+        if not target_features and not allow_empty:
             if not quiet:
                 typer.echo(f"  Tag '{tag}': 0 features matched, skipping export.")
             continue
@@ -636,18 +642,20 @@ def main(
         # Export genome subset
         if genome_obj:
             genome_fts = target_features.intersection(genome_obj.scaffolds)
-            if (genome_fts or write_empty_other) and not dry_run:
-                g_split = copy.copy(genome_obj)
-                g_split.scaffolds = {k: v.copy() for k, v in genome_obj.scaffolds.items() if k in genome_fts}
-                g_split.update()
-
+            if (genome_fts or allow_empty) and not dry_run:
                 out_g_filename = resolve_split_filename(output_genome_file, genome_name, tag, ".fasta")
-                g_split.export(output_dir=output_dir, filename=out_g_filename, keep_description=keep_description, quiet=True)
+                if genome_fts:
+                    g_split = copy.copy(genome_obj)
+                    g_split.scaffolds = {k: v.copy() for k, v in genome_obj.scaffolds.items() if k in genome_fts}
+                    g_split.update()
+                    g_split.export(output_dir=output_dir, filename=out_g_filename, keep_description=keep_description, quiet=True)
+                else:
+                    open(os.path.join(output_dir, out_g_filename), "w", encoding="utf-8").close()
 
         # Export annotation subset
         if annot_obj:
             annot_fts = target_features.intersection(annot_obj.chrs)
-            if annot_fts or write_empty_other:
+            if annot_fts or allow_empty:
                 if annot_fts:
                     a_split = annot_obj.copy()
                     a_split.subset(chosen_features=annot_fts, gene_cap=None, no_gene_cap=True, min_genes=0, quiet=True)
@@ -673,9 +681,9 @@ def main(
                     out_a_filename = resolve_split_filename(output_annot_file, annotation_name, tag, ".gff3")
                     is_gtf = out_a_filename.lower().endswith(".gtf")
                     if is_gtf:
-                        a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, subfolder=False, quiet=True)
+                        a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, UTRs=True, subfolder=False, quiet=True)
                     else:
-                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, subfolder=False, skip_atypical_fts=clean_features, quiet=True)
+                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, UTRs=True, subfolder=False, skip_atypical_fts=clean_features, quiet=True)
 
         if not quiet:
             label = "other (unassigned)" if tag == "other" else f"Tag '{tag}'"

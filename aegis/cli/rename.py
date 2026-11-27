@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback, AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
+from .utils import split_callback, resolve_bio_name, ANNOT_EXTENSIONS, AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -155,8 +155,7 @@ def main(
     if rename_features == []:
         raise typer.BadParameter(f"No features were chosen to rename their ids. Select from: {VALID_FEATURES}.")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -181,7 +180,7 @@ def main(
     correspondences_kwargs = dict(correspondences_output_dir=output_dir, correspondences_filename=output_file_correspondences) if gene_id_correspondences else {}
 
     annotation.rename_ids(**correspondences_kwargs, features=tuple(rename_features), keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, remove_point_suffix=remove_point_suffix, strip_gene_tag=strip_gene_tag, keep_subfeature_numbers=keep_numbering, cds_segment_ids=unique_cds_entry_ids, prefix=prefix, suffix=suffix, spacer=spacer, sep=sep, g_id_digits=g_id_digits, t_id_digits=t_id_digits, correspondences=gene_id_correspondences, old_id_names=("keep" if keep_old_names else "alias"), quiet=quiet)
-    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 if __name__ == "__main__":
     app()

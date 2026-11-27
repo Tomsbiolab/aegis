@@ -126,3 +126,86 @@ def test_extract_cli_internal_stops(tmp_path, internal_stops, keep_stop, expecte
     (fasta_out,) = output_dir.iterdir()
     seqs = {line for line in fasta_out.read_text().splitlines() if line and not line.startswith(">")}
     assert seqs == expected
+
+
+def test_extract_cli_multiple_modes(tmp_path):
+    """Comma-separated --mode values all export instead of only the highest-precedence branch."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1\n" + "ATGAAACCCGGGTTTAGA" * 5 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t36\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t36\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t36\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t18\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1\tt\tmRNA\t1\t18\t.\t+\t.\tID=t2;Parent=g1\n"
+        "chr1\tt\texon\t1\t18\t.\t+\t.\tID=e2;Parent=t2\n"
+        "chr1\tt\tCDS\t1\t15\t.\t+\t0\tID=c2;Parent=t2\n"
+    )
+    out_dir = tmp_path / "out"
+    res = runner.invoke(
+        app,
+        [str(gff), str(fa), "-f", "transcript,protein,CDS,promoter", "-m", "all,main,unique,unique_per_gene", "-d", str(out_dir), "-q"],
+    )
+    assert res.exit_code == 0, res.output
+    files = sorted(f.name for f in out_dir.iterdir())
+    assert len(files) == 16, files
+
+
+def test_extract_cli_output_template_disambiguation(tmp_path):
+    """-o with {annotation-name}/{genome-name} does not overwrite files across multiple features or modes."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1\n" + "ATGAAACCCGGGTTTAGA" * 5 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t36\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t36\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t36\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t18\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+
+    out1 = tmp_path / "out1"
+    res1 = runner.invoke(app, [str(gff), str(fa), "-f", "gene,protein", "-o", "{annotation-name}.fasta", "-d", str(out1), "-q"])
+    assert res1.exit_code == 0, res1.output
+    assert sorted(f.name for f in out1.iterdir()) == ["a_gene_all.fasta", "a_protein_all.fasta"]
+
+    out2 = tmp_path / "out2"
+    res2 = runner.invoke(app, [str(gff), str(fa), "-f", "protein", "-m", "all,main", "-o", "{genome-name}_{feature}.fa", "-d", str(out2), "-q"])
+    assert res2.exit_code == 0, res2.output
+    assert sorted(f.name for f in out2.iterdir()) == ["g_protein_all.fa", "g_protein_main.fa"]
+
+
+def test_extract_cli_biotypes_applies_to_all_features(tmp_path):
+    """-b / --biotypes filters gene, transcript, promoter, protein, and CDS extractions."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1\n" + "ACGT" * 50 + "ATGAAACCCGGGTTTAGA" + "ACGT" * 20 + "ATGCCCAAAGGGTTATGA" + "ACGT" * 20 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t201\t218\t.\t+\t.\tID=g_mrna\n"
+        "chr1\tt\tmRNA\t201\t218\t.\t+\t.\tID=t_mrna;Parent=g_mrna\n"
+        "chr1\tt\texon\t201\t218\t.\t+\t.\tID=e_mrna;Parent=t_mrna\n"
+        "chr1\tt\tCDS\t201\t218\t.\t+\t0\tID=c_mrna;Parent=t_mrna\n"
+        "chr1\tt\tgene\t299\t316\t.\t+\t.\tID=g_lnc\n"
+        "chr1\tt\tlnc_RNA\t299\t316\t.\t+\t.\tID=t_lnc;Parent=g_lnc\n"
+        "chr1\tt\texon\t299\t316\t.\t+\t.\tID=e_lnc;Parent=t_lnc\n"
+        "chr1\tt\tCDS\t299\t316\t.\t+\t0\tID=c_lnc;Parent=t_lnc\n"
+        "chr1\tt\tgene\t340\t360\t.\t+\t.\tID=g_notx\n"
+    )
+    out = tmp_path / "out"
+    res = runner.invoke(
+        app,
+        [str(gff), str(fa), "-f", "gene,transcript,promoter,protein,CDS", "-m", "main", "-b", "lnc_RNA", "-o", "{feature}.fa", "-d", str(out), "-q"],
+    )
+    assert res.exit_code == 0, res.output
+
+    def headers(name: str) -> list[str]:
+        return [l for l in (out / f"{name}.fa").read_text().splitlines() if l.startswith(">")]
+
+    assert headers("gene") == [">g_lnc"]
+    assert headers("transcript") == [">t_lnc"]
+    assert headers("promoter") == [">t_lnc_promoter"]
+    assert headers("protein") == [">c_lnc.prot"]
+    assert headers("CDS") == [">c_lnc"]

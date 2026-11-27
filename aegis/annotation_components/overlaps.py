@@ -507,7 +507,7 @@ class AnnotationOverlaps(AnnotationComponent):
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     g.overlaps["self"] = []
-        elif keep_other:
+        elif not keep_other:
             self.other_genes = set()
             self._annot.overlapped_annotations = set()
             for genes in self._annot.chrs.values():
@@ -525,7 +525,7 @@ class AnnotationOverlaps(AnnotationComponent):
             for g in genes.values():
                 progress_bar.update(1)
                 for o in g.overlaps["self"]:
-                    if o.exon_query_percent > 0:
+                    if o.exon_query_percent is not None and o.exon_query_percent > 0:
 
                         g_exons, g_CDSs, g_UTRs = set(), set(), set()
                         o_exons, o_CDSs, o_UTRs = set(), set(), set()
@@ -712,78 +712,37 @@ class AnnotationOverlaps(AnnotationComponent):
 
             na_rows = []
 
-            if not copies_info:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    if g.id not in overlapping_genes:
+                        na_row = {
+                            "gene_id_A": g.id,
+                            "overlap_score": 0,
+                        }
+                        if export_mode != "self":
+                            na_row["gene_id_A_origin"] = self._annot.name
+                        if copies_info:
+                            na_row["gene_id_A_copy"] = g.extra_copy
+                        if synteny:
+                            na_row["gene_id_A_synteny_conserved"] = g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
+                        na_rows.append(na_row)
 
-                if export_mode == "self":
-
-                    for genes in self._annot.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "overlap_score": 0,
-                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
-                                })
-
-                else:
-
-                    for genes in self._annot.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_origin": self._annot.name,
-                                    "overlap_score": 0,
-                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
-                                })
-
-                if synteny:
-                    for g_id in self._annot.unmapped:
-                        na_rows.append({
-                            "gene_id_A": g_id,
-                            "gene_id_A_origin": self._annot.name
-                        })
-
-            else:
-
-                if export_mode == "self":
-
-                    for genes in self._annot.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_copy": g.extra_copy,
-                                    "overlap_score": 0,
-                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
-                                })
-
-                else:
-
-                    for genes in self._annot.chrs.values():
-                        for g in genes.values():
-                            if g.id not in overlapping_genes:
-                                na_rows.append({
-                                    "gene_id_A": g.id,
-                                    "gene_id_A_origin": self._annot.name,
-                                    "overlap_score": 0,
-                                    "gene_id_A_copy": g.extra_copy,
-                                    "gene_id_A_synteny_conserved": g.synteny.liftover_conserved if self._annot.original_annotation is not None else pd.NA
-                                })
-
-                if synteny:
-                    for g_id in self._annot.unmapped:
-                        na_rows.append({
-                            "gene_id_A": g_id,
-                            "gene_id_A_origin": self._annot.name
-                        })          
+            if synteny:
+                for g_id in self._annot.unmapped:
+                    na_row = {"gene_id_A": g_id}
+                    if export_mode != "self":
+                        na_row["gene_id_A_origin"] = self._annot.name
+                    na_rows.append(na_row)
 
             if na_rows:
                 eq_df = pd.concat([eq_df, pd.DataFrame(na_rows)], ignore_index=True)
 
         eq_df = eq_df[[col for col in correct_order if col in eq_df.columns]]
 
-        if synteny:
+        if export_mode == "self" and synteny:
+            column_sort_order = ["overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
+            ascending = [False, False, False, True, True]
+        elif synteny:
             column_sort_order = ["gene_id_A_origin", "gene_id_B_origin", "overlap_score", "gene_id_A_synteny_conserved", "gene_id_B_synteny_conserved", "gene_id_A", "gene_id_B"]
             ascending = [True, True, False, False, False, True, True]
         elif export_mode == "self":

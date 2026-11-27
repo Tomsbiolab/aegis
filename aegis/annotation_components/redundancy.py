@@ -272,7 +272,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 else:
                     for o in g.overlaps["self"]:
                         if o.score >= 5:
-                            if o.CDS_query_percent > 30:
+                            if o.CDS_query_percent is not None and o.CDS_query_percent > 30:
                                 if "stringtie" in self._annot.chrs[g.ch][o.id].source or "psiclass" in self._annot.chrs[g.ch][o.id].source:
                                     g.quality.transcriptomic_evidence = True
         progress_bar.close()
@@ -290,7 +290,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 else:
                     for o in g.overlaps["self"]:
                         if o.score >= 5:
-                            if o.CDS_query_percent > 30:
+                            if o.CDS_query_percent is not None and o.CDS_query_percent > 30:
                                 if self._source_matches_any(self._annot.chrs[g.ch][o.id].source, reliable_sources):
                                     g.quality.abinitio_evidence = True
         progress_bar.close()
@@ -516,10 +516,12 @@ class AnnotationRedundancy(AnnotationComponent):
                 progress_bar.update(1)
                 if g.id not in merge_genes and g.alternative_transcript_rescue != []:
                     best = g.alternative_transcript_rescue[0]
-                    for alt in g.alternative_transcript_rescue:
+                    for alt in g.alternative_transcript_rescue[1:]:
                         if alt == best:
                             continue
-                        query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][alt], source_priority)
+                        query_best = self._annot.chrs[g.ch][best].compare_protein_blast_hits(
+                            self._annot.chrs[g.ch][alt], source_priority
+                        )
                         if not query_best:
                             best = alt
 
@@ -567,7 +569,7 @@ class AnnotationRedundancy(AnnotationComponent):
 
                         if self._source_matches_none(overlap_gene.source, reliable_sources):
                             continue
-                        if not ((o.full_protein_overlaps >= 2) or (o.protein_query_percent >= 90)):
+                        if not ((o.full_protein_overlaps >= 2) or (o.protein_query_percent is not None and o.protein_query_percent >= 90)):
                             continue
                         if overlap_main_CDS_size <= main_CDS_size:
                             continue
@@ -905,7 +907,7 @@ class AnnotationRedundancy(AnnotationComponent):
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
                             if o.gene_query_percent >= 100 or o.gene_target_percent >= 100:
-                                if o.exon_query_percent > 0:
+                                if o.exon_query_percent is not None and o.exon_query_percent > 0:
                                     if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]):
                                         continue
                                     self._compete_overlap_pair(
@@ -936,7 +938,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 if not g.quality.remove or g.quality.rescue:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
-                            if o.exon_query_percent > 0 or o.exon_target_percent > 0:
+                            if (o.exon_query_percent is not None and o.exon_query_percent > 0) or (o.exon_target_percent is not None and o.exon_target_percent > 0):
                                 if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]):
                                     continue
                                 self._compete_overlap_pair(
@@ -951,7 +953,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 if not g.quality.remove or g.quality.rescue:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
-                            if o.exon_query_percent > 0 or o.exon_target_percent > 0:
+                            if (o.exon_query_percent is not None and o.exon_query_percent > 0) or (o.exon_target_percent is not None and o.exon_target_percent > 0):
                                 if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]):
                                     continue
                                 self._annot.chrs[g.ch][o.id].clear_UTRs()
@@ -1287,15 +1289,27 @@ class AnnotationRedundancy(AnnotationComponent):
         snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
     def remove_alternative(self):
-        nodes = self._annot.overlaps.networks[chr][0].nodes()
-        print("Nodes in the graph:")
-        for node in nodes:
-            print(node)
+        if not hasattr(self._annot.overlaps, "networks"):
+            self._annot.overlaps.as_networks()
 
-        # Find articulation points (connector nodes)
-        connector_nodes = list(nx.articulation_points(self._annot.overlaps.networks[chr][0]))
+        for chrom, components in self._annot.overlaps.networks.items():
+            for component in components:
+                if isinstance(component, nx.Graph):
+                    graph = component
+                else:
+                    graph = nx.Graph()
+                    for g_id in component:
+                        graph.add_node(g_id)
+                        gene = self._annot.chrs.get(chrom, {}).get(g_id)
+                        if gene is not None:
+                            for o in gene.overlaps["self"]:
+                                if o.id in component:
+                                    graph.add_edge(g_id, o.id)
 
-        # Remove connector nodes from the graph
-        for node in connector_nodes:
-            self._annot.overlaps.networks[chr][0].remove_node(node)
+                connector_nodes = list(nx.articulation_points(graph))
+                if isinstance(component, nx.Graph):
+                    for node in connector_nodes:
+                        component.remove_node(node)
+                else:
+                    component.difference_update(connector_nodes)
 

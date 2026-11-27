@@ -137,7 +137,7 @@ def open_file(file_path:Any, mode:str='r', encoding:str|None=None) -> TextIO:
     Transparently opens a text file or a gzipped text file, depending on the extension.
     """
     if str(file_path).endswith('.gz'):
-        if 'r' in mode and 'b' not in mode:
+        if 'b' not in mode and 't' not in mode:
             mode += 't'
         return gzip.open(file_path, mode, encoding=encoding) # type: ignore
     return open(file_path, mode, encoding=encoding) # type: ignore

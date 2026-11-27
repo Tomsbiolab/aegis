@@ -1,3 +1,4 @@
+import csv
 from typer.testing import CliRunner
 from aegis.cli.summary import app
 
@@ -161,5 +162,117 @@ def test_cli_summary_multi_genome_translates_all_annotations(tmp_path):
     assert "Intron-exon boundary GC-AG count\t0" in a1_stats
     assert "Intron-exon boundary GC-AG count\t1" in a2_stats
     assert "Intron-exon boundary GT-AG count\t0" in a2_stats
+
+
+def test_cli_summary_csv_export_uses_comma_delimiter_and_quoting(tmp_path):
+    """-o *.csv writes valid comma-delimited CSV and quotes values containing commas."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chrM\n" + "ATGAAACCCGGGTTTAGA" * 2 + "\n>chrC\n" + "ATGAAACCCGGGTTTAGA" * 2 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chrM\tt\tgene\t1\t18\t.\t+\t.\tID=g1\n"
+        "chrM\tt\tmRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chrC\tt\tgene\t1\t18\t.\t+\t.\tID=g2\n"
+        "chrC\tt\tmRNA\t1\t18\t.\t+\t.\tID=t2;Parent=g2\n"
+    )
+    out_csv = tmp_path / "summary.csv"
+    res = runner.invoke(app, [str(gff), "-g", str(fa), "-A", "-o", str(out_csv), "-d", str(tmp_path / "stats"), "-q"])
+    assert res.exit_code == 0, res.output
+
+    text = out_csv.read_text(encoding="utf-8")
+    assert "\t" not in text
+    data_lines = [l for l in text.splitlines() if l and not l.startswith("#")]
+    parsed = list(csv.reader(data_lines))
+    assert ["Metric", "a"] in parsed
+    gc_header_idx = parsed.index(["Annotation", "Taxonomy", "Nuclear", "Mitochondrial", "Plastid", "Organelle contigs"])
+    gc_row = parsed[gc_header_idx + 1]
+    assert len(gc_row) == 6
+    assert "chrM (mito)" in gc_row[5] and "chrC (plastid)" in gc_row[5]
+
+
+def test_cli_summary_plots_flag_controls_plot_export(tmp_path):
+    """Plot files (.pdf/.html) are only exported when --plots is explicitly passed."""
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t100\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t99\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+    out_no_plots = tmp_path / "no_plots"
+    res1 = runner.invoke(app, [str(gff), "-d", str(out_no_plots), "-q"])
+    assert res1.exit_code == 0, res1.output
+    assert not [p for p in out_no_plots.iterdir() if p.suffix in {".pdf", ".html"}]
+    assert (out_no_plots / "a_basic_stats.csv").exists()
+
+    out_with_plots = tmp_path / "with_plots"
+    res2 = runner.invoke(app, [str(gff), "-d", str(out_with_plots), "--plots", "-q"])
+    assert res2.exit_code == 0, res2.output
+    assert any(p.suffix == ".pdf" for p in out_with_plots.iterdir())
+    assert any(p.suffix == ".html" for p in out_with_plots.iterdir())
+
+
+def test_cli_summary_disambiguates_duplicate_annotation_and_genome_names(tmp_path):
+    """Duplicate annotation and genome basenames are disambiguated so stats CSVs and table headers do not collide."""
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+
+    fa1 = tmp_path / "v1" / "genome.fa"
+    fa2 = tmp_path / "v2" / "genome.fa"
+    seq = "ATG" + "GCT" * 20 + "TAA" + "A" * 100
+    fa1.write_text(f">chr1\n{seq}\n")
+    fa2.write_text(f">chr1\n{seq}\n")
+
+    gff1 = tmp_path / "v1" / "annot.gff3"
+    gff1.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t66\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t66\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t66\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t66\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+    gff2 = tmp_path / "v2" / "annot.gff3"
+    gff2.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t66\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t66\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t66\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t66\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1\tt\tgene\t80\t120\t.\t+\t.\tID=g2\n"
+        "chr1\tt\tmRNA\t80\t120\t.\t+\t.\tID=t2;Parent=g2\n"
+        "chr1\tt\texon\t80\t120\t.\t+\t.\tID=e2;Parent=t2\n"
+    )
+
+    out_dir = tmp_path / "stats"
+    out_tsv = out_dir / "summary.tsv"
+    res = runner.invoke(
+        app,
+        [str(gff1), str(gff2), "-g", f"{fa1},{fa2}", "-d", str(out_dir), "-o", str(out_tsv), "-q"],
+    )
+    assert res.exit_code == 0, res.output
+
+    # Separate per-annotation stats CSVs must exist without overwriting each other
+    s1 = out_dir / "annot_on_genome_full_stats.csv"
+    s2 = out_dir / "annot_2_on_genome_2_full_stats.csv"
+    assert s1.exists(), f"Missing {s1.name}; found {[p.name for p in out_dir.iterdir()]}"
+    assert s2.exists(), f"Missing {s2.name}; found {[p.name for p in out_dir.iterdir()]}"
+    assert "Number of genes\t1" in s1.read_text()
+    assert "Number of genes\t2" in s2.read_text()
+
+    text = out_tsv.read_text()
+    assert "Metric\tannot\tannot_2\tDiff" in text
+    assert "Total Genes\t1\t2\t+1" in text
+
+    # Also verify --ref-annotation works with the disambiguated name
+    out_ref = tmp_path / "ref_summary.tsv"
+    res_ref = runner.invoke(
+        app,
+        [str(gff1), str(gff2), "--ref-annotation", "annot_2", "-d", str(tmp_path / "ref_stats"), "-o", str(out_ref), "-q"],
+    )
+    assert res_ref.exit_code == 0, res_ref.output
+    assert "Metric\tannot vs ref\tannot_2 (ref)" in out_ref.read_text()
+
 
 

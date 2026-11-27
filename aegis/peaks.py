@@ -107,7 +107,7 @@ _EXTRA_COLUMNS = {"fold": ("fold_enrichment", "fold"), "motif": ("binding_motif"
 
 
 def _header_columns(path:str) -> list[str]:
-    """Column names of a '#' header line before the first data line (empty without one)."""
+    """Column names of a header line before the first data line (empty without one)."""
     names = []
     with _open(path) as fh:
         for line in fh:
@@ -115,6 +115,9 @@ def _header_columns(path:str) -> list[str]:
             if line.startswith("#"):
                 names = [c.strip().lower() for c in line.lstrip("#").split("\t")]
             elif line.strip() and not line.startswith(("track", "browser")):
+                cols = [c.strip().lower() for c in line.split("\t")]
+                if len(cols) >= 3 and not (_is_int(cols[1]) and _is_int(cols[2])):
+                    names = cols
                 break
     return names
 
@@ -134,17 +137,25 @@ def _data_lines(path:str):
 
 def detect_peak_format(path:str) -> str:
     """Return 'gem', 'narrowpeak' or 'bed' for a peak file."""
-    for line in _data_lines(path):
+    first_line = None
+    for i, line in enumerate(_data_lines(path)):
+        if first_line is None:
+            first_line = line
         cols = line.split("\t")
-        if cols[0].strip() == "Position" and "IP" in [c.strip() for c in cols]:
+        if i == 0 and cols[0].strip() == "Position" and "IP" in [c.strip() for c in cols]:
             return "gem"
-        if len(cols) >= 10 and all(_is_int(cols[i]) for i in (1, 2, 9)):
+        if len(cols) >= 10 and all(_is_int(cols[idx]) for idx in (1, 2, 9)):
             return "narrowpeak"
         if len(cols) >= 3 and _is_int(cols[1]) and _is_int(cols[2]):
             return "bed"
-        if _GEM_POSITION_RE.match(cols[0].strip()):
+        if i == 0 and _GEM_POSITION_RE.match(cols[0].strip()):
             return "gem"
-        raise ValueError(f"Could not detect the format of peak file '{path}' from line: {line!r}")
+        if i == 0 and len(cols) >= 3:
+            # Skip an unprefixed header row before BED / narrowPeak data lines, matching _read_bed_like
+            continue
+        raise ValueError(f"Could not detect the format of peak file '{path}' from line: {first_line!r}")
+    if first_line is not None:
+        raise ValueError(f"Could not detect the format of peak file '{path}' from line: {first_line!r}")
     raise ValueError(f"Peak file '{path}' has no data lines.")
 
 
@@ -165,7 +176,7 @@ def _read_gem(path:str, event_width:int) -> list[Peak]:
             raise ValueError(f"Unexpected GEM event position '{cols[0]}' in '{path}'.")
         chrom, pos = m.group(1), int(m.group(2))
         def text(name, default_index):
-            i = columns.get(name, default_index) if columns else default_index
+            i = columns.get(name) if columns is not None else default_index
             return cols[i] if i is not None and i < len(cols) else ""
         def col(name, default_index):
             return _to_float(text(name, default_index))

@@ -5,7 +5,7 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback, IO_PANEL, EXEC_PANEL, SYMBOLS_PANEL
+from .utils import split_callback, resolve_bio_name, ANNOT_EXTENSIONS, IO_PANEL, EXEC_PANEL, SYMBOLS_PANEL
 
 VALID_TARGETS = ["Name", "Alias", "Symbol"]
 VALID_MATCH_ON = ["id", "name", "alias"]
@@ -140,8 +140,7 @@ def main(
 
     annotation_file = annot_in
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     os.makedirs(output_dir, exist_ok=True)
     subfolder = False
@@ -168,9 +167,9 @@ def main(
         print(f"Placed symbols in {placed} ({'appended' if append else 'replaced'}); {len(missing)} ids in {symbols_in} were not found.")
 
     if output_format == "gtf":
-        annotation.export.gtf(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
+        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
     else:
-        annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
+        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 if __name__ == "__main__":
     app()

@@ -185,6 +185,44 @@ class TestTranscriptExonUpdate:
         # After exon_update, coding_ratio should be set
         assert hasattr(t, 'coding_ratio')
 
+    def test_update_resets_stale_exon_coding_and_marks_unstranded(self, make_transcript, make_exon, make_CDS, make_CDS_segment):
+        t = make_transcript(feature_id="t1", start=1, end=300, strand="+")
+        e1 = make_exon("e1", 1, 100, strand="+")
+        e2 = make_exon("e2", 200, 300, strand="+")
+        t.exons = [e1, e2]
+        c = make_CDS(
+            segments=[
+                make_CDS_segment("c1", start=1, end=100, strand="+", phase=0),
+                make_CDS_segment("c1", start=200, end=300, strand="+", phase=0),
+            ],
+            feature_id="c1",
+            strand="+",
+        )
+        t.CDSs = {"c1": c}
+        t.update()
+        assert [e.coding for e in t.exons] == [True, True]
+
+        # Shrink CDS to exon 2 only: exon 1 becomes pure UTR and must have coding=False
+        c.CDS_segments = [make_CDS_segment("c1", start=200, end=300, strand="+", phase=0)]
+        c.update()
+        t.update()
+        assert [e.coding for e in t.exons] == [False, True]
+
+        # Remove CDS entirely: all exons become non-coding
+        t.CDSs = {}
+        t.update()
+        assert [e.coding for e in t.exons] == [False, False]
+
+        # Unstranded transcript with CDS marks overlapping exon as coding
+        t_dot = make_transcript(feature_id="t2", start=1, end=300, strand=".")
+        e_coding = make_exon("e_coding", 1, 100, strand=".")
+        e_utr = make_exon("e_utr", 200, 300, strand=".")
+        t_dot.exons = [e_coding, e_utr]
+        c_dot = make_CDS(segments=[make_CDS_segment("c2", start=10, end=90, strand=".", phase=0)], feature_id="c2", strand=".")
+        t_dot.CDSs = {"c2": c_dot}
+        t_dot.update()
+        assert [e.coding for e in t_dot.exons] == [True, False]
+
 
 # ============================================================
 # rename_exons
@@ -889,6 +927,22 @@ class TestCollapseCDSSegments:
         assert len(cds.CDS_segments) == 1
         assert cds.CDS_segments[0].start == 1000
         assert cds.CDS_segments[0].end == 1199
+
+    @pytest.mark.parametrize("strand, segments, expected_phase", [
+        ("+", [(1000, 1299, 0), (1100, 1200, 0), (1300, 1599, 0)], 0),
+        ("-", [(1000, 1299, 1), (1100, 1200, 0), (1300, 1599, 1)], 1),
+    ])
+    def test_collapse_cds_abutting_segment_after_nested_row(self, make_transcript, make_CDS, make_CDS_segment, strand, segments, expected_phase):
+        # After 1000..1299 absorbs nested 1100..1200, an abutting 1300..1599 must be compared against 1000..1299
+        t = make_transcript(feature_id="t1", strand=strand)
+        segs = [make_CDS_segment(f"s{i}", strand=strand, start=a, end=b, phase=p) for i, (a, b, p) in enumerate(segments)]
+        cds = make_CDS(segments=segs, strand=strand, feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1000, 1599, expected_phase)]
 
 
 # ============================================================
