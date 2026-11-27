@@ -32,11 +32,6 @@ def main(
     )] = 100,
 
     # 2. Subfeature & Model Options
-    skip_renaming: Annotated[bool, typer.Option(
-        "--skip-renaming",
-        help="Skip renaming of subgene features (transcript, CDS, exon, UTRs).",
-        rich_help_panel=SUBFEATURE_PANEL,
-    )] = False,
     no_collapse_exons: Annotated[bool, typer.Option(
         "--no-collapse-exons", help="Do not merge overlapping/adjacent exons.",
         rich_help_panel=SUBFEATURE_PANEL,
@@ -103,11 +98,6 @@ def main(
         names_tag = "_".join(annotation_names) if annotation_names else "merged"
         output_file = output_file.replace("{annotation-names}", names_tag)
 
-    if skip_renaming:
-        features = []
-    else:
-        features = ["transcript", "CDS", "exon", "UTR"]
-
     name_1 = annotation_names[0] if len(annotation_names) > 0 else os.path.splitext(os.path.basename(annot_files[0]))[0]
     if not quiet:
         print(f"Loading base annotation from {annot_files[0]}...")
@@ -140,7 +130,8 @@ def main(
             max_gene_overlap=max_gene_overlap,
             max_exon_overlap=max_exon_overlap,
             max_cds_overlap=max_cds_overlap,
-            features_to_rename=tuple(features),
+            features_to_rename=("transcript", "CDS", "exon", "UTR"),
+            quiet=quiet,
         )
 
     if not quiet:
