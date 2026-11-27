@@ -224,7 +224,7 @@ def main(
         extra_chrs = set(a.chrs.keys()) - set(g.scaffolds.keys())
         if extra_chrs:
             a.remove_chromosomes(extra_chrs)
-        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, skip_atypical_fts=clean_features)
+        a.export.gff(output_dir=output_dir, subfolder=subfolder, filename=output_annot_file, UTRs=True, skip_atypical_fts=clean_features)
 
 
 if __name__ == "__main__":

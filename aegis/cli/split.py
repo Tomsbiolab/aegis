@@ -673,9 +673,9 @@ def main(
                     out_a_filename = resolve_split_filename(output_annot_file, annotation_name, tag, ".gff3")
                     is_gtf = out_a_filename.lower().endswith(".gtf")
                     if is_gtf:
-                        a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, subfolder=False, quiet=True)
+                        a_split.export.gtf(output_dir=output_dir, filename=out_a_filename, UTRs=True, subfolder=False, quiet=True)
                     else:
-                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, subfolder=False, skip_atypical_fts=clean_features, quiet=True)
+                        a_split.export.gff(output_dir=output_dir, filename=out_a_filename, UTRs=True, subfolder=False, skip_atypical_fts=clean_features, quiet=True)
 
         if not quiet:
             label = "other (unassigned)" if tag == "other" else f"Tag '{tag}'"

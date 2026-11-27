@@ -282,7 +282,7 @@ def main(
             quiet=quiet,
         )
 
-    a.export.gff(output_dir=output_dir, filename=output_annot_file, subfolder=False, skip_atypical_fts=clean_features)
+    a.export.gff(output_dir=output_dir, filename=output_annot_file, UTRs=True, subfolder=False, skip_atypical_fts=clean_features)
 
     if genome_file:
         g.subset(chosen_features=chosen_chromosomes_set, quiet=quiet)

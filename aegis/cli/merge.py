@@ -145,7 +145,7 @@ def main(
 
     if not quiet:
         print(f"Writing merged annotation to {output_dir}...")
-    base_annotation.export.gff(output_dir=output_dir, quiet=quiet, subfolder=subfolder, filename=output_file, skip_atypical_fts=clean_features)
+    base_annotation.export.gff(output_dir=output_dir, UTRs=True, quiet=quiet, subfolder=subfolder, filename=output_file, skip_atypical_fts=clean_features)
 
     if not quiet:
         print("Done.")

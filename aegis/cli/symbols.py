@@ -168,9 +168,9 @@ def main(
         print(f"Placed symbols in {placed} ({'appended' if append else 'replaced'}); {len(missing)} ids in {symbols_in} were not found.")
 
     if output_format == "gtf":
-        annotation.export.gtf(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder)
+        annotation.export.gtf(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder)
     else:
-        annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
+        annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 if __name__ == "__main__":
     app()

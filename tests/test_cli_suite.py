@@ -194,3 +194,47 @@ def test_tidy_coords_panel():
     p_coords = res.stdout.find("Coordinate & Phase Options")
     assert p_coords != -1
     assert "--coordinate-polishing" in res.stdout
+
+
+def test_cli_subcommands_preserve_utrs_on_export(tmp_path):
+    """Ensure rename, symbols, prune, subset, split, merge, and tidy-genome preserve UTRs on export."""
+    gff1 = tmp_path / "g1.gff3"
+    gff1.write_text(
+        "##gff-version 3\n"
+        "chr1A\ttest\tgene\t1\t30\t.\t+\t.\tID=g1\n"
+        "chr1A\ttest\tmRNA\t1\t30\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1A\ttest\texon\t1\t30\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1A\ttest\tfive_prime_UTR\t1\t6\t.\t+\t.\tID=u5;Parent=t1\n"
+        "chr1A\ttest\tCDS\t7\t24\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1A\ttest\tthree_prime_UTR\t25\t30\t.\t+\t.\tID=u3;Parent=t1\n"
+    )
+    gff2 = tmp_path / "g2.gff3"
+    gff2.write_text(
+        "##gff-version 3\n"
+        "chr1A\ttest\tgene\t40\t70\t.\t+\t.\tID=g2\n"
+        "chr1A\ttest\tmRNA\t40\t70\t.\t+\t.\tID=t2;Parent=g2\n"
+        "chr1A\ttest\texon\t40\t70\t.\t+\t.\tID=e2;Parent=t2\n"
+        "chr1A\ttest\tCDS\t46\t63\t.\t+\t0\tID=c2;Parent=t2\n"
+    )
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1A\n" + "A" * 100 + "\n")
+    sym = tmp_path / "sym.tsv"
+    sym.write_text("g1\tMYG1\n")
+
+    cases = [
+        (["rename", str(gff1), "-d", str(tmp_path / "ren"), "-o", "out.gff3", "-q"], tmp_path / "ren/out.gff3"),
+        (["symbols", str(gff1), str(sym), "-d", str(tmp_path / "sym_gff"), "-o", "out.gff3", "-q"], tmp_path / "sym_gff/out.gff3"),
+        (["symbols", str(gff1), str(sym), "--output-format", "gtf", "-d", str(tmp_path / "sym_gtf"), "-o", "out.gtf", "-q"], tmp_path / "sym_gtf/out.gtf"),
+        (["prune", str(gff1), "g1", "--keep", "-d", str(tmp_path / "prn"), "-o", "out.gff3", "-q"], tmp_path / "prn/out.gff3"),
+        (["subset", str(gff1), "-c", "chr1A", "--no-gene-cap", "-d", str(tmp_path / "sub"), "-oa", "out.gff3", "-q"], tmp_path / "sub/out.gff3"),
+        (["split", str(gff1), "-s", "A", "-d", str(tmp_path / "sp_gff"), "-oa", "out_{tag}.gff3", "-q"], tmp_path / "sp_gff/out_A.gff3"),
+        (["split", str(gff1), "-s", "A", "-d", str(tmp_path / "sp_gtf"), "-oa", "out_{tag}.gtf", "-q"], tmp_path / "sp_gtf/out_A.gtf"),
+        (["merge", str(gff1), str(gff2), "-d", str(tmp_path / "mrg"), "-o", "out.gff3", "-q"], tmp_path / "mrg/out.gff3"),
+        (["tidy-genome", str(fa), str(gff1), "-d", str(tmp_path / "tg"), "-oa", "out.gff3", "-q"], tmp_path / "tg/out.gff3"),
+    ]
+    for args, out_path in cases:
+        res = runner.invoke(app, args)
+        assert res.exit_code == 0, f"{args[0]} failed: {res.output}"
+        content = out_path.read_text()
+        assert "five_prime_UTR" in content or "5UTR" in content, f"{args[0]} stripped 5' UTR"
+        assert "three_prime_UTR" in content or "3UTR" in content, f"{args[0]} stripped 3' UTR"

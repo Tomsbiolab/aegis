@@ -130,7 +130,7 @@ def main(
     if not (output_file.endswith(".gff3") or output_file.endswith(".gff")):
         output_file += ".gff3"
 
-    annotation.export.gff(output_dir=output_dir, filename=output_file, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
+    annotation.export.gff(output_dir=output_dir, filename=output_file, UTRs=True, quiet=quiet, subfolder=subfolder, skip_atypical_fts=clean_features)
 
 
 if __name__ == "__main__":
