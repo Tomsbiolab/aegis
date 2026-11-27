@@ -4234,15 +4234,14 @@ class Annotation():
     def remove_chromosomes_from_header(self):
         new_header = []
         ft_to_keep = set(self.chrs)
-        
+
         for line in self.gff_header:
-            if line.startswith("##sequence-region"):
-                keep_header = False
-                for ft in ft_to_keep:
-                    if ft in line:
-                        keep_header = True
-                if keep_header:
+            parts = line.split()
+            if parts and parts[0] == "##sequence-region":
+                if len(parts) >= 2 and parts[1] in ft_to_keep:
                     new_header.append(line)
+            else:
+                new_header.append(line)
 
         self.gff_header = new_header
 

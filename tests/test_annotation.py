@@ -4769,3 +4769,38 @@ class TestCodonRows:
         annot = Annotation(str(gff_file), quiet=True)
         assert "sc1" in annot.warnings["missing_subfeature_parent"]
         assert self._segments(annot) == [(11, 46, 0)]
+
+
+class TestRemoveChromosomesFromHeader:
+    def test_preserves_directives_and_matches_exact_seqid(self, tmp_path):
+        gff = tmp_path / "header.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "#!genome-build test\n"
+            "##sequence-region chr1 1 1000\n"
+            "##sequence-region chr10 1 2000\n"
+            "##sequence-region 1 1 500\n"
+            "##sequence-region chr2 1 500\n"
+            "chr1\tt\tgene\t10\t100\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t10\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t10\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr10\tt\tgene\t10\t100\t.\t+\t.\tID=g2\n"
+            "chr10\tt\tmRNA\t10\t100\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr10\tt\texon\t10\t100\t.\t+\t.\tID=e2;Parent=t2\n"
+            "1\tt\tgene\t10\t100\t.\t+\t.\tID=g3\n"
+            "1\tt\tmRNA\t10\t100\t.\t+\t.\tID=t3;Parent=g3\n"
+            "1\tt\texon\t10\t100\t.\t+\t.\tID=e3;Parent=t3\n"
+            "chr2\tt\tgene\t10\t100\t.\t+\t.\tID=g4\n"
+            "chr2\tt\tmRNA\t10\t100\t.\t+\t.\tID=t4;Parent=g4\n"
+            "chr2\tt\texon\t10\t100\t.\t+\t.\tID=e4;Parent=t4\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        del annot.chrs["chr10"]
+        del annot.chrs["chr2"]
+        annot.remove_chromosomes_from_header()
+        assert annot.gff_header == [
+            "##gff-version 3",
+            "#!genome-build test",
+            "##sequence-region chr1 1 1000",
+            "##sequence-region 1 1 500",
+        ]
