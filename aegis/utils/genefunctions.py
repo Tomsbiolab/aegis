@@ -714,6 +714,7 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
             all_genes[a.name] = set(a.all_gene_ids.keys())
             unmapped_genes[a.name] = set(a.unmapped)
 
+    eq_df = None
     for x, a in enumerate(annotations):
 
         if group_tag and (reference or len(annotations) == 2):
@@ -749,10 +750,10 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
 
         if len(annotations) > 2:
 
-            if x == 0:
+            if eq_df is None:
                 eq_df = single_df.copy()
             else:
-                eq_df = pd.concat([eq_df, single_df])
+                eq_df = pd.concat([eq_df, single_df], ignore_index=True)
 
         if len(annotations) == 2 or output_also_single_files:
 
