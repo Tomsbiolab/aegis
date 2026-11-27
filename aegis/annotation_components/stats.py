@@ -102,7 +102,7 @@ class AnnotationStats(AnnotationComponent):
         self.data = {}
 
     def calculate_transcript_masking(self):
-        if self._annot.hard_masked_genome is not None or self._annot.genome is not None:
+        if self._annot.hard_masked_genome is not None:
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     g.quality.calculate_masking()
