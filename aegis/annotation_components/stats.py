@@ -161,7 +161,10 @@ class AnnotationStats(AnnotationComponent):
                 intervals = []
                 for g in genes.values():
                     if g.start is not None and g.end is not None:
-                        intervals.append((max(1, g.start), min(size, g.end)))
+                        s = max(1, g.start)
+                        e = min(size, g.end)
+                        if s <= e:
+                            intervals.append((s, e))
                 intervals.sort()
                 merged = []
                 for s, e in intervals:
@@ -292,6 +295,11 @@ class AnnotationStats(AnnotationComponent):
                 if _shortest_gene is None or g.size < _shortest_gene:
                     _shortest_gene = g.size
 
+                if g.coding:
+                    self.data["coding_genes"].append(g.id)
+                else:
+                    self.data["noncoding_genes"].append(g.id)
+
                 for t in g.transcripts.values():
                     if t.main:
                         if t.introns:
@@ -362,9 +370,6 @@ class AnnotationStats(AnnotationComponent):
                                                         self.data["introns_in_3utr"] += 1
                                     if self._annot.genome is not None and c.protein is not None:
                                         self.data["mean_protein_size"].append(c.protein.size)
-                            self.data["coding_genes"].append(g.id)
-                        else:
-                            self.data["noncoding_genes"].append(g.id)
 
                         for e in t.exons:
                             self.data["mean_exon_size"].append(e.size)
