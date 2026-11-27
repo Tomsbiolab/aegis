@@ -516,10 +516,12 @@ class AnnotationRedundancy(AnnotationComponent):
                 progress_bar.update(1)
                 if g.id not in merge_genes and g.alternative_transcript_rescue != []:
                     best = g.alternative_transcript_rescue[0]
-                    for alt in g.alternative_transcript_rescue:
+                    for alt in g.alternative_transcript_rescue[1:]:
                         if alt == best:
                             continue
-                        query_best = g.compare_protein_blast_hits(self._annot.chrs[g.ch][alt], source_priority)
+                        query_best = self._annot.chrs[g.ch][best].compare_protein_blast_hits(
+                            self._annot.chrs[g.ch][alt], source_priority
+                        )
                         if not query_best:
                             best = alt
 
@@ -1287,15 +1289,27 @@ class AnnotationRedundancy(AnnotationComponent):
         snapshot = self._print_changes("overlaps.detect", snapshot, quiet=quiet)
 
     def remove_alternative(self):
-        nodes = self._annot.overlaps.networks[chr][0].nodes()
-        print("Nodes in the graph:")
-        for node in nodes:
-            print(node)
+        if not hasattr(self._annot.overlaps, "networks"):
+            self._annot.overlaps.as_networks()
 
-        # Find articulation points (connector nodes)
-        connector_nodes = list(nx.articulation_points(self._annot.overlaps.networks[chr][0]))
+        for chrom, components in self._annot.overlaps.networks.items():
+            for component in components:
+                if isinstance(component, nx.Graph):
+                    graph = component
+                else:
+                    graph = nx.Graph()
+                    for g_id in component:
+                        graph.add_node(g_id)
+                        gene = self._annot.chrs.get(chrom, {}).get(g_id)
+                        if gene is not None:
+                            for o in gene.overlaps["self"]:
+                                if o.id in component:
+                                    graph.add_edge(g_id, o.id)
 
-        # Remove connector nodes from the graph
-        for node in connector_nodes:
-            self._annot.overlaps.networks[chr][0].remove_node(node)
+                connector_nodes = list(nx.articulation_points(graph))
+                if isinstance(component, nx.Graph):
+                    for node in connector_nodes:
+                        component.remove_node(node)
+                else:
+                    component.difference_update(connector_nodes)
 
