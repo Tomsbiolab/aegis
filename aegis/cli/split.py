@@ -634,8 +634,9 @@ def main(
 
     for tag in all_tags:
         target_features = tag_to_features.get(tag, set())
+        allow_empty = write_empty_other and tag == "other"
 
-        if not target_features and not write_empty_other:
+        if not target_features and not allow_empty:
             if not quiet:
                 typer.echo(f"  Tag '{tag}': 0 features matched, skipping export.")
             continue
@@ -646,18 +647,20 @@ def main(
         # Export genome subset
         if genome_obj:
             genome_fts = target_features.intersection(genome_obj.scaffolds)
-            if (genome_fts or write_empty_other) and not dry_run:
-                g_split = copy.copy(genome_obj)
-                g_split.scaffolds = {k: v.copy() for k, v in genome_obj.scaffolds.items() if k in genome_fts}
-                g_split.update()
-
+            if (genome_fts or allow_empty) and not dry_run:
                 out_g_filename = resolve_split_filename(output_genome_file, genome_name, tag, ".fasta")
-                g_split.export(output_dir=output_dir, filename=out_g_filename, keep_description=keep_description, quiet=True)
+                if genome_fts:
+                    g_split = copy.copy(genome_obj)
+                    g_split.scaffolds = {k: v.copy() for k, v in genome_obj.scaffolds.items() if k in genome_fts}
+                    g_split.update()
+                    g_split.export(output_dir=output_dir, filename=out_g_filename, keep_description=keep_description, quiet=True)
+                else:
+                    open(os.path.join(output_dir, out_g_filename), "w", encoding="utf-8").close()
 
         # Export annotation subset
         if annot_obj:
             annot_fts = target_features.intersection(annot_obj.chrs)
-            if annot_fts or write_empty_other:
+            if annot_fts or allow_empty:
                 if annot_fts:
                     a_split = annot_obj.copy()
                     a_split.subset(chosen_features=annot_fts, gene_cap=None, no_gene_cap=True, min_genes=0, quiet=True)
