@@ -235,34 +235,35 @@ class Transcript(Feature):
             if len(cds.CDS_segments) > 1:
                 cds.CDS_segments.sort()
                 groups = [[cds.CDS_segments[0]]]
-                cur_end = cds.CDS_segments[0].end
+                # Segment holding the rightmost coordinate of the current merged group
+                cur_end_seg = cds.CDS_segments[0]
                 for seg in cds.CDS_segments[1:]:
-                    if seg.start <= cur_end + 1:
+                    if seg.start <= cur_end_seg.end + 1:
                         # Adjacent segments and 1-2 bp overlaps only collapse when merging keeps the reading frame:
                         # the leftover bases of the upstream segment, minus the overlap, must complete a codon
-                        # with the downstream segment's phase. Longer overlaps always collapse
-                        prev_seg = groups[-1][-1]
-                        overlap = cur_end - seg.start + 1
+                        # with the downstream segment's phase. Nested rows and longer overlaps always collapse
+                        overlap = cur_end_seg.end - seg.start + 1
                         phase_compatible = True
-                        if overlap <= 2:
-                            if prev_seg.phase is not None and seg.phase is not None:
+                        if overlap <= 2 and seg.end > cur_end_seg.end:
+                            if cur_end_seg.phase is not None and seg.phase is not None:
                                 if cds.strand != "-":
-                                    prev_lo = (prev_seg.size - prev_seg.phase) % 3
+                                    prev_lo = (cur_end_seg.size - cur_end_seg.phase) % 3
                                     phase_compatible = (prev_lo - overlap + seg.phase) % 3 == 0
                                 else:
                                     seg_lo = (seg.size - seg.phase) % 3
-                                    phase_compatible = (seg_lo - overlap + prev_seg.phase) % 3 == 0
+                                    phase_compatible = (seg_lo - overlap + cur_end_seg.phase) % 3 == 0
                             else:
                                 # Without phases a 1-2 bp overlap may be a programmed frameshift, so only adjacent rows merge
                                 phase_compatible = overlap == 0
 
                         if phase_compatible:
-                            cur_end = max(cur_end, seg.end)
+                            if seg.end > cur_end_seg.end:
+                                cur_end_seg = seg
                             groups[-1].append(seg)
                             continue
 
                     groups.append([seg])
-                    cur_end = seg.end
+                    cur_end_seg = seg
 
                 if len(groups) < len(cds.CDS_segments):
                     merged = []

@@ -928,6 +928,22 @@ class TestCollapseCDSSegments:
         assert cds.CDS_segments[0].start == 1000
         assert cds.CDS_segments[0].end == 1199
 
+    @pytest.mark.parametrize("strand, segments, expected_phase", [
+        ("+", [(1000, 1299, 0), (1100, 1200, 0), (1300, 1599, 0)], 0),
+        ("-", [(1000, 1299, 1), (1100, 1200, 0), (1300, 1599, 1)], 1),
+    ])
+    def test_collapse_cds_abutting_segment_after_nested_row(self, make_transcript, make_CDS, make_CDS_segment, strand, segments, expected_phase):
+        # After 1000..1299 absorbs nested 1100..1200, an abutting 1300..1599 must be compared against 1000..1299
+        t = make_transcript(feature_id="t1", strand=strand)
+        segs = [make_CDS_segment(f"s{i}", strand=strand, start=a, end=b, phase=p) for i, (a, b, p) in enumerate(segments)]
+        cds = make_CDS(segments=segs, strand=strand, feature_id="t1_CDS1")
+        t.CDSs = {"t1_CDS1": cds}
+
+        t.collapse_CDS_segments()
+
+        assert t.collapsed_CDS_segments is True
+        assert [(s.start, s.end, s.phase) for s in cds.CDS_segments] == [(1000, 1599, expected_phase)]
+
 
 # ============================================================
 # Boundary & overlap edge cases
