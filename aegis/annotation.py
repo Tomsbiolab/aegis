@@ -3116,7 +3116,7 @@ class Annotation():
                             for x2, cs2 in enumerate(c.CDS_segments):
                                 if x1 == x2:
                                     continue
-                                if cs1 != cs2:
+                                if cs1.id != cs2.id:
                                     common_protein_CDS_ids = False
                                     break
 

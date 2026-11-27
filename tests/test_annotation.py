@@ -3404,6 +3404,27 @@ class TestCDSReformatting:
         assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[0].id == "mRNA_iso1c_CDS1"
         assert annot.chrs["chr1"]["gene_iso1"].transcripts["mRNA_iso1c"].CDSs["mRNA_iso1c_CDS1"].CDS_segments[1].id == "mRNA_iso1c_CDS1"
 
+    def test_CDS_segment_to_CDS_ids_preserves_shared_ids_without_override(self, tmp_path):
+        gff = tmp_path / "shared_cds.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\texon\t300\t500\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\tt\tCDS\t100\t200\t.\t+\t0\tID=cds-NP_001;Parent=t1\n"
+            "chr1\tt\tCDS\t300\t500\t.\t+\t1\tID=cds-NP_001;Parent=t1\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        annot.CDS_segment_to_CDS_ids(override=False)
+        t = annot.chrs["chr1"]["g1"].transcripts["t1"]
+        assert list(t.CDSs.keys()) == ["cds-NP_001"]
+        assert [cs.id for cs in t.CDSs["cds-NP_001"].CDS_segments] == ["cds-NP_001", "cds-NP_001"]
+
+        annot.CDS_segment_to_CDS_ids(override=True)
+        assert list(t.CDSs.keys()) == ["t1_CDS1"]
+        assert [cs.id for cs in t.CDSs["t1_CDS1"].CDS_segments] == ["t1_CDS1", "t1_CDS1"]
+
 # ============================================================
 # Testing synteny
 # ============================================================
