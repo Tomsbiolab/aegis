@@ -5,7 +5,7 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..conf import RNA_CLASSES
-from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL, split_callback
+from .utils import COLUMNS_PANEL, FILTER_PANEL, IO_PANEL, EXEC_PANEL, ANNOT_EXTENSIONS, split_callback, resolve_bio_name
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -121,8 +121,7 @@ def genes(
         if biotype not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid RNA class: '{biotype}'. Choose from: {RNA_CLASSES}")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)
@@ -265,8 +264,7 @@ def transcripts(
         if biotype not in RNA_CLASSES:
             raise typer.BadParameter(f"Invalid RNA class: '{biotype}'. Choose from: {RNA_CLASSES}")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
     
     if "{annotation-name}" in output_file:
         output_file = output_file.replace("{annotation-name}", annotation_name)

@@ -13,7 +13,10 @@ from .utils import (
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
     PROMOTER_PANEL,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
     detect_file_type,
+    resolve_bio_name,
 )
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -187,11 +190,8 @@ def main(
         else:
             final_motif_len = len(motif_in)
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-
-    if genome_name == "{genome-file}":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
+    genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
 
     subfolder = False
 

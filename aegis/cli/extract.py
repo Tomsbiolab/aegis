@@ -10,6 +10,9 @@ from .utils import (
     warn_organelle_genetic_codes,
     split_callback,
     detect_file_type,
+    resolve_bio_name,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
     TaxonomyOption,
     GeneticCodeOption,
     AutoOrganelleDetectionOption,
@@ -280,11 +283,8 @@ def main(
     if feature_id not in VALID_IDS:
         raise typer.BadParameter(f"Invalid feature ID: {feature_id}. Choose from: {VALID_IDS}")
     
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-
-    if genome_name == "{genome-file}":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
+    genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
 
     if promoter_type not in PROMOTER_TYPES:
         raise typer.BadParameter(f"Invalid promoter type: '{promoter_type}'. Choose from: {PROMOTER_TYPES}")

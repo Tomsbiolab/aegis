@@ -185,3 +185,147 @@ class TestMcscanGtfBedPreparation:
         for gff_text in mcscan_gffs_seen:
             assert "\tmRNA\t" in gff_text
             assert "\ttranscript\t" not in gff_text
+
+
+class TestOrthologyNameDisambiguation:
+    def _write_annot(self, path, gid, start=1, end=156):
+        path.write_text(
+            "##gff-version 3\n"
+            f"chr1\ttest\tgene\t{start}\t{end}\t.\t+\t.\tID={gid}\n"
+            f"chr1\ttest\tmRNA\t{start}\t{end}\t.\t+\t.\tID={gid}.1;Parent={gid}\n"
+            f"chr1\ttest\texon\t{start}\t{end}\t.\t+\t.\tID={gid}.1.e1;Parent={gid}.1\n"
+            f"chr1\ttest\tCDS\t{start}\t{end}\t.\t+\t0\tID={gid}.1.c1;Parent={gid}.1\n"
+        )
+
+    def test_duplicate_annotation_and_distinct_genome_basenames_disambiguated(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from aegis.cli import app
+        import aegis.cli.orthology as orthology_mod
+
+        (tmp_path / "sp1").mkdir()
+        (tmp_path / "sp2").mkdir()
+        seq = ">chr1\n" + ("ATG" + "GCT" * 50 + "TAA") + ("A" * 200) + "\n"
+        fa1 = tmp_path / "sp1" / "genome.fa"
+        fa2 = tmp_path / "sp2" / "genome.fa"
+        fa1.write_text(seq)
+        fa2.write_text(seq)
+
+        a1 = tmp_path / "sp1" / "annot.gff3"
+        a2 = tmp_path / "sp2" / "annot.gff3"
+        self._write_annot(a1, "G1")
+        self._write_annot(a2, "H1")
+
+        seen_calls = []
+
+        def fake_pairwise(**kwargs):
+            seen_calls.append((
+                kwargs["annot1_name"],
+                kwargs["annot2_name"],
+                kwargs["genome1"].name,
+                kwargs["genome2"].name,
+                kwargs["pairwise_orthofinder"],
+            ))
+
+        monkeypatch.setattr(orthology_mod, "pairwise_orthology", fake_pairwise)
+
+        runner = CliRunner(env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"})
+        out_dir = tmp_path / "out"
+        res = runner.invoke(app, [
+            "orthology",
+            "-a", f"{a1},{a2}",
+            "-g", f"{fa1},{fa2}",
+            "-d", str(out_dir),
+            "--skip-lifton", "--skip-mcscan", "--skip-all-blasts", "--skip-orthofinder",
+            "-na",
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        assert seen_calls == [
+            ("annot", "annot_2", "genome", "genome_2", False),
+            ("annot_2", "annot", "genome_2", "genome", False),
+        ]
+        df = pd.read_csv(out_dir / "equivalences_with_NAs.tsv", sep="\t", keep_default_na=False)
+        assert set(df["annotation_A"]) == {"annot", "annot_2"}
+
+    def test_shared_and_distinct_genomes_with_same_basename(self, tmp_path, monkeypatch):
+        """Two annotations sharing sp1/genome.fa keep 'genome', while sp2/genome.fa is disambiguated to 'genome_2'."""
+        from typer.testing import CliRunner
+        from aegis.cli import app
+        import aegis.cli.orthology as orthology_mod
+
+        (tmp_path / "sp1").mkdir()
+        (tmp_path / "sp2").mkdir()
+        seq = ">chr1\n" + ("ATG" + "GCT" * 50 + "TAA") + ("A" * 200) + "\n"
+        fa1 = tmp_path / "sp1" / "genome.fa"
+        fa2 = tmp_path / "sp2" / "genome.fa"
+        fa1.write_text(seq)
+        fa2.write_text(seq)
+
+        a1 = tmp_path / "sp1" / "annot.gff3"
+        a2 = tmp_path / "sp1" / "annot_alt.gff3"
+        a3 = tmp_path / "sp2" / "annot.gff3"
+        self._write_annot(a1, "G1")
+        self._write_annot(a2, "G2")
+        self._write_annot(a3, "H1")
+
+        seen_genome_names = {}
+
+        def fake_pairwise(**kwargs):
+            seen_genome_names[kwargs["annot1_name"]] = kwargs["genome1"].name
+            seen_genome_names[kwargs["annot2_name"]] = kwargs["genome2"].name
+            assert kwargs["pairwise_orthofinder"] is True
+
+        monkeypatch.setattr(orthology_mod, "pairwise_orthology", fake_pairwise)
+
+        runner = CliRunner(env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"})
+        out_dir = tmp_path / "out_mix"
+        res = runner.invoke(app, [
+            "orthology",
+            "-a", f"{a1},{a2},{a3}",
+            "-g", f"{fa1},{fa1},{fa2}",
+            "-d", str(out_dir),
+            "--skip-liftoff", "--skip-lifton", "--skip-mcscan", "--skip-all-blasts", "--skip-orthofinder",
+        ])
+        # All methods skipped -> should fail with No analysis methods selected, after name resolution.
+        assert res.exit_code != 0
+
+        res = runner.invoke(app, [
+            "orthology",
+            "-a", f"{a1},{a2},{a3}",
+            "-g", f"{fa1},{fa1},{fa2}",
+            "-d", str(out_dir),
+            "--skip-lifton", "--skip-mcscan", "--skip-all-blasts", "--skip-orthofinder",
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        assert seen_genome_names == {
+            "annot": "genome",
+            "annot_alt": "genome",
+            "annot_2": "genome_2",
+        }
+
+    def test_conflicting_explicit_tags_for_same_genome_file_rejected(self, tmp_path):
+        from typer.testing import CliRunner
+        from aegis.cli import app
+
+        fa = tmp_path / "genome.fa"
+        fa.write_text(">chr1\nATG" + "GCT" * 50 + "TAA\n")
+        a1 = tmp_path / "a1.gff3"
+        a2 = tmp_path / "a2.gff3"
+        self._write_annot(a1, "G1")
+        self._write_annot(a2, "G2")
+
+        runner = CliRunner(env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"})
+        res = runner.invoke(app, [
+            "orthology",
+            "-a", f"{a1},{a2}",
+            "-g", f"{fa},{fa}",
+            "-gn", "G1,G2",
+            "-d", str(tmp_path / "out"),
+            "--skip-lifton", "--skip-mcscan", "--skip-all-blasts", "--skip-orthofinder",
+            "-q",
+        ])
+        assert res.exit_code != 0
+        normalized = " ".join(res.output.replace("│", " ").split())
+        assert "multiple different tags" in normalized
+        assert "single consistent tag" in normalized

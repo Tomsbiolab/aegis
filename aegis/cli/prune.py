@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation, read_file_with_fallback
-from .utils import IO_PANEL, EXEC_PANEL, PRUNE_PANEL
+from .utils import IO_PANEL, EXEC_PANEL, PRUNE_PANEL, ANNOT_EXTENSIONS, resolve_bio_name
 
 features = ["gene", "transcript"]
 
@@ -85,8 +85,7 @@ def main(
     if feature_type not in features:
         raise typer.BadParameter(f"Invalid feature level: {feature_type}. Choose from: {features}")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     subfolder = False
 

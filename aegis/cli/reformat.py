@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation, detect_file_format, read_file_with_fallback
-from .utils import IO_PANEL, EXEC_PANEL, FORMAT_PANEL, COORDS_PANEL
+from .utils import IO_PANEL, EXEC_PANEL, FORMAT_PANEL, COORDS_PANEL, ANNOT_EXTENSIONS, resolve_bio_name
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -107,8 +107,7 @@ def main(
     collapse_exons_opt = collapse_exons
     collapse_CDSs_opt = collapse_cds
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     os.makedirs(output_dir, exist_ok=True)
     subfolder = False

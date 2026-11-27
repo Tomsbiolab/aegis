@@ -21,6 +21,10 @@ from .utils import (
     InitiatorMethionineOption,
     apply_organelle_chroms,
     warn_organelle_genetic_codes,
+    split_callback,
+    resolve_unique_names,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
     IO_PANEL,
     EXEC_PANEL,
     FASTA_HEADER_PANEL,
@@ -232,14 +236,16 @@ def main(
         "-g", "--genome", "--genome-file", "--genome-files", "--genomes", help="Path to input genome FASTA file(s). Provide 1 file for shared assembly, or 1-to-1 matching annotations (comma-separated or repeated -g).",
         rich_help_panel=IO_PANEL,
     )] = None,
-    annotation_names: Annotated[str, typer.Option(
+    annotation_names: Annotated[List[str], typer.Option(
         "-an", "--annotation-names", "--annotation-name", "--annot-names", "--annot-name", help="Comma-separated annotation names or tags (defaults to filenames).",
+        callback=split_callback,
         rich_help_panel=IO_PANEL,
-    )] = "",
-    genome_name: Annotated[str, typer.Option(
+    )] = [],
+    genome_name: Annotated[List[str], typer.Option(
         "-gn", "--genome-name", "--genome-names", help="Genome assembly version, name or tag (comma-separated if multiple genomes).",
+        callback=split_callback,
         rich_help_panel=IO_PANEL,
-    )] = "{genome-file}",
+    )] = [],
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to output summary table (TSV/CSV).",
         rich_help_panel=IO_PANEL,
@@ -349,21 +355,20 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     # 2. Load genome assembly if specified
-    gnames = [item.strip() for item in genome_name.split(",")] if genome_name and genome_name != "{genome-file}" else []
+    resolved_genome_names = (
+        resolve_unique_names(
+            genome_files,
+            provided_names=genome_name,
+            extensions=FASTA_EXTENSIONS,
+            kind="genome",
+            quiet=quiet,
+        )
+        if genome_files
+        else []
+    )
     genome_objs: list[Genome] = []
 
-    for g_idx, g_file in enumerate(genome_files):
-        if g_idx < len(gnames) and gnames[g_idx]:
-            cur_gname = gnames[g_idx]
-        else:
-            g_stem = Path(g_file).stem
-            if g_stem.endswith(".fa") or g_stem.endswith(".fasta"):
-                g_stem = Path(g_stem).stem
-            cur_gname = g_stem
-
-        if any(g.name == cur_gname for g in genome_objs):
-            cur_gname = f"{cur_gname}_{g_idx + 1}"
-
+    for g_file, cur_gname in zip(genome_files, resolved_genome_names):
         g_obj = Genome(
             name=cur_gname,
             genome_file_path=g_file,
@@ -377,18 +382,18 @@ def main(
     genome_obj: Genome | None = genome_objs[0] if (num_genomes == 1) else None
     has_genomes = bool(genome_obj is not None or (is_multi_genome and genome_objs))
 
-    # 3. Parse annotation names
-    names = [item.strip() for item in annotation_names.split(",")] if annotation_names else []
+    # 3. Resolve and disambiguate annotation names
+    resolved_annot_names = resolve_unique_names(
+        annot_files,
+        provided_names=annotation_names,
+        extensions=ANNOT_EXTENSIONS,
+        kind="annotation",
+        quiet=quiet,
+    )
 
     # 4. Load annotation objects
     annotations: list[Annotation] = []
-    for idx, afile in enumerate(annot_files):
-        if idx < len(names) and names[idx]:
-            aname = names[idx]
-        else:
-            aname = Path(afile).stem
-            if aname.endswith(".gff3") or aname.endswith(".gff") or aname.endswith(".gtf"):
-                aname = Path(aname).stem
+    for idx, (afile, aname) in enumerate(zip(annot_files, resolved_annot_names)):
 
         if is_multi_genome:
             assigned_genome = genome_objs[idx]

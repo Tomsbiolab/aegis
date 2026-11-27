@@ -116,6 +116,25 @@ def test_cli_summary_genome_duplicate_filenames_disambiguated(tmp_path):
     assert lines[1] == "chr1\t8\t16\t+8"
 
 
+def test_cli_summary_genome_duplicate_collision_with_existing_suffix(tmp_path):
+    """Disambiguation avoids colliding with a genome genuinely named genome_2."""
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+    g1 = tmp_path / "v1" / "genome.fa"
+    g2 = tmp_path / "v2" / "genome.fa"
+    g3 = tmp_path / "genome_2.fa"
+    g1.write_text(">chr1\nACGTACGT\n")
+    g2.write_text(">chr1\nACGTACGTACGT\n")
+    g3.write_text(">chr1\nACGTACGTACGTACGT\n")
+
+    out_tsv = tmp_path / "dup3.tsv"
+    res = runner.invoke(app, [str(g1), str(g2), str(g3), "-o", str(out_tsv), "-q"])
+    assert res.exit_code == 0, res.output
+    lines = out_tsv.read_text().splitlines()
+    assert lines[0] == "Feature\tgenome\tgenome_3\tgenome_2"
+    assert lines[1] == "chr1\t8\t12\t16"
+
+
 def test_cli_summary_genome_csv_quotes_commas(tmp_path):
     """CSV export quotes cells containing commas (e.g. '= ref (PN1, seq diff)')."""
     g1 = tmp_path / "ga.fa"

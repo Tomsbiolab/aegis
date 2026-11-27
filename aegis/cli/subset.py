@@ -12,6 +12,7 @@ from ..genome import Genome
 from .utils import (
     split_callback,
     strip_bio_extension,
+    resolve_bio_name,
     ANNOT_EXTENSIONS,
     FASTA_EXTENSIONS,
     SUBSET_PANEL,
@@ -164,12 +165,11 @@ def main(
 
     chosen_chromosomes_set = set(chosen_chromosomes)
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
-    if genome_name == "{genome-file}" and genome_file != "":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
-    elif genome_file == "":
+    if genome_file != "":
+        genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
+    else:
         genome_name = "genome"
 
     if output_file:

@@ -7,7 +7,15 @@ from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..genome import Genome, Scaffold
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SUMMARY_PANEL, FASTA_EXTENSIONS, strip_bio_extension
+from .utils import (
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    SUMMARY_PANEL,
+    FASTA_EXTENSIONS,
+    split_callback,
+    resolve_unique_names,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -397,10 +405,11 @@ def main(
         "-g", "--genomes", "--genome", "--genome-file", help="Path to input genome FASTA file(s). Overrides positional arguments if provided.",
         rich_help_panel=IO_PANEL,
     )] = None,
-    genome_names: Annotated[str, typer.Option(
+    genome_names: Annotated[List[str], typer.Option(
         "-gn", "--genome-names", "--genome-name", help="Comma-separated genome names/tags (e.g. 'Col-0,Cvi-0'). Defaults to filenames.",
+        callback=split_callback,
         rich_help_panel=IO_PANEL,
-    )] = "",
+    )] = [],
     output_file: Annotated[str, typer.Option(
         "-o", "--output-file", help="Path to output TSV/CSV file.",
         rich_help_panel=IO_PANEL,
@@ -451,26 +460,17 @@ def main(
         except Exception:
             typer.echo(f"Warning: Could not parse --genome-size '{genome_size}'. Ignoring.", err=True)
 
-    # Parse names
-    names = [item.strip() for item in genome_names.split(",")] if genome_names else []
-    
-    seen_names: set[str] = set()
+    # Resolve and disambiguate genome names
+    resolved_genome_names = resolve_unique_names(
+        genome_files,
+        provided_names=genome_names,
+        extensions=FASTA_EXTENSIONS,
+        kind="genome",
+        quiet=quiet,
+    )
+
     genomes: list[Genome] = []
-    for idx, gfile in enumerate(genome_files):
-        if idx < len(names) and names[idx]:
-            gname = names[idx]
-        else:
-            gname, _ = strip_bio_extension(Path(gfile).name, FASTA_EXTENSIONS)
-
-        if gname in seen_names:
-            suffix = idx + 1
-            candidate = f"{gname}_{suffix}"
-            while candidate in seen_names:
-                suffix += 1
-                candidate = f"{gname}_{suffix}"
-            gname = candidate
-        seen_names.add(gname)
-
+    for gfile, gname in zip(genome_files, resolved_genome_names):
         g = Genome(
             name=gname,
             genome_file_path=gfile,

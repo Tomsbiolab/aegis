@@ -15,6 +15,7 @@ from .utils import (
     FASTA_EXTENSIONS,
     detect_file_type,
     strip_bio_extension,
+    resolve_bio_name,
 )
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -148,11 +149,10 @@ def main(
     genome_file = gen_in
     annotation_file = annot_in
 
-    if genome_name == "{genome-file}":
-        genome_name = os.path.splitext(os.path.basename(genome_file))[0]
+    genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
 
-    if (annotation_name == "{annotation-file}") and (annotation_file != ""):
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    if annotation_file != "":
+        annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     if coordinate_polishing not in ("none", "contain", "trim"):
         raise typer.BadParameter(f"Invalid coordinate_polishing: '{coordinate_polishing}'. Choose from: 'none', 'contain', 'trim'.")

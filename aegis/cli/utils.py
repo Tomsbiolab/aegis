@@ -2,6 +2,7 @@
 Utility functions and callbacks for the AEGIS CLI suite.
 """
 from __future__ import annotations
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Sequence, Union, Optional
 
 import typer
@@ -87,6 +88,165 @@ def strip_bio_extension(name: str, extensions: tuple[str, ...] = BIO_EXTENSIONS)
         if lower.endswith(ext):
             return name[:-len(ext)], name[-len(ext):]
     return name, ""
+
+
+DEFAULT_NAME_SENTINELS = (
+    "{annotation-file}",
+    "{genome-file}",
+    "{annotation-filename(s)}",
+    "{genome-filename(s)}",
+)
+
+
+def derive_bio_name(filepath: str, extensions: tuple[str, ...] = BIO_EXTENSIONS) -> str:
+    """
+    Derive a clean tag/name from an annotation or genome file path by stripping
+    any known bioinformatics extension (including gzipped extensions such as
+    '.gff3.gz' or '.fasta.gz'), preserving dotted stems like 'release_v1.2'.
+    """
+    stem, _ = strip_bio_extension(Path(filepath).name, extensions)
+    return stem
+
+
+def resolve_bio_name(
+    filepath: str,
+    provided_name: Optional[str] = None,
+    *,
+    extensions: tuple[str, ...] = BIO_EXTENSIONS,
+) -> str:
+    """
+    Return a single annotation or genome name: the explicit name when provided
+    (and not a default placeholder), otherwise derived from ``filepath``.
+    """
+    cleaned = provided_name.strip() if provided_name else ""
+    if cleaned and cleaned not in DEFAULT_NAME_SENTINELS:
+        return cleaned
+    return derive_bio_name(filepath, extensions)
+
+
+def _disambiguate_names(
+    files: Sequence[str],
+    raw_names: Sequence[str],
+) -> tuple[List[str], List[tuple[str, str, str]]]:
+    """
+    Ensure every entry in ``raw_names`` is unique by appending ``_2``, ``_3``, ...
+    to subsequent occurrences while avoiding collisions with already-used names
+    and with raw names belonging to other entries.
+    """
+    reserved = set(raw_names)
+    used: set[str] = set()
+    next_suffix: dict[str, int] = {}
+    resolved: List[str] = []
+    disambiguated: List[tuple[str, str, str]] = []
+
+    for filepath, base in zip(files, raw_names):
+        if base not in used:
+            final = base
+        else:
+            suffix = next_suffix.get(base, 2)
+            candidate = f"{base}_{suffix}"
+            while candidate in used or candidate in reserved:
+                suffix += 1
+                candidate = f"{base}_{suffix}"
+            next_suffix[base] = suffix + 1
+            final = candidate
+            disambiguated.append((base, final, filepath))
+        used.add(final)
+        resolved.append(final)
+
+    return resolved, disambiguated
+
+
+def resolve_unique_names(
+    files: Sequence[str],
+    provided_names: Union[str, Sequence[str], None] = None,
+    *,
+    extensions: tuple[str, ...] = BIO_EXTENSIONS,
+    kind: str = "input",
+    share_by_file: bool = False,
+    strict_count: bool = False,
+    quiet: bool = False,
+) -> List[str]:
+    """
+    Resolve and disambiguate names for a sequence of annotation or genome files.
+
+    - Missing entries (or default placeholder sentinels) are derived from each
+      filename via ``derive_bio_name``.
+    - Duplicate names are disambiguated consistently with ``_2``, ``_3``, ...
+      (skipping any name already used or claimed by another entry).
+    - When ``share_by_file=True`` (e.g. genomes in ``aegis orthology``), entries
+      pointing to the same resolved file path share a single name (raising
+      ``typer.BadParameter`` if conflicting explicit names were assigned to the
+      same file), while distinct files with colliding names are disambiguated.
+    """
+    if not files:
+        return []
+
+    if isinstance(provided_names, str):
+        raw_provided = [n.strip() for n in provided_names.split(",") if n.strip()]
+    else:
+        raw_provided = [n.strip() for n in provided_names] if provided_names else []
+
+    if raw_provided and all(n in DEFAULT_NAME_SENTINELS or not n for n in raw_provided):
+        raw_provided = []
+
+    if raw_provided:
+        if strict_count and len(raw_provided) != len(files):
+            raise typer.BadParameter(
+                f"The provided number of {kind} name(s)/tag(s) ({len(raw_provided)}) "
+                f"does not match the number of {kind} file(s) ({len(files)})."
+            )
+        if len(raw_provided) > len(files):
+            raise typer.BadParameter(
+                f"Too many {kind} name(s)/tag(s) provided ({len(raw_provided)}) "
+                f"for {len(files)} {kind} file(s)."
+            )
+
+    raw_names: List[str] = []
+    for idx, filepath in enumerate(files):
+        if idx < len(raw_provided) and raw_provided[idx] and raw_provided[idx] not in DEFAULT_NAME_SENTINELS:
+            raw_names.append(raw_provided[idx])
+        else:
+            raw_names.append(derive_bio_name(filepath, extensions))
+
+    if share_by_file:
+        resolved_paths = [str(Path(f).resolve()) for f in files]
+        file_to_names: dict[str, set[str]] = {}
+        for rpath, name in zip(resolved_paths, raw_names):
+            file_to_names.setdefault(rpath, set()).add(name)
+        for rpath, names_set in file_to_names.items():
+            if len(names_set) > 1:
+                raise typer.BadParameter(
+                    f"The {kind} file '{Path(rpath).name}' is mapped to multiple different tags: {sorted(names_set)}. "
+                    f"The same {kind} file must use a single consistent tag."
+                )
+
+        unique_orig_files: List[str] = []
+        unique_rpaths: List[str] = []
+        unique_raw_names: List[str] = []
+        seen_rpaths: set[str] = set()
+        for orig_f, rpath, name in zip(files, resolved_paths, raw_names):
+            if rpath not in seen_rpaths:
+                seen_rpaths.add(rpath)
+                unique_orig_files.append(orig_f)
+                unique_rpaths.append(rpath)
+                unique_raw_names.append(name)
+
+        unique_resolved, disambiguated = _disambiguate_names(unique_orig_files, unique_raw_names)
+        rpath_to_final = dict(zip(unique_rpaths, unique_resolved))
+        resolved = [rpath_to_final[rpath] for rpath in resolved_paths]
+    else:
+        resolved, disambiguated = _disambiguate_names(files, raw_names)
+
+    if disambiguated and not quiet:
+        for orig, final, filepath in disambiguated:
+            typer.secho(
+                f"Warning: Duplicate {kind} name '{orig}' disambiguated to '{final}' (for '{filepath}').",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+
+    return resolved
 
 
 def detect_file_type(filepath: str) -> str:

@@ -4,7 +4,15 @@ from typing import List
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import MERGE_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL, split_callback
+from .utils import (
+    MERGE_PANEL,
+    SUBFEATURE_PANEL,
+    IO_PANEL,
+    EXEC_PANEL,
+    ANNOT_EXTENSIONS,
+    split_callback,
+    resolve_unique_names,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -92,13 +100,21 @@ def main(
 
     subfolder = False
 
+    resolved_names = resolve_unique_names(
+        annot_files,
+        provided_names=annotation_names,
+        extensions=ANNOT_EXTENSIONS,
+        kind="annotation",
+        quiet=quiet,
+    )
+
     if output_file == "{annotation-names}.gff3":
         output_file = None  # type: ignore
     elif "{annotation-names}" in output_file:
-        names_tag = "_".join(annotation_names) if annotation_names else "merged"
+        names_tag = "_".join(resolved_names)
         output_file = output_file.replace("{annotation-names}", names_tag)
 
-    name_1 = annotation_names[0] if len(annotation_names) > 0 else os.path.splitext(os.path.basename(annot_files[0]))[0]
+    name_1 = resolved_names[0]
     if not quiet:
         print(f"Loading base annotation from {annot_files[0]}...")
     base_annotation = Annotation(
@@ -110,8 +126,7 @@ def main(
         coordinate_polishing="none", skip_atypical_features=clean_features
     )
 
-    for i, annotation_file in enumerate(annot_files[1:], start=1):
-        name_i = annotation_names[i] if len(annotation_names) > i else os.path.splitext(os.path.basename(annotation_file))[0]
+    for annotation_file, name_i in zip(annot_files[1:], resolved_names[1:]):
         if not quiet:
             print(f"Loading annotation to merge from {annotation_file}...")
         merge_annotation = Annotation(

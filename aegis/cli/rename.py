@@ -4,7 +4,7 @@ from typing import Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
-from .utils import split_callback, AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
+from .utils import split_callback, resolve_bio_name, ANNOT_EXTENSIONS, AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, RENAME_PANEL, SUBFEATURE_PANEL, IO_PANEL, EXEC_PANEL
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -155,8 +155,7 @@ def main(
     if rename_features == []:
         raise typer.BadParameter(f"No features were chosen to rename their ids. Select from: {VALID_FEATURES}.")
 
-    if annotation_name == "{annotation-file}":
-        annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
+    annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
 
     os.makedirs(output_dir, exist_ok=True)
 

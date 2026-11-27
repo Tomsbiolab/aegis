@@ -15,6 +15,7 @@ from .utils import (
     MitochondriaChromsOption,
     ChloroplastChromsOption,
     strip_bio_extension,
+    resolve_bio_name,
     ANNOT_EXTENSIONS,
     FASTA_EXTENSIONS,
     IO_PANEL,
@@ -482,18 +483,12 @@ def main(
 
     # 3. Derive names
     if annotation_file:
-        if annotation_name == "{annotation-file}":
-            annotation_name = os.path.splitext(os.path.basename(annotation_file))[0]
-            if annotation_name.endswith(".gff") or annotation_name.endswith(".gtf"):
-                annotation_name = os.path.splitext(annotation_name)[0]
+        annotation_name = resolve_bio_name(annotation_file, annotation_name, extensions=ANNOT_EXTENSIONS)
     else:
         annotation_name = "annotation"
 
     if genome_file:
-        if genome_name == "{genome-file}":
-            genome_name = os.path.splitext(os.path.basename(genome_file))[0]
-            if genome_name.endswith(".fa") or genome_name.endswith(".fasta"):
-                genome_name = os.path.splitext(genome_name)[0]
+        genome_name = resolve_bio_name(genome_file, genome_name, extensions=FASTA_EXTENSIONS)
     else:
         genome_name = "genome"
 

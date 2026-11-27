@@ -136,3 +136,42 @@ class TestOverlapCLI:
         ])
         assert res.exit_code != 0
         assert "multiple input filenames" in res.output
+
+    def test_duplicate_annotation_basenames_disambiguated(self, tmp_path):
+        d1 = tmp_path / "v1"
+        d2 = tmp_path / "v2"
+        d1.mkdir()
+        d2.mkdir()
+        _write_simple_gff(d1 / "same.gff3", [("g1", 100, 500)])
+        _write_simple_gff(d2 / "same.gff3", [("h1", 100, 500)])
+
+        out_dir = tmp_path / "out"
+        res = runner.invoke(app, [
+            "overlap",
+            str(d1 / "same.gff3"),
+            str(d2 / "same.gff3"),
+            "-d", str(out_dir),
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        csv_files = list((out_dir / "overlaps").glob("*.csv"))
+        assert [f.name for f in csv_files] == ["same_same_2_overlaps_t6.csv"]
+        df = pd.read_csv(csv_files[0], sep="\t")
+        assert set(df["gene_id_A_origin"]) | set(df["gene_id_B_origin"]) == {"same", "same_2"}
+
+    def test_duplicate_explicit_annotation_names_disambiguated(self, tmp_path):
+        _write_simple_gff(tmp_path / "a1.gff3", [("g1", 100, 500)])
+        _write_simple_gff(tmp_path / "a2.gff3", [("h1", 100, 500)])
+
+        out_dir = tmp_path / "out_dup_an"
+        res = runner.invoke(app, [
+            "overlap",
+            str(tmp_path / "a1.gff3"),
+            str(tmp_path / "a2.gff3"),
+            "-an", "dup,dup",
+            "-d", str(out_dir),
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        csv_files = list((out_dir / "overlaps").glob("*.csv"))
+        assert [f.name for f in csv_files] == ["dup_dup_2_overlaps_t6.csv"]

@@ -2,12 +2,20 @@ import typer
 import os
 import warnings
 
+from pathlib import Path
 from typing import List, Optional
 from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..utils.genefunctions import export_group_equivalences
-from .utils import split_callback, IO_PANEL, EXEC_PANEL, OVERLAP_PANEL
+from .utils import (
+    split_callback,
+    resolve_unique_names,
+    ANNOT_EXTENSIONS,
+    IO_PANEL,
+    EXEC_PANEL,
+    OVERLAP_PANEL,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -91,19 +99,18 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    if annotation_names == ["{annotation-filename(s)}"]:
-        annotation_names = []
-        for annotation_file in annot_files:
-            annotation_names.append(os.path.splitext(os.path.basename(annotation_file))[0])
-
-    if len(annot_files) != len(annotation_names):
-        raise typer.BadParameter(f"The provided number of annotation name(s)/tag(s) do not match the number of annotation file(s).")
-
-    if len(annotation_names) != len(set(annotation_names)):
-        raise typer.BadParameter("Avoid repeated annotation tag(s)/name(s).")
-    
-    if len(annot_files) != len(set(annot_files)):
+    resolved_annot_files = [str(Path(f).resolve()) for f in annot_files]
+    if len(resolved_annot_files) != len(set(resolved_annot_files)):
         raise typer.BadParameter("Avoid repeated annotation filename(s).")
+
+    annotation_names = resolve_unique_names(
+        annot_files,
+        provided_names=annotation_names,
+        extensions=ANNOT_EXTENSIONS,
+        kind="annotation",
+        strict_count=True,
+        quiet=quiet,
+    )
 
     if original_annotation_files != []:
         synteny = True
