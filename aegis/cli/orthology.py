@@ -810,18 +810,11 @@ def main(
         mcscan_name = a.name.replace(".", "_")
 
         gff_file1 = gff_path / f"{a.name}.gff3"
-        gff_file2 = gff_path / f"{mcscan_name}.gff3"
 
         if not gff_file1.exists():
             a.export.gff(output_dir=str(gff_path), filename=f"{a.name}.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
         else:
             print(f"\n\tExisting GFF file for {a.name}. Skipping.")
-
-        if gff_file1 != gff_file2:
-            if not gff_file2.exists():
-                a.export.gff(output_dir=str(gff_path), filename=f"{mcscan_name}.gff3", subfolder=False, quiet=quiet, clean_attributes=True)
-            else:
-                print(f"\n\tExisting GFF mcscan file for {a.name}. Skipping.")
             
         if not skip_lifton:
             lifton_prep_file = gff_path / f"{a.name}__for__lifton.gff3"
@@ -868,9 +861,27 @@ def main(
                 print(f"\n\tExisting cleaned CDS for {a.name}. Skipping.")
 
             if not bed_file.exists():
+                # JCVI extracts BED rows with --type=mRNA; standardise coding transcripts to mRNA
+                # (e.g. GTF inputs use 'transcript') on a temporary copy so other tools keep original types.
+                needs_mcscan_standardise = any(
+                    (t.feature != "mRNA") if t.CDSs else (t.feature == "mRNA")
+                    for genes in a.chrs.values()
+                    for g in genes.values()
+                    for t in g.transcripts.values()
+                )
+                if needs_mcscan_standardise:
+                    mcscan_gff = gff_path / f"{mcscan_name}__for__mcscan.gff3"
+                    if not mcscan_gff.exists():
+                        a_mcscan = a.copy()
+                        a_mcscan.update_features(standardise=True, quiet=quiet)
+                        a_mcscan.export.gff(output_dir=str(gff_path), filename=mcscan_gff.name, subfolder=False, quiet=quiet, clean_attributes=True)
+                        del a_mcscan
+                else:
+                    mcscan_gff = gff_file1
+
                 gff_to_bed_cmd_1 = [
                     "python", "-m", "jcvi.formats.gff", "bed", "--type=mRNA",
-                    "--key=Parent", "--primary_only", f"{gff_path}/{mcscan_name}.gff3", "-o", str(bed_file)
+                    "--key=Parent", "--primary_only", str(mcscan_gff), "-o", str(bed_file)
                 ]
                 run_command(mcscan_path, gff_to_bed_cmd_1)
             else:

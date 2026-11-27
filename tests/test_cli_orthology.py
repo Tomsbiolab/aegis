@@ -128,3 +128,60 @@ class TestZeroHitOrthologySchema:
         assert res.exit_code == 0, res.output
         df4 = pd.read_csv(d4 / "out.tsv", sep="\t")
         assert "species_A" in df4.columns and "species_B" in df4.columns
+
+
+class TestMcscanGtfBedPreparation:
+    def test_gtf_coding_transcripts_standardised_to_mRNA_for_mcscan(self, tmp_path, monkeypatch):
+        from pathlib import Path
+        from typer.testing import CliRunner
+        from aegis.cli import app
+        import aegis.cli.orthology as orthology_mod
+
+        fa1 = tmp_path / "g1.fa"
+        fa2 = tmp_path / "g2.fa"
+        seq = ">chr1\n" + ("ATG" + "GCT" * 50 + "TAA") + ("A" * 200) + "\n"
+        fa1.write_text(seq)
+        fa2.write_text(seq)
+
+        gtf_template = (
+            'chr1\ttest\tgene\t1\t156\t.\t+\t.\tgene_id "{g}";\n'
+            'chr1\ttest\ttranscript\t1\t156\t.\t+\t.\tgene_id "{g}"; transcript_id "{g}.1";\n'
+            'chr1\ttest\texon\t1\t156\t.\t+\t.\tgene_id "{g}"; transcript_id "{g}.1";\n'
+            'chr1\ttest\tCDS\t1\t156\t.\t+\t0\tgene_id "{g}"; transcript_id "{g}.1";\n'
+        )
+        a1 = tmp_path / "a1.gtf"
+        a2 = tmp_path / "a2.gtf"
+        a1.write_text(gtf_template.format(g="G1"))
+        a2.write_text(gtf_template.format(g="H1"))
+
+        mcscan_gffs_seen = []
+
+        def fake_run_command(cwd, cmd):
+            if "jcvi.formats.gff" in cmd and "bed" in cmd:
+                gff_arg = Path(cmd[cmd.index("--primary_only") + 1])
+                mcscan_gffs_seen.append(gff_arg.read_text())
+                out_bed = Path(cmd[cmd.index("-o") + 1])
+                out_bed.write_text("")
+            elif "jcvi.formats.fasta" in cmd:
+                Path(cmd[-1]).write_text("")
+
+        monkeypatch.setattr(orthology_mod, "run_command", fake_run_command)
+        monkeypatch.setattr(orthology_mod, "pairwise_orthology", lambda **kwargs: None)
+
+        runner = CliRunner(env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"})
+        out_dir = tmp_path / "out"
+        res = runner.invoke(app, [
+            "orthology",
+            "-a", f"{a1},{a2}",
+            "-g", f"{fa1},{fa2}",
+            "-an", "A1,A2",
+            "-gn", "G1,G2",
+            "-d", str(out_dir),
+            "--skip-liftoff", "--skip-lifton", "--skip-all-blasts", "--skip-orthofinder",
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        assert len(mcscan_gffs_seen) == 2
+        for gff_text in mcscan_gffs_seen:
+            assert "\tmRNA\t" in gff_text
+            assert "\ttranscript\t" not in gff_text
