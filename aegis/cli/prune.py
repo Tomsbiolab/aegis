@@ -113,10 +113,10 @@ def main(
 
     if keep:
         if feature_type == "gene":
-            to_remove = set(annotation.genes.keys()) - input_ids
+            to_remove = set(annotation.all_gene_ids.keys()) - input_ids
             annotation.remove_genes(to_remove=to_remove, override_rescue=True, quiet=quiet)
         else:
-            to_remove = set(annotation.transcripts.keys()) - input_ids
+            to_remove = set(annotation.all_transcript_ids.keys()) - input_ids
             annotation.remove_transcripts(to_remove=to_remove, remove_genes_accordingly=True, quiet=quiet)
     else:
         if feature_type == "gene":
