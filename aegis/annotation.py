@@ -3431,16 +3431,18 @@ class Annotation():
         trimmed = 0
         for (chrom, g_id), (start_before, end_before) in spans_before.items():
             g = self.chrs[chrom].get(g_id)
-            if g is None or not g.transcripts:
+            if g is None:
                 continue
-            start = min(x.start for x in g.transcripts.values())
-            end = max(x.end for x in g.transcripts.values())
-            if (g.start == start_before and start > g.start) or (g.end == end_before and end < g.end):
-                trimmed += 1
-                if g.start == start_before:
-                    g.start = start
-                if g.end == end_before:
-                    g.end = end
+            if g.transcripts:
+                start = min(x.start for x in g.transcripts.values())
+                end = max(x.end for x in g.transcripts.values())
+                if (g.start == start_before and start > g.start) or (g.end == end_before and end < g.end):
+                    trimmed += 1
+                    if g.start == start_before:
+                        g.start = start
+                    if g.end == end_before:
+                        g.end = end
+            g.update(quiet=quiet)
 
         if removed:
             if trimmed:
@@ -3531,22 +3533,33 @@ class Annotation():
                         e.parents = new_parents
                         e.parents.sort()
                     for c in t.CDSs.values():
-                        new_parents = []
                         if c.parents:
+                            new_parents = []
                             for p in c.parents:
                                 if p in self.all_transcript_ids:
                                     new_parents.append(p)
                             c.parents = new_parents
                             c.parents.sort()
-                            for cs in c.CDS_segments:
-                                new_parents = []
-                                for p in (cs.parents or []):
+                        for cs in c.CDS_segments:
+                            new_parents = []
+                            for p in (cs.parents or []):
+                                if p in self.all_transcript_ids:
+                                    new_parents.append(p)
+                                else:
+                                    removed += 1
+                            cs.parents = new_parents
+                            cs.parents.sort()
+                        for u in c.UTRs:
+                            new_parents = []
+                            if u.parents:
+                                for p in u.parents:
                                     if p in self.all_transcript_ids:
-                                        new_parents.append(p)
+                                        if p not in g.transcripts or g.transcripts[p].strand == u.strand:
+                                            new_parents.append(p)
                                     else:
                                         removed += 1
-                                cs.parents = new_parents
-                                cs.parents.sort()
+                            u.parents = new_parents
+                            u.parents.sort()
         if removed and not quiet:
             print(f"{self.id}: {removed} parent references to transcripts no longer in the annotation were removed from exon and CDS rows")
 

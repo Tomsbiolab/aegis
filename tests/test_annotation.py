@@ -801,6 +801,38 @@ class TestAnnotationRemoveTranscripts:
             annot.remove_transcripts(to_remove={"fake_transcript"}, remove_genes_accordingly=True, quiet=False)
             assert any("fake_transcript" in str(warning.message) for warning in w)
 
+    def test_remove_main_transcript_updates_gene_and_cleans_utr_parents(self, tmp_path):
+        gff = tmp_path / "isoforms.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t1000\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t1000\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t300\t.\t+\t.\tID=e1;Parent=t1,t2\n"
+            "chr1\tt\texon\t400\t1000\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\tt\tCDS\t200\t300\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\tt\tCDS\t400\t900\t.\t+\t1\tID=c1;Parent=t1\n"
+            "chr1\tt\tmRNA\t100\t800\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\tt\texon\t400\t800\t.\t+\t.\tID=e3;Parent=t2\n"
+            "chr1\tt\tCDS\t200\t300\t.\t+\t0\tID=c2;Parent=t2\n"
+            "chr1\tt\tCDS\t400\t700\t.\t+\t1\tID=c2;Parent=t2\n"
+            "chr1\tt\tlnc_RNA\t100\t500\t.\t+\t.\tID=t3;Parent=g1\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e4;Parent=t3\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        g = annot.chrs["chr1"]["g1"]
+        assert g.transcripts["t1"].main is True
+
+        annot.remove_transcripts({"t1"}, quiet=True)
+        assert g.transcripts["t2"].main is True
+        assert g.coding is True and g.noncoding is True
+        for c in g.transcripts["t2"].CDSs.values():
+            for u in c.UTRs:
+                assert "t1" not in u.parents
+
+        annot.remove_transcripts({"t2"}, quiet=True)
+        assert g.transcripts["t3"].main is True
+        assert g.coding is False and g.noncoding is True
+
 
 # ============================================================
 # Annotation — remove_transcripts_with_no_exons
