@@ -3985,12 +3985,18 @@ class Annotation():
                         if not c.main:
                             c_count += 1
 
-                        if "CDS" in features or prefix:
+                        if "CDS" in features or prefix or cds_segment_ids:
 
                             if prefix or base_id_missing:
                                 c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=False, cds_segment_ids=cds_segment_ids)
                             else:
                                 c.rename(base_id=t.id, base_gene_id=g.base_id, count=c_count, sep=sep, digits=t_id_digits, keep_numbering=keep_subfeature_numbers, keep_existing_ids_if_derived_from_base_id=keep_existing_ids_if_derived_from_base_id, cds_segment_ids=cds_segment_ids)
+                                if cds_segment_ids and keep_existing_ids_if_derived_from_base_id and any(cs.id == c.id for cs in c.CDS_segments):
+                                    for cs_count, cs in enumerate(c.CDS_segments, start=1):
+                                        cs.id = f"{c.id}{sep}{cs_count}"
+                                        if cs.original_id != cs.id:
+                                            c.renamed = True
+                                            cs.update_numbering()
 
                             if c.renamed:
                                 changed_features.add("CDS")

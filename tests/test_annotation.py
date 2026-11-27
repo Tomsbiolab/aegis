@@ -5035,3 +5035,24 @@ class TestAnnotationRelease:
         a2 = Annotation(str(gff), quiet=True)
         a2.release(name="rel", id="rel_v1", source_name="src", id_prefix="REL_", custom_path=str(out_tagged), tag="final", quiet=True)
         assert [p.name for p in out_tagged.iterdir()] == ["rel_v1_final.gff3"]
+
+
+class TestRenameIdsBugFixes:
+    def test_cds_segment_ids_without_cds_in_features_renames_segments(self, tmp_path):
+        gff = tmp_path / "cds_seg.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\texon\t300\t500\t.\t+\t.\tID=e2;Parent=t1\n"
+            "chr1\tt\tCDS\t100\t200\t.\t+\t0\tID=cds1;Parent=t1\n"
+            "chr1\tt\tCDS\t300\t500\t.\t+\t1\tID=cds1;Parent=t1\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        with pytest.warns(UserWarning, match="cds_segment_ids"):
+            annot.rename_ids(features=("gene", "transcript"), cds_segment_ids=True, quiet=True)
+        t = next(iter(annot.chrs["chr1"]["g1"].transcripts.values()))
+        c = next(iter(t.CDSs.values()))
+        assert [cs.id for cs in c.CDS_segments] == [f"{c.id}_1", f"{c.id}_2"]
+        assert "CDS" in annot.renamed_features
