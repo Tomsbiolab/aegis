@@ -76,6 +76,29 @@ def test_read_bed_converts_to_one_based(tmp_path):
     assert (p.start, p.end, p.summit, p.score, p.peak_id) == (2100, 2200, 2150, 50.0, "p1")
 
 
+def test_detect_and_read_bed_and_narrowpeak_with_unprefixed_header(tmp_path):
+    bed_path = _bed(tmp_path, [("chrom", "start", "end", "name", "score"), ("chr1", 99, 200, "p1", 50)], "hdr.bed")
+    assert detect_peak_format(bed_path) == "bed"
+    p = read_peaks(bed_path)[0]
+    assert (p.chrom, p.start, p.end, p.name, p.score) == ("chr1", 100, 200, "p1", 50.0)
+
+    np_path = _bed(
+        tmp_path,
+        [
+            ("chrom", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "peak", "fold_enrichment", "binding_motif"),
+            ("chr1", 999, 1200, "peakX", 300, ".", 12.5, 4.2, 3.1, 50, 7.5, "ACGT"),
+        ],
+        "hdr.narrowPeak",
+    )
+    assert detect_peak_format(np_path) == "narrowpeak"
+    p = read_peaks(np_path)[0]
+    assert (p.start, p.end, p.summit, p.signal, p.fold, p.motif) == (1000, 1200, 1050, 12.5, 7.5, "ACGT")
+
+    bad_path = _bed(tmp_path, [("chrom", "start", "end"), ("not", "ints", "here")], "bad.bed")
+    with pytest.raises(ValueError, match="Could not detect"):
+        detect_peak_format(bad_path)
+
+
 def test_read_narrowpeak_uses_summit_offset(tmp_path):
     path = _bed(tmp_path, [("chr1", 999, 1200, "peakX", 300, ".", 12.5, 4.2, 3.1, 50)], "x.narrowPeak")
     assert detect_peak_format(path) == "narrowpeak"
