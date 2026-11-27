@@ -40,18 +40,16 @@ class AnnotationMotifs (AnnotationComponent):
         extra_suffixes = [tf_motif_tag]
 
         motif = motif.upper()
-        promoter_length = 0
-
-        for genes in self._annot.chrs.values():
-            for g in genes.values():
-                for t in g.transcripts.values():
-                    if t.main:
-                        if t.promoter:
-                            if t.promoter.seq != "":
+        promoter_length = getattr(self._annot, "promoter_size", 0) or 0
+        if promoter_length <= 0:
+            for genes in self._annot.chrs.values():
+                for g in genes.values():
+                    for t in g.transcripts.values():
+                        if t.main and t.promoter and t.promoter.seq != "":
+                            if t.promoter.size > promoter_length:
                                 promoter_length = t.promoter.size
-                                break
-                break
-            break
+        hist_bins = max(1, promoter_length // bin_division)
+        genome_hist_bins = max(1, promoter_length // bins_genome_division)
                     
         # critical thing to understand here is that we are looking at how a motif
         # is oriented with regards to the TSS
@@ -106,7 +104,7 @@ class AnnotationMotifs (AnnotationComponent):
             df.to_csv(str(backlist_file_path), sep="\t")
         
         interest_count = len(midpoints)
-        plt.hist(midpoints, bins=(promoter_length//bin_division), color='skyblue', edgecolor='skyblue')
+        plt.hist(midpoints, bins=hist_bins, color='skyblue', edgecolor='skyblue')
         plt.grid(False)
         plt.title(f"{self._annot.id} {tf_motif_tag} {glistname} histogram\npromoters with motif: ({interest_proportion}/{len(query_genes)})")
         plt.xlabel("promoter position")
@@ -172,7 +170,7 @@ class AnnotationMotifs (AnnotationComponent):
             df.to_csv(str(backlist_file_path), sep="\t")
 
         random_count = len(midpoints)
-        plt.hist(midpoints, bins=(promoter_length//bin_division), color='grey', edgecolor='grey')
+        plt.hist(midpoints, bins=hist_bins, color='grey', edgecolor='grey')
         plt.grid(False)
         plt.title(f"{self._annot.id} {tf_motif_tag} {glistname} random histogram\npromoters with motif: ({random_proportion}/{len(query_genes)})")
         plt.xlabel("promoter position")
@@ -225,7 +223,7 @@ class AnnotationMotifs (AnnotationComponent):
                 midpoints.append(midpoint)
 
             genomic_count = len(midpoints)
-            plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
+            plt.hist(midpoints, bins=genome_hist_bins, color='grey', edgecolor='grey')
             plt.grid(False)
             plt.title(f"{self._annot.id} {tf_motif_tag} full genome histogram\npromoters with motif: ({genomic_proportion}/{len(self._annot.all_gene_ids.keys())})")
             plt.xlabel("promoter position")
@@ -275,7 +273,7 @@ class AnnotationMotifs (AnnotationComponent):
                 midpoints.append(midpoint)
 
             genomic_count = len(midpoints)
-            plt.hist(midpoints, bins=(promoter_length//bins_genome_division), color='grey', edgecolor='grey')
+            plt.hist(midpoints, bins=genome_hist_bins, color='grey', edgecolor='grey')
             plt.grid(False)
             plt.title(f"{self._annot.id} {tf_motif_tag} {backlistname} as background histogram\npromoters with motif: ({genomic_proportion}/{len(backlist)})")
             plt.xlabel("promoter position")
