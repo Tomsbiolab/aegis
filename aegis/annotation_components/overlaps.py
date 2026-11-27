@@ -507,7 +507,7 @@ class AnnotationOverlaps(AnnotationComponent):
             for genes in self._annot.chrs.values():
                 for g in genes.values():
                     g.overlaps["self"] = []
-        elif keep_other:
+        elif not keep_other:
             self.other_genes = set()
             self._annot.overlapped_annotations = set()
             for genes in self._annot.chrs.values():
