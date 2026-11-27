@@ -4764,6 +4764,8 @@ class Annotation():
                             u.ch = chrom
                     for e in t.exons:
                         e.ch = chrom
+                    for m in t.miRNAs:
+                        m.ch = chrom
                     if t.introns is not None:
                         for i in t.introns:
                             i.ch = chrom
@@ -4775,6 +4777,22 @@ class Annotation():
         for o in self.orphaned_features:
             if o.ch in equivalences:
                 o.ch = equivalences[o.ch]
+
+        self.all_gene_ids = {g_id: equivalences.get(ch, ch) for g_id, ch in self.all_gene_ids.items()}
+        self.all_transcript_ids = {t_id: (equivalences.get(ch, ch), g_id) for t_id, (ch, g_id) in self.all_transcript_ids.items()}
+        self.all_protein_ids = {p_id: (equivalences.get(ch, ch), g_id, t_id, c_id) for p_id, (ch, g_id, t_id, c_id) in self.all_protein_ids.items()}
+        self.circular_chromosomes = {equivalences.get(ch, ch) for ch in self.circular_chromosomes}
+        self.mitochondria_chroms = tuple(equivalences.get(ch, ch) for ch in self.mitochondria_chroms)
+        self.chloroplast_chroms = tuple(equivalences.get(ch, ch) for ch in self.chloroplast_chroms)
+
+        new_header = []
+        for line in self.gff_header:
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == "##sequence-region" and parts[1] in equivalences:
+                new_ch = equivalences[parts[1]]
+                line = re.sub(r"^(##sequence-region\s+)\S+", lambda m, nc=new_ch: m.group(1) + nc, line, count=1)
+            new_header.append(line)
+        self.gff_header = new_header
         if dap:
             self.tags.add("dapfit")
             if renamed_scaffolds:

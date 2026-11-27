@@ -1598,6 +1598,36 @@ class TestAnnotationRenameChromosomes:
         annot.rename_chromosomes(equivalences)
         assert "confrenamed" in annot.tags
 
+    def test_rename_updates_caches_mirnas_circular_and_header(self, tmp_path):
+        gff = tmp_path / "mirna_circ.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "##sequence-region chr1 1 5000\n"
+            "##sequence-region chr2 1 3000\n"
+            "chr1\tt\tregion\t1\t5000\t.\t+\t.\tID=reg1;Is_circular=true\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmiRNA_primary_transcript\t100\t500\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tmiRNA\t200\t222\t.\t+\t.\tID=m1;Parent=t1\n"
+            "chr2\tt\tgene\t100\t400\t.\t+\t.\tID=g2\n"
+            "chr2\tt\tmRNA\t100\t400\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr2\tt\texon\t100\t400\t.\t+\t.\tID=e2;Parent=t2\n"
+        )
+        annot = Annotation(str(gff), quiet=True, mitochondria_chroms=("chr1",), chloroplast_chroms=("chr2",))
+        annot.all_protein_ids["p1"] = ("chr1", "g1", "t1", "c1")
+        annot.rename_chromosomes({"chr1": "scaf_1", "chr2": "scaf_2"})
+
+        assert annot.all_gene_ids == {"g1": "scaf_1", "g2": "scaf_2"}
+        assert annot.all_transcript_ids == {"t1": ("scaf_1", "g1"), "t2": ("scaf_2", "g2")}
+        assert annot.all_protein_ids == {"p1": ("scaf_1", "g1", "t1", "c1")}
+        assert annot.chrs["scaf_1"]["g1"].transcripts["t1"].miRNAs[0].ch == "scaf_1"
+        assert annot.circular_chromosomes == {"scaf_1"}
+        assert annot.mitochondria_chroms == ("scaf_1",)
+        assert annot.chloroplast_chroms == ("scaf_2",)
+        assert "##sequence-region scaf_1 1 5000" in annot.gff_header
+        assert "##sequence-region scaf_2 1 3000" in annot.gff_header
+        assert not any("chr1" in h or "chr2" in h for h in annot.gff_header)
+
 
 # ============================================================
 # Annotation — feature tags round trip
