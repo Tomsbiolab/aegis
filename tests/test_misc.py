@@ -1066,3 +1066,18 @@ def test_covered_length(intervals, expected):
 ])
 def test_trim_3p_bases(segments, bases, strand, expected):
     assert trim_3p_bases(segments, bases, strand) == expected
+
+
+def test_pie_chart_interpolated_hsl_colors(tmp_path):
+    from aegis.utils.plots import pie_chart, parse_to_matplotlib_colors
+
+    parsed = parse_to_matplotlib_colors(["#FF0000", "rgb(0, 255, 0)", "hsl(240.0, 100.0%, 50.0%)"])
+    assert parsed[0] == "#FF0000"
+    assert parsed[1] == (0.0, 1.0, 0.0)
+    assert all(abs(a - b) < 1e-6 for a, b in zip(parsed[2], (0.0, 0.0, 1.0)))
+
+    labels = [f"cat_{i}" for i in range(8)]
+    values = list(range(1, 9))
+    pie_chart(labels, values, f"{tmp_path}/", "interpolated", "Interpolated Pie")
+    assert (tmp_path / "interpolated.html").exists()
+    assert (tmp_path / "interpolated.pdf").exists()

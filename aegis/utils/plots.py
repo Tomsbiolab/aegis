@@ -6,6 +6,7 @@ Created on Saturday March 23 14:29:53 2023
 @authors: David Navarro, Antonio Santiago
 """
 
+import colorsys
 import colorlover as cl
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
@@ -22,15 +23,22 @@ palettes["pastel"] = ["#A8D6B5", "#FFC9A5", "#C9CCE5", "#EFCEDF", "#DFF2B9"]
 common_font = dict(family="Arial", size=18)
 
 def parse_to_matplotlib_colors(colours):
-    """Converts hex or rgb() strings from colorlover into a format matplotlib understands."""
+    """Converts hex, rgb(), or hsl() strings from colorlover into a format matplotlib understands."""
     matplotlib_colors = []
     for c in colours:
-        if isinstance(c, str) and c.startswith("rgb"):
-            # Parse 'rgb(r,g,b)' into normalized float tuples (r/255, g/255, b/255)
-            parts = c.replace("rgb(", "").replace(")", "").split(",")
-            matplotlib_colors.append(tuple(float(p.strip()) / 255.0 for p in parts))
-        else:
-            matplotlib_colors.append(c)
+        if isinstance(c, str):
+            s = c.strip()
+            if s.startswith("rgb(") and s.endswith(")"):
+                # Parse 'rgb(r,g,b)' into normalized float tuples (r/255, g/255, b/255)
+                parts = s[4:-1].split(",")
+                matplotlib_colors.append(tuple(float(p.strip()) / 255.0 for p in parts))
+                continue
+            if s.startswith("hsl(") and s.endswith(")"):
+                # Parse 'hsl(h, s%, l%)' into normalized RGB float tuples via HLS
+                h, sat, light = (float(p.strip().rstrip("%")) for p in s[4:-1].split(","))
+                matplotlib_colors.append(colorsys.hls_to_rgb(h / 360.0, light / 100.0, sat / 100.0))
+                continue
+        matplotlib_colors.append(c)
     return matplotlib_colors
 
 def save_pdf_pie(labels, values, colours, export_folder, tag, title):
