@@ -457,8 +457,8 @@ def main(
     for annot in annotations:
         if annot.genome is not None:
             warn_organelle_genetic_codes(annot, show_name=len(annotations) > 1)
-        # Update stats and export basic/full stats CSV files
-        annot.stats.update(output_dir=output_dir, export=True, quiet=True)
+        # Update stats and export basic/full stats CSV files (and plots only when --plots is set)
+        annot.stats.update(output_dir=output_dir, export=True, plots=plots, quiet=True)
 
     num_annots = len(annotations)
     is_multi = num_annots > 1

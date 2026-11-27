@@ -191,3 +191,27 @@ def test_cli_summary_csv_export_uses_comma_delimiter_and_quoting(tmp_path):
     assert "chrM (mito)" in gc_row[5] and "chrC (plastid)" in gc_row[5]
 
 
+def test_cli_summary_plots_flag_controls_plot_export(tmp_path):
+    """Plot files (.pdf/.html) are only exported when --plots is explicitly passed."""
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t100\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t100\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t100\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t99\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+    out_no_plots = tmp_path / "no_plots"
+    res1 = runner.invoke(app, [str(gff), "-d", str(out_no_plots), "-q"])
+    assert res1.exit_code == 0, res1.output
+    assert not [p for p in out_no_plots.iterdir() if p.suffix in {".pdf", ".html"}]
+    assert (out_no_plots / "a_basic_stats.csv").exists()
+
+    out_with_plots = tmp_path / "with_plots"
+    res2 = runner.invoke(app, [str(gff), "-d", str(out_with_plots), "--plots", "-q"])
+    assert res2.exit_code == 0, res2.output
+    assert any(p.suffix == ".pdf" for p in out_with_plots.iterdir())
+    assert any(p.suffix == ".html" for p in out_with_plots.iterdir())
+
+
+

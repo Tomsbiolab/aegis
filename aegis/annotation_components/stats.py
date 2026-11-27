@@ -216,7 +216,7 @@ class AnnotationStats(AnnotationComponent):
 
         return sorted(contig_dict.values(), key=sort_key)
 
-    def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, max_x:int|None=None, quiet:bool=True,
+    def update(self, output_dir: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "stats", export:bool=False, plots:bool=True, max_x:int|None=None, quiet:bool=True,
         #deprecated_arguments
         custom_path:str=""):
 
@@ -415,7 +415,7 @@ class AnnotationStats(AnnotationComponent):
         self.data["phase_mismatches"]     = qc["phase_mismatches"]
 
         # anything with mean will be also plotted as distribution plots:
-        if export:
+        if export and plots:
             for key in self.data:
                 if "mean" in key:
                     tag = key.split("mean_")[1]
@@ -452,7 +452,7 @@ class AnnotationStats(AnnotationComponent):
                                         intron_stats["other_intron_seqs"] += 1
             self.data["intron_composition"] = list(self.data["intron_composition"])
 
-            if export:
+            if export and plots:
                 labels = list(intron_stats.keys())
                 mod_labels = []
                 for l in labels:
