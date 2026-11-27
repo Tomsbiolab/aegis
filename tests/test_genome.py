@@ -140,6 +140,25 @@ class TestScaffold:
         s.update(new_name="chr01")
         assert s.description == "chr10 something"
 
+    @pytest.mark.parametrize("name", ["scaffold_12", "ctg100", "contig_42"])
+    def test_renamed_two_or_three_digit_scaffolds_stay_scaffolds(self, name):
+        s = Scaffold(name, "ATGC", original_name="GWH00000001")
+        assert s.renamed is True
+        assert s.chromosome is False
+
+    def test_update_resets_stale_flags_on_rename(self):
+        s = Scaffold("Ch0", "ATGC")
+        assert (s.chromosome, s.unknown_chromosome) == (True, False)
+        s.update(new_name="chr00")
+        assert (s.chromosome, s.unknown_chromosome, s.dapfit, s.renamed) == (False, True, True, True)
+
+        s2 = Scaffold("chr1", "ATGC")
+        assert (s2.chromosome, s2.dapfit) == (True, True)
+        s2.update(new_name="scaffold_12")
+        assert (s2.chromosome, s2.dapfit, s2.renamed) == (False, False, True)
+        s2.update(new_name="chr1")
+        assert (s2.chromosome, s2.dapfit, s2.renamed) == (True, True, False)
+
 
 # ============================================================
 # Genome
@@ -476,6 +495,9 @@ class TestDapRenaming:
         assert equivalences["Ch0"] == "chr00"
         assert equivalences["chrUn"] == "chr00000001"
         assert len(g.scaffolds) == 3
+        assert g.scaffolds["chr00"].chromosome is True
+        assert g.scaffolds["chr00"].unknown_chromosome is False
+        assert g.get_stats()["num_scaffolds"] == 0
 
     def test_dapfit_genome_with_chr00_is_unchanged(self, tmp_path, capsys):
         fasta = self._write_fasta(tmp_path / "fit.fa", ["chr01", "chr02", "chr00"])

@@ -135,8 +135,10 @@ class Scaffold():
                 self._rename_description(self.name, new_name)
             self.name = new_name
 
-        if self.name != self.original_name:
-            self.renamed = True
+        self.renamed = self.name != self.original_name
+        self.chromosome = False
+        self.unknown_chromosome = False
+        self.dapfit = False
 
         match = re.search(r'(\d+(?:\.\d+)?)$', self.name)
 
@@ -164,9 +166,6 @@ class Scaffold():
             self.unknown_chromosome = True
         elif chromosome_scaffold:
             pass
-        elif self.renamed and not self.name.startswith("chr"):
-            if len(self.number) == 2 or len(self.number) == 3:
-                self.chromosome = True
         elif lower_name.startswith("ch"):
             self.chromosome = True
 
@@ -190,10 +189,12 @@ class Scaffold():
                 self.mitochondria = True
             else:
                 self.chloroplast = True
+        elif self.organelle:
+            self.chromosome = True
 
         if self.name.startswith("chr"):
             number_str = self.name[3:]
-            if number_str.isdigit():
+            if number_str.isascii() and number_str.isdigit():
                 self.dapfit = True
 
     @property
@@ -632,12 +633,15 @@ class Genome():
             for scaffold in self.scaffolds.values():
                 previous_name = scaffold.name
                 was_chromosome = scaffold.chromosome
+                was_unknown_chromosome = scaffold.unknown_chromosome
                 new_name = self.equivalences[scaffold.original_name]
-                scaffold.update(new_name=new_name)
-                # update() classifies any name starting with "ch" as a chromosome
-                scaffold.chromosome = was_chromosome
-                if previous_name != scaffold.name:
+                if previous_name != new_name:
                     scaffold.dapmod = True
+                scaffold.update(new_name=new_name)
+                # update() reclassifies from the DAP name (e.g. chr00000001 starts with "ch",
+                # and chr00 looks like an unknown chromosome even for a chromosome numbered 0)
+                scaffold.chromosome = was_chromosome
+                scaffold.unknown_chromosome = was_unknown_chromosome
                 new_scaffolds[scaffold.name] = scaffold.copy()
 
             self.scaffolds = new_scaffolds.copy()
