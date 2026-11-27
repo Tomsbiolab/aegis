@@ -80,6 +80,27 @@ class TestGeneRename:
         g.rename(count=1, remove_point_suffix=True)
         assert "." not in g.id.split("g")[0]  # point suffix removed
 
+    def test_rename_exons_and_utrs_unstranded_starts_at_one(self, make_gene, make_transcript, make_exon, make_CDS):
+        g = make_gene(feature_id="g1", strand=".")
+        t = make_transcript("t1", strand=".")
+        t.exons = [
+            make_exon("ex_a", 1, 100, strand="."),
+            make_exon("ex_b", 200, 300, strand="."),
+        ]
+        c = make_CDS(feature_id="c1", strand=".")
+        c.UTRs = [
+            UTR("u_a", "chr1", "aegis", "UTR", ".", 1, 50, ".", ["t1"]),
+            UTR("u_b", "chr1", "aegis", "UTR", ".", 250, 300, ".", ["t1"]),
+        ]
+        t.CDSs["c1"] = c
+        g.transcripts["t1"] = t
+
+        g.rename_exons()
+        g.rename_utrs()
+
+        assert [e.id for e in t.exons] == ["g1_e001", "g1_e002"]
+        assert [u.id for u in c.UTRs] == ["g1_u001", "g1_u002"]
+
 
 # ============================================================
 # obtain_base_id

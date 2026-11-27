@@ -354,8 +354,8 @@ class Gene(Feature):
                         else:
                             rev_exon_names[key] = ""
 
-                x += len(rev_exon_names) + 1
-                total = x
+                total = x + sum(1 for v in rev_exon_names.values() if v == "")
+                x = total + 1
 
                 for key in rev_exon_names:
                     if rev_exon_names[key] == "":
@@ -505,8 +505,8 @@ class Gene(Feature):
                         else:
                             rev_utr_names[key] = ""
 
-                x += len(rev_utr_names) + 1
-                total = x
+                total = x + sum(1 for v in rev_utr_names.values() if v == "")
+                x = total + 1
 
                 for key in rev_utr_names:
                     if rev_utr_names[key] == "":
