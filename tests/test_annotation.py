@@ -4870,3 +4870,34 @@ class TestAddBlastHits:
             annot.add_blast_hits("swissprot", str(blast), mode="gene")
         with pytest.raises(ValueError):
             annot.add_blast_hits("swissprot", str(blast), mode="invalid")
+
+
+class TestPartialGenomeAndTranslTable:
+    def test_generate_promoters_and_rework_CDSs_skip_missing_contigs_and_use_cds_transl_table(self, tmp_path):
+        # Code 4 translates TGA as Trp (W) instead of STOP
+        fa = tmp_path / "partial.fa"
+        fa.write_text(">chr1\n" + "A" * 30 + "ATGCCCTGACCCTAA" + "A" * 30 + "\n")
+        gff = tmp_path / "partial.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t31\t45\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t31\t45\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t31\t45\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tCDS\t31\t45\t.\t+\t0\tID=c1;Parent=t1;transl_table=4\n"
+            "chr_missing\tt\tgene\t10\t50\t.\t+\t.\tID=g2\n"
+            "chr_missing\tt\tmRNA\t10\t50\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr_missing\tt\texon\t10\t50\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr_missing\tt\tCDS\t10\t50\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        genome = Genome("test", str(fa), quiet=True)
+        annot = Annotation(str(gff), genome=genome, quiet=True)
+
+        annot.generate_promoters(20)
+        assert annot.chrs["chr1"]["g1"].transcripts["t1"].promoter is not None
+        assert annot.chrs["chr_missing"]["g2"].transcripts["t2"].promoter is None
+
+        annot.rework_CDSs(quiet=True, allow_internal_stops=False, allow_partial=False)
+        c1 = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"]
+        assert c1.protein is not None and c1.protein.seq == "MPWP*"
+        assert c1.transl_table == 4
+        assert list(annot.chrs["chr_missing"]["g2"].transcripts["t2"].CDSs.keys()) == ["c2"]

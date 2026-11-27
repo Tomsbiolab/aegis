@@ -2540,10 +2540,16 @@ class Annotation():
 
         self.contains_promoters = True
 
-        for genes in self.chrs.values():
+        if self.genome is None:
+            raise ValueError("No genome loaded; cannot generate promoters without scaffold sizes.")
+
+        for chrom, genes in self.chrs.items():
+            if chrom not in self.genome.scaffolds:
+                continue
+            scaffold_size = self.genome.scaffolds[chrom].size
             for g in genes.values():
                 for t in g.transcripts.values():
-                    t.generate_promoter(promoter_size, self.genome.scaffolds[t.ch].size, promoter_type)
+                    t.generate_promoter(promoter_size, scaffold_size, promoter_type)
     
     def clear_promoters(self):
         for genes in self.chrs.values():
@@ -3579,7 +3585,9 @@ class Annotation():
         progress_bar = start_progress_bar(total=len(self.all_gene_ids), description=f"Reworking {self.id} CDSs", colour="91", quiet=quiet)
 
         for chrom, genes in self.chrs.items():
-            chrom_table = self.translation_table(chrom)
+            if self.genome is not None and chrom not in self.genome.scaffolds:
+                progress_bar.update(len(genes))
+                continue
 
             for g in genes.values():
                 progress_bar.update(1)
@@ -3588,6 +3596,10 @@ class Annotation():
                         continue
                     old_CDSs = list(t.CDSs.values())
                     old_UTRs = [u for c in old_CDSs for u in c.UTRs]
+                    ref_cds = next((c for c in old_CDSs if c.main and c.transl_table is not None), None)
+                    if ref_cds is None:
+                        ref_cds = next((c for c in old_CDSs if c.transl_table is not None), None)
+                    cds_table = self.translation_table(chrom, ref_cds)
 
                     t.generate_best_protein(
                         mode=mode,
@@ -3599,7 +3611,7 @@ class Annotation():
                         tolerated_stops=tolerated_stops,
                         orf_choice_mode=orf_choice_mode,
                         quiet=quiet,
-                        table=chrom_table,
+                        table=cds_table,
                         initiator_methionine=self.initiator_methionine,
                         alt_start_methionine=self.alt_start_methionine,
                     )
@@ -3616,7 +3628,7 @@ class Annotation():
                             must_have_stop=must_have_stop,
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
-                            table=chrom_table,
+                            table=cds_table,
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
@@ -3633,7 +3645,7 @@ class Annotation():
                             enforce_start_codon=enforce_start_codon,
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
-                            table=chrom_table,
+                            table=cds_table,
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
@@ -3650,13 +3662,17 @@ class Annotation():
                             enforce_start_codon=enforce_start_codon,
                             orf_choice_mode=orf_choice_mode,
                             quiet=quiet,
-                            table=chrom_table,
+                            table=cds_table,
                             initiator_methionine=self.initiator_methionine,
                             alt_start_methionine=self.alt_start_methionine,
                         )
                         t.update(quiet=quiet)
 
                     t.keep_unchanged_subfeatures(old_CDSs, old_UTRs, quiet=quiet)
+                    if ref_cds is not None:
+                        for c in t.CDSs.values():
+                            if c.transl_table is None:
+                                c.transl_table = ref_cds.transl_table
 
                 g.update(quiet=quiet)
 
