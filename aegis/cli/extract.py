@@ -354,27 +354,44 @@ def main(
             err=True,
         )
 
+    unique_features = list(dict.fromkeys(features))
+    modes = list(dict.fromkeys(mode))
+    fasta_exts = (".fasta", ".fa", ".fna", ".faa", ".fas")
+
     def resolve_export_filename(feat_name: str, mode_name: str) -> Optional[str]:
         if not output_file:
             return None
-        fn = output_file
-        if "{feature}" in fn:
-            fn = fn.replace("{feature}", feat_name)
-        if "{mode}" in fn:
-            fn = fn.replace("{mode}", mode_name)
-        if "{annotation-name}" in fn:
-            fn = fn.replace("{annotation-name}", annotation_name)
-        if "{genome-name}" in fn:
-            fn = fn.replace("{genome-name}", genome_name)
-        if fn == output_file and (len(features) > 1 or len(mode) > 1) and not ("{feature}" in output_file or "{mode}" in output_file):
-            stem, ext = os.path.splitext(output_file)
-            ext = ext if ext else ".fasta"
-            fn = f"{stem}_{feat_name}_{mode_name}{ext}"
-        elif fn == output_file and not fn.endswith(".fasta") and not fn.endswith(".fa"):
-            fn = f"{fn}.fasta"
-        return fn
+        has_feature = "{feature}" in output_file
+        has_mode = "{mode}" in output_file
+        fn = (
+            output_file
+            .replace("{feature}", feat_name)
+            .replace("{mode}", mode_name)
+            .replace("{annotation-name}", annotation_name)
+            .replace("{genome-name}", genome_name)
+        )
+        lower_fn = fn.lower()
+        ext = ""
+        for cand in fasta_exts:
+            if lower_fn.endswith(cand):
+                ext = fn[-len(cand):]
+                fn = fn[:-len(cand)]
+                break
+        if not ext:
+            ext = ".fasta"
 
-    modes = list(dict.fromkeys(mode))
+        suffixes = []
+        if len(unique_features) > 1 and not has_feature:
+            suffixes.append(feat_name)
+        if len(modes) > 1 and not has_mode:
+            suffixes.append(mode_name)
+        if suffixes:
+            if not has_feature and feat_name not in suffixes:
+                suffixes.insert(0, feat_name)
+            if not has_mode and mode_name not in suffixes:
+                suffixes.append(mode_name)
+            fn = f"{fn}_{'_'.join(suffixes)}"
+        return f"{fn}{ext}"
 
     if "gene" in features:
 

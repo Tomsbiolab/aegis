@@ -151,3 +151,27 @@ def test_extract_cli_multiple_modes(tmp_path):
     assert res.exit_code == 0, res.output
     files = sorted(f.name for f in out_dir.iterdir())
     assert len(files) == 16, files
+
+
+def test_extract_cli_output_template_disambiguation(tmp_path):
+    """-o with {annotation-name}/{genome-name} does not overwrite files across multiple features or modes."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1\n" + "ATGAAACCCGGGTTTAGA" * 5 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t36\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t36\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t36\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t18\t.\t+\t0\tID=c1;Parent=t1\n"
+    )
+
+    out1 = tmp_path / "out1"
+    res1 = runner.invoke(app, [str(gff), str(fa), "-f", "gene,protein", "-o", "{annotation-name}.fasta", "-d", str(out1), "-q"])
+    assert res1.exit_code == 0, res1.output
+    assert sorted(f.name for f in out1.iterdir()) == ["a_gene_all.fasta", "a_protein_all.fasta"]
+
+    out2 = tmp_path / "out2"
+    res2 = runner.invoke(app, [str(gff), str(fa), "-f", "protein", "-m", "all,main", "-o", "{genome-name}_{feature}.fa", "-d", str(out2), "-q"])
+    assert res2.exit_code == 0, res2.output
+    assert sorted(f.name for f in out2.iterdir()) == ["g_protein_all.fa", "g_protein_main.fa"]
