@@ -68,3 +68,27 @@ class TestExportGroupEquivalences:
         a2c = Annotation(str(tmp_path / "a2.gff3"), name="a2", genome=g_other, quiet=True)
         with pytest.raises(ValueError, match="same genome version"):
             export_group_equivalences([a1b, a2c], tmp_path / "out_diff", quiet=True)
+
+
+class TestOverlapCLI:
+    def test_original_annotation_files_reports_synteny_conserved(self, tmp_path):
+        _write_simple_gff(tmp_path / "orig1.gff3", [("g1", 100, 500), ("g2", 1000, 1500)])
+        _write_simple_gff(tmp_path / "lifted1.gff3", [("g1", 100, 500), ("g2", 1000, 1500)])
+        _write_simple_gff(tmp_path / "target2.gff3", [("h1", 100, 500), ("h2", 1000, 1500)])
+
+        out_dir = tmp_path / "out"
+        res = runner.invoke(app, [
+            "overlap",
+            str(tmp_path / "lifted1.gff3"),
+            str(tmp_path / "target2.gff3"),
+            "--original-annotation-files",
+            f"{tmp_path / 'orig1.gff3'},NA",
+            "-d", str(out_dir),
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        csv_files = list((out_dir / "overlaps").glob("*.csv"))
+        assert len(csv_files) == 1
+        df = pd.read_csv(csv_files[0], sep="\t")
+        assert list(df["gene_id_A_synteny_conserved"]) == [True, True]
+        assert list(df["gene_id_B_synteny_conserved"]) == [False, False]
