@@ -965,8 +965,9 @@ class Genome():
                     raise ValueError(f"Chosen scaffold/chromosome {chosen_feature} is not in {self.name} genome. Choose from '{self.scaffolds.keys()}'")
             scaffolds_to_remove = set(self.scaffolds) - chosen_features
         else:
-            if cap > len(self.scaffolds) and not quiet:
-                warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chrosomomes ({len(self.scaffolds)}). No features removed in subset genome {self.name}.", category=UserWarning)
+            if cap > len(self.scaffolds):
+                if not quiet:
+                    warnings.warn(f"Cap value {cap} exceeds the number of available scaffolds/chromosomes ({len(self.scaffolds)}). No features removed in subset genome {self.name}.", category=UserWarning)
                 return
             scaffolds_to_remove = set(self.scaffolds) - set(random.sample(list(self.scaffolds), cap))
 

@@ -212,6 +212,11 @@ class TestGenome:
         g_tuple.subset(chosen_features=("chr1",))
         assert "chr1" in g_tuple.scaffolds
 
+    def test_subset_cap_exceeding_scaffolds_quiet(self, sample_fasta_file):
+        g = Genome("test_genome", sample_fasta_file, quiet=True)
+        g.subset(cap=10, quiet=True)
+        assert set(g.scaffolds) == {"chr1", "chr2"}
+
     def test_copy(self, sample_fasta_file):
         g = Genome("test_genome", sample_fasta_file, quiet=True)
         g2 = g.copy()
