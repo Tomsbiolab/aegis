@@ -205,3 +205,24 @@ class TestFeatureQualityAttributes:
         line = make_gene(feature_id="gene001").print_gff(extra_attributes=True)
         assert "ID=gene001" in line
         assert "reliable_score=0" in line
+
+    def test_calculate_masking_case_insensitive_and_zero_size(self, make_feature, monkeypatch):
+        from aegis.feature import Feature
+
+        class DummyScaffold:
+            seq = "ACGTnnnnXXXX"
+
+        class DummyGenome:
+            name = "dummy"
+            scaffolds = {"chr1": DummyScaffold()}
+
+        monkeypatch.setattr(Feature, "_ACTIVE_HARD_GENOME", DummyGenome())
+
+        f = make_feature(feature_id="f1", start=1, end=12)
+        f.quality.calculate_masking()
+        assert f.quality.masked_fraction == round(8 / 12, 2)
+
+        f_empty = make_feature(feature_id="p0", feature="promoter", start=1, end=0)
+        assert f_empty.size == 0
+        f_empty.quality.calculate_masking()
+        assert f_empty.quality.masked_fraction == 0
