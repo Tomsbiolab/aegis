@@ -92,9 +92,12 @@ def get_tiered_cardinality(df, allowed_scores):
 
     sub_df['d1'] = sub_df.groupby(['a1', 'a2', 'g1'])['g2'].transform('count')
     sub_df['d2'] = sub_df.groupby(['a1', 'a2', 'g2'])['g1'].transform('count')
+    # A bipartite connected component has >1 node on side 2 iff some neighbor of g2 has d1 > 1,
+    # and >1 node on side 1 iff some neighbor of g1 has d2 > 1.
+    sub_df['max_d1'] = sub_df.groupby(['a1', 'a2', 'g2'])['d1'].transform('max')
     sub_df['max_d2'] = sub_df.groupby(['a1', 'a2', 'g1'])['d2'].transform('max')
-    
-    deg_A = sub_df['d1'].to_numpy()
+
+    deg_A = sub_df['max_d1'].to_numpy()
     deg_B = sub_df['max_d2'].to_numpy()
     
     condlist = [
