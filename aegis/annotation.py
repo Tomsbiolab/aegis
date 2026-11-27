@@ -4707,24 +4707,22 @@ class Annotation():
         self.update(quiet=quiet)
 
     def remove_coding_transcripts_from_non_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):
-        transcripts_to_remove = []
+        transcripts_to_remove = {
+            t.id
+            for genes in self.chrs.values()
+            for g in genes.values()
+            if g.coding and g.noncoding
+            for t in g.transcripts.values()
+            if t.coding
+        }
 
-        for chrom, genes in self.chrs.items():
-            for g in genes.values():
-                if g.coding:
-                    for t in g.transcripts.values():
-                        if t.coding == True:
-                            transcripts_to_remove.append((chrom, g.id, t.id))
-        
-        for chrom, g_id, t_id in transcripts_to_remove:
-            del self.chrs[chrom][g_id].transcripts[t_id]
-
-        if transcripts_to_remove != []:
+        if transcripts_to_remove:
+            self.remove_transcripts(transcripts_to_remove, quiet=quiet)
             removed_any = True
 
         if removed_any:
             self.feature_tags.add("minus_coding")
-        
+
         self.overlaps.clear()
 
         if update:
@@ -4733,19 +4731,17 @@ class Annotation():
         return removed_any
 
     def remove_non_coding_transcripts_from_coding_genes(self, removed_any:bool=False, update=True, quiet:bool=False):
-        transcripts_to_remove = []
+        transcripts_to_remove = {
+            t.id
+            for genes in self.chrs.values()
+            for g in genes.values()
+            if g.noncoding and g.coding
+            for t in g.transcripts.values()
+            if not t.coding
+        }
 
-        for chrom, genes in self.chrs.items():
-            for g in genes.values():
-                if g.noncoding:
-                    for t in g.transcripts.values():
-                        if t.coding == False:
-                            transcripts_to_remove.append((chrom, g.id, t.id))
-        
-        for chrom, g_id, t_id in transcripts_to_remove:
-            del self.chrs[chrom][g_id].transcripts[t_id]
-
-        if transcripts_to_remove != []:
+        if transcripts_to_remove:
+            self.remove_transcripts(transcripts_to_remove, quiet=quiet)
             removed_any = True
 
         if removed_any:

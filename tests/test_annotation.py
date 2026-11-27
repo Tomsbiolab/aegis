@@ -1826,6 +1826,52 @@ class TestAnnotationRemoveCodingGenes:
         # geneR3 (noncoding) should remain
         assert "geneR3" in annot.all_gene_ids
 
+    def test_mixed_gene_filters_clean_parents_atypicals_and_preserve_pure_genes(self, tmp_path):
+        gff = tmp_path / "mixed_coding.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t500\t.\t+\t.\tID=g_mix\n"
+            "chr1\tt\tmRNA\t100\t500\t.\t+\t.\tID=t_cod;Parent=g_mix\n"
+            "chr1\tt\texon\t100\t500\t.\t+\t.\tID=e_shared;Parent=t_cod,t_nc\n"
+            "chr1\tt\tCDS\t150\t450\t.\t+\t0\tID=c_cod;Parent=t_cod\n"
+            "chr1\tt\tprotein\t150\t450\t.\t+\t.\tID=p_cod;Derives_from=t_cod\n"
+            "chr1\tt\tlnc_RNA\t100\t500\t.\t+\t.\tID=t_nc;Parent=g_mix\n"
+            "chr1\tt\tgene\t700\t900\t.\t+\t.\tID=g_pure_cod\n"
+            "chr1\tt\tmRNA\t700\t900\t.\t+\t.\tID=t_pc;Parent=g_pure_cod\n"
+            "chr1\tt\texon\t700\t900\t.\t+\t.\tID=e_pc;Parent=t_pc\n"
+            "chr1\tt\tCDS\t700\t900\t.\t+\t0\tID=c_pc;Parent=t_pc\n"
+            "chr1\tt\tgene\t1100\t1300\t.\t+\t.\tID=g_pure_nc\n"
+            "chr1\tt\tlnc_RNA\t1100\t1300\t.\t+\t.\tID=t_pnc;Parent=g_pure_nc\n"
+            "chr1\tt\texon\t1100\t1300\t.\t+\t.\tID=e_pnc;Parent=t_pnc\n"
+        )
+
+        # Removing coding genes & transcripts cleans shared exon parents, all_transcript_ids, and atypical proteins
+        a1 = Annotation(str(gff), quiet=True)
+        a1.remove_coding_genes_and_transcripts(quiet=True)
+        assert "t_cod" not in a1.all_transcript_ids
+        assert "g_pure_cod" not in a1.all_gene_ids
+        assert [e.parents for e in a1.chrs["chr1"]["g_mix"].transcripts["t_nc"].exons] == [["t_nc"]]
+        assert a1.atypical_features == []
+
+        # Removing non-coding genes & transcripts cleans shared exon parents and all_transcript_ids
+        a2 = Annotation(str(gff), quiet=True)
+        a2.remove_non_coding_genes_and_transcripts(quiet=True)
+        assert "t_nc" not in a2.all_transcript_ids
+        assert "g_pure_nc" not in a2.all_gene_ids
+        assert [e.parents for e in a2.chrs["chr1"]["g_mix"].transcripts["t_cod"].exons] == [["t_cod"]]
+        assert len(a2.atypical_features) == 1
+
+        # Direct calls only affect mixed genes, never emptying pure genes
+        a3 = Annotation(str(gff), quiet=True)
+        a3.remove_coding_transcripts_from_non_coding_genes(update=False, quiet=True)
+        assert list(a3.chrs["chr1"]["g_pure_cod"].transcripts) == ["t_pc"]
+        assert list(a3.chrs["chr1"]["g_mix"].transcripts) == ["t_nc"]
+
+        a4 = Annotation(str(gff), quiet=True)
+        a4.remove_non_coding_transcripts_from_coding_genes(update=False, quiet=True)
+        assert list(a4.chrs["chr1"]["g_pure_nc"].transcripts) == ["t_pnc"]
+        assert list(a4.chrs["chr1"]["g_mix"].transcripts) == ["t_cod"]
+
 
 # ============================================================
 # Annotation — remove_pseudogene_genes & remove_non_pseudogene_genes
