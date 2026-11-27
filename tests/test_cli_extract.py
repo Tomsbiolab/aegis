@@ -175,3 +175,37 @@ def test_extract_cli_output_template_disambiguation(tmp_path):
     res2 = runner.invoke(app, [str(gff), str(fa), "-f", "protein", "-m", "all,main", "-o", "{genome-name}_{feature}.fa", "-d", str(out2), "-q"])
     assert res2.exit_code == 0, res2.output
     assert sorted(f.name for f in out2.iterdir()) == ["g_protein_all.fa", "g_protein_main.fa"]
+
+
+def test_extract_cli_biotypes_applies_to_all_features(tmp_path):
+    """-b / --biotypes filters gene, transcript, promoter, protein, and CDS extractions."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1\n" + "ACGT" * 50 + "ATGAAACCCGGGTTTAGA" + "ACGT" * 20 + "ATGCCCAAAGGGTTATGA" + "ACGT" * 20 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t201\t218\t.\t+\t.\tID=g_mrna\n"
+        "chr1\tt\tmRNA\t201\t218\t.\t+\t.\tID=t_mrna;Parent=g_mrna\n"
+        "chr1\tt\texon\t201\t218\t.\t+\t.\tID=e_mrna;Parent=t_mrna\n"
+        "chr1\tt\tCDS\t201\t218\t.\t+\t0\tID=c_mrna;Parent=t_mrna\n"
+        "chr1\tt\tgene\t299\t316\t.\t+\t.\tID=g_lnc\n"
+        "chr1\tt\tlnc_RNA\t299\t316\t.\t+\t.\tID=t_lnc;Parent=g_lnc\n"
+        "chr1\tt\texon\t299\t316\t.\t+\t.\tID=e_lnc;Parent=t_lnc\n"
+        "chr1\tt\tCDS\t299\t316\t.\t+\t0\tID=c_lnc;Parent=t_lnc\n"
+        "chr1\tt\tgene\t340\t360\t.\t+\t.\tID=g_notx\n"
+    )
+    out = tmp_path / "out"
+    res = runner.invoke(
+        app,
+        [str(gff), str(fa), "-f", "gene,transcript,promoter,protein,CDS", "-m", "main", "-b", "lnc_RNA", "-o", "{feature}.fa", "-d", str(out), "-q"],
+    )
+    assert res.exit_code == 0, res.output
+
+    def headers(name: str) -> list[str]:
+        return [l for l in (out / f"{name}.fa").read_text().splitlines() if l.startswith(">")]
+
+    assert headers("gene") == [">g_lnc"]
+    assert headers("transcript") == [">t_lnc"]
+    assert headers("promoter") == [">t_lnc_promoter"]
+    assert headers("protein") == [">c_lnc.prot"]
+    assert headers("CDS") == [">c_lnc"]

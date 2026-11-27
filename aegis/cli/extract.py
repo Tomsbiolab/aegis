@@ -62,7 +62,7 @@ def main(
         rich_help_panel=EXTRACTION_PANEL,
     )] = ["all"],
     rna_classes: Annotated[List[str], typer.Option(
-        "-b", "-r", "--biotypes", "--rna-classes", help=f"Filter transcripts by biotype (e.g., 'mRNA,lncRNA'). Provide a comma-separated list. If empty, all biotypes are included.",
+        "-b", "-r", "--biotypes", "--rna-classes", help=f"Filter extracted features by transcript biotype (e.g., 'mRNA,lnc_RNA'). Provide a comma-separated list. If empty, all biotypes are included.",
         callback=split_callback,
         rich_help_panel=EXTRACTION_PANEL,
     )] = [],
@@ -341,6 +341,16 @@ def main(
         recalculate_phases=recalculate_phases,
         reset_phases_zero=reset_phases_zero, skip_atypical_features=True
     )
+
+    if rna_classes:
+        annotation.filter_by_rna_class(rna_classes=rna_classes, remove_genes_accordingly=True, quiet=quiet)
+        transcriptless = {
+            g.id for genes in annotation.chrs.values() for g in genes.values() if not g.transcripts
+        }
+        if transcriptless:
+            annotation.remove_genes(transcriptless, override_rescue=True, quiet=quiet)
+        annotation.clear_proteins()
+        annotation.update(quiet=quiet, update_gene_and_transcript_list=True)
 
     if "protein" in features or "CDS" in features or rework_all_cds or infer_missing_cds:
         warn_organelle_genetic_codes(annotation)
