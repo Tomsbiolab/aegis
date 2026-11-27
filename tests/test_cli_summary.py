@@ -1,3 +1,4 @@
+import csv
 from typer.testing import CliRunner
 from aegis.cli.summary import app
 
@@ -161,5 +162,32 @@ def test_cli_summary_multi_genome_translates_all_annotations(tmp_path):
     assert "Intron-exon boundary GC-AG count\t0" in a1_stats
     assert "Intron-exon boundary GC-AG count\t1" in a2_stats
     assert "Intron-exon boundary GT-AG count\t0" in a2_stats
+
+
+def test_cli_summary_csv_export_uses_comma_delimiter_and_quoting(tmp_path):
+    """-o *.csv writes valid comma-delimited CSV and quotes values containing commas."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chrM\n" + "ATGAAACCCGGGTTTAGA" * 2 + "\n>chrC\n" + "ATGAAACCCGGGTTTAGA" * 2 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chrM\tt\tgene\t1\t18\t.\t+\t.\tID=g1\n"
+        "chrM\tt\tmRNA\t1\t18\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chrC\tt\tgene\t1\t18\t.\t+\t.\tID=g2\n"
+        "chrC\tt\tmRNA\t1\t18\t.\t+\t.\tID=t2;Parent=g2\n"
+    )
+    out_csv = tmp_path / "summary.csv"
+    res = runner.invoke(app, [str(gff), "-g", str(fa), "-A", "-o", str(out_csv), "-d", str(tmp_path / "stats"), "-q"])
+    assert res.exit_code == 0, res.output
+
+    text = out_csv.read_text(encoding="utf-8")
+    assert "\t" not in text
+    data_lines = [l for l in text.splitlines() if l and not l.startswith("#")]
+    parsed = list(csv.reader(data_lines))
+    assert ["Metric", "a"] in parsed
+    gc_header_idx = parsed.index(["Annotation", "Taxonomy", "Nuclear", "Mitochondrial", "Plastid", "Organelle contigs"])
+    gc_row = parsed[gc_header_idx + 1]
+    assert len(gc_row) == 6
+    assert "chrM (mito)" in gc_row[5] and "chrC (plastid)" in gc_row[5]
 
 

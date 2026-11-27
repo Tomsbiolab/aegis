@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 import typer
@@ -754,12 +755,11 @@ def main(
         if is_two_genomes and not is_ref_mode:
             file_headers.append("Diff")
 
-        with open(export_path, "w", encoding="utf-8") as f_out:
-            f_out.write(delimiter.join(file_headers) + "\n")
-            for row in file_rows:
-                f_out.write(delimiter.join(row) + "\n")
-            for row in file_summary_rows:
-                f_out.write(delimiter.join(row) + "\n")
+        with open(export_path, "w", encoding="utf-8", newline="") as f_out:
+            writer = csv.writer(f_out, delimiter=delimiter, lineterminator="\n")
+            writer.writerow(file_headers)
+            writer.writerows(file_rows)
+            writer.writerows(file_summary_rows)
 
         if not quiet:
             typer.echo(f"\nGenome summary exported to: {export_path}")

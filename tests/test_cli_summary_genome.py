@@ -1,3 +1,4 @@
+import csv
 from typer.testing import CliRunner
 from aegis.cli.summary_genome import app
 
@@ -113,5 +114,23 @@ def test_cli_summary_genome_duplicate_filenames_disambiguated(tmp_path):
     lines = out_tsv.read_text().splitlines()
     assert lines[0] == "Feature\tgenome\tgenome_2\tDiff"
     assert lines[1] == "chr1\t8\t16\t+8"
+
+
+def test_cli_summary_genome_csv_quotes_commas(tmp_path):
+    """CSV export quotes cells containing commas (e.g. '= ref (PN1, seq diff)')."""
+    g1 = tmp_path / "ga.fa"
+    g2 = tmp_path / "gc.fa"
+    g1.write_text(">chr1\nACGTACGTACGT\n")
+    g2.write_text(">PN1\nACGTTTTTACGT\n")
+
+    out_csv = tmp_path / "summary.csv"
+    res = runner.invoke(app, [str(g1), str(g2), "-r", "-o", str(out_csv), "-q"])
+    assert res.exit_code == 0, res.output
+
+    with open(out_csv, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["Feature", "ga [Ref]", "gc"]
+    assert rows[1] == ["chr1", "12", "= ref (PN1, seq diff)"]
+    assert all(len(row) == 3 for row in rows)
 
 

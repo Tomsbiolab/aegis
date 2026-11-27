@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 import typer
@@ -1009,25 +1010,24 @@ def main(
 
     if export_path is not None:
         export_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(export_path, "w", encoding="utf-8") as f:
+        delimiter = "," if export_path.suffix.lower() == ".csv" else "\t"
+        with open(export_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f, delimiter=delimiter, lineterminator="\n")
             if not summary_only and contig_file_rows:
                 f.write("# Contig Breakdown\n")
-                f.write("\t".join(contig_headers) + "\n")
-                for r in contig_file_rows:
-                    f.write("\t".join(r) + "\n")
+                writer.writerow(contig_headers)
+                writer.writerows(contig_file_rows)
                 f.write("\n")
 
             if not contigs_only and summary_file_rows:
                 f.write("# Summary Statistics\n")
-                f.write("\t".join(summary_headers) + "\n")
-                for r in summary_file_rows:
-                    f.write("\t".join(r) + "\n")
+                writer.writerow(summary_headers)
+                writer.writerows(summary_file_rows)
 
             if genetic_code_rows:
                 f.write("\n# Genetic Codes\n")
-                f.write("\t".join(genetic_code_headers) + "\n")
-                for r in genetic_code_rows:
-                    f.write("\t".join(r) + "\n")
+                writer.writerow(genetic_code_headers)
+                writer.writerows(genetic_code_rows)
 
         if not quiet:
             typer.echo(f"\nSummary table exported to: {export_path}")
