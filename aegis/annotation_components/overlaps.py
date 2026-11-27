@@ -525,7 +525,7 @@ class AnnotationOverlaps(AnnotationComponent):
             for g in genes.values():
                 progress_bar.update(1)
                 for o in g.overlaps["self"]:
-                    if o.exon_query_percent > 0:
+                    if o.exon_query_percent is not None and o.exon_query_percent > 0:
 
                         g_exons, g_CDSs, g_UTRs = set(), set(), set()
                         o_exons, o_CDSs, o_UTRs = set(), set(), set()

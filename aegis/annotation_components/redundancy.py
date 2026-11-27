@@ -272,7 +272,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 else:
                     for o in g.overlaps["self"]:
                         if o.score >= 5:
-                            if o.CDS_query_percent > 30:
+                            if o.CDS_query_percent is not None and o.CDS_query_percent > 30:
                                 if "stringtie" in self._annot.chrs[g.ch][o.id].source or "psiclass" in self._annot.chrs[g.ch][o.id].source:
                                     g.quality.transcriptomic_evidence = True
         progress_bar.close()
@@ -290,7 +290,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 else:
                     for o in g.overlaps["self"]:
                         if o.score >= 5:
-                            if o.CDS_query_percent > 30:
+                            if o.CDS_query_percent is not None and o.CDS_query_percent > 30:
                                 if self._source_matches_any(self._annot.chrs[g.ch][o.id].source, reliable_sources):
                                     g.quality.abinitio_evidence = True
         progress_bar.close()
@@ -567,7 +567,7 @@ class AnnotationRedundancy(AnnotationComponent):
 
                         if self._source_matches_none(overlap_gene.source, reliable_sources):
                             continue
-                        if not ((o.full_protein_overlaps >= 2) or (o.protein_query_percent >= 90)):
+                        if not ((o.full_protein_overlaps >= 2) or (o.protein_query_percent is not None and o.protein_query_percent >= 90)):
                             continue
                         if overlap_main_CDS_size <= main_CDS_size:
                             continue
@@ -905,7 +905,7 @@ class AnnotationRedundancy(AnnotationComponent):
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
                             if o.gene_query_percent >= 100 or o.gene_target_percent >= 100:
-                                if o.exon_query_percent > 0:
+                                if o.exon_query_percent is not None and o.exon_query_percent > 0:
                                     if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]):
                                         continue
                                     self._compete_overlap_pair(
@@ -936,7 +936,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 if not g.quality.remove or g.quality.rescue:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
-                            if o.exon_query_percent > 0 or o.exon_target_percent > 0:
+                            if (o.exon_query_percent is not None and o.exon_query_percent > 0) or (o.exon_target_percent is not None and o.exon_target_percent > 0):
                                 if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]):
                                     continue
                                 self._compete_overlap_pair(
@@ -951,7 +951,7 @@ class AnnotationRedundancy(AnnotationComponent):
                 if not g.quality.remove or g.quality.rescue:
                     for o in g.overlaps["self"]:
                         if (not self._annot.chrs[g.ch][o.id].quality.remove or self._annot.chrs[g.ch][o.id].quality.rescue) and (not g.quality.remove or g.quality.rescue):
-                            if o.exon_query_percent > 0 or o.exon_target_percent > 0:
+                            if (o.exon_query_percent is not None and o.exon_query_percent > 0) or (o.exon_target_percent is not None and o.exon_target_percent > 0):
                                 if self._same_alt_transcript_group(g, self._annot.chrs[g.ch][o.id]):
                                     continue
                                 self._annot.chrs[g.ch][o.id].clear_UTRs()
