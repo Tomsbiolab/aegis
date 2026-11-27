@@ -4198,11 +4198,18 @@ class Annotation():
         """
         accepted_levels = ["protein", "CDS", "transcript", "gene"]
 
-        if mode in accepted_levels:
-            hits = {}
-            f_in = open(blastfile, encoding="utf-8")
-            for line in f_in:
-                line = line.strip().split("\t")
+        if mode not in accepted_levels:
+            raise ValueError(f"Invalid mode '{mode}'. Choose from: {accepted_levels}.")
+        if mode != "protein":
+            raise NotImplementedError("Adding blast hits is not available for gene, transcripts and CDSs yet.")
+
+        hits = {}
+        with open(blastfile, encoding="utf-8") as f_in:
+            for raw_line in f_in:
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                line = stripped.split("\t")
                 ID = line[0]
                 evalue = float(line[-2])
                 bitscore = float(line[-1])
@@ -4210,26 +4217,26 @@ class Annotation():
                     hits[ID] = BlastHit(source, bitscore, evalue)
                 else:
                     print(f"Warning: for now the add blast hits method does not accept more than one blast hit per ID ({ID})")
-            f_in.close()
-            if mode == "protein":
-                if not self.protein_equivalences:
-                    self.generate_protein_equivalences(quiet=True)
-                for protein_id in self.protein_equivalences:
-                    chrom, g, t, c = self.all_protein_ids[protein_id]
-                    prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
-                    if protein_id in hits:
-                        if prot is not None:
-                            prot.blast_hits.append(hits[protein_id])
-                    for protein_id_copy in self.protein_equivalences[protein_id]:
-                        chrom, g, t, c = self.all_protein_ids[protein_id_copy]
-                        prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
-                        if protein_id_copy in self.chrs[chrom] and protein_id in hits:
-                            if prot is not None:
-                                prot.blast_hits.append(hits[protein_id])
-            else:
-                "Adding blast hits is not available for gene, transcripts and CDSs yet."
-        else:
-            print(f"Warning: {mode} chosen is not in accepted list of choices=['protein', 'CDS', 'transcript', 'gene]")   
+
+        if not self.protein_equivalences:
+            self.generate_protein_equivalences(quiet=True)
+
+        for protein_id, copies in self.protein_equivalences.items():
+            hit = hits.get(protein_id)
+            if hit is None:
+                for pid in copies:
+                    if pid in hits:
+                        hit = hits[pid]
+                        break
+            if hit is None:
+                continue
+            for pid in (protein_id, *copies):
+                if pid not in self.all_protein_ids:
+                    continue
+                chrom, g, t, c = self.all_protein_ids[pid]
+                prot = self.chrs[chrom][g].transcripts[t].CDSs[c].protein
+                if prot is not None:
+                    prot.blast_hits.append(hit)
 
     def remove_chromosomes_from_header(self):
         new_header = []

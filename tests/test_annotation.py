@@ -4834,3 +4834,39 @@ class TestRemoveChromosomesFromHeader:
             "##sequence-region chr1 1 1000",
             "##sequence-region 1 1 500",
         ]
+
+
+class TestAddBlastHits:
+    def test_propagates_hits_to_equivalent_proteins_and_validates_mode(self, tmp_path):
+        fa = tmp_path / "g.fa"
+        fa.write_text(">chr1\n" + "A" * 50 + "ATGGGCCCCTAA" + "A" * 50 + "ATGGGCCCCTAA" + "A" * 50 + "\n")
+        gff = tmp_path / "a.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t51\t62\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t51\t62\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t51\t62\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tCDS\t51\t62\t.\t+\t0\tID=c1;Parent=t1\n"
+            "chr1\tt\tgene\t113\t124\t.\t+\t.\tID=g2\n"
+            "chr1\tt\tmRNA\t113\t124\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\tt\texon\t113\t124\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\tt\tCDS\t113\t124\t.\t+\t0\tID=c2;Parent=t2\n"
+        )
+        blast = tmp_path / "hits.tsv"
+        blast.write_text("c1.prot\tsubj1\t100.0\t4\t0\t0\t1\t4\t1\t4\t1e-5\t50.0\n")
+
+        genome = Genome("test", str(fa), quiet=True)
+        annot = Annotation(str(gff), genome=genome, quiet=True)
+        annot.add_blast_hits("swissprot", str(blast), mode="protein")
+
+        p1 = annot.chrs["chr1"]["g1"].transcripts["t1"].CDSs["c1"].protein
+        p2 = annot.chrs["chr1"]["g2"].transcripts["t2"].CDSs["c2"].protein
+        assert len(p1.blast_hits) == 1
+        assert len(p2.blast_hits) == 1
+        assert p2.blast_hits[0].score == 50.0
+        assert p2.blast_hits[0].evalue == 1e-5
+
+        with pytest.raises(NotImplementedError):
+            annot.add_blast_hits("swissprot", str(blast), mode="gene")
+        with pytest.raises(ValueError):
+            annot.add_blast_hits("swissprot", str(blast), mode="invalid")
