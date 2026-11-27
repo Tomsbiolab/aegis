@@ -655,18 +655,18 @@ def export_group_equivalences(annotations:list[Annotation], output_folder:str|Pa
     genome_none = False
     genome_name = ""
     for a in annotations:
-        if a.genome == None:
+        if a.genome is None:
             genome_none = True
         else:
-            genome_name = a.genome
+            genome_name = a.genome.name
 
     if genome_none:
         warnings.warn("Please verify that all annotations are associated to the same genome version/assembly, this could not be checked based on annotation files alone.", category=UserWarning)
 
     if genome_name != "":
         for a in annotations:
-            if a.genome != None:
-                if a.genome != genome_name:
+            if a.genome is not None:
+                if a.genome.name != genome_name:
                     raise ValueError("The provided annotations are not based on the same genome version/assembly. Please review input.")
                 
     if len(annotations) < 2:

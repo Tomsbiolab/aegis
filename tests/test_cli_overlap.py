@@ -36,3 +36,35 @@ class TestExportGroupEquivalences:
         df = pd.read_csv(csv_files[0], sep="\t")
         assert set(df["gene_id_A_origin"]) == {"a2"}
         assert set(df["gene_id_B_origin"]) == {"a1", "a3"}
+
+    def test_genome_name_used_in_filename_and_equality(self, tmp_path):
+        import pytest
+
+        fa = tmp_path / "g.fa"
+        fa.write_text(">chr1\n" + "A" * 1000 + "\n")
+        _write_simple_gff(tmp_path / "a1.gff3", [("a1_g1", 100, 500)])
+        _write_simple_gff(tmp_path / "a2.gff3", [("a2_g1", 100, 500)])
+
+        g_shared = Genome("MyAssembly", str(fa), quiet=True)
+        a1 = Annotation(str(tmp_path / "a1.gff3"), name="a1", genome=g_shared, quiet=True)
+        a2 = Annotation(str(tmp_path / "a2.gff3"), name="a2", genome=g_shared, quiet=True)
+        export_group_equivalences([a1, a2], tmp_path / "out_shared", quiet=True)
+
+        out_files = [f.name for f in (tmp_path / "out_shared" / "overlaps").iterdir()]
+        assert out_files == ["a1_a2_on_MyAssembly_overlaps_t6.csv"]
+
+        # Two separate Genome instances with the same name must not raise ValueError
+        g1 = Genome("MyAssembly", str(fa), quiet=True)
+        g2 = Genome("MyAssembly", str(fa), quiet=True)
+        a1b = Annotation(str(tmp_path / "a1.gff3"), name="a1", genome=g1, quiet=True)
+        a2b = Annotation(str(tmp_path / "a2.gff3"), name="a2", genome=g2, quiet=True)
+        export_group_equivalences([a1b, a2b], tmp_path / "out_same_name", quiet=True)
+        assert [f.name for f in (tmp_path / "out_same_name" / "overlaps").iterdir()] == [
+            "a1_a2_on_MyAssembly_overlaps_t6.csv"
+        ]
+
+        # Distinct genome names must still raise ValueError
+        g_other = Genome("OtherAssembly", str(fa), quiet=True)
+        a2c = Annotation(str(tmp_path / "a2.gff3"), name="a2", genome=g_other, quiet=True)
+        with pytest.raises(ValueError, match="same genome version"):
+            export_group_equivalences([a1b, a2c], tmp_path / "out_diff", quiet=True)
