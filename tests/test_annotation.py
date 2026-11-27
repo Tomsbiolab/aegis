@@ -4979,3 +4979,38 @@ class TestPartialGenomeAndTranslTable:
         assert c1.protein is not None and c1.protein.seq == "MPWP*"
         assert c1.transl_table == 4
         assert list(annot.chrs["chr_missing"]["g2"].transcripts["t2"].CDSs.keys()) == ["c2"]
+
+
+class TestMakeAlternativeGenesIntoTranscripts:
+    def test_transitive_overlap_chain_preserves_all_transcripts(self, tmp_path):
+        from types import SimpleNamespace
+
+        gff = tmp_path / "chain.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t300\t.\t+\t.\tID=g1\n"
+            "chr1\tt\tmRNA\t100\t300\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\tt\texon\t100\t300\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tgene\t150\t350\t.\t+\t.\tID=g2\n"
+            "chr1\tt\tmRNA\t150\t350\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\tt\texon\t150\t350\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\tt\tgene\t200\t400\t.\t+\t.\tID=g3\n"
+            "chr1\tt\tmRNA\t200\t400\t.\t+\t.\tID=t3;Parent=g3\n"
+            "chr1\tt\texon\t200\t400\t.\t+\t.\tID=e3;Parent=t3\n"
+            "chr1\tt\tgene\t250\t450\t.\t+\t.\tID=g4\n"
+            "chr1\tt\tmRNA\t250\t450\t.\t+\t.\tID=t4;Parent=g4\n"
+            "chr1\tt\texon\t250\t450\t.\t+\t.\tID=e4;Parent=t4\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        hit = lambda i: SimpleNamespace(id=i, score=6)
+        annot.chrs["chr1"]["g1"].overlaps["self"] = [hit("g2")]
+        annot.chrs["chr1"]["g2"].overlaps["self"] = [hit("g1"), hit("g3")]
+        annot.chrs["chr1"]["g3"].overlaps["self"] = [hit("g2"), hit("g4")]
+        annot.chrs["chr1"]["g4"].overlaps["self"] = [hit("g3")]
+
+        annot.make_alternative_genes_into_transcripts(quiet=True)
+
+        assert list(annot.chrs["chr1"].keys()) == ["g1"]
+        g1 = annot.chrs["chr1"]["g1"]
+        assert {t.original_id for t in g1.transcripts.values()} == {"t1", "t2", "t3", "t4"}
+        assert g1.start == 100 and g1.end == 450

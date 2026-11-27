@@ -4519,29 +4519,41 @@ class Annotation():
     def make_alternative_genes_into_transcripts(self, quiet:bool=False):
 
         correspondence = {}
-
         to_remove = []
+
         for chrom, genes in self.chrs.items():
+            gene_ids = list(genes.keys())
+            order = {g_id: idx for idx, g_id in enumerate(gene_ids)}
+            eligible = {g_id: (not g.quality.remove or g.quality.rescue) for g_id, g in genes.items()}
+            parent = {g_id: g_id for g_id in gene_ids}
+
+            def find(x: str) -> str:
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
             for g in genes.values():
-                if (not g.quality.remove or g.quality.rescue) and (g.id not in correspondence):
-                    if g.overlaps:
-                        for o in g.overlaps["self"]:
-                            if o.score >= 5:
+                if not eligible[g.id] or not g.overlaps or "self" not in g.overlaps:
+                    continue
+                for o in g.overlaps["self"]:
+                    if o.score >= 5 and o.id != g.id and o.id in genes:
+                        rg = find(g.id)
+                        ro = find(o.id)
+                        if rg == ro:
+                            continue
+                        if (not eligible[rg], order[rg]) <= (not eligible[ro], order[ro]):
+                            parent[ro] = rg
+                        else:
+                            parent[rg] = ro
 
-                                if o.id in correspondence:
-
-                                    correspondence_gene = correspondence[o.id]
-                                    correspondence[g.id] = correspondence_gene
-                                    to_remove.append((g.id, chrom))
-                                    for t in self.chrs[chrom][g.id].transcripts.values():
-                                        self.chrs[chrom][correspondence_gene].transcripts[t.id] = t.copy()
-
-                                else:
-
-                                    correspondence[o.id] = g.id
-                                    to_remove.append((o.id, chrom))
-                                    for t in self.chrs[chrom][o.id].transcripts.values():
-                                        g.transcripts[t.id] = t.copy()
+            for g_id in gene_ids:
+                root = find(g_id)
+                if root != g_id:
+                    correspondence[g_id] = root
+                    to_remove.append((g_id, chrom))
+                    for t in genes[g_id].transcripts.values():
+                        genes[root].transcripts[t.id] = t.copy()
 
         for g, chrom in to_remove:
             if g in self.chrs[chrom]:
