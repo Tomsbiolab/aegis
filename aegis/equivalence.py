@@ -823,9 +823,7 @@ class Simple_annotation():
                     score += f", norm_bitscore={round(float(q_nb), 1)}/{round(float(t_nb), 1)}"
                     score += f", coverage={round(float(q_cov), 1)}/{round(float(t_cov), 1)}"
                     score += f", identity={round(float(q_id), 1)}/{round(float(t_id), 1)}"
-                    pair = sorted([gene_query, gene_target])
-                    pair = "-".join(pair)
-                    rbbh_hits.add(pair)
+                    rbbh_hits.add((gene_query, gene_target))
                     self.genes[gene_query].equivalences.append(
                         Equivalence(gene_target, "rbbh", target_annotation, species, score, q_ev)
                     )
@@ -852,8 +850,7 @@ class Simple_annotation():
                         score += f", norm_bitscore={round(float(q_nb), 1)}/{round(float(t_nb), 1)}"
                         score += f", coverage={round(float(q_cov), 1)}/{round(float(t_cov), 1)}"
                         score += f", identity={round(float(q_id), 1)}/{round(float(t_id), 1)}"
-                        pair = sorted([gene_query, gene_target])
-                        pair = "-".join(pair)
+                        pair = (gene_query, gene_target)
                         if pair not in rbbh_hits:
                             rbh_hits.add(pair)
                             self.genes[gene_query].equivalences.append(
@@ -884,8 +881,7 @@ class Simple_annotation():
                             score += f", norm_bitscore={norm_bitscore}"
                             score += f", coverage={round(float(qcov), 1)}"
                             score += f", identity={round(float(pident), 1)}"
-                            pair = sorted([q, s])
-                            pair = "-".join(pair)
+                            pair = (q, s)
                             if pair not in rbh_hits and pair not in rbbh_hits:
                                 self.genes[q].equivalences.append(Equivalence(s, equivalence_type, target_annotation, species, score, evalue))
 
@@ -906,8 +902,7 @@ class Simple_annotation():
                             score += f", norm_bitscore={norm_bitscore}"
                             score += f", coverage={round(float(qcov), 1)}"
                             score += f", identity={round(float(pident), 1)}"
-                            pair = sorted([gene_query, gene_target])
-                            pair = "-".join(pair)
+                            pair = (gene_query, gene_target)
                             if pair not in rbh_hits and pair not in rbbh_hits:
                                 self.genes[gene_query].equivalences.append(Equivalence(gene_target, equivalence_type, target_annotation, species, score, evalue))
 

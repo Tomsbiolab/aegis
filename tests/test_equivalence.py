@@ -258,3 +258,33 @@ class TestEquivalenceRanking:
         e_rec_ov = Equivalence("g_rec_ov", "rec_liftoff_aegis [9/8], rbbh [evalue=1e-50/1e-50, coverage=90/90, identity=90/90]", "annot2", "sp", "medium_confidence", "1e-50", "vvvv_reliable")
 
         assert [e.id for e in sorted([e_no_ov, e_with_ov, e_rec_ov])] == ["g_rec_ov", "g_with_ov", "g_no_ov"]
+
+
+class TestBlastEquivalenceKeys:
+    HEADER = "\tquery_x\tsubject_x\tidentity_x\tcoverage_x\tqlength_x\tslength_x\talength_x\tbitscore_x\tE-value_x\tnorm_bitscore_x\tqcov_x\tscov_x\tquery_y\tsubject_y\tidentity_y\tcoverage_y\tqlength_y\tslength_y\talength_y\tbitscore_y\tE-value_y\tnorm_bitscore_y\tqcov_y\tscov_y\n"
+
+    def test_directed_tuple_keys_avoid_shared_and_hyphen_collisions(self, tmp_path):
+        from types import SimpleNamespace
+        from aegis.equivalence import Simple_annotation
+
+        (tmp_path / "rbbh_Q__to__T.txt").write_text(
+            self.HEADER
+            + "0\tg1\tg2\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\tg2\tg1\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\n"
+            + "1\ta-b\tc\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\tc\ta-b\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\n"
+        )
+        (tmp_path / "rbh_Q__to__T.txt").write_text(
+            self.HEADER
+            + "0\tg1\tg2\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\tg2\tg1\t90\t90\t100\t100\t90\t200\t1e-50\t2.0\t0.9\t0.9\n"
+            + "1\tg2\tg1\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\tg1\tg2\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\n"
+            + "2\ta\tb-c\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\tb-c\ta\t80\t80\t100\t100\t80\t150\t1e-30\t1.5\t0.8\t0.8\n"
+        )
+        (tmp_path / "single_Q__to__T.txt").write_text("g1\tg2\t90\t90\t100\t100\t90\t200\t1e-50\n")
+        (tmp_path / "single_T__to__Q.txt").write_text("g3\tg2\t70\t70\t100\t100\t70\t120\t1e-20\n")
+
+        annot = Simple_annotation("Q", SimpleNamespace(all_gene_ids={"g1": "c1", "g2": "c1", "a-b": "c1", "a": "c1"}, target=False), "sp1")
+        annot.add_blast_equivalences(str(tmp_path), "Q", "T", "sp2", quiet=True)
+
+        assert [(e.id, e.type) for e in annot.genes["g1"].equivalences] == [("g2", "rbbh")]
+        assert [(e.id, e.type) for e in annot.genes["g2"].equivalences] == [("g1", "rbh"), ("g3", "rev_blastp")]
+        assert [(e.id, e.type) for e in annot.genes["a-b"].equivalences] == [("c", "rbbh")]
+        assert [(e.id, e.type) for e in annot.genes["a"].equivalences] == [("b-c", "rbh")]
