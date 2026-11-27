@@ -253,3 +253,25 @@ def test_cli_tidy_genome_no_keep_description(gwh_sample_files, tmp_path):
     assert result.exit_code == 0, f"Error: {result.stdout}"
     fa_headers = [line.strip() for line in (out_dir / "tidy.fasta").read_text().splitlines() if line.startswith(">")]
     assert fa_headers == [">chr1", ">chr2"]
+
+
+def test_gwh_rename_features_dap_updates_equivalences_and_aliases(tmp_path):
+    fasta = tmp_path / "gwh_dap.fasta"
+    fasta.write_text(
+        ">GWHBAVD00000001\tOriSeqID=chr1\tLen=12\nACGTACGTACGT\n"
+        ">GWHBAVD00000002\tOriSeqID=ctg100\tLen=12\nACGTACGTACGT\n",
+        encoding="utf-8",
+    )
+    g = Genome("gwh_dap", str(fasta), gwh=True, quiet=True)
+    assert g.scaffolds["ctg100"].chromosome is False
+
+    equivalences = g.rename_features_dap(return_equivalences=True)
+    assert equivalences["chr1"] == "chr01"
+    assert equivalences["GWHBAVD00000001"] == "chr01"
+    assert equivalences["ctg100"] == "chr00000001"
+    assert equivalences["GWHBAVD00000002"] == "chr00000001"
+
+    assert g.get_scaffold("GWHBAVD00000001") is not None
+    assert g.get_scaffold("GWHBAVD00000001").name == "chr01"
+    assert g.get_scaffold("GWHBAVD00000002") is not None
+    assert g.get_scaffold("GWHBAVD00000002").name == "chr00000001"

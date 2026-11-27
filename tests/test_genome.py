@@ -507,6 +507,13 @@ class TestDapRenaming:
         assert list(g.scaffolds) == ["chr01", "chr02", "chr00"]
         assert g.suffix == "_scffree_dapfit_organellefree_chr00"
 
+    @pytest.mark.parametrize("name", ["chr1_1", "chr1r2", "chr-1"])
+    def test_genome_dapfit_rejects_non_digit_chr_names(self, tmp_path, name):
+        fasta = self._write_fasta(tmp_path / "bad.fa", [name])
+        g = Genome("bad", fasta, quiet=True)
+        assert g.scaffolds[name].dapfit is False
+        assert g.dapfit is False
+
     @pytest.mark.parametrize("fasta_text", [
         ">chr1 desc one\nAAAA\n>chr2\nCCCC\n>chr00\nGGGG\n>scf1 some scaffold\nTTTT\n>ChrC\nACGT\n",
         # several unknown chromosomes get scaffold names, recognised from their input ids

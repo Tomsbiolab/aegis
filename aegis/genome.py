@@ -426,13 +426,8 @@ class Genome():
             if update_scaffolds:
                 scaffold.update()
 
-            if not scaffold.name.startswith("chr"):
+            if not (scaffold.name.startswith("chr") and scaffold.name[3:].isascii() and scaffold.name[3:].isdigit()):
                 self.dapfit = False
-            else:
-                try:
-                    _ = int(scaffold.name.split("r")[1])
-                except:
-                    self.dapfit = False
 
             if scaffold.dapmod:
                 self.dapmod = True
@@ -604,29 +599,35 @@ class Genome():
             scaffold_count = 0
             chromosome_count = 0
 
+            renaming: dict[str, str] = {}
             for scaffold in self.scaffolds.values():
 
                 if scaffold.mitochondria or scaffold.chloroplast:
                     organelle_count += 1
                     number = "{:04d}".format(organelle_count)
                     scaffold.number = number
-                    self.equivalences[scaffold.original_name] = f"chr{scaffold.number}"
+                    new_name = f"chr{scaffold.number}"
 
                 elif scaffold.chromosome:
                     if use_chromosome_count:
                         chromosome_count += 1
                         scaffold.number = "{:02d}".format(chromosome_count)
-                        self.equivalences[scaffold.original_name] = f"chr{scaffold.number}"
+                        new_name = f"chr{scaffold.number}"
                     else:
                         scaffold.number = "{:02d}".format(int(scaffold.number))
-                        self.equivalences[scaffold.original_name] = f"chr{scaffold.number}"
+                        new_name = f"chr{scaffold.number}"
                 elif keep_unknown_chromosome and scaffold.unknown_chromosome:
                     scaffold.number = "00"
-                    self.equivalences[scaffold.original_name] = "chr00"
+                    new_name = "chr00"
                 else:
                     scaffold_count += 1
                     scaffold.number = "{:08d}".format(scaffold_count)
-                    self.equivalences[scaffold.original_name] = f"chr{scaffold.number}"
+                    new_name = f"chr{scaffold.number}"
+
+                renaming[scaffold.name] = new_name
+
+            self.equivalences = {k: renaming.get(v, v) for k, v in self.equivalences.items()}
+            self.aliases = {k: renaming.get(v, v) for k, v in self.aliases.items()}
 
             new_scaffolds = {}
 
@@ -634,7 +635,9 @@ class Genome():
                 previous_name = scaffold.name
                 was_chromosome = scaffold.chromosome
                 was_unknown_chromosome = scaffold.unknown_chromosome
-                new_name = self.equivalences[scaffold.original_name]
+                new_name = renaming[previous_name]
+                self.equivalences[scaffold.original_name] = new_name
+                self.equivalences[previous_name] = new_name
                 if previous_name != new_name:
                     scaffold.dapmod = True
                 scaffold.update(new_name=new_name)
@@ -664,21 +667,25 @@ class Genome():
 
         new_scaffolds = {}
         final_equivalences = {}
+        renaming = {}
 
         for scaffold in self.scaffolds.values():
             
             original_name = scaffold.original_name
-            new_name = rename_map.get(scaffold.name, rename_map.get(original_name, scaffold.name))
+            previous_name = scaffold.name
+            new_name = rename_map.get(previous_name, rename_map.get(original_name, previous_name))
             
             copied_scaffold = scaffold.copy()
             copied_scaffold.update(new_name=new_name)
 
+            renaming[previous_name] = new_name
             final_equivalences[original_name] = new_name
-            final_equivalences[scaffold.name] = new_name
+            final_equivalences[previous_name] = new_name
 
             new_scaffolds[new_name] = copied_scaffold
 
         self.scaffolds = new_scaffolds
+        self.aliases = {k: renaming.get(v, v) for k, v in self.aliases.items()}
         self.update()
 
         return final_equivalences
