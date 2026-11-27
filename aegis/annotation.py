@@ -2095,9 +2095,10 @@ class Annotation():
         if define_synteny:
             self.define_synteny(sort_processes=sort_processes)
         if self.original_annotation is not None:
-            for g_id in self.original_annotation.all_gene_ids:
-                if g_id not in self.all_gene_ids:
-                    self.unmapped.append(g_id)
+            self.unmapped = [
+                g_id for g_id in self.original_annotation.all_gene_ids
+                if g_id not in self.all_gene_ids
+            ]
 
         now = time.time()
         lapse = now - start_time

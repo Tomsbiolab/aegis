@@ -3423,6 +3423,8 @@ class TestSynteny:
         annot_after = Annotation(synteny_after_liftover_gff3_file, quiet=True, original_annotation=annot_before, define_synteny=True)
         
         assert annot_after.unmapped == ["g6"]
+        annot_after.update(quiet=True)
+        assert annot_after.unmapped == ["g6"]
 
         assert annot_after.chrs["chr1"]["g1"].synteny.old_previous == None
         assert annot_after.chrs["chr1"]["g2"].synteny.old_previous == "g1"
