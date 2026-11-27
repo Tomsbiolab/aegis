@@ -374,6 +374,8 @@ def main(
             fn = f"{fn}.fasta"
         return fn
 
+    modes = list(dict.fromkeys(mode))
+
     if "gene" in features:
 
         annotation.export.genes(output_dir=output_dir, verbose=detailed_headers, filename=resolve_export_filename("gene", "all"))
@@ -385,14 +387,15 @@ def main(
         else:
             used_id = "transcript"
 
-        if "unique_per_gene" in mode:
-            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True, filename=resolve_export_filename("transcript", "unique_per_gene")) #type: ignore
-        elif "unique" in mode:
-            annotation.export.unique_transcripts(output_dir=output_dir, quiet=quiet, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "unique")) #type: ignore
-        elif "all" in mode:
-            annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "all")) #type: ignore
-        else:
-            annotation.export.transcripts(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "main")) #type: ignore
+        for m in modes:
+            if m == "unique_per_gene":
+                annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, unique_transcripts_per_gene=True, filename=resolve_export_filename("transcript", "unique_per_gene")) #type: ignore
+            elif m == "unique":
+                annotation.export.unique_transcripts(output_dir=output_dir, quiet=quiet, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "unique")) #type: ignore
+            elif m == "all":
+                annotation.export.transcripts(only_main=False, verbose=detailed_headers, output_dir=output_dir, used_id=used_id, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "all")) #type: ignore
+            elif m == "main":
+                annotation.export.transcripts(only_main=True, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, rna_classes=rna_classes, filename=resolve_export_filename("transcript", "main")) #type: ignore
 
     if strip_stop is not None:
         protein_strip = strip_stop
@@ -412,14 +415,15 @@ def main(
         else:
             used_id = "protein"
 
-        if "unique_per_gene" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "unique_per_gene"))
-        elif "unique" in mode:
-            annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "unique"))
-        elif "all" in mode:
-            annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "all"))
-        else:
-            annotation.export.proteins(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "main"))
+        for m in modes:
+            if m == "unique_per_gene":
+                annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, unique_proteins_per_gene=True, used_id=used_id, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "unique_per_gene"))
+            elif m == "unique":
+                annotation.export.unique_proteins(output_dir=output_dir, quiet=quiet, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "unique"))
+            elif m == "all":
+                annotation.export.proteins(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "all"))
+            elif m == "main":
+                annotation.export.proteins(only_main=True, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, strip_stop=protein_strip, internal_stops=internal_stops, filename=resolve_export_filename("protein", "main"))
 
     if "CDS" in features:
 
@@ -432,14 +436,15 @@ def main(
 
         protein_oriented = not raw_cds
 
-        if "unique_per_gene" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "unique_per_gene"))
-        elif "unique" in mode:
-            annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "unique"))
-        elif "all" in mode:
-            annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "all"))
-        else:
-            annotation.export.CDSs(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "main"))
+        for m in modes:
+            if m == "unique_per_gene":
+                annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_CDSs_per_gene=True, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "unique_per_gene"))
+            elif m == "unique":
+                annotation.export.unique_CDSs(output_dir=output_dir, quiet=quiet, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "unique"))
+            elif m == "all":
+                annotation.export.CDSs(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, only_cds_main=False, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "all"))
+            elif m == "main":
+                annotation.export.CDSs(only_main=True, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, protein_oriented=protein_oriented, strip_stop=cds_strip, filename=resolve_export_filename("CDS", "main"))
 
     if "promoter" in features:
 
@@ -450,14 +455,15 @@ def main(
         else:
             used_id = "promoter"
 
-        if "unique_per_gene" in mode:
-            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_promoters_per_gene=True, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "unique_per_gene"))
-        elif "unique" in mode:
-            annotation.export.unique_promoters(output_dir=output_dir, used_id="transcript" if used_id == "transcript" else "promoter", promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "unique"))
-        elif "all" in mode:
-            annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "all"))
-        else:
-            annotation.export.promoters(output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "main"))
+        for m in modes:
+            if m == "unique_per_gene":
+                annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, unique_promoters_per_gene=True, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "unique_per_gene"))
+            elif m == "unique":
+                annotation.export.unique_promoters(output_dir=output_dir, used_id="transcript" if used_id == "transcript" else "promoter", promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "unique"))
+            elif m == "all":
+                annotation.export.promoters(only_main=False, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "all"))
+            elif m == "main":
+                annotation.export.promoters(only_main=True, output_dir=output_dir, verbose=detailed_headers, used_id=used_id, promoter_type=promoter_type, promoter_size=promoter_size, quiet=quiet, filename=resolve_export_filename("promoter", "main"))
 
 if __name__ == "__main__":
     app()

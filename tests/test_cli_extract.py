@@ -126,3 +126,28 @@ def test_extract_cli_internal_stops(tmp_path, internal_stops, keep_stop, expecte
     (fasta_out,) = output_dir.iterdir()
     seqs = {line for line in fasta_out.read_text().splitlines() if line and not line.startswith(">")}
     assert seqs == expected
+
+
+def test_extract_cli_multiple_modes(tmp_path):
+    """Comma-separated --mode values all export instead of only the highest-precedence branch."""
+    fa = tmp_path / "g.fa"
+    fa.write_text(">chr1\n" + "ATGAAACCCGGGTTTAGA" * 5 + "\n")
+    gff = tmp_path / "a.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chr1\tt\tgene\t1\t36\t.\t+\t.\tID=g1\n"
+        "chr1\tt\tmRNA\t1\t36\t.\t+\t.\tID=t1;Parent=g1\n"
+        "chr1\tt\texon\t1\t36\t.\t+\t.\tID=e1;Parent=t1\n"
+        "chr1\tt\tCDS\t1\t18\t.\t+\t0\tID=c1;Parent=t1\n"
+        "chr1\tt\tmRNA\t1\t18\t.\t+\t.\tID=t2;Parent=g1\n"
+        "chr1\tt\texon\t1\t18\t.\t+\t.\tID=e2;Parent=t2\n"
+        "chr1\tt\tCDS\t1\t15\t.\t+\t0\tID=c2;Parent=t2\n"
+    )
+    out_dir = tmp_path / "out"
+    res = runner.invoke(
+        app,
+        [str(gff), str(fa), "-f", "transcript,protein,CDS,promoter", "-m", "all,main,unique,unique_per_gene", "-d", str(out_dir), "-q"],
+    )
+    assert res.exit_code == 0, res.output
+    files = sorted(f.name for f in out_dir.iterdir())
+    assert len(files) == 16, files
