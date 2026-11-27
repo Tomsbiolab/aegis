@@ -147,6 +147,17 @@ def test_read_gem_events_table(tmp_path):
     assert (point.start, point.end, point.summit) == (4000, 4000, 4000)
 
 
+def test_read_gps_events_table_without_kmer_group(tmp_path):
+    # GPS_events.txt has Strand at column 10 instead of KmerGroup; parsed headers must not fall back positionally
+    path = tmp_path / "TF.GPS_events.txt"
+    path.write_text(
+        "Position\tIP\tControl\tFold\tExpectd\tQ_-lg10\tP_-lg10\tP_poiss\tIPvsEMP\tNoise\tStrand\n"
+        "chr1:5000\t100.0\t1.0\t10.0\t1.0\t5.0\t6.0\t6.0\t0\t0\t+\n"
+    )
+    p = read_peaks(str(path))[0]
+    assert (p.chrom, p.summit, p.signal, p.fold, p.motif) == ("chr1", 5000, 100.0, 10.0, "")
+
+
 def test_non_unique_names_get_peak_ids(tmp_path):
     path = _bed(tmp_path, [("chr1", 10, 20, "same"), ("chr1", 30, 40, "same")])
     assert [p.peak_id for p in read_peaks(path)] == ["peak_1", "peak_2"]

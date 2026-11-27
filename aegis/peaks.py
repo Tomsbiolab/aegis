@@ -176,7 +176,7 @@ def _read_gem(path:str, event_width:int) -> list[Peak]:
             raise ValueError(f"Unexpected GEM event position '{cols[0]}' in '{path}'.")
         chrom, pos = m.group(1), int(m.group(2))
         def text(name, default_index):
-            i = columns.get(name, default_index) if columns else default_index
+            i = columns.get(name) if columns is not None else default_index
             return cols[i] if i is not None and i < len(cols) else ""
         def col(name, default_index):
             return _to_float(text(name, default_index))
