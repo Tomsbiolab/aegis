@@ -649,9 +649,9 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
                 if inferred_gene:
                     tx_attrs['gene_id'] = inferred_gene
             tx_feature_type = 'transcript'
-            if 'transcript_biotype' in attributes:
-                if 'RNA' in attributes['transcript_biotype']:
-                    tx_feature_type = attributes['transcript_biotype']
+            biotype = attributes.get('transcript_biotype')
+            if biotype and 'RNA' in biotype and biotype in default_features["transcript"]:
+                tx_feature_type = biotype
             tx_attr_str = format_gff3_attributes(tx_attrs, tx_feature_type)
             outfile.write("\t".join([parts[0], parts[1], tx_feature_type,
                                      parts[3], parts[4], parts[5], parts[6],

@@ -114,6 +114,30 @@ class TestParsing:
         annot = Annotation(f, quiet=True)
         assert models(annot) == {"e_gw1": {"3359": (((100, 300), (500, 900)), ((100, 300), (500, 900)))}}
 
+    def test_gtf_non_transcript_rna_biotypes_stay_linked(self, tmp_path):
+        # Biotypes containing 'RNA' that are not valid transcript feature types (e.g. miRNA, mt_tRNA, misc_RNA)
+        # must fall back to a valid transcript feature type rather than losing ID/Parent
+        f = write(tmp_path, "ensembl_rna.gtf", [
+            'chr1|ensembl|gene|1|100|.|+|.|gene_id "ENSG1";',
+            'chr1|ensembl|transcript|1|100|.|+|.|gene_id "ENSG1"; transcript_id "ENST1"; transcript_biotype "miRNA";',
+            'chr1|ensembl|exon|1|100|.|+|.|gene_id "ENSG1"; transcript_id "ENST1";',
+            'chr1|ensembl|gene|200|300|.|+|.|gene_id "ENSG2";',
+            'chr1|ensembl|transcript|200|300|.|+|.|gene_id "ENSG2"; transcript_id "ENST2"; transcript_biotype "mt_tRNA";',
+            'chr1|ensembl|exon|200|300|.|+|.|gene_id "ENSG2"; transcript_id "ENST2";',
+            'chr1|ensembl|gene|400|500|.|+|.|gene_id "ENSG3";',
+            'chr1|ensembl|transcript|400|500|.|+|.|gene_id "ENSG3"; transcript_id "ENST3"; transcript_biotype "lncRNA";',
+            'chr1|ensembl|exon|400|500|.|+|.|gene_id "ENSG3"; transcript_id "ENST3";',
+        ], header="")
+        annot = Annotation(f, quiet=True)
+        assert models(annot) == {
+            "ENSG1": {"ENST1": (((1, 100),), ())},
+            "ENSG2": {"ENST2": (((200, 300),), ())},
+            "ENSG3": {"ENST3": (((400, 500),), ())},
+        }
+        assert annot.chrs["chr1"]["ENSG1"].transcripts["ENST1"].feature == "transcript"
+        assert annot.chrs["chr1"]["ENSG2"].transcripts["ENST2"].feature == "transcript"
+        assert annot.chrs["chr1"]["ENSG3"].transcripts["ENST3"].feature == "lncRNA"
+
     def test_processed_transcript_is_a_transcript(self, tmp_path):
         f = write(tmp_path, "ensembl.gff3", [
             "1|ens|gene|100|500|.|+|.|ID=gene:G1",
