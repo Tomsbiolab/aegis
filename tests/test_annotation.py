@@ -5056,3 +5056,39 @@ class TestRenameIdsBugFixes:
         c = next(iter(t.CDSs.values()))
         assert [cs.id for cs in c.CDS_segments] == [f"{c.id}_1", f"{c.id}_2"]
         assert "CDS" in annot.renamed_features
+
+    def test_remove_point_suffix_and_strip_gene_tag_do_not_overwrite_colliding_genes(self, tmp_path):
+        gff = tmp_path / "collide.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\tt\tgene\t100\t200\t.\t+\t.\tID=g1.1\n"
+            "chr1\tt\tmRNA\t100\t200\t.\t+\t.\tID=t1;Parent=g1.1\n"
+            "chr1\tt\texon\t100\t200\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\tt\tgene\t300\t400\t.\t+\t.\tID=g1.2\n"
+            "chr1\tt\tmRNA\t300\t400\t.\t+\t.\tID=t2;Parent=g1.2\n"
+            "chr1\tt\texon\t300\t400\t.\t+\t.\tID=e2;Parent=t2\n"
+            "chr1\tt\tgene\t500\t600\t.\t+\t.\tID=gene-X\n"
+            "chr1\tt\tmRNA\t500\t600\t.\t+\t.\tID=t3;Parent=gene-X\n"
+            "chr1\tt\texon\t500\t600\t.\t+\t.\tID=e3;Parent=t3\n"
+            "chr1\tt\tgene\t700\t800\t.\t+\t.\tID=X\n"
+            "chr1\tt\tmRNA\t700\t800\t.\t+\t.\tID=t4;Parent=X\n"
+            "chr1\tt\texon\t700\t800\t.\t+\t.\tID=e4;Parent=t4\n"
+            "chr2\tt\tgene\t100\t200\t.\t+\t.\tID=g1.3\n"
+            "chr2\tt\tmRNA\t100\t200\t.\t+\t.\tID=t5;Parent=g1.3\n"
+            "chr2\tt\texon\t100\t200\t.\t+\t.\tID=e5;Parent=t5\n"
+        )
+        annot = Annotation(str(gff), quiet=True)
+        with pytest.warns(UserWarning, match="colliding"):
+            annot.rename_ids(remove_point_suffix=True, strip_gene_tag=True, quiet=True)
+
+        assert len(annot.all_gene_ids) == 5
+        assert set(annot.chrs["chr1"].keys()) == {"g1", "g1_2", "X_2", "X"}
+        assert set(annot.chrs["chr2"].keys()) == {"g1_3"}
+        # Unchanged gene X keeps its ID; gene-X is disambiguated to X_2
+        assert annot.chrs["chr1"]["X"].original_id == "X"
+        assert annot.chrs["chr1"]["X_2"].original_id == "gene-X"
+        # Transcripts point to the disambiguated gene IDs
+        for genes in annot.chrs.values():
+            for g in genes.values():
+                for t in g.transcripts.values():
+                    assert t.parents == [g.id]

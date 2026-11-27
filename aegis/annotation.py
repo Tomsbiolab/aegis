@@ -3897,21 +3897,54 @@ class Annotation():
         # Organelle genes are labelled chrMT/chrCP instead of their chromosome name; chromosomes sharing
         # a label (e.g. several mitochondrial contigs) continue its gene numbering
         organelle_labels = {"mitochondria": "chrMT", "chloroplast": "chrCP"}
-        g_counts: dict[str, int] = {}
 
-        for chrom, genes in self.chrs.items():
-            chrom_label = organelle_labels.get(self.chromosome_compartment(chrom), chrom)
-            for g in genes.values():
-                progress_bar.update(1)
-                g_counts[chrom_label] = g_counts.get(chrom_label, 0) + spacer
-                g_count = g_counts[chrom_label]
-
-                if "gene" in features or prefix:
+        if "gene" in features or prefix:
+            g_counts: dict[str, int] = {}
+            by_new_id: dict[str, list[tuple[Gene, str]]] = {}
+            for chrom, genes in self.chrs.items():
+                chrom_label = organelle_labels.get(self.chromosome_compartment(chrom), chrom)
+                for g in genes.values():
+                    g_counts[chrom_label] = g_counts.get(chrom_label, 0) + spacer
+                    g_count = g_counts[chrom_label]
+                    old_id = g.id
                     g.rename(g_count, sep=sep, digits=g_id_digits, prefix=prefix, suffix=suffix, base_id_as_id=strip_gene_tag, remove_point_suffix=remove_point_suffix, chrom_label=chrom_label)
+                    by_new_id.setdefault(g.id, []).append((g, old_id))
+
+            used_gene_ids = set(by_new_id.keys())
+            collisions = 0
+            for new_id, group in by_new_id.items():
+                if len(group) == 1:
+                    continue
+                if not any(old_id != new_id for _, old_id in group):
+                    continue
+                # Preserve an unchanged gene on its existing ID before disambiguating others
+                group.sort(key=lambda item: item[1] != new_id)
+                for g, _ in group[1:]:
+                    collisions += 1
+                    n = 2
+                    while f"{new_id}_{n}" in used_gene_ids:
+                        n += 1
+                    unique_id = f"{new_id}_{n}"
+                    used_gene_ids.add(unique_id)
+                    g.id = unique_id
+                    g.renamed = (g.id != g.original_id)
+                    g.update_numbering()
+
+            if collisions:
+                warnings.warn(
+                    f"Renaming gene IDs produced {collisions} colliding ID(s); disambiguated with numeric suffixes to avoid overwriting genes.",
+                    category=UserWarning,
+                )
+
+            for genes in self.chrs.values():
+                for g in genes.values():
                     if g.renamed:
                         changed_features.add("gene")
-
                     correspondences_d[g.original_id] = g.id
+
+        for chrom, genes in self.chrs.items():
+            for g in genes.values():
+                progress_bar.update(1)
 
                 tmains = 0
 
@@ -4158,18 +4191,26 @@ class Annotation():
 
         for chrom, genes_dict in self.chrs.items():
             new_genes = {}
-            
+
             for gene in genes_dict.values():
                 new_transcripts = {}
                 for transcript in gene.transcripts.values():
-                    new_cdss = {cds.id: cds for cds in transcript.CDSs.values()}
+                    new_cdss = {}
+                    for cds in transcript.CDSs.values():
+                        if CDS_keys and cds.id in new_cdss:
+                            raise ValueError(f"Duplicate CDS ID '{cds.id}' in transcript '{transcript.id}' on chromosome '{chrom}'.")
+                        new_cdss[cds.id] = cds
                     if CDS_keys:
                         transcript.CDSs = new_cdss
+                    if transcript_keys and transcript.id in new_transcripts:
+                        raise ValueError(f"Duplicate transcript ID '{transcript.id}' in gene '{gene.id}' on chromosome '{chrom}'.")
                     new_transcripts[transcript.id] = transcript
-                
+
                 if transcript_keys:
                     gene.transcripts = new_transcripts
 
+                if gene_keys and gene.id in new_genes:
+                    raise ValueError(f"Duplicate gene ID '{gene.id}' on chromosome '{chrom}'.")
                 new_genes[gene.id] = gene
 
             if gene_keys:
