@@ -924,16 +924,17 @@ class AnnotationExport(AnnotationComponent):
 
         equivalences = genome.rename_features_dap(output_dir=genome_output_dir, filename=genome_filename, filepath=genome_filepath, extension=genome_extension, use_genome_dir=use_genome_dir, subfolder_name=genome_subfolder_name, subfolder=genome_subfolder, return_equivalences=True, export=True, keep_description=genome_keep_description)
 
-        self._annot.rename_chromosomes(equivalences)
+        if equivalences:
+            self._annot.rename_chromosomes(equivalences)
 
         extra_suffixes = ["for_dap"]
 
         final_output_path = self._resolve_output_path(filepath=gff_filepath, output_dir=gff_output_dir, filename=gff_filename, suffix=self._annot.all_suffixes, extension=gff_extension, use_annot_dir=use_annot_dir, subfolder_name=gff_subfolder_name, subfolder=gff_subfolder, extra_suffixes=extra_suffixes, use_name_not_id=gff_use_name_not_id)
 
-        self.gff(filepath=str(final_output_path), skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, just_genes=exclude_non_coding, clean_attributes=True)
+        self.gff(filepath=str(final_output_path), skip_atypical_fts=skip_atypical_fts, main_only=main_only, UTRs=UTRs, skip_non_coding=exclude_non_coding, clean_attributes=True)
 
     def gff(self, 
-            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gffs", extension:str=".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes: bool = False, clean_attributes: bool = False, names: bool = True, aliases: bool = True, symbols: bool = True, symbols_as_description: bool = False, print_empty_attributes: bool = False, miRNAs: bool = True, clean_header: bool = False,
+            filepath: str | None = None, output_dir: str | None = None, filename: str | None = None, use_annot_dir: bool = False, subfolder: bool = False, subfolder_name: str = "out_gffs", extension:str=".gff3", skip_atypical_fts: bool = False, main_only: bool = False, UTRs: bool = False, just_genes: bool = False, no_1bp_features: bool = False, repeat_exons_utrs: bool = False, quiet: bool = False, skip_orphaned_fts: bool = False, featurecountsID: bool = False, extra_attributes: bool = False, clean_attributes: bool = False, names: bool = True, aliases: bool = True, symbols: bool = True, symbols_as_description: bool = False, print_empty_attributes: bool = False, miRNAs: bool = True, clean_header: bool = False, skip_non_coding: bool = False,
             # Deprecated arguments
             custom_path: str = "", tag: str = ".gff3"):
 
@@ -994,15 +995,16 @@ class AnnotationExport(AnnotationComponent):
             atypical_written = set()
 
             unexported_ids = set()
-            if main_only:
+            if main_only or skip_non_coding:
                 for genes in self._annot.chrs.values():
                     for g in genes.values():
+                        gene_skipped = skip_non_coding and not g.coding
                         for t in g.transcripts.values():
-                            if not t.main:
+                            if gene_skipped or (main_only and not t.main) or (skip_non_coding and not t.coding):
                                 unexported_ids.add(t.id)
                                 for c in t.CDSs.values():
                                     unexported_ids.add(c.id)
-                            else:
+                            elif main_only:
                                 for c in t.CDSs.values():
                                     if not c.main:
                                         unexported_ids.add(c.id)
@@ -1015,7 +1017,7 @@ class AnnotationExport(AnnotationComponent):
                 finally:
                     ft.parents = orig_parents
 
-            def _print_child(ft, parent_id):
+            def _print_child(ft, parent_id=None):
                 kwargs = dict(
                     featurecountsID=featurecountsID,
                     clean=clean_attributes,
@@ -1025,8 +1027,10 @@ class AnnotationExport(AnnotationComponent):
                     symbols_as_description=symbols_as_description,
                     print_empty_attributes=print_empty_attributes,
                 )
-                if main_only and ft.parents and (len(ft.parents) > 1 or ft.parents[0] != parent_id):
+                if parent_id is not None and (main_only or unexported_ids) and ft.parents and (len(ft.parents) > 1 or ft.parents[0] != parent_id):
                     return _print_with_parents(ft, [parent_id], **kwargs)
+                if parent_id is None and unexported_ids and ft.parents and any(p in unexported_ids for p in ft.parents):
+                    return _print_with_parents(ft, [p for p in ft.parents if p not in unexported_ids], **kwargs)
                 return ft.print_gff(**kwargs)
 
             def write_atypical_group(root, write=True):
@@ -1039,7 +1043,7 @@ class AnnotationExport(AnnotationComponent):
                     atypical_written.add(id(ft))
                     if write:
                         kwargs = dict(clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes)
-                        if main_only and ft.parents and any(p in unexported_ids for p in ft.parents):
+                        if unexported_ids and ft.parents and any(p in unexported_ids for p in ft.parents):
                             filtered_parents = [p for p in ft.parents if p not in unexported_ids]
                             f_out.write(_print_with_parents(ft, filtered_parents, **kwargs))
                         else:
@@ -1048,12 +1052,16 @@ class AnnotationExport(AnnotationComponent):
 
             def write_atypical_of(g, gene_written=True):
                 for ft, t in atypical_by_gene.get(g.id, ()):
-                    write_atypical_group(ft, write=gene_written and not (main_only and t is not None and not t.main))
+                    write_atypical_group(ft, write=gene_written and not (t is not None and t.id in unexported_ids))
 
             for x1, genes in enumerate(self._annot.chrs.values()):
                 progress_bar.update(len(genes))
                 for x2, g in enumerate(genes.values()):
                     
+                    if skip_non_coding and not g.coding:
+                        write_atypical_of(g, gene_written=False)
+                        continue
+
                     if no_1bp_features:
                         gene_1bp_feature = False
                         for t in g.transcripts.values():
@@ -1077,11 +1085,13 @@ class AnnotationExport(AnnotationComponent):
                     if just_genes:
                         continue
 
-                    if repeat_exons_utrs or main_only or len(g.transcripts) == 1:
-                        for t in g.transcripts.values():
-                            if main_only:
-                                if not t.main:
-                                    continue
+                    exported_transcripts = [
+                        t for t in g.transcripts.values()
+                        if (not main_only or t.main) and (not skip_non_coding or t.coding)
+                    ]
+
+                    if repeat_exons_utrs or main_only or len(exported_transcripts) <= 1:
+                        for t in exported_transcripts:
                             f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                             for e in t.exons:
                                 f_out.write(_print_child(e, t.id))
@@ -1104,11 +1114,11 @@ class AnnotationExport(AnnotationComponent):
 
                     else:
                                 
-                        for t in g.transcripts.values():                                
+                        for t in exported_transcripts:                                
                             f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
 
                         exons = []
-                        for t in g.transcripts.values():
+                        for t in exported_transcripts:
                             exons.extend(t.exons)
 
                         exons.sort()
@@ -1121,21 +1131,21 @@ class AnnotationExport(AnnotationComponent):
                                     unique_exons.append(exons[i])
 
                         for e in unique_exons:
-                            f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                            f_out.write(_print_child(e))
 
 
-                        for t in g.transcripts.values():
+                        for t in exported_transcripts:
 
                             for c in t.CDSs.values():
                                 for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                    f_out.write(_print_child(c_seg))
 
                             if miRNAs:
                                 for m in t.miRNAs:
-                                    f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                    f_out.write(_print_child(m))
                         if UTRs:
                             utrs = []
-                            for t in g.transcripts.values():
+                            for t in exported_transcripts:
                                 for c in t.CDSs.values():
                                     if hasattr(c, "UTRs"):
                                         utrs.extend(c.UTRs)
@@ -1149,7 +1159,7 @@ class AnnotationExport(AnnotationComponent):
                                         unique_utrs.append(utrs[i])
 
                             for u in unique_utrs:
-                                f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                f_out.write(_print_child(u))
 
                     write_atypical_of(g)
 
