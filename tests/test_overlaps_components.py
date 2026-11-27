@@ -62,3 +62,28 @@ def test_overlaps_and_redundancy_guard_none_percents_on_exonless_and_noncoding(t
     annot.redundancy.remove_exon_overlaps(["stringtie", "augustus"])
     annot.redundancy.remove_UTRs_from_exon_overlaps()
 
+
+def test_overlaps_export_self_with_synteny_and_na_columns(test_data_dir):
+    gff = str(test_data_dir / "input/annotation/self_overlapping_genes.gff3")
+    annot = Annotation(gff, quiet=True)
+    annot.overlaps.detect(quiet=True)
+
+    # export_self=True, synteny=True must not crash with KeyError: 'gene_id_A_origin'
+    df_self_syn = annot.overlaps.export(export_self=True, synteny=True, NAs=True, quiet=True)
+    assert "gene_id_A_origin" not in df_self_syn.columns
+    assert "gene_id_B_origin" not in df_self_syn.columns
+    assert "gene_id_A_synteny_conserved" in df_self_syn.columns
+    assert "gene_id_B_synteny_conserved" in df_self_syn.columns
+
+    # synteny=False, NAs=True must not leak gene_id_A_synteny_conserved
+    df_no_syn = annot.overlaps.export(export_self=True, synteny=False, NAs=True, quiet=True)
+    assert "gene_id_A_synteny_conserved" not in df_no_syn.columns
+    assert "gene_id_B_synteny_conserved" not in df_no_syn.columns
+
+    # Also verify non-self export with synteny=False, NAs=True does not leak synteny column
+    other = Annotation(gff, name="other", quiet=True)
+    annot.overlaps.detect(other, clear=False, quiet=True)
+    df_other_no_syn = annot.overlaps.export(export_self=False, synteny=False, NAs=True, quiet=True)
+    assert "gene_id_A_synteny_conserved" not in df_other_no_syn.columns
+
+
