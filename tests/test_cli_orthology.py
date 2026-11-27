@@ -53,3 +53,78 @@ class TestGetTieredCardinality:
         rev_labels = labels[len(rows):]
         flip = {"1:1": "1:1", "1:N": "N:1", "N:1": "1:N", "N:N": "N:N"}
         assert [flip[x] for x in fwd_labels] == rev_labels
+
+
+class TestZeroHitOrthologySchema:
+    def _setup_non_overlapping_same_genome(self, tmp_path):
+        fa = tmp_path / "g.fa"
+        fa.write_text(">chr1\n" + ("ATGGCTAGCGATCGATCGAT" * 50) + "TAA" + ("A" * 500) + "\n")
+        a1 = tmp_path / "a1.gff3"
+        a1.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t1\t303\t.\t+\t.\tID=g1\n"
+            "chr1\taegis\tmRNA\t1\t303\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\taegis\texon\t1\t303\t.\t+\t.\tID=e1;Parent=t1\n"
+            "chr1\taegis\tCDS\t1\t303\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        a2 = tmp_path / "a2.gff3"
+        a2.write_text(
+            "##gff-version 3\n"
+            "chr1\taegis\tgene\t601\t903\t.\t+\t.\tID=h1\n"
+            "chr1\taegis\tmRNA\t601\t903\t.\t+\t.\tID=u1;Parent=h1\n"
+            "chr1\taegis\texon\t601\t903\t.\t+\t.\tID=f1;Parent=u1\n"
+            "chr1\taegis\tCDS\t601\t903\t.\t+\t0\tID=d1;Parent=u1\n"
+        )
+        return a1, a2, fa
+
+    def test_zero_hit_schema_consistency(self, tmp_path):
+        from typer.testing import CliRunner
+        from aegis.cli import app
+
+        runner = CliRunner(env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"})
+        a1, a2, fa = self._setup_non_overlapping_same_genome(tmp_path)
+        common = [
+            "orthology",
+            "-a", f"{a1},{a2}",
+            "-g", f"{fa},{fa}",
+            "-an", "A1,A2",
+            "-gn", "G1,G1",
+            "--skip-lifton", "--skip-mcscan", "--skip-all-blasts", "--skip-orthofinder",
+            "-q",
+        ]
+
+        # 1. 0-hit without -na: must include cardinality and drop species_A/species_B
+        d1 = tmp_path / "d1"
+        res = runner.invoke(app, [*common, "-d", str(d1), "-o", "out.tsv"])
+        assert res.exit_code == 0, res.output
+        df1 = pd.read_csv(d1 / "out.tsv", sep="\t")
+        assert list(df1.columns) == ["gene_id_A", "gene_id_B", "summary_score", "cardinality", "annotation_A", "annotation_B", "score"]
+        assert df1.empty
+
+        # 2. 0-hit with -na: must include cardinality="NA" and drop species_A/species_B
+        d2 = tmp_path / "d2"
+        res = runner.invoke(app, [*common, "-na", "-d", str(d2), "-o", "out.tsv"])
+        assert res.exit_code == 0, res.output
+        df2 = pd.read_csv(d2 / "out.tsv", sep="\t", keep_default_na=False)
+        assert list(df2.columns) == ["gene_id_A", "gene_id_B", "summary_score", "cardinality", "annotation_A", "annotation_B", "score"]
+        assert list(df2["cardinality"]) == ["NA", "NA"]
+
+        # 3. 0-hit with -na --tiered-cardinality: must include tiered columns
+        d3 = tmp_path / "d3"
+        res = runner.invoke(app, [*common, "-na", "--tiered-cardinality", "-d", str(d3), "-o", "out.tsv"])
+        assert res.exit_code == 0, res.output
+        df3 = pd.read_csv(d3 / "out.tsv", sep="\t", keep_default_na=False)
+        assert list(df3.columns) == [
+            "gene_id_A", "gene_id_B", "summary_score", "annotation_A", "annotation_B",
+            "cardinality_strict", "cardinality_moderate", "cardinality_relaxed", "score",
+        ]
+        assert list(df3["cardinality_strict"]) == ["NA", "NA"]
+        assert list(df3["cardinality_moderate"]) == ["NA", "NA"]
+        assert list(df3["cardinality_relaxed"]) == ["NA", "NA"]
+
+        # 4. 0-hit with --group-names: must keep species_A/species_B
+        d4 = tmp_path / "d4"
+        res = runner.invoke(app, [*common, "--group-names", "sp1,sp2", "-d", str(d4), "-o", "out.tsv"])
+        assert res.exit_code == 0, res.output
+        df4 = pd.read_csv(d4 / "out.tsv", sep="\t")
+        assert "species_A" in df4.columns and "species_B" in df4.columns

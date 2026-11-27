@@ -1194,7 +1194,7 @@ def main(
 
     valid_confidences = [f"{c}_confidence" for c in sorted_confs]
 
-    if not final_df.empty and not skip_cardinality:
+    if not skip_cardinality:
         if tiered_cardinality:
             if conf_set not in standard_sets:
                 final_df['cardinality'] = get_tiered_cardinality(final_df, valid_confidences)
@@ -1271,27 +1271,26 @@ def main(
         final_df['summary_score'] = final_df['summary_score'].astype(str)
         final_df['annotation_B'] = final_df['annotation_B'].astype(str)
 
-    if not final_df.empty and "species_A" in final_df.columns and "species_B" in final_df.columns:
-        if (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all():
+    if "species_A" in final_df.columns and "species_B" in final_df.columns:
+        if (final_df.empty and all(g == "NA" for g in group_names)) or (
+            not final_df.empty and (final_df["species_A"] == "NA").all() and (final_df["species_B"] == "NA").all()
+        ):
             final_df = final_df.drop(columns=["species_A", "species_B"])
 
-    if not final_df.empty and split_scores:
+    if split_scores:
+        if final_df.empty:
+            final_df = final_df.drop(columns=["score"], errors="ignore")
+        else:
+            if not quiet:
+                print("\nSplitting aggregate scores into individual tool columns.")
 
-        if not quiet:
-            print("\nSplitting aggregate scores into individual tool columns.")
+            score_data = [parse_score_column(s) for s in final_df["score"]]
+            split_df = pd.DataFrame(score_data, index=final_df.index)
 
-        score_data = [parse_score_column(s) for s in final_df["score"]]
-        split_df = pd.DataFrame(score_data, index=final_df.index)
+            split_df = split_df.loc[:, (split_df != "NA").any(axis=0)]
 
-        split_df = split_df.loc[:, (split_df != "NA").any(axis=0)]
-        
-        try:
-            col_idx = list(final_df.columns).index("score")
-        except ValueError:
-            col_idx = 0
-
-        final_df = final_df.drop(columns=["score"], errors="ignore")
-        final_df = pd.concat([final_df, split_df], axis=1)
+            final_df = final_df.drop(columns=["score"], errors="ignore")
+            final_df = pd.concat([final_df, split_df], axis=1)
 
     desired_column_order = [
         "gene_id_A",
