@@ -701,6 +701,11 @@ def convert_gtf_to_gff3(gtf_file, gff3_file, encoding, quiet:bool=False):
     if not quiet:
         print(f"Successfully converted {gtf_file} to a gff format")
 
+_QUOTED_STR_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_GFF3_ATTR_RE = re.compile(r'(?:^|;)\s*[\w.-]+=')
+_GTF_ATTR_RE = re.compile(r'(?:^|;)\s*[\w.-]+\s+(?:"(?:[^"\\]|\\.)*"|[^\s;]+)')
+
+
 def detect_file_format(file_path, encoding, lines_to_check=20):
     """
     Detects if a file is GTF or GFF3 format.
@@ -733,11 +738,12 @@ def detect_file_format(file_path, encoding, lines_to_check=20):
 
                 if len(parts) == 9:
                     attributes = parts[8].strip()
+                    unquoted = _QUOTED_STR_RE.sub('""', attributes)
 
-                    if re.search(r'\b\w+=', attributes):
+                    if _GFF3_ATTR_RE.search(unquoted):
                         return 'gff3'
 
-                    if re.search(r'\b\w+\s+(?:"[^"]+"|[^\s;]+)', attributes):
+                    if _GTF_ATTR_RE.search(attributes):
                         return 'gtf'
 
                     # A bare value (e.g. AUGUSTUS gene lines 'g2') fits both formats: let the next lines decide

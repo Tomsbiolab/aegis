@@ -266,3 +266,12 @@ class TestGTFQuoting:
         gtf = tmp_path / "in.gtf"
         gtf.write_text('chr1\tsrc\texon\t1\t99\t.\t+\t.\tgene_id "g1"; transcript_id "t1"; gene_name "say \\"hi\\"";\n', encoding="utf-8")
         assert Annotation(str(gtf), quiet=True).chrs["chr1"]["g1"].names == ['say "hi"']
+
+    def test_detect_gtf_with_equals_in_quoted_value(self, tmp_path):
+        from aegis.utils.gtf_gff import detect_file_format
+        path = _gff(tmp_path, "ID=g1;Name=a%3Db")
+        Annotation(path, quiet=True).export.gtf(output_dir=str(tmp_path), filename="out.gtf", quiet=True)
+        out = str(tmp_path / "out.gtf")
+        assert detect_file_format(out, "utf-8") == "gtf"
+        back = Annotation(out, quiet=True)
+        assert back.chrs["chr1"]["g1"].names == ["a=b"]
