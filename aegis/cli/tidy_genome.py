@@ -5,7 +5,17 @@ from typing_extensions import Annotated
 
 from ..annotation import Annotation
 from ..genome import Genome
-from .utils import IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, COORDS_PANEL, GENOME_CLEANING_PANEL, detect_file_type
+from .utils import (
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    COORDS_PANEL,
+    GENOME_CLEANING_PANEL,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
+    detect_file_type,
+    strip_bio_extension,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
@@ -190,20 +200,23 @@ def main(
 
 
     if output_file:
+        stem, known_ext = strip_bio_extension(output_file)
+        clean_ext = known_ext[:-3] if known_ext.lower().endswith(".gz") else known_ext
+        is_fasta_ext = known_ext.lower() in FASTA_EXTENSIONS
+        is_annot_ext = known_ext.lower() in ANNOT_EXTENSIONS
+
         if not output_genome_file:
-            if not annotation_file or output_file.lower().endswith((".fa", ".fasta", ".fna")):
-                output_genome_file = output_file
+            if is_fasta_ext:
+                output_genome_file = f"{stem}{clean_ext}"
+            elif not annotation_file:
+                output_genome_file = f"{stem}.fasta"
             else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".fasta"
-                output_genome_file = f"{stem}_tidy{ext}"
+                output_genome_file = f"{stem}_tidy.fasta"
         if not output_annot_file and annotation_file:
-            if output_file.lower().endswith((".gff", ".gff3", ".gtf")):
-                output_annot_file = output_file
+            if is_annot_ext:
+                output_annot_file = f"{stem}{clean_ext}"
             else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".gff3"
-                output_annot_file = f"{stem}_matching_genome_tidy{ext}"
+                output_annot_file = f"{stem}_matching_genome_tidy.gff3"
 
     if not output_genome_file:
         output_genome_file = "{genome-name}_tidy.fasta"

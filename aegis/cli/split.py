@@ -10,7 +10,18 @@ from typing_extensions import Annotated
 from ..annotation import Annotation
 from ..genome import Genome, classify_compartment
 from ..utils.misc import open_file
-from .utils import AutoOrganelleDetectionOption, MitochondriaChromsOption, ChloroplastChromsOption, IO_PANEL, EXEC_PANEL, FASTA_HEADER_PANEL, SPLIT_PANEL
+from .utils import (
+    AutoOrganelleDetectionOption,
+    MitochondriaChromsOption,
+    ChloroplastChromsOption,
+    strip_bio_extension,
+    ANNOT_EXTENSIONS,
+    FASTA_EXTENSIONS,
+    IO_PANEL,
+    EXEC_PANEL,
+    FASTA_HEADER_PANEL,
+    SPLIT_PANEL,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -252,7 +263,6 @@ def classify_feature(
 
 def resolve_split_filename(template: str, name: str, tag: str, default_ext: str) -> str:
     """Format output filename using template, name, tag and extension."""
-    tag_str = tag
     if tag == "other":
         if "_split{tag}" in template:
             filename = template.replace("_split{tag}", "_split_other")
@@ -261,13 +271,18 @@ def resolve_split_filename(template: str, name: str, tag: str, default_ext: str)
         elif "{tag}" in template:
             filename = template.replace("{tag}", "_other")
         else:
-            filename = f"{template}_other"
+            stem, ext = strip_bio_extension(template)
+            filename = f"{stem}_other{ext}"
+    elif "{tag}" in template:
+        filename = template.replace("{tag}", tag)
     else:
-        filename = template.replace("{tag}", tag_str)
+        stem, ext = strip_bio_extension(template)
+        filename = f"{stem}_{tag}{ext}"
 
     filename = filename.replace("{annotation-name}", name).replace("{genome-name}", name)
 
-    if not os.path.splitext(filename)[1]:
+    _, ext = strip_bio_extension(filename)
+    if not ext:
         filename = f"{filename}{default_ext}"
     return filename
 
@@ -483,20 +498,15 @@ def main(
         genome_name = "genome"
 
     if output_file:
+        stem, known_ext = strip_bio_extension(output_file)
+        clean_ext = known_ext[:-3] if known_ext.lower().endswith(".gz") else known_ext
+        annot_ext = clean_ext if known_ext.lower() in ANNOT_EXTENSIONS else ".gff3"
+        genome_ext = clean_ext if known_ext.lower() in FASTA_EXTENSIONS else ".fasta"
+
         if not output_annot_file and annotation_file:
-            if not genome_file or output_file.lower().endswith((".gff", ".gff3", ".gtf")):
-                output_annot_file = output_file
-            else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".gff3"
-                output_annot_file = f"{stem}_split{{tag}}{ext}" if "{tag}" not in output_file else output_file
+            output_annot_file = f"{stem}{annot_ext}" if "{tag}" in stem else f"{stem}_split{{tag}}{annot_ext}"
         if not output_genome_file and genome_file:
-            if not annotation_file or output_file.lower().endswith((".fa", ".fasta", ".fna")):
-                output_genome_file = output_file
-            else:
-                stem, ext = os.path.splitext(output_file)
-                ext = ext if ext else ".fasta"
-                output_genome_file = f"{stem}_split{{tag}}{ext}" if "{tag}" not in output_file else output_file
+            output_genome_file = f"{stem}{genome_ext}" if "{tag}" in stem else f"{stem}_split{{tag}}{genome_ext}"
 
     if not output_annot_file:
         output_annot_file = "{annotation-name}_split{tag}.gff3"

@@ -71,6 +71,24 @@ COLUMNS_PANEL = "Output Columns"
 EXEC_PANEL = "Execution & Debugging"
 
 
+ANNOT_EXTENSIONS = (".gff3.gz", ".gff.gz", ".gtf.gz", ".gff3", ".gff", ".gtf")
+FASTA_EXTENSIONS = (".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz", ".faa.gz", ".fasta", ".fa", ".fna", ".fas", ".faa")
+BIO_EXTENSIONS = ANNOT_EXTENSIONS + FASTA_EXTENSIONS
+
+
+def strip_bio_extension(name: str, extensions: tuple[str, ...] = BIO_EXTENSIONS) -> tuple[str, str]:
+    """
+    Split a filename or prefix into (stem, ext) only when it ends with a known
+    bioinformatics extension (longest match first), preserving dotted prefixes
+    such as 'release_v1.2'.
+    """
+    lower = name.lower()
+    for ext in sorted(extensions, key=len, reverse=True):
+        if lower.endswith(ext):
+            return name[:-len(ext)], name[-len(ext):]
+    return name, ""
+
+
 def detect_file_type(filepath: str) -> str:
     """Detect whether a file is FASTA or GFF/GTF annotation."""
     import os
