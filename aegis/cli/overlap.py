@@ -113,9 +113,29 @@ def main(
         synteny = False
         original_annotation_files = ["NA"] * len(annot_files)
     
+    reference_idx = None
     if reference_annotation is not None and reference_annotation != "None":
-        if reference_annotation not in annot_files and reference_annotation not in annotation_names:
-            raise typer.BadParameter(f"The provided reference-annotation = {reference_annotation} is not present neither in annotation-files ({annot_files}) nor annotation-names ({annotation_names}).")
+        if reference_annotation in annotation_names:
+            reference_idx = annotation_names.index(reference_annotation)
+        elif reference_annotation in annot_files:
+            reference_idx = annot_files.index(reference_annotation)
+        else:
+            resolved_ref = os.path.abspath(reference_annotation)
+            resolved_files = [os.path.abspath(f) for f in annot_files]
+            if resolved_ref in resolved_files:
+                reference_idx = resolved_files.index(resolved_ref)
+            else:
+                basename_matches = [i for i, f in enumerate(annot_files) if os.path.basename(f) == reference_annotation]
+                if len(basename_matches) == 1:
+                    reference_idx = basename_matches[0]
+                elif len(basename_matches) > 1:
+                    raise typer.BadParameter(
+                        f"The provided reference-annotation '{reference_annotation}' matches multiple input filenames. Please specify its full path or annotation name ({annotation_names})."
+                    )
+                else:
+                    raise typer.BadParameter(
+                        f"The provided reference-annotation = {reference_annotation} is not present in annotation-files ({annot_files}) or annotation-names ({annotation_names})."
+                    )
         
     if len(annot_files) == 1:
         if original_annotation_files[0] != "NA":
@@ -130,7 +150,7 @@ def main(
         else:
             annotations.append(Annotation(name=annotation_names[n], annot_file_path=annotation_file, quiet=quiet, coordinate_polishing="none", skip_atypical_features=True))
 
-        if annotation_names[n] == reference_annotation or annotation_file == reference_annotation:
+        if n == reference_idx:
             annotations[n].target = True
 
     if len(annot_files) == 1:

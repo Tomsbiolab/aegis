@@ -92,3 +92,47 @@ class TestOverlapCLI:
         df = pd.read_csv(csv_files[0], sep="\t")
         assert list(df["gene_id_A_synteny_conserved"]) == [True, True]
         assert list(df["gene_id_B_synteny_conserved"]) == [False, False]
+
+    def test_reference_annotation_accepts_basename(self, tmp_path):
+        sub = tmp_path / "inputs"
+        sub.mkdir()
+        _write_simple_gff(sub / "a1.gff3", [("g1", 100, 500)])
+        _write_simple_gff(sub / "a2.gff3", [("h1", 100, 500)])
+        _write_simple_gff(sub / "a3.gff3", [("k1", 100, 500)])
+
+        out_dir = tmp_path / "out"
+        res = runner.invoke(app, [
+            "overlap",
+            str(sub / "a1.gff3"),
+            str(sub / "a2.gff3"),
+            str(sub / "a3.gff3"),
+            "-r", "a2.gff3",
+            "-d", str(out_dir),
+            "-q",
+        ])
+        assert res.exit_code == 0, res.output
+        csv_files = list((out_dir / "overlaps").glob("*.csv"))
+        assert len(csv_files) == 1
+        df = pd.read_csv(csv_files[0], sep="\t")
+        assert set(df["gene_id_A_origin"]) == {"a2"}
+        assert set(df["gene_id_B_origin"]) == {"a1", "a3"}
+
+    def test_reference_annotation_rejects_ambiguous_basename(self, tmp_path):
+        d1 = tmp_path / "v1"
+        d2 = tmp_path / "v2"
+        d1.mkdir()
+        d2.mkdir()
+        _write_simple_gff(d1 / "same.gff3", [("g1", 100, 500)])
+        _write_simple_gff(d2 / "same.gff3", [("h1", 100, 500)])
+
+        res = runner.invoke(app, [
+            "overlap",
+            str(d1 / "same.gff3"),
+            str(d2 / "same.gff3"),
+            "-an", "v1,v2",
+            "-r", "same.gff3",
+            "-d", str(tmp_path / "out"),
+            "-q",
+        ])
+        assert res.exit_code != 0
+        assert "multiple input filenames" in res.output
