@@ -162,12 +162,13 @@ class Feature():
             if key in IDENTITY_ATTRIBUTES:
                 if self._attributes is None:
                     self._attributes = FeatureAttributes()
+                values = [value] if isinstance(value, str) else list(value)
                 if key == INT_NAME:
-                    self._attributes.names = value[:]
+                    self._attributes.names = values
                 elif key == INT_ALIAS:
-                    self._attributes.aliases = value[:]
+                    self._attributes.aliases = values
                 else:
-                    self._attributes.symbols = value[:]
+                    self._attributes.symbols = values
                 identity_order.append((key, len(self._attributes.misc or ())))
 
             elif key == SOURCE_KEYS:

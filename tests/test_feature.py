@@ -53,6 +53,16 @@ class TestFeatureInit:
         assert "mRNA1" in f.parents # type: ignore
         assert "Test" in f.names # type: ignore
 
+    def test_string_identity_attributes_normalized_to_list(self, make_feature):
+        f = make_feature(feature_id="feat01", attributes={"Name": "COX1", "Alias": "A1", "Symbol": "S1"})
+        assert f.names == ["COX1"]
+        assert f.aliases == ["A1"]
+        assert f.symbols == ["S1"]
+        gff_line = f.print_gff(names=True, aliases=True, symbols=True)
+        assert "Name=COX1" in gff_line
+        assert "Alias=A1" in gff_line
+        assert "symbol=S1" in gff_line
+
     def test_misc_attributes_collected(self, make_feature):
         f = make_feature(feature_id="feat1", attributes={"Dbxref": "GeneID:12345", "custom": "value"})
         assert any("Dbxref" in a for a in f.misc_attributes)
