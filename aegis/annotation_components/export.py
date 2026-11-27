@@ -993,6 +993,42 @@ class AnnotationExport(AnnotationComponent):
             atypical_by_gene, atypical_children, atypical_roots = self._place_atypical_features() if write_atypical else ({}, {}, [])
             atypical_written = set()
 
+            unexported_ids = set()
+            if main_only:
+                for genes in self._annot.chrs.values():
+                    for g in genes.values():
+                        for t in g.transcripts.values():
+                            if not t.main:
+                                unexported_ids.add(t.id)
+                                for c in t.CDSs.values():
+                                    unexported_ids.add(c.id)
+                            else:
+                                for c in t.CDSs.values():
+                                    if not c.main:
+                                        unexported_ids.add(c.id)
+
+            def _print_with_parents(ft, parents, **kwargs):
+                orig_parents = ft.parents
+                ft.parents = parents
+                try:
+                    return ft.print_gff(**kwargs)
+                finally:
+                    ft.parents = orig_parents
+
+            def _print_child(ft, parent_id):
+                kwargs = dict(
+                    featurecountsID=featurecountsID,
+                    clean=clean_attributes,
+                    names=names,
+                    aliases=aliases,
+                    symbols=symbols,
+                    symbols_as_description=symbols_as_description,
+                    print_empty_attributes=print_empty_attributes,
+                )
+                if main_only and ft.parents and (len(ft.parents) > 1 or ft.parents[0] != parent_id):
+                    return _print_with_parents(ft, [parent_id], **kwargs)
+                return ft.print_gff(**kwargs)
+
             def write_atypical_group(root, write=True):
                 # write=False drops the group instead (its gene or transcript is not written)
                 stack = [root]
@@ -1002,7 +1038,12 @@ class AnnotationExport(AnnotationComponent):
                         continue
                     atypical_written.add(id(ft))
                     if write:
-                        f_out.write(ft.print_gff(clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                        kwargs = dict(clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes)
+                        if main_only and ft.parents and any(p in unexported_ids for p in ft.parents):
+                            filtered_parents = [p for p in ft.parents if p not in unexported_ids]
+                            f_out.write(_print_with_parents(ft, filtered_parents, **kwargs))
+                        else:
+                            f_out.write(ft.print_gff(**kwargs))
                     stack.extend(reversed(atypical_children.get(id(ft), ())))
 
             def write_atypical_of(g, gene_written=True):
@@ -1043,23 +1084,23 @@ class AnnotationExport(AnnotationComponent):
                                     continue
                             f_out.write(t.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
                             for e in t.exons:
-                                f_out.write(e.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                f_out.write(_print_child(e, t.id))
 
                             if miRNAs:
                                 for m in t.miRNAs:
-                                    f_out.write(m.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                    f_out.write(_print_child(m, t.id))
 
                             for c in t.CDSs.values():
                                 if main_only:
                                     if not c.main:
                                         continue
                                 for c_seg in c.CDS_segments:
-                                    f_out.write(c_seg.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                    f_out.write(_print_child(c_seg, t.id))
 
                                 if UTRs:
                                     if hasattr(c, "UTRs"):
                                         for u in c.UTRs:
-                                            f_out.write(u.print_gff(featurecountsID=featurecountsID, clean=clean_attributes, names=names, aliases=aliases, symbols=symbols, symbols_as_description=symbols_as_description, print_empty_attributes=print_empty_attributes))
+                                            f_out.write(_print_child(u, t.id))
 
                     else:
                                 
@@ -1158,7 +1199,8 @@ class AnnotationExport(AnnotationComponent):
         by_gene, children, roots = {}, {}, []
         for ft in self._annot.atypical_features:
             parents = ft.parents or []
-            placed = next((gene_of[p] for p in parents if p in gene_of), None)
+            matches = [gene_of[p] for p in parents if p in gene_of]
+            placed = next((m for m in matches if m[1] is None or m[1].main), matches[0]) if matches else None
             parent = None if placed is not None else next((atypical_ids[p] for p in parents if p in atypical_ids and atypical_ids[p] is not ft), None)
             if placed is not None:
                 by_gene.setdefault(placed[0], []).append((ft, placed[1]))
